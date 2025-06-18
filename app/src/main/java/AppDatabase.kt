@@ -4,20 +4,42 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
-// 1. Add the Account entity to the list
-// 2. IMPORTANT: Increment the database version from 1 to 2
+// 1. Add the Budget entity to the list
+// 2. IMPORTANT: Increment the database version from 3 to 4
 @Database(
-    entities = [Transaction::class, Account::class],
-    version = 2
+    entities = [Transaction::class, Account::class, Budget::class],
+    version = 4
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun transactionDao(): TransactionDao
-    // 3. Add the new abstract function for the AccountDao
     abstract fun accountDao(): AccountDao
+    // 3. Add the new abstract function for the BudgetDao
+    abstract fun budgetDao(): BudgetDao
 
     companion object {
+        // 4. --- THIS IS THE MIGRATION LOGIC ---
+        // Create a Migration object that tells Room how to get from version 3 to 4.
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Here, you write the raw SQL to update your database.
+                // We are creating the new 'budgets' table with the schema defined
+                // in our Budget entity.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `budgets` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `categoryName` TEXT NOT NULL, 
+                        `amount` REAL NOT NULL, 
+                        `month` INTEGER NOT NULL, 
+                        `year` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -29,12 +51,11 @@ abstract class AppDatabase : RoomDatabase() {
                     instance = Room.databaseBuilder(
                         context.applicationContext,
                         AppDatabase::class.java,
-                        "finance_database" // This is the filename of the database on the device
+                        "finance_database"
                     )
-                        // This will wipe and recreate the database when the version number changes.
-                        // This is okay for development, but for a real app, you would
-                        // create a proper Migration plan.
-                        .fallbackToDestructiveMigration()
+                        // We are no longer using fallbackToDestructiveMigration.
+                        // Instead, we provide our specific migration plan.
+                        .addMigrations(MIGRATION_3_4)
                         .build()
 
                     INSTANCE = instance

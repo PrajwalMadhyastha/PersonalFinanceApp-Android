@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -49,6 +49,7 @@ fun FinanceApp() {
     val navController = rememberNavController()
     val transactionViewModel: TransactionViewModel = viewModel()
     val accountViewModel: AccountViewModel = viewModel()
+    val budgetViewModel: BudgetViewModel = viewModel()
 
     NavHost(navController = navController, startDestination = "transaction_list") {
         composable("transaction_list") {
@@ -102,8 +103,18 @@ fun FinanceApp() {
                 )
             }
         }
+        composable("budget_screen") {
+            BudgetScreen(navController = navController, viewModel = budgetViewModel)
+        }
+        composable("add_budget") {
+            AddBudgetScreen(navController = navController, viewModel = budgetViewModel)
+        }
     }
 }
+
+// =================================================================================
+// Transaction-related Screens
+// =================================================================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -115,6 +126,17 @@ fun TransactionListScreen(navController: NavController, viewModel: TransactionVi
             TopAppBar(
                 title = { Text("Transactions") },
                 actions = {
+                    // --- UPDATED: Now two icons are here for easy access ---
+
+                    // 1. The button for Budgets
+                    IconButton(onClick = { navController.navigate("budget_screen") }) {
+                        Icon(
+                            imageVector = Icons.Default.Assessment,
+                            contentDescription = "Budgets"
+                        )
+                    }
+
+                    // 2. The button for Accounts
                     IconButton(onClick = { navController.navigate("account_list") }) {
                         Icon(
                             imageVector = Icons.Default.AccountBalanceWallet,
@@ -399,20 +421,13 @@ fun TransactionItem(transactionWithAccount: TransactionWithAccount, onClick: () 
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Preview(showBackground = true)
-@Composable
-fun TransactionListScreenPreview() {
-    PersonalFinanceAppTheme {
-        // Preview might not work perfectly with real ViewModels, this is okay.
-        // TransactionListScreen(rememberNavController(), viewModel())
-    }
-}
+// =================================================================================
+// Account-related Screens
+// =================================================================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountListScreen(navController: NavController, viewModel: AccountViewModel) {
-    // Use the new, smarter Flow from the ViewModel
     val accountsWithBalance by viewModel.accountsWithBalance.collectAsState(initial = emptyList())
 
     Scaffold(
@@ -422,6 +437,11 @@ fun AccountListScreen(navController: NavController, viewModel: AccountViewModel)
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { navController.navigate("budget_screen") }) {
+                        Icon(imageVector = Icons.Default.Assessment, contentDescription = "Budgets")
                     }
                 }
             )
@@ -437,13 +457,10 @@ fun AccountListScreen(navController: NavController, viewModel: AccountViewModel)
                 .padding(innerPadding)
                 .padding(16.dp)
         ) {
-            // The item is now of type AccountWithBalance
             items(accountsWithBalance) { accountWithBalance ->
                 Box(modifier = Modifier.clickable {
-                    // Navigate using the ID from the nested account object
                     navController.navigate("account_detail/${accountWithBalance.account.id}")
                 }) {
-                    // Pass the whole combined object to the item
                     AccountItem(accountWithBalance = accountWithBalance)
                 }
                 Divider()
@@ -453,7 +470,7 @@ fun AccountListScreen(navController: NavController, viewModel: AccountViewModel)
 }
 
 @Composable
-fun AccountItem(accountWithBalance: AccountWithBalance) { // The parameter is now AccountWithBalance
+fun AccountItem(accountWithBalance: AccountWithBalance) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -461,16 +478,13 @@ fun AccountItem(accountWithBalance: AccountWithBalance) { // The parameter is no
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            // Get name and type from the nested account object
             Text(text = accountWithBalance.account.name, style = MaterialTheme.typography.bodyLarge)
             Text(text = accountWithBalance.account.type, style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
         }
         Text(
-            // Display the calculated balance from our new object
             text = "₹${"%.2f".format(accountWithBalance.balance)}",
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
-            // Add color to the balance text
             color = if (accountWithBalance.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
         )
     }
@@ -724,7 +738,130 @@ fun AccountTransactionItem(transaction: Transaction) {
         Text(
             text = "₹${"%.2f".format(transaction.amount)}",
             style = MaterialTheme.typography.bodyLarge,
-            color = if (transaction.amount < 0) Color.Red else Color(0xFF006400) // Darker Green for better readability
+            color = if (transaction.amount < 0) Color.Red else Color(0xFF006400)
         )
+    }
+}
+
+
+// =================================================================================
+// Budget-related Screens
+// =================================================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
+    val budgets by viewModel.budgetsForCurrentMonth.collectAsState(initial = emptyList())
+    val monthYear = viewModel.getCurrentMonthYearString()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Budgets for $monthYear") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_budget") }) {
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Budget")
+            }
+        }
+    ) { innerPadding ->
+        if (budgets.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                Text("No budgets set for this month. Add one!")
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .padding(16.dp)
+            ) {
+                items(budgets) { budget ->
+                    BudgetItem(budget = budget)
+                    Divider()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BudgetItem(budget: Budget) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = budget.categoryName,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "₹${"%.2f".format(budget.amount)}",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddBudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
+    var categoryName by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Add New Budget") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = categoryName,
+                onValueChange = { categoryName = it },
+                label = { Text("Category Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                label = { Text("Budget Amount") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    if (categoryName.isNotBlank() && amount.isNotBlank()) {
+                        viewModel.addBudget(categoryName, amount)
+                        navController.popBackStack()
+                    }
+                },
+                modifier = Modifier.align(Alignment.End),
+                enabled = categoryName.isNotBlank() && amount.isNotBlank()
+            ) {
+                Text("Save Budget")
+            }
+        }
     }
 }
