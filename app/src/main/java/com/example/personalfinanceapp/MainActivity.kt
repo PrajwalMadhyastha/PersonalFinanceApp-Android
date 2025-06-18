@@ -4,29 +4,22 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
-import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,76 +28,112 @@ class MainActivity : ComponentActivity() {
         setContent {
             PersonalFinanceAppTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    // This calls our new LoginScreen composable
-                    LoginScreen(modifier = Modifier.padding(innerPadding))
+                    // Call our new main screen composable
+                    TransactionScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
     }
 }
 
-// This is our main UI function for the login screen
+// Renamed from LoginScreen to TransactionScreen for clarity
 @Composable
-fun LoginScreen(modifier: Modifier = Modifier) {
-    // These state variables already hold the text from the input fields.
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+fun TransactionScreen(modifier: Modifier = Modifier) {
+    // 1. Get an instance of our ViewModel
+    val transactionViewModel: TransactionViewModel = viewModel()
 
-    // Get the current context, which is needed to show a Toast message
-    val context = androidx.compose.ui.platform.LocalContext.current
+    // 2. Observe the Flow and collect its values as State.
+    // The 'transactions' variable will automatically update whenever the data in Room changes.
+    val transactions by transactionViewModel.allTransactions.collectAsState(initial = emptyList())
+
+    // State for the input fields
+    var description by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(16.dp),
     ) {
-        Text(text = "Welcome Back", style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
+        Text("Add New Transaction", style = MaterialTheme.typography.headlineSmall)
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Input section
         OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Password") },
-            modifier = Modifier.fillMaxWidth(),
-            visualTransformation = PasswordVisualTransformation()
+            value = description,
+            onValueChange = { description = it },
+            label = { Text("Description") },
+            modifier = Modifier.fillMaxWidth()
         )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // This is the Login button.
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = { Text("Amount") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = {
-                // --- THIS IS THE FIX ---
-                // The logic goes directly inside the onClick lambda.
-                // We can directly use the 'email' and 'password' variables.
-                val loginMessage = "Email: $email, Password: $password"
-                Toast.makeText(context, loginMessage, Toast.LENGTH_SHORT).show()
-                // --- END OF FIX ---
+                // Call the ViewModel function to add the transaction
+                transactionViewModel.addTransaction(description, amount)
+                // Clear the input fields after adding
+                description = ""
+                amount = ""
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.align(Alignment.End)
         ) {
-            Text("Login")
+            Text("Add")
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Display the list of transactions
+        Text("History", style = MaterialTheme.typography.headlineSmall)
+        Spacer(modifier = Modifier.height(8.dp))
+        TransactionList(transactions = transactions)
+    }
+}
+
+// 3. New Composable to display the list
+@Composable
+fun TransactionList(transactions: List<Transaction>) {
+    // LazyColumn is efficient for long lists. It only renders the items on screen.
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(transactions) { transaction ->
+            TransactionItem(transaction = transaction)
+            HorizontalDivider()
         }
     }
 }
 
-// This function provides a preview in the Android Studio editor
+// New Composable for a single row in the list
+@Composable
+fun TransactionItem(transaction: Transaction) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Text(text = transaction.description, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            // Format the Long timestamp into a readable date string
+            Text(text = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(transaction.date)), fontSize = 12.sp, color = Color.Gray)
+        }
+        Text(text = "₹${"%.2f".format(transaction.amount)}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    }
+}
+
+
 @Preview(showBackground = true)
 @Composable
-fun LoginScreenPreview() {
+fun TransactionScreenPreview() {
     PersonalFinanceAppTheme {
-        LoginScreen()
+        // We can't fully preview the ViewModel, but we can preview the layout
+        TransactionScreen()
     }
 }

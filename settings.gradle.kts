@@ -1,12 +1,9 @@
+// In settings.gradle.kts (the one in your project's root directory)
+
 pluginManagement {
     repositories {
-        google {
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
-            }
-        }
+        // This simpler format is less restrictive and should resolve the issue.
+        google()
         mavenCentral()
         gradlePluginPortal()
     }

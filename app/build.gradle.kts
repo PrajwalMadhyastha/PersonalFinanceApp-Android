@@ -2,13 +2,12 @@ val room_version = "2.6.1"
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.kotlin.ksp)
 }
 
 android {
     namespace = "com.example.personalfinanceapp"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.example.personalfinanceapp"
@@ -16,8 +15,10 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ksp {
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
     }
 
     buildTypes {
@@ -38,6 +39,12 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    // --- THIS IS THE CRUCIAL BLOCK ---
+    // It explicitly tells Compose which compiler version to use,
+    // matching the version we defined in libs.versions.toml.
+    composeOptions {
+        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
 }
 
