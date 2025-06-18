@@ -30,4 +30,7 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     suspend fun delete(transaction: Transaction) {
         transactionDao.delete(transaction)
     }
+    fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?> {
+        return transactionDao.getSpendingForCategory(categoryName, startDate, endDate)
+    }
 }

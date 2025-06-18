@@ -30,6 +30,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
 import java.text.SimpleDateFormat
+import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.map
 import java.util.*
 
 class MainActivity : ComponentActivity() {
@@ -778,12 +780,13 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
         } else {
             LazyColumn(
                 modifier = Modifier
-                    .padding(innerPadding)
-                    .padding(16.dp)
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(16.dp)
             ) {
                 items(budgets) { budget ->
-                    BudgetItem(budget = budget)
-                    Divider()
+                    // Here we use our new, more powerful BudgetItem, passing the ViewModel down
+                    BudgetItem(budget = budget, viewModel = viewModel)
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
             }
         }
@@ -791,23 +794,82 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
 }
 
 @Composable
-fun BudgetItem(budget: Budget) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
+    // 1. Create a flow that transforms the raw spending data into the value we need (a positive Double).
+    // We use remember() so this flow is not recreated on every recomposition.
+    val spendingFlow = remember(budget.categoryName) {
+        viewModel.getActualSpending(budget.categoryName).map { spending ->
+            // If spending is null (no transactions), default to 0.0.
+            // Use Math.abs() because expenses are negative, but progress is positive.
+            Math.abs(spending ?: 0.0)
+        }
+    }
+    // 2. Collect the transformed flow as a state that the UI can react to.
+    val actualSpending by spendingFlow.collectAsState(initial = 0.0)
+
+    // 3. Calculate progress and remaining amount.
+    val progress = if (budget.amount > 0) {
+        (actualSpending / budget.amount).toFloat()
+    } else {
+        0f
+    }
+    val amountRemaining = budget.amount - actualSpending
+
+    // 4. Determine the color of the progress bar.
+    val progressColor = when {
+        progress > 1f -> MaterialTheme.colorScheme.error
+        progress > 0.8f -> Color(0xFFFBC02D) // Amber
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        Text(
-            text = budget.categoryName,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = "₹${"%.2f".format(budget.amount)}",
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold
-        )
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = budget.categoryName,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "₹${"%.2f".format(budget.amount)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp),
+                color = progressColor
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Spent: ₹${"%.2f".format(actualSpending)}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = "Remaining: ₹${"%.2f".format(amountRemaining)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (amountRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
     }
 }
 

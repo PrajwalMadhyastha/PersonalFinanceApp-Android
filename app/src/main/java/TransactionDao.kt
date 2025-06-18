@@ -28,4 +28,11 @@ interface TransactionDao {
 
     @Delete
     suspend fun delete(transaction: Transaction)
+
+    @Query("""
+    SELECT SUM(amount) FROM transactions 
+    WHERE description = :categoryName 
+    AND date BETWEEN :startDate AND :endDate
+""")
+    fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?>
 }
