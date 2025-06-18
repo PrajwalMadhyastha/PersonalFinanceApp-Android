@@ -226,35 +226,65 @@ fun TransactionList(transactions: List<Transaction>, navController: NavControlle
             Text("No transactions yet. Add one!")
         }
     } else {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        // The LazyColumn now has some content padding for better spacing
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        ) {
             items(transactions) { transaction ->
+                // Call the new, improved TransactionItem
                 TransactionItem(
                     transaction = transaction,
                     onClick = {
+                        // The navigation logic is unchanged
                         navController.navigate("edit_transaction/${transaction.id}")
                     }
                 )
-                HorizontalDivider()
             }
         }
     }
 }
 
+// --- THIS IS THE NEWLY DESIGNED COMPOSABLE ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionItem(transaction: Transaction, onClick: () -> Unit) {
-    Row(
+    // 1. Use a Card as the root element for elevation and a clean container
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(vertical = 4.dp), // Add space between cards
+        onClick = onClick // Make the whole card clickable
     ) {
-        Column {
-            Text(text = transaction.description, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Text(text = SimpleDateFormat("dd MMM yyyy, h:mm a", Locale.getDefault()).format(Date(transaction.date)), fontSize = 12.sp, color = Color.Gray)
+        // 2. A Row to structure the content horizontally
+        Row(
+            modifier = Modifier
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // A Column on the left for Description and Date
+            Column(modifier = Modifier.weight(1f)) { // The weight makes it take up available space
+                Text(
+                    text = transaction.description,
+                    style = MaterialTheme.typography.bodyLarge, // 3. Apply typography
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = SimpleDateFormat("dd MMM yyyy, h:mm a", Locale.getDefault()).format(Date(transaction.date)),
+                    style = MaterialTheme.typography.bodySmall, // 3. Apply typography
+                    color = Color.Gray
+                )
+            }
+
+            // A Text element on the right for the Amount
+            Text(
+                text = "₹${"%.2f".format(transaction.amount)}",
+                style = MaterialTheme.typography.bodyLarge, // 3. Apply typography
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
-        Text(text = "₹${"%.2f".format(transaction.amount)}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
     }
 }
 
