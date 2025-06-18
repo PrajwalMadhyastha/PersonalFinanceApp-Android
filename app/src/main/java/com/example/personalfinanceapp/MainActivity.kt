@@ -11,7 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Delete // <--- THIS IS THE ONLY ADDED LINE
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,16 +51,10 @@ fun FinanceApp() {
 
     NavHost(navController = navController, startDestination = "transaction_list") {
         composable("transaction_list") {
-            TransactionListScreen(
-                navController = navController,
-                viewModel = transactionViewModel
-            )
+            TransactionListScreen(navController = navController, viewModel = transactionViewModel)
         }
         composable("add_transaction") {
-            AddTransactionScreen(
-                navController = navController,
-                viewModel = transactionViewModel
-            )
+            AddTransactionScreen(navController = navController, viewModel = transactionViewModel)
         }
         composable(
             "edit_transaction/{transactionId}",
@@ -95,10 +89,7 @@ fun TransactionListScreen(navController: NavController, viewModel: TransactionVi
         }
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding)) {
-            // --- THIS IS THE FIX ---
-            // We now correctly pass the navController to the TransactionList.
             TransactionList(transactions = transactions, navController = navController)
-            // --- END OF FIX ---
         }
     }
 }
@@ -123,7 +114,10 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
         }
     ) { innerPadding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
         ) {
             OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(8.dp))
@@ -177,7 +171,10 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
     ) { innerPadding ->
         transaction?.let { currentTransaction ->
             Column(
-                modifier = Modifier.fillMaxSize().padding(innerPadding).padding(16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
             ) {
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
                 Spacer(modifier = Modifier.height(8.dp))
@@ -246,7 +243,10 @@ fun TransactionList(transactions: List<Transaction>, navController: NavControlle
 @Composable
 fun TransactionItem(transaction: Transaction, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
