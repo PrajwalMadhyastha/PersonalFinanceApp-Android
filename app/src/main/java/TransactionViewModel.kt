@@ -62,9 +62,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.update(transaction)
     }
 
-    /**
-     * Deletes a transaction.
-     */
+
     fun deleteTransaction(transaction: Transaction) = viewModelScope.launch {
         transactionRepository.delete(transaction)
     }
