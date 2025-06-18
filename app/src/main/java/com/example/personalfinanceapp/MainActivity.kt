@@ -76,8 +76,6 @@ fun FinanceApp() {
         composable("add_account") {
             AddAccountScreen(navController = navController, viewModel = accountViewModel)
         }
-
-        // --- ADDED: The route for editing an account ---
         composable(
             "edit_account/{accountId}",
             arguments = listOf(navArgument("accountId") { type = NavType.IntType })
@@ -91,9 +89,21 @@ fun FinanceApp() {
                 )
             }
         }
+        composable(
+            "account_detail/{accountId}",
+            arguments = listOf(navArgument("accountId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val accountId = backStackEntry.arguments?.getInt("accountId")
+            if (accountId != null) {
+                AccountDetailScreen(
+                    navController = navController,
+                    viewModel = accountViewModel,
+                    accountId = accountId
+                )
+            }
+        }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,7 +126,7 @@ fun TransactionListScreen(navController: NavController, viewModel: TransactionVi
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
-                Icon(Icons.Filled.Add, contentDescription = "Add transaction")
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add transaction")
             }
         }
     ) { innerPadding ->
@@ -125,7 +135,6 @@ fun TransactionListScreen(navController: NavController, viewModel: TransactionVi
         }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -142,7 +151,7 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 title = { Text("Add New Transaction") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -205,7 +214,6 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
     }
 }
 
-// --- UPDATED: Complete overhaul of this function ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditTransactionScreen(navController: NavController, viewModel: TransactionViewModel, transactionId: Int) {
@@ -213,7 +221,6 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
-
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
     var isAccountDropdownExpanded by remember { mutableStateOf(false) }
@@ -234,12 +241,12 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                 title = { Text("Edit Transaction") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
                     IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                        Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete")
                     }
                 }
             )
@@ -327,7 +334,6 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
     }
 }
 
-
 @Composable
 fun TransactionList(transactions: List<TransactionWithAccount>, navController: NavController) {
     if (transactions.isEmpty()) {
@@ -351,7 +357,6 @@ fun TransactionList(transactions: List<TransactionWithAccount>, navController: N
     }
 }
 
-// --- UPDATED: To correctly use TransactionWithAccount ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionItem(transactionWithAccount: TransactionWithAccount, onClick: () -> Unit) {
@@ -378,7 +383,7 @@ fun TransactionItem(transactionWithAccount: TransactionWithAccount, onClick: () 
                     color = MaterialTheme.colorScheme.secondary
                 )
                 Text(
-                    text = SimpleDateFormat("dd MMM yyyy, h:mm a", Locale.getDefault()).format(Date(transactionWithAccount.transaction.date)),
+                    text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionWithAccount.transaction.date)),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
@@ -394,7 +399,7 @@ fun TransactionItem(transactionWithAccount: TransactionWithAccount, onClick: () 
     }
 }
 
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Preview(showBackground = true)
 @Composable
 fun TransactionListScreenPreview() {
@@ -404,11 +409,11 @@ fun TransactionListScreenPreview() {
     }
 }
 
-// --- UPDATED: To make items clickable ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountListScreen(navController: NavController, viewModel: AccountViewModel) {
-    val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
+    // Use the new, smarter Flow from the ViewModel
+    val accountsWithBalance by viewModel.accountsWithBalance.collectAsState(initial = emptyList())
 
     Scaffold(
         topBar = {
@@ -416,14 +421,14 @@ fun AccountListScreen(navController: NavController, viewModel: AccountViewModel)
                 title = { Text("Manage Accounts") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { navController.navigate("add_account") }) {
-                Icon(Icons.Filled.Add, contentDescription = "Add Account")
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Account")
             }
         }
     ) { innerPadding ->
@@ -432,11 +437,14 @@ fun AccountListScreen(navController: NavController, viewModel: AccountViewModel)
                 .padding(innerPadding)
                 .padding(16.dp)
         ) {
-            items(accounts) { account ->
+            // The item is now of type AccountWithBalance
+            items(accountsWithBalance) { accountWithBalance ->
                 Box(modifier = Modifier.clickable {
-                    navController.navigate("edit_account/${account.id}")
+                    // Navigate using the ID from the nested account object
+                    navController.navigate("account_detail/${accountWithBalance.account.id}")
                 }) {
-                    AccountItem(account = account)
+                    // Pass the whole combined object to the item
+                    AccountItem(accountWithBalance = accountWithBalance)
                 }
                 Divider()
             }
@@ -445,7 +453,7 @@ fun AccountListScreen(navController: NavController, viewModel: AccountViewModel)
 }
 
 @Composable
-fun AccountItem(account: Account) {
+fun AccountItem(accountWithBalance: AccountWithBalance) { // The parameter is now AccountWithBalance
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -453,13 +461,17 @@ fun AccountItem(account: Account) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = account.name, style = MaterialTheme.typography.bodyLarge)
-            Text(text = account.type, style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+            // Get name and type from the nested account object
+            Text(text = accountWithBalance.account.name, style = MaterialTheme.typography.bodyLarge)
+            Text(text = accountWithBalance.account.type, style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
         }
         Text(
-            text = "₹${"%.2f".format(account.balance)}",
+            // Display the calculated balance from our new object
+            text = "₹${"%.2f".format(accountWithBalance.balance)}",
             style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            // Add color to the balance text
+            color = if (accountWithBalance.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
         )
     }
 }
@@ -476,7 +488,7 @@ fun AddAccountScreen(navController: NavController, viewModel: AccountViewModel) 
                 title = { Text("Add New Account") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -518,7 +530,6 @@ fun AddAccountScreen(navController: NavController, viewModel: AccountViewModel) 
     }
 }
 
-// --- ADDED: The missing EditAccountScreen composable ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditAccountScreen(
@@ -544,12 +555,12 @@ fun EditAccountScreen(
                 title = { Text("Edit Account") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, "Back")
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
                     IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(Icons.Filled.Delete, "Delete Account")
+                        Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete Account")
                     }
                 }
             )
@@ -611,6 +622,109 @@ fun EditAccountScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AccountDetailScreen(
+    navController: NavController,
+    viewModel: AccountViewModel,
+    accountId: Int
+) {
+    val account by viewModel.getAccountById(accountId).collectAsState(initial = null)
+    val balance by viewModel.getAccountBalance(accountId).collectAsState(initial = 0.0)
+    val transactions by viewModel.getTransactionsForAccount(accountId).collectAsState(initial = emptyList())
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(account?.name ?: "Account Details") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp)
+                .fillMaxSize()
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Current Balance",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "₹${"%.2f".format(balance)}",
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Recent Transactions",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            if (transactions.isEmpty()) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Text("No transactions for this account yet.")
+                }
+            } else {
+                LazyColumn {
+                    items(transactions) { transaction ->
+                        AccountTransactionItem(transaction = transaction)
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AccountTransactionItem(transaction: Transaction) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = transaction.description, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transaction.date)),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+        }
+        Text(
+            text = "₹${"%.2f".format(transaction.amount)}",
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (transaction.amount < 0) Color.Red else Color(0xFF006400) // Darker Green for better readability
         )
     }
 }
