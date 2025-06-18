@@ -32,6 +32,6 @@ interface TransactionDao {
 
     // --- END OF NEW FUNCTIONS ---
 
-    @Query("SELECT * FROM transactions ORDER BY date DESC")
-    fun getAllTransactions(): Flow<List<Transaction>>
+    @Query("SELECT transactions.*, accounts.name as accountName FROM transactions LEFT JOIN accounts ON transactions.accountId = accounts.id ORDER BY date DESC")
+    fun getAllTransactions(): Flow<List<TransactionWithAccount>>
 }

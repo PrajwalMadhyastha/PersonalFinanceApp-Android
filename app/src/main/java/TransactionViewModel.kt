@@ -5,78 +5,67 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.filterNotNull
-import java.util.Date
 
-/**
- * The ViewModel for our main screen. It holds the UI state and handles business logic.
- *
- * We inherit from AndroidViewModel because we need the Application context
- * to initialize our database singleton.
- */
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
 
-    // The private repository instance.
-    private val repository: TransactionRepository
-    val allTransactions: Flow<List<Transaction>>
+    // 1. Declare properties for BOTH repositories.
+    private val transactionRepository: TransactionRepository
+    private val accountRepository: AccountRepository
+
+    // 2. Declare the public data Flows that the UI will observe.
+    val allTransactions: Flow<List<TransactionWithAccount>>
+    val allAccounts: Flow<List<Account>> // This is needed for the dropdowns
 
     init {
+        // 3. Get instances of BOTH DAOs from the database.
         val transactionDao = AppDatabase.getInstance(application).transactionDao()
-        repository = TransactionRepository(transactionDao)
-        allTransactions = repository.allTransactions
-    }
+        val accountDao = AppDatabase.getInstance(application).accountDao()
 
-    // --- ADD THESE NEW FUNCTIONS ---
+        // 4. Initialize BOTH repositories.
+        transactionRepository = TransactionRepository(transactionDao)
+        accountRepository = AccountRepository(accountDao)
 
-    /**
-     * Retrieves a single transaction by ID.
-     * We use filterNotNull() to ensure the UI only tries to process non-null values.
-     */
-    fun getTransactionById(id: Int): Flow<Transaction> {
-        return repository.getTransactionById(id).filterNotNull()
+        // 5. Initialize the public Flows using their respective repositories.
+        allTransactions = transactionRepository.allTransactions
+        allAccounts = accountRepository.allAccounts
     }
 
     /**
-     * Launches a coroutine to update a transaction.
+     * Gets a single transaction by its ID for the edit screen.
      */
-    fun updateTransaction(transaction: Transaction) = viewModelScope.launch {
-        repository.update(transaction)
+    fun getTransactionById(id: Int): Flow<Transaction?> {
+        return transactionRepository.getTransactionById(id)
     }
 
     /**
-     * Launches a coroutine to delete a transaction.
+     * Adds a new transaction.
      */
-    fun deleteTransaction(transaction: Transaction) = viewModelScope.launch {
-        repository.delete(transaction)
-    }
-
-    // --- END OF NEW FUNCTIONS ---
-
-    fun addTransaction(description: String, amountStr: String) {
-        // 1. Don't add if the inputs are blank
-        if (description.isBlank() || amountStr.isBlank()) {
-            return
-        }
-
-        // --- THIS IS THE FIX ---
-        // 2. Safely convert the amount string to a Double.
-        // If the conversion fails (e.g., user types "abc"), do nothing.
+    fun addTransaction(description: String, amountStr: String, accountId: Int) {
+        // Basic validation
         val amount = amountStr.toDoubleOrNull() ?: return
 
-        // 3. Add a check to ensure the amount is a positive number.
-        if (amount <= 0) {
-            return
-        }
-        // --- END OF FIX ---
-
-        // 4. Launch the coroutine to insert the new transaction
+        val newTransaction = Transaction(
+            description = description,
+            amount = amount,
+            date = System.currentTimeMillis(),
+            accountId = accountId
+        )
         viewModelScope.launch {
-            val newTransaction = Transaction(
-                description = description,
-                amount = amount, // Use the correctly parsed Double
-                date = Date().time
-            )
-            repository.insert(newTransaction)
+            transactionRepository.insert(newTransaction)
         }
+    }
+
+    /**
+     * Updates an existing transaction.
+     */
+    fun updateTransaction(transaction: Transaction) = viewModelScope.launch {
+        transactionRepository.update(transaction)
+    }
+
+    /**
+     * Deletes a transaction.
+     */
+    fun deleteTransaction(transaction: Transaction) = viewModelScope.launch {
+        transactionRepository.delete(transaction)
     }
 }

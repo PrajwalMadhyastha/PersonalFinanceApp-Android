@@ -6,7 +6,9 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "transactions")
 data class Transaction(
     @PrimaryKey(autoGenerate = true)
-    val id: Int = 0, // Default to 0, Room will handle generating the ID
+    val id: Int = 0,
+
+    val accountId: Int,
 
     val description: String,
 

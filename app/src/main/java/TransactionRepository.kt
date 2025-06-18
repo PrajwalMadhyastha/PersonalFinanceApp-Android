@@ -14,7 +14,7 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     // Exposes the Flow of all transactions directly from the DAO.
     // The ViewModel will observe this Flow.
-    val allTransactions: Flow<List<Transaction>> = transactionDao.getAllTransactions()
+    val allTransactions: Flow<List<TransactionWithAccount>> = transactionDao.getAllTransactions()
 
     // --- ADD THESE NEW FUNCTIONS ---
 
