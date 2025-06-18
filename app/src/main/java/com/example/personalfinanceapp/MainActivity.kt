@@ -7,6 +7,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +19,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
 import java.text.SimpleDateFormat
 import java.util.*
@@ -27,113 +33,157 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             PersonalFinanceAppTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    // Call our new main screen composable
-                    TransactionScreen(modifier = Modifier.padding(innerPadding))
-                }
+                FinanceApp()
             }
         }
     }
 }
 
-// Renamed from LoginScreen to TransactionScreen for clarity
 @Composable
-fun TransactionScreen(modifier: Modifier = Modifier) {
-    // 1. Get an instance of our ViewModel
+fun FinanceApp() {
+    val navController = rememberNavController()
     val transactionViewModel: TransactionViewModel = viewModel()
 
-    // 2. Observe the Flow and collect its values as State.
-    // The 'transactions' variable will automatically update whenever the data in Room changes.
-    val transactions by transactionViewModel.allTransactions.collectAsState(initial = emptyList())
+    NavHost(navController = navController, startDestination = "transaction_list") {
+        composable("transaction_list") {
+            TransactionListScreen(
+                navController = navController,
+                viewModel = transactionViewModel
+            )
+        }
+        composable("add_transaction") {
+            AddTransactionScreen(
+                navController = navController,
+                viewModel = transactionViewModel
+            )
+        }
+    }
+}
 
-    // State for the input fields
+// --- SCREEN 1: Transaction List ---
+// ADD THIS ANNOTATION to opt-in to using experimental APIs inside this function
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransactionListScreen(navController: NavController, viewModel: TransactionViewModel) {
+    val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Transactions") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.primary
+                )
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
+                Icon(Icons.Filled.Add, contentDescription = "Add transaction")
+            }
+        }
+    ) { innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding)) {
+            TransactionList(transactions = transactions)
+        }
+    }
+}
+
+// --- SCREEN 2: Add Transaction ---
+// ADD THIS ANNOTATION HERE AS WELL
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddTransactionScreen(navController: NavController, viewModel: TransactionViewModel) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-    ) {
-        Text("Add New Transaction", style = MaterialTheme.typography.headlineSmall)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Input section
-        OutlinedTextField(
-            value = description,
-            onValueChange = { description = it },
-            label = { Text("Description") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = amount,
-            onValueChange = { amount = it },
-            label = { Text("Amount") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = {
-                // Call the ViewModel function to add the transaction
-                transactionViewModel.addTransaction(description, amount)
-                // Clear the input fields after adding
-                description = ""
-                amount = ""
-            },
-            modifier = Modifier.align(Alignment.End)
-        ) {
-            Text("Add")
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Add New Transaction") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.primary
+                )
+            )
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-        HorizontalDivider()
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Display the list of transactions
-        Text("History", style = MaterialTheme.typography.headlineSmall)
-        Spacer(modifier = Modifier.height(8.dp))
-        TransactionList(transactions = transactions)
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+        ) {
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                label = { Text("Amount") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    viewModel.addTransaction(description, amount)
+                    navController.popBackStack()
+                },
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text("Save Transaction")
+            }
+        }
     }
 }
 
-// 3. New Composable to display the list
+
+// --- Reusable UI Components (unchanged) ---
+
 @Composable
 fun TransactionList(transactions: List<Transaction>) {
-    // LazyColumn is efficient for long lists. It only renders the items on screen.
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(transactions) { transaction ->
-            TransactionItem(transaction = transaction)
-            HorizontalDivider()
+    if (transactions.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No transactions yet. Add one!")
+        }
+    } else {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(transactions) { transaction ->
+                TransactionItem(transaction = transaction)
+                HorizontalDivider()
+            }
         }
     }
 }
 
-// New Composable for a single row in the list
 @Composable
 fun TransactionItem(transaction: Transaction) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column {
             Text(text = transaction.description, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            // Format the Long timestamp into a readable date string
             Text(text = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(transaction.date)), fontSize = 12.sp, color = Color.Gray)
         }
         Text(text = "₹${"%.2f".format(transaction.amount)}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
     }
 }
 
-
+// Preview for the list screen
 @Preview(showBackground = true)
 @Composable
-fun TransactionScreenPreview() {
+fun TransactionListScreenPreview() {
     PersonalFinanceAppTheme {
-        // We can't fully preview the ViewModel, but we can preview the layout
-        TransactionScreen()
+        // We can't provide a real NavController or ViewModel in a preview
+        // So we create dummy ones for visual layout only.
+        TransactionListScreen(rememberNavController(), viewModel())
     }
 }

@@ -71,4 +71,5 @@ dependencies {
     implementation("androidx.room:room-ktx:$room_version") // For Kotlin Coroutines support
     ksp("androidx.room:room-compiler:$room_version")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
 }
