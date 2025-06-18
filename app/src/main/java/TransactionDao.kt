@@ -35,4 +35,7 @@ interface TransactionDao {
     AND date BETWEEN :startDate AND :endDate
 """)
     fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?>
+
+    @Query("SELECT * FROM transactions WHERE date BETWEEN :startDate AND :endDate ORDER BY date DESC")
+    fun getAllTransactionsForRange(startDate: Long, endDate: Long): Flow<List<Transaction>>
 }

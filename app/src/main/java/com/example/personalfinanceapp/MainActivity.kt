@@ -52,8 +52,12 @@ fun FinanceApp() {
     val transactionViewModel: TransactionViewModel = viewModel()
     val accountViewModel: AccountViewModel = viewModel()
     val budgetViewModel: BudgetViewModel = viewModel()
+    val dashboardViewModel: DashboardViewModel = viewModel()
 
-    NavHost(navController = navController, startDestination = "transaction_list") {
+    NavHost(navController = navController, startDestination = "dashboard") {
+        composable("dashboard") {
+            DashboardScreen(navController = navController, viewModel = dashboardViewModel)
+        }
         composable("transaction_list") {
             TransactionListScreen(navController = navController, viewModel = transactionViewModel)
         }
@@ -873,6 +877,142 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel) {
+    val netWorth by viewModel.netWorth.collectAsState(initial = 0.0)
+    val monthlyIncome by viewModel.monthlyIncome.collectAsState(initial = 0.0)
+    val monthlyExpenses by viewModel.monthlyExpenses.collectAsState(initial = 0.0)
+    val recentTransactions by viewModel.recentTransactions.collectAsState(initial = emptyList())
+    val budgetStatus by viewModel.budgetStatus.collectAsState(initial = emptyList())
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Dashboard") },
+                actions = {
+                    IconButton(onClick = { navController.navigate("account_list") }) {
+                        Icon(imageVector = Icons.Default.AccountBalanceWallet, contentDescription = "Accounts")
+                    }
+                    IconButton(onClick = { navController.navigate("budget_screen") }) {
+                        Icon(imageVector = Icons.Default.Assessment, contentDescription = "Budgets")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Transaction")
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { NetWorthCard(netWorth = netWorth) }
+            item { MonthlySummaryCard(income = monthlyIncome, expenses = monthlyExpenses) }
+            item { BudgetWatchCard(budgetStatus = budgetStatus, navController) }
+            item { RecentActivityCard(transactions = recentTransactions, navController) }
+        }
+    }
+}
+
+@Composable
+fun NetWorthCard(netWorth: Double) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Net Worth", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "₹${"%.2f".format(netWorth)}",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun MonthlySummaryCard(income: Double, expenses: Double) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("This Month's Summary", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.SpaceAround, modifier = Modifier.fillMaxWidth()) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Income", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        text = "₹${"%.2f".format(income)}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color(0xFF006400)
+                    )
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Expenses", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        text = "₹${"%.2f".format(expenses)}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BudgetWatchCard(budgetStatus: List<BudgetWithSpending>, navController: NavController) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            if (budgetStatus.isEmpty()) {
+                Text("No budgets set for this month.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                budgetStatus.forEach { budgetWithSpending ->
+                    BudgetStatusItem(budgetWithSpending)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BudgetStatusItem(item: BudgetWithSpending) {
+    val progress = if (item.budget.amount > 0) (item.spent / item.budget.amount).toFloat() else 0f
+    Column {
+        Row {
+            Text(item.budget.categoryName, modifier = Modifier.weight(1f))
+            Text("₹${"%.2f".format(item.spent)} / ₹${"%.2f".format(item.budget.amount)}")
+        }
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            color = if(progress > 1f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+fun RecentActivityCard(transactions: List<TransactionWithAccount>, navController: NavController) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent Activity", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { navController.navigate("transaction_list") }) {
+                    Text("View All")
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            transactions.forEach { transaction ->
+                TransactionItem(transactionWithAccount = transaction, onClick = {
+                    navController.navigate("edit_transaction/${transaction.transaction.id}")
+                })
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -33,4 +33,7 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?> {
         return transactionDao.getSpendingForCategory(categoryName, startDate, endDate)
     }
+    fun getAllTransactionsForRange(startDate: Long, endDate: Long): Flow<List<Transaction>> {
+        return transactionDao.getAllTransactionsForRange(startDate, endDate)
+    }
 }
