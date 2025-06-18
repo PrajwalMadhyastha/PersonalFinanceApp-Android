@@ -16,8 +16,22 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     // The ViewModel will observe this Flow.
     val allTransactions: Flow<List<Transaction>> = transactionDao.getAllTransactions()
 
-    // The 'suspend' modifier tells us this is a long-running operation that
-    // must be called from a coroutine.
+    // --- ADD THESE NEW FUNCTIONS ---
+
+    fun getTransactionById(id: Int): Flow<Transaction?> {
+        return transactionDao.getTransactionById(id)
+    }
+
+    suspend fun update(transaction: Transaction) {
+        transactionDao.update(transaction)
+    }
+
+    suspend fun delete(transaction: Transaction) {
+        transactionDao.delete(transaction)
+    }
+
+    // --- END OF NEW FUNCTIONS ---
+
     suspend fun insert(transaction: Transaction) {
         transactionDao.insert(transaction)
     }

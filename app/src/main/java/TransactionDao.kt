@@ -1,30 +1,37 @@
 package com.example.personalfinanceapp
 
-import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.Query
+import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
 
-    /**
-     * Inserts a new transaction into the database. The 'suspend' keyword means
-     * this function must be called from a coroutine, as database operations
-     * cannot block the main UI thread.
-     */
     @Insert
     suspend fun insert(transaction: Transaction)
 
+    // --- ADD THESE NEW FUNCTIONS ---
+
     /**
-     * Retrieves all transactions from the 'transactions' table, ordering them
-     * by date with the newest first.
-     * It returns a Flow, which is a reactive data stream. The UI can observe
-     * this Flow and will automatically update itself whenever the data in the
-     * table changes.
+     * Updates an existing transaction in the database.
      */
+    @Update
+    suspend fun update(transaction: Transaction)
+
+    /**
+     * Deletes a transaction from the database.
+     */
+    @Delete
+    suspend fun delete(transaction: Transaction)
+
+    /**
+     * Retrieves a single transaction by its ID. Returns a Flow so the UI
+     * can observe changes to this specific item.
+     */
+    @Query("SELECT * FROM transactions WHERE id = :id")
+    fun getTransactionById(id: Int): Flow<Transaction?> // The '?' makes it nullable
+
+    // --- END OF NEW FUNCTIONS ---
+
     @Query("SELECT * FROM transactions ORDER BY date DESC")
     fun getAllTransactions(): Flow<List<Transaction>>
-
-    // We can add more queries here later, like update, delete, or get by ID.
 }
