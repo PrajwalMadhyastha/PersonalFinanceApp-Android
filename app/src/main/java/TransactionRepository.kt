@@ -6,7 +6,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     val allTransactions: Flow<List<TransactionDetails>> = transactionDao.getAllTransactions()
 
-    // --- NEW: Expose the new DAO method ---
     fun getTransactionDetailsForRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>> {
         return transactionDao.getTransactionDetailsForRange(startDate, endDate)
     }
@@ -29,6 +28,11 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?> {
         return transactionDao.getSpendingForCategory(categoryName, startDate, endDate)
+    }
+
+    // --- NEW: Expose the transaction count function ---
+    suspend fun countTransactionsForCategory(categoryId: Int): Int {
+        return transactionDao.countTransactionsForCategory(categoryId)
     }
 
     suspend fun insert(transaction: Transaction) {

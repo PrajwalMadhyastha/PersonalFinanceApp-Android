@@ -22,7 +22,6 @@ interface TransactionDao {
     """)
     fun getAllTransactions(): Flow<List<TransactionDetails>>
 
-    // --- NEW: Query to get full transaction details for a date range ---
     @Query("""
         SELECT
             T.*,
@@ -58,6 +57,10 @@ interface TransactionDao {
         WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate
     """)
     fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?>
+
+    // --- NEW: Efficiently count transactions for a category ---
+    @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
+    suspend fun countTransactionsForCategory(categoryId: Int): Int
 
     @Insert
     suspend fun insert(transaction: Transaction)
