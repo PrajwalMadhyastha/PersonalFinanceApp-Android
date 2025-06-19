@@ -323,7 +323,18 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
         mutableStateOf(Calendar.getInstance())
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val validationError by viewModel.validationError.collectAsState()
+
+    LaunchedEffect(validationError) {
+        validationError?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Add New Transaction") },
@@ -354,7 +365,6 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                     Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
                 }
             }
-
 
             ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
                 OutlinedTextField(
@@ -395,8 +405,15 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
 
             Button(
                 onClick = {
-                    if (selectedAccount != null && description.isNotBlank()) {
-                        viewModel.addTransaction(description, selectedCategory?.id, amount, selectedAccount!!.id, notes.takeIf { it.isNotBlank() }, selectedDateTime.timeInMillis)
+                    val success = viewModel.addTransaction(
+                        description = description,
+                        categoryId = selectedCategory?.id,
+                        amountStr = amount,
+                        accountId = selectedAccount!!.id,
+                        notes = notes.takeIf { it.isNotBlank() },
+                        date = selectedDateTime.timeInMillis
+                    )
+                    if (success) {
                         navController.popBackStack()
                     }
                 },
@@ -476,6 +493,15 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
     var showTimePicker by remember { mutableStateOf(false) }
     val selectedDateTime = remember { Calendar.getInstance() }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val validationError by viewModel.validationError.collectAsState()
+
+    LaunchedEffect(validationError) {
+        validationError?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
 
     LaunchedEffect(transaction, accounts, categories) {
         transaction?.let { txn ->
@@ -489,6 +515,7 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Edit Transaction") },
@@ -566,7 +593,7 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
 
                 Button(
                     onClick = {
-                        val updatedAmount = amount.toDoubleOrNull() ?: currentTransaction.amount
+                        val updatedAmount = amount.toDoubleOrNull() ?: 0.0
                         val updatedTransaction = currentTransaction.copy(
                             description = description,
                             amount = updatedAmount,
@@ -575,8 +602,10 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                             notes = notes.takeIf { it.isNotBlank() },
                             date = selectedDateTime.timeInMillis
                         )
-                        viewModel.updateTransaction(updatedTransaction)
-                        navController.popBackStack()
+                        val success = viewModel.updateTransaction(updatedTransaction)
+                        if (success) {
+                            navController.popBackStack()
+                        }
                     },
                     modifier = Modifier.align(Alignment.End)
                 ) {
@@ -649,7 +678,6 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
         )
     }
 }
-
 // Helper composable for TimePickerDialog as it's not a standard Material3 dialog
 @Composable
 fun TimePickerDialog(
