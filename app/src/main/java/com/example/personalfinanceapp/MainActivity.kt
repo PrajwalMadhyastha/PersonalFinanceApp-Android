@@ -1,13 +1,16 @@
 package com.example.personalfinanceapp
 
+import android.graphics.Color as AndroidColor // Use an alias to avoid conflict
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,10 +18,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavType
@@ -27,6 +32,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
+import com.github.mikephil.charting.charts.PieChart
+import com.github.mikephil.charting.data.PieData
+import com.github.mikephil.charting.data.PieDataSet
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.*
@@ -51,6 +59,7 @@ fun FinanceApp() {
     val budgetViewModel: BudgetViewModel = viewModel()
     val dashboardViewModel: DashboardViewModel = viewModel()
     val categoryViewModel: CategoryViewModel = viewModel()
+    val reportsViewModel: ReportsViewModel = viewModel()
 
     NavHost(navController = navController, startDestination = "dashboard") {
         composable("dashboard") {
@@ -129,9 +138,8 @@ fun FinanceApp() {
                 )
             }
         }
-        // --- NEW: Route for the Reports screen ---
         composable("reports_screen") {
-            ReportsScreen(navController = navController)
+            ReportsScreen(navController = navController, viewModel = reportsViewModel)
         }
     }
 }
@@ -151,7 +159,6 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
             TopAppBar(
                 title = { Text("Dashboard") },
                 actions = {
-                    // --- NEW: Button to navigate to the new Reports screen ---
                     IconButton(onClick = { navController.navigate("reports_screen") }) {
                         Icon(imageVector = Icons.Default.BarChart, contentDescription = "Reports")
                     }
@@ -186,36 +193,6 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
     }
 }
 
-// --- NEW: Reports Screen Composable ---
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ReportsScreen(navController: NavController) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Reports") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("Charts and reports will be displayed here.", style = MaterialTheme.typography.titleMedium)
-        }
-    }
-}
-
-
-// --- Other existing composables are unchanged and included for completeness ---
 @Composable
 fun NetWorthCard(netWorth: Double) {
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
@@ -313,6 +290,8 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
     }
 }
 
+
+// --- Transaction Screens ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionListScreen(navController: NavController, viewModel: TransactionViewModel) {
@@ -781,7 +760,6 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
 }
 
 
-// --- Account Screens ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountListScreen(navController: NavController, viewModel: AccountViewModel) {
@@ -1101,7 +1079,6 @@ fun AccountTransactionItem(transaction: Transaction) {
 }
 
 
-// --- Budget Screens ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
@@ -1446,7 +1423,6 @@ fun DeleteCategoryDialog(
     )
 }
 
-// This screen is no longer directly used for adding but is kept for completeness.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddCategoryScreen(navController: NavController, viewModel: CategoryViewModel) {
@@ -1494,7 +1470,6 @@ fun AddCategoryScreen(navController: NavController, viewModel: CategoryViewModel
     }
 }
 
-// This screen is no longer directly used for editing but is kept for completeness.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditCategoryScreen(
@@ -1592,7 +1567,7 @@ fun EditCategoryScreen(
     }
 }
 
-// Helper composable for TimePickerDialog as it's not a standard Material3 dialog
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimePickerDialog(
     title: String = "Select Time",
@@ -1619,4 +1594,94 @@ fun TimePickerDialog(
             }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel) {
+    val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Reports for ${viewModel.monthYear}") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp)
+        ) {
+            if (pieData == null || pieData?.entryCount == 0) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No expense data for this month to generate a report.")
+                }
+            } else {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Spending by Category", style = MaterialTheme.typography.titleLarge)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        AndroidView(
+                            factory = { context ->
+                                PieChart(context).apply {
+                                    description.isEnabled = false
+                                    isDrawHoleEnabled = true
+                                    setEntryLabelColor(AndroidColor.BLACK)
+                                    setEntryLabelTextSize(12f)
+                                    legend.isEnabled = false
+                                }
+                            },
+                            update = { chart ->
+                                chart.data = pieData
+                                chart.invalidate()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(350.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        ChartLegend(pieData = pieData)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ChartLegend(pieData: PieData?) {
+    // Safely get the dataset from the PieData object.
+    val dataSet = pieData?.dataSet as? PieDataSet ?: return
+
+    // Use a classic for loop for maximum compatibility with the Java library.
+    // This explicitly gets each entry and its corresponding color by index.
+    Column {
+        for (i in 0 until dataSet.entryCount) {
+            val entry = dataSet.getEntryForIndex(i)
+            val color = dataSet.getColor(i)
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color(color)) // Convert the Android integer color to a Compose Color
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                // The 'label' property of PieEntry holds the category name.
+                Text(text = "${entry.label} - ₹${"%.2f".format(entry.value)}")
+            }
+        }
+    }
 }

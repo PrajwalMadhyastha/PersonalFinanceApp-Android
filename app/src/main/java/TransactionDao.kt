@@ -58,7 +58,17 @@ interface TransactionDao {
     """)
     fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?>
 
-    // --- NEW: Efficiently count transactions for a category ---
+    // --- NEW: Query to get total spending grouped by category for a specific month ---
+    @Query("""
+        SELECT C.name as categoryName, SUM(T.amount) as totalAmount
+        FROM transactions AS T
+        INNER JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.amount < 0 AND T.date BETWEEN :startDate AND :endDate
+        GROUP BY C.name
+        ORDER BY totalAmount ASC
+    """)
+    fun getSpendingByCategoryForMonth(startDate: Long, endDate: Long): Flow<List<CategorySpending>>
+
     @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
     suspend fun countTransactionsForCategory(categoryId: Int): Int
 

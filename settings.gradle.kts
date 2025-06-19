@@ -1,8 +1,5 @@
-// In settings.gradle.kts (the one in your project's root directory)
-
 pluginManagement {
     repositories {
-        // This simpler format is less restrictive and should resolve the issue.
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -12,9 +9,10 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
+        // This line is essential for downloading third-party libraries like Vico.
         mavenCentral()
+        maven("https://jitpack.io")
     }
 }
-
-rootProject.name = "PersonalFinanceApp"
+rootProject.name = "Personal Finance App"
 include(":app")
