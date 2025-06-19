@@ -10,24 +10,20 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val transactionRepository: TransactionRepository
     private val accountRepository: AccountRepository
-    // --- NEW: Add a repository for categories ---
     private val categoryRepository: CategoryRepository
 
     val allTransactions: Flow<List<TransactionDetails>>
     val allAccounts: Flow<List<Account>>
-    // --- NEW: Expose the list of all categories to the UI ---
     val allCategories: Flow<List<Category>>
 
     init {
         val db = AppDatabase.getInstance(application)
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
-        // --- NEW: Initialize the category repository ---
         categoryRepository = CategoryRepository(db.categoryDao())
 
         allTransactions = transactionRepository.allTransactions
         allAccounts = accountRepository.allAccounts
-        // --- NEW: Get all categories from the new repository ---
         allCategories = categoryRepository.allCategories
     }
 
@@ -35,8 +31,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
-    // Updated to accept categoryId
-    fun addTransaction(description: String, categoryId: Int?, amountStr: String, accountId: Int) {
+    fun addTransaction(description: String, categoryId: Int?, amountStr: String, accountId: Int, notes: String?) {
         val amount = amountStr.toDoubleOrNull() ?: return
 
         val newTransaction = Transaction(
@@ -44,7 +39,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             categoryId = categoryId,
             amount = amount,
             date = System.currentTimeMillis(),
-            accountId = accountId
+            accountId = accountId,
+            notes = notes
         )
         viewModelScope.launch {
             transactionRepository.insert(newTransaction)

@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [Transaction::class, Account::class, Budget::class, Category::class],
-    version = 5
+    version = 6
 )
 abstract class AppDatabase : RoomDatabase() {
 
@@ -19,6 +19,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
 
     companion object {
+        // --- Migration from 3 to 4: Adds the 'budgets' table ---
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -33,10 +34,10 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- UPDATED: A new, non-destructive migration from version 4 to 5 ---
+        // --- Migration from 4 to 5: Adds the 'categories' table and refactors 'transactions' ---
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Step 1: Create the new 'categories' table.
+                // Create the new categories table
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `categories` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -45,15 +46,7 @@ abstract class AppDatabase : RoomDatabase() {
                 """.trimIndent())
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_categories_name` ON `categories` (`name`)")
 
-                // Step 2: Populate the new 'categories' table with the unique descriptions from the old transactions.
-                db.execSQL("""
-                    INSERT INTO categories (name)
-                    SELECT DISTINCT description FROM transactions
-                    WHERE description IS NOT NULL AND description != ''
-                """.trimIndent())
-
-                // Step 3: Create a temporary 'transactions_new' table with the final desired schema,
-                // including the new categoryId column and foreign keys.
+                // Create a temporary new transactions table with the final schema
                 db.execSQL("""
                     CREATE TABLE `transactions_new` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -65,25 +58,27 @@ abstract class AppDatabase : RoomDatabase() {
                         FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
                     )
                 """.trimIndent())
-                // Add indices for performance
                 db.execSQL("CREATE INDEX `index_transactions_categoryId` ON `transactions_new` (`categoryId`)")
                 db.execSQL("CREATE INDEX `index_transactions_accountId` ON `transactions_new` (`accountId`)")
 
-                // Step 4: Copy the data from the old transactions table into the new one.
-                // This query looks up the new categoryId for each transaction by joining
-                // the old transactions table with the new categories table on the name/description.
+                // Copy data from the old table to the new one
                 db.execSQL("""
-                    INSERT INTO transactions_new (id, amount, date, accountId, categoryId)
-                    SELECT T.id, T.amount, T.date, T.accountId, C.id
-                    FROM transactions AS T
-                    LEFT JOIN categories AS C ON T.description = C.name
+                    INSERT INTO transactions_new (id, amount, date, accountId)
+                    SELECT id, amount, date, accountId FROM transactions
                 """.trimIndent())
 
-                // Step 5: Drop the old transactions table.
+                // Drop the old table
                 db.execSQL("DROP TABLE transactions")
 
-                // Step 6: Rename the new table to 'transactions'.
+                // Rename the new table to the original name
                 db.execSQL("ALTER TABLE transactions_new RENAME TO transactions")
+            }
+        }
+
+        // --- Migration from 5 to 6: Adds the 'notes' column to transactions ---
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN notes TEXT")
             }
         }
 
@@ -101,7 +96,8 @@ abstract class AppDatabase : RoomDatabase() {
                         AppDatabase::class.java,
                         "finance_database"
                     )
-                        .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
+                        // Add all migrations in order
+                        .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                         .build()
 
                     INSTANCE = instance

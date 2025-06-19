@@ -122,7 +122,6 @@ fun FinanceApp() {
         ) { backStackEntry ->
             val categoryId = backStackEntry.arguments?.getInt("categoryId")
             if (categoryId != null) {
-                // This screen is kept for potential future use but is not actively navigated to.
                 EditCategoryScreen(
                     navController = navController,
                     viewModel = categoryViewModel,
@@ -308,6 +307,7 @@ fun TransactionListScreen(navController: NavController, viewModel: TransactionVi
 fun AddTransactionScreen(navController: NavController, viewModel: TransactionViewModel) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
 
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
@@ -345,6 +345,13 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 label = { Text("Amount") },
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+
+            OutlinedTextField(
+                value = notes,
+                onValueChange = { notes = it },
+                label = { Text("Notes (Optional)") },
+                modifier = Modifier.fillMaxWidth()
             )
 
             ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
@@ -388,7 +395,7 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
             Button(
                 onClick = {
                     if (selectedAccount != null && description.isNotBlank()) {
-                        viewModel.addTransaction(description, selectedCategory?.id, amount, selectedAccount!!.id)
+                        viewModel.addTransaction(description, selectedCategory?.id, amount, selectedAccount!!.id, notes.takeIf { it.isNotBlank() })
                         navController.popBackStack()
                     }
                 },
@@ -408,6 +415,7 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
 
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
 
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
@@ -423,6 +431,7 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
         transaction?.let { txn ->
             description = txn.description
             amount = txn.amount.toString()
+            notes = txn.notes ?: ""
             selectedAccount = accounts.find { it.id == txn.accountId }
             selectedCategory = categories.find { it.id == txn.categoryId }
         }
@@ -461,6 +470,13 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                     label = { Text("Amount") },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes (Optional)") },
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
@@ -508,7 +524,8 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                             description = description,
                             amount = updatedAmount,
                             accountId = selectedAccount?.id ?: currentTransaction.accountId,
-                            categoryId = selectedCategory?.id
+                            categoryId = selectedCategory?.id,
+                            notes = notes.takeIf { it.isNotBlank() }
                         )
                         viewModel.updateTransaction(updatedTransaction)
                         navController.popBackStack()
@@ -575,8 +592,16 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold
                 )
+                if (!transactionDetails.transaction.notes.isNullOrBlank()) {
+                    Text(
+                        text = transactionDetails.transaction.notes!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Text(
-                    text = transactionDetails.categoryName ?: "Uncategorized",
+                    text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
@@ -1084,14 +1109,12 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
     var newCategoryName by remember { mutableStateOf("") }
 
-    // State for managing the dialogs
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Listener for snackbar messages from ViewModel
     LaunchedEffect(key1 = viewModel.uiEvent) {
         viewModel.uiEvent.collect { message ->
             snackbarHostState.showSnackbar(message)
@@ -1117,7 +1140,6 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
                 .padding(innerPadding)
                 .padding(16.dp)
         ) {
-            // UI for adding a new category
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1145,7 +1167,6 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
             Spacer(modifier = Modifier.height(16.dp))
             Divider()
 
-            // List of existing categories with Edit and Delete buttons
             LazyColumn {
                 items(categories) { category ->
                     Row(
@@ -1266,6 +1287,7 @@ fun DeleteCategoryDialog(
     )
 }
 
+// This screen is no longer directly used for adding but is kept for completeness.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddCategoryScreen(navController: NavController, viewModel: CategoryViewModel) {
@@ -1313,6 +1335,7 @@ fun AddCategoryScreen(navController: NavController, viewModel: CategoryViewModel
     }
 }
 
+// This screen is no longer directly used for editing but is kept for completeness.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditCategoryScreen(
