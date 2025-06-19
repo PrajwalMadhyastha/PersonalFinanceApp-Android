@@ -4,11 +4,19 @@ import kotlinx.coroutines.flow.Flow
 
 class TransactionRepository(private val transactionDao: TransactionDao) {
 
-    val allTransactions: Flow<List<TransactionWithAccount>> = transactionDao.getAllTransactions()
+    val allTransactions: Flow<List<TransactionDetails>> = transactionDao.getAllTransactions()
 
-    // Ensure this function exists
+    // --- NEW: Expose the new DAO method ---
+    fun getTransactionDetailsForRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>> {
+        return transactionDao.getTransactionDetailsForRange(startDate, endDate)
+    }
+
     fun getAllTransactionsSimple(): Flow<List<Transaction>> {
         return transactionDao.getAllTransactionsSimple()
+    }
+
+    fun getAllTransactionsForRange(startDate: Long, endDate: Long): Flow<List<Transaction>> {
+        return transactionDao.getAllTransactionsForRange(startDate, endDate)
     }
 
     fun getTransactionById(id: Int): Flow<Transaction?> {
@@ -17,6 +25,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getTransactionsForAccount(accountId: Int): Flow<List<Transaction>> {
         return transactionDao.getTransactionsForAccount(accountId)
+    }
+
+    fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?> {
+        return transactionDao.getSpendingForCategory(categoryName, startDate, endDate)
     }
 
     suspend fun insert(transaction: Transaction) {
@@ -29,11 +41,5 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     suspend fun delete(transaction: Transaction) {
         transactionDao.delete(transaction)
-    }
-    fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?> {
-        return transactionDao.getSpendingForCategory(categoryName, startDate, endDate)
-    }
-    fun getAllTransactionsForRange(startDate: Long, endDate: Long): Flow<List<Transaction>> {
-        return transactionDao.getAllTransactionsForRange(startDate, endDate)
     }
 }

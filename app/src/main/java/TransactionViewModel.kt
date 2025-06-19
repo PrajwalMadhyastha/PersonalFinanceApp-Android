@@ -8,44 +8,40 @@ import kotlinx.coroutines.launch
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
 
-    // 1. Declare properties for BOTH repositories.
     private val transactionRepository: TransactionRepository
     private val accountRepository: AccountRepository
+    // --- NEW: Add a repository for categories ---
+    private val categoryRepository: CategoryRepository
 
-    // 2. Declare the public data Flows that the UI will observe.
-    val allTransactions: Flow<List<TransactionWithAccount>>
-    val allAccounts: Flow<List<Account>> // This is needed for the dropdowns
+    val allTransactions: Flow<List<TransactionDetails>>
+    val allAccounts: Flow<List<Account>>
+    // --- NEW: Expose the list of all categories to the UI ---
+    val allCategories: Flow<List<Category>>
 
     init {
-        // 3. Get instances of BOTH DAOs from the database.
-        val transactionDao = AppDatabase.getInstance(application).transactionDao()
-        val accountDao = AppDatabase.getInstance(application).accountDao()
+        val db = AppDatabase.getInstance(application)
+        transactionRepository = TransactionRepository(db.transactionDao())
+        accountRepository = AccountRepository(db.accountDao())
+        // --- NEW: Initialize the category repository ---
+        categoryRepository = CategoryRepository(db.categoryDao())
 
-        // 4. Initialize BOTH repositories.
-        transactionRepository = TransactionRepository(transactionDao)
-        accountRepository = AccountRepository(accountDao)
-
-        // 5. Initialize the public Flows using their respective repositories.
         allTransactions = transactionRepository.allTransactions
         allAccounts = accountRepository.allAccounts
+        // --- NEW: Get all categories from the new repository ---
+        allCategories = categoryRepository.allCategories
     }
 
-    /**
-     * Gets a single transaction by its ID for the edit screen.
-     */
     fun getTransactionById(id: Int): Flow<Transaction?> {
         return transactionRepository.getTransactionById(id)
     }
 
-    /**
-     * Adds a new transaction.
-     */
-    fun addTransaction(description: String, amountStr: String, accountId: Int) {
-        // Basic validation
+    // Updated to accept categoryId
+    fun addTransaction(description: String, categoryId: Int?, amountStr: String, accountId: Int) {
         val amount = amountStr.toDoubleOrNull() ?: return
 
         val newTransaction = Transaction(
             description = description,
+            categoryId = categoryId,
             amount = amount,
             date = System.currentTimeMillis(),
             accountId = accountId
@@ -55,13 +51,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /**
-     * Updates an existing transaction.
-     */
     fun updateTransaction(transaction: Transaction) = viewModelScope.launch {
         transactionRepository.update(transaction)
     }
-
 
     fun deleteTransaction(transaction: Transaction) = viewModelScope.launch {
         transactionRepository.delete(transaction)

@@ -8,18 +8,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Assessment
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -29,9 +27,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
-import java.text.SimpleDateFormat
-import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.map
+import java.text.SimpleDateFormat
 import java.util.*
 
 class MainActivity : ComponentActivity() {
@@ -53,6 +50,7 @@ fun FinanceApp() {
     val accountViewModel: AccountViewModel = viewModel()
     val budgetViewModel: BudgetViewModel = viewModel()
     val dashboardViewModel: DashboardViewModel = viewModel()
+    val categoryViewModel: CategoryViewModel = viewModel()
 
     NavHost(navController = navController, startDestination = "dashboard") {
         composable("dashboard") {
@@ -115,52 +113,182 @@ fun FinanceApp() {
         composable("add_budget") {
             AddBudgetScreen(navController = navController, viewModel = budgetViewModel)
         }
+        composable("category_list") {
+            CategoryListScreen(navController = navController, viewModel = categoryViewModel)
+        }
+        composable("add_category") {
+            AddCategoryScreen(navController = navController, viewModel = categoryViewModel)
+        }
     }
 }
 
-// =================================================================================
-// Transaction-related Screens
-// =================================================================================
-
+// --- Dashboard ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransactionListScreen(navController: NavController, viewModel: TransactionViewModel) {
-    val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
+fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel) {
+    val netWorth by viewModel.netWorth.collectAsState(initial = 0.0)
+    val monthlyIncome by viewModel.monthlyIncome.collectAsState(initial = 0.0)
+    val monthlyExpenses by viewModel.monthlyExpenses.collectAsState(initial = 0.0)
+    val recentTransactions by viewModel.recentTransactions.collectAsState(initial = emptyList())
+    val budgetStatus by viewModel.budgetStatus.collectAsState(initial = emptyList())
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Transactions") },
+                title = { Text("Dashboard") },
                 actions = {
-                    // --- UPDATED: Now two icons are here for easy access ---
-
-                    // 1. The button for Budgets
-                    IconButton(onClick = { navController.navigate("budget_screen") }) {
-                        Icon(
-                            imageVector = Icons.Default.Assessment,
-                            contentDescription = "Budgets"
-                        )
+                    IconButton(onClick = { navController.navigate("category_list") }) {
+                        Icon(imageVector = Icons.Default.Category, contentDescription = "Categories")
                     }
-
-                    // 2. The button for Accounts
                     IconButton(onClick = { navController.navigate("account_list") }) {
-                        Icon(
-                            imageVector = Icons.Default.AccountBalanceWallet,
-                            contentDescription = "Manage Accounts"
-                        )
+                        Icon(imageVector = Icons.Default.AccountBalanceWallet, contentDescription = "Accounts")
+                    }
+                    IconButton(onClick = { navController.navigate("budget_screen") }) {
+                        Icon(imageVector = Icons.Default.Assessment, contentDescription = "Budgets")
                     }
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add transaction")
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Transaction")
             }
         }
     ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding)) {
-            TransactionList(transactions = transactions, navController = navController)
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { NetWorthCard(netWorth = netWorth) }
+            item { MonthlySummaryCard(income = monthlyIncome, expenses = monthlyExpenses) }
+            item { BudgetWatchCard(budgetStatus = budgetStatus) }
+            item { RecentActivityCard(transactions = recentTransactions, navController = navController) }
         }
+    }
+}
+
+@Composable
+fun NetWorthCard(netWorth: Double) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Net Worth", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "₹${"%.2f".format(netWorth)}",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun MonthlySummaryCard(income: Double, expenses: Double) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("This Month's Summary", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.SpaceAround, modifier = Modifier.fillMaxWidth()) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Income", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        text = "₹${"%.2f".format(income)}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color(0xFF006400)
+                    )
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Expenses", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        text = "₹${"%.2f".format(expenses)}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BudgetWatchCard(budgetStatus: List<BudgetWithSpending>) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            if (budgetStatus.isEmpty()) {
+                Text("No budgets set for this month.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                budgetStatus.forEach { budgetWithSpending ->
+                    BudgetStatusItem(item = budgetWithSpending)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BudgetStatusItem(item: BudgetWithSpending) {
+    val progress = if (item.budget.amount > 0) (item.spent / item.budget.amount).toFloat() else 0f
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Row {
+            Text(item.budget.categoryName, modifier = Modifier.weight(1f))
+            Text("₹${"%.2f".format(item.spent)} / ₹${"%.2f".format(item.budget.amount)}")
+        }
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            color = if(progress > 1f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+fun RecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent Activity", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { navController.navigate("transaction_list") }) {
+                    Text("View All")
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            transactions.forEach { details ->
+                TransactionItem(transactionDetails = details, onClick = {
+                    navController.navigate("edit_transaction/${details.transaction.id}")
+                })
+            }
+        }
+    }
+}
+
+
+// --- Transaction Screens ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransactionListScreen(navController: NavController, viewModel: TransactionViewModel) {
+    val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Transactions") },
+                actions = {
+                    IconButton(onClick = { navController.navigate("dashboard") }) {
+                        Icon(imageVector = Icons.Default.Home, contentDescription = "Dashboard")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
+                Icon(Icons.Filled.Add, contentDescription = "Add transaction")
+            }
+        }
+    ) { innerPadding ->
+        TransactionList(transactions = transactions, navController = navController)
     }
 }
 
@@ -169,19 +297,20 @@ fun TransactionListScreen(navController: NavController, viewModel: TransactionVi
 fun AddTransactionScreen(navController: NavController, viewModel: TransactionViewModel) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
     var isAccountDropdownExpanded by remember { mutableStateOf(false) }
+
+    val categories by viewModel.allCategories.collectAsState(initial = emptyList())
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Add New Transaction") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.Filled.ArrowBack, "Back") } }
             )
         }
     ) { innerPadding ->
@@ -190,51 +319,70 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth())
-            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-            ExposedDropdownMenuBox(
-                expanded = isAccountDropdownExpanded,
-                onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }
-            ) {
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                label = { Text("Amount") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+
+            ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
                 OutlinedTextField(
-                    value = selectedAccount?.name ?: "Select an Account",
+                    value = selectedAccount?.name ?: "Select Account",
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Account") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor()
+                    modifier = Modifier.fillMaxWidth().menuAnchor()
                 )
-                ExposedDropdownMenu(
-                    expanded = isAccountDropdownExpanded,
-                    onDismissRequest = { isAccountDropdownExpanded = false }
-                ) {
+                ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
                     accounts.forEach { account ->
-                        DropdownMenuItem(
-                            text = { Text(account.name) },
-                            onClick = {
-                                selectedAccount = account
-                                isAccountDropdownExpanded = false
-                            }
-                        )
+                        DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                            selectedAccount = account
+                            isAccountDropdownExpanded = false
+                        })
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+
+            ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                OutlinedTextField(
+                    value = selectedCategory?.name ?: "Select Category",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Category") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor()
+                )
+                ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                    categories.forEach { category ->
+                        DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                            selectedCategory = category
+                            isCategoryDropdownExpanded = false
+                        })
+                    }
+                }
+            }
+
             Button(
                 onClick = {
-                    selectedAccount?.let { account ->
-                        viewModel.addTransaction(description, amount, account.id)
+                    if (selectedAccount != null && description.isNotBlank()) {
+                        viewModel.addTransaction(description, selectedCategory?.id, amount, selectedAccount!!.id)
                         navController.popBackStack()
                     }
                 },
                 modifier = Modifier.align(Alignment.End),
-                enabled = selectedAccount != null
+                enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank()
             ) {
                 Text("Save Transaction")
             }
@@ -245,141 +393,32 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditTransactionScreen(navController: NavController, viewModel: TransactionViewModel, transactionId: Int) {
-    val transaction by viewModel.getTransactionById(transactionId).collectAsState(initial = null)
-    var description by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
-    var selectedAccount by remember { mutableStateOf<Account?>(null) }
-    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
-
-    LaunchedEffect(transaction, accounts) {
-        transaction?.let {
-            description = it.description
-            amount = it.amount.toString()
-            if (accounts.isNotEmpty()) {
-                selectedAccount = accounts.find { acc -> acc.id == it.accountId }
-            }
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Edit Transaction") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete")
-                    }
-                }
+                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.Filled.ArrowBack, "Back") } }
             )
         }
     ) { innerPadding ->
-        transaction?.let { currentTransaction ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
-            ) {
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth())
-                Spacer(modifier = Modifier.height(16.dp))
-
-                ExposedDropdownMenuBox(
-                    expanded = isAccountDropdownExpanded,
-                    onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = selectedAccount?.name ?: "Select an Account",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Account") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = isAccountDropdownExpanded,
-                        onDismissRequest = { isAccountDropdownExpanded = false }
-                    ) {
-                        accounts.forEach { account ->
-                            DropdownMenuItem(
-                                text = { Text(account.name) },
-                                onClick = {
-                                    selectedAccount = account
-                                    isAccountDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        val updatedAmount = amount.toDoubleOrNull() ?: currentTransaction.amount
-                        val updatedTransaction = currentTransaction.copy(
-                            description = description,
-                            amount = updatedAmount,
-                            accountId = selectedAccount?.id ?: currentTransaction.accountId
-                        )
-                        viewModel.updateTransaction(updatedTransaction)
-                        navController.popBackStack()
-                    },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Text("Update Transaction")
-                }
-            }
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+            Text("Edit Transaction screen needs to be updated.", color = Color.Gray)
         }
-    }
-
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Confirm Deletion") },
-            text = { Text("Are you sure you want to permanently delete this transaction?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        transaction?.let {
-                            viewModel.deleteTransaction(it)
-                            showDeleteDialog = false
-                            navController.popBackStack()
-                        }
-                    }
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
-            }
-        )
     }
 }
 
 @Composable
-fun TransactionList(transactions: List<TransactionWithAccount>, navController: NavController) {
+fun TransactionList(transactions: List<TransactionDetails>, navController: NavController) {
     if (transactions.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("No transactions yet. Add one!")
         }
     } else {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            items(transactions) { transactionWithAccount ->
-                TransactionItem(
-                    transactionWithAccount = transactionWithAccount,
-                    onClick = {
-                        navController.navigate("edit_transaction/${transactionWithAccount.transaction.id}")
-                    }
-                )
+        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+            items(transactions) { details ->
+                TransactionItem(transactionDetails = details, onClick = {
+                    navController.navigate("edit_transaction/${details.transaction.id}")
+                })
             }
         }
     }
@@ -387,50 +426,43 @@ fun TransactionList(transactions: List<TransactionWithAccount>, navController: N
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransactionItem(transactionWithAccount: TransactionWithAccount, onClick: () -> Unit) {
+fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         onClick = onClick
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = transactionWithAccount.transaction.description,
+                    text = transactionDetails.transaction.description,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = transactionWithAccount.accountName ?: "Unassigned",
+                    text = transactionDetails.categoryName ?: "Uncategorized",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
                 Text(
-                    text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionWithAccount.transaction.date)),
+                    text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
             }
-
             Text(
-                text = "₹${"%.2f".format(transactionWithAccount.transaction.amount)}",
+                text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
+                color = if (transactionDetails.transaction.amount < 0) MaterialTheme.colorScheme.error else Color(0xFF006400)
             )
         }
     }
 }
 
-// =================================================================================
-// Account-related Screens
-// =================================================================================
 
+// --- Account Screens ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountListScreen(navController: NavController, viewModel: AccountViewModel) {
@@ -446,6 +478,9 @@ fun AccountListScreen(navController: NavController, viewModel: AccountViewModel)
                     }
                 },
                 actions = {
+                    IconButton(onClick = { navController.navigate("dashboard") }) {
+                        Icon(imageVector = Icons.Default.Home, contentDescription = "Dashboard")
+                    }
                     IconButton(onClick = { navController.navigate("budget_screen") }) {
                         Icon(imageVector = Icons.Default.Assessment, contentDescription = "Budgets")
                     }
@@ -700,15 +735,12 @@ fun AccountDetailScreen(
                     )
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
             Text(
                 text = "Recent Transactions",
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
-
             if (transactions.isEmpty()) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                     Text("No transactions for this account yet.")
@@ -750,10 +782,6 @@ fun AccountTransactionItem(transaction: Transaction) {
 }
 
 
-// =================================================================================
-// Budget-related Screens
-// =================================================================================
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
@@ -767,6 +795,11 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { navController.navigate("dashboard") }) {
+                        Icon(imageVector = Icons.Default.Home, contentDescription = "Dashboard")
                     }
                 }
             )
@@ -788,7 +821,6 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
                 contentPadding = PaddingValues(16.dp)
             ) {
                 items(budgets) { budget ->
-                    // Here we use our new, more powerful BudgetItem, passing the ViewModel down
                     BudgetItem(budget = budget, viewModel = viewModel)
                     Spacer(modifier = Modifier.height(12.dp))
                 }
@@ -799,27 +831,16 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
 
 @Composable
 fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
-    // 1. Create a flow that transforms the raw spending data into the value we need (a positive Double).
-    // We use remember() so this flow is not recreated on every recomposition.
     val spendingFlow = remember(budget.categoryName) {
         viewModel.getActualSpending(budget.categoryName).map { spending ->
-            // If spending is null (no transactions), default to 0.0.
-            // Use Math.abs() because expenses are negative, but progress is positive.
             Math.abs(spending ?: 0.0)
         }
     }
-    // 2. Collect the transformed flow as a state that the UI can react to.
     val actualSpending by spendingFlow.collectAsState(initial = 0.0)
 
-    // 3. Calculate progress and remaining amount.
-    val progress = if (budget.amount > 0) {
-        (actualSpending / budget.amount).toFloat()
-    } else {
-        0f
-    }
+    val progress = if (budget.amount > 0) (actualSpending / budget.amount).toFloat() else 0f
     val amountRemaining = budget.amount - actualSpending
 
-    // 4. Determine the color of the progress bar.
     val progressColor = when {
         progress > 1f -> MaterialTheme.colorScheme.error
         progress > 0.8f -> Color(0xFFFBC02D) // Amber
@@ -831,10 +852,7 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = budget.categoryName,
                     style = MaterialTheme.typography.titleLarge,
@@ -846,23 +864,14 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
                     color = MaterialTheme.colorScheme.secondary
                 )
             }
-
             Spacer(modifier = Modifier.height(12.dp))
-
             LinearProgressIndicator(
                 progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp),
+                modifier = Modifier.fillMaxWidth().height(8.dp),
                 color = progressColor
             )
-
             Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
                     text = "Spent: ₹${"%.2f".format(actualSpending)}",
                     style = MaterialTheme.typography.bodyMedium
@@ -877,142 +886,6 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel) {
-    val netWorth by viewModel.netWorth.collectAsState(initial = 0.0)
-    val monthlyIncome by viewModel.monthlyIncome.collectAsState(initial = 0.0)
-    val monthlyExpenses by viewModel.monthlyExpenses.collectAsState(initial = 0.0)
-    val recentTransactions by viewModel.recentTransactions.collectAsState(initial = emptyList())
-    val budgetStatus by viewModel.budgetStatus.collectAsState(initial = emptyList())
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Dashboard") },
-                actions = {
-                    IconButton(onClick = { navController.navigate("account_list") }) {
-                        Icon(imageVector = Icons.Default.AccountBalanceWallet, contentDescription = "Accounts")
-                    }
-                    IconButton(onClick = { navController.navigate("budget_screen") }) {
-                        Icon(imageVector = Icons.Default.Assessment, contentDescription = "Budgets")
-                    }
-                }
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Transaction")
-            }
-        }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier.padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item { NetWorthCard(netWorth = netWorth) }
-            item { MonthlySummaryCard(income = monthlyIncome, expenses = monthlyExpenses) }
-            item { BudgetWatchCard(budgetStatus = budgetStatus, navController) }
-            item { RecentActivityCard(transactions = recentTransactions, navController) }
-        }
-    }
-}
-
-@Composable
-fun NetWorthCard(netWorth: Double) {
-    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Net Worth", style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = "₹${"%.2f".format(netWorth)}",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-fun MonthlySummaryCard(income: Double, expenses: Double) {
-    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("This Month's Summary", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.SpaceAround, modifier = Modifier.fillMaxWidth()) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Income", style = MaterialTheme.typography.labelMedium)
-                    Text(
-                        text = "₹${"%.2f".format(income)}",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color(0xFF006400)
-                    )
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Expenses", style = MaterialTheme.typography.labelMedium)
-                    Text(
-                        text = "₹${"%.2f".format(expenses)}",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun BudgetWatchCard(budgetStatus: List<BudgetWithSpending>, navController: NavController) {
-    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-            if (budgetStatus.isEmpty()) {
-                Text("No budgets set for this month.", style = MaterialTheme.typography.bodyMedium)
-            } else {
-                budgetStatus.forEach { budgetWithSpending ->
-                    BudgetStatusItem(budgetWithSpending)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun BudgetStatusItem(item: BudgetWithSpending) {
-    val progress = if (item.budget.amount > 0) (item.spent / item.budget.amount).toFloat() else 0f
-    Column {
-        Row {
-            Text(item.budget.categoryName, modifier = Modifier.weight(1f))
-            Text("₹${"%.2f".format(item.spent)} / ₹${"%.2f".format(item.budget.amount)}")
-        }
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            color = if(progress > 1f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-        )
-    }
-}
-
-@Composable
-fun RecentActivityCard(transactions: List<TransactionWithAccount>, navController: NavController) {
-    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Recent Activity", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { navController.navigate("transaction_list") }) {
-                    Text("View All")
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            transactions.forEach { transaction ->
-                TransactionItem(transactionWithAccount = transaction, onClick = {
-                    navController.navigate("edit_transaction/${transaction.transaction.id}")
-                })
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1063,6 +936,95 @@ fun AddBudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
                 enabled = categoryName.isNotBlank() && amount.isNotBlank()
             ) {
                 Text("Save Budget")
+            }
+        }
+    }
+}
+
+// --- Category Screens ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CategoryListScreen(navController: NavController, viewModel: CategoryViewModel) {
+    val categories by viewModel.allCategories.collectAsState(initial = emptyList())
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Manage Categories") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_category") }) {
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Category")
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp)
+        ) {
+            items(categories) { category ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = category.name, modifier = Modifier.weight(1f))
+                }
+                Divider()
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddCategoryScreen(navController: NavController, viewModel: CategoryViewModel) {
+    var categoryName by remember { mutableStateOf("") }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Add New Category") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = categoryName,
+                onValueChange = { categoryName = it },
+                label = { Text("Category Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    if (categoryName.isNotBlank()) {
+                        viewModel.addCategory(categoryName)
+                        navController.popBackStack()
+                    }
+                },
+                modifier = Modifier.align(Alignment.End),
+                enabled = categoryName.isNotBlank()
+            ) {
+                Text("Save Category")
             }
         }
     }
