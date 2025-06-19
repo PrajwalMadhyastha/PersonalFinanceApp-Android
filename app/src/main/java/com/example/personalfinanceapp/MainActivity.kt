@@ -129,6 +129,10 @@ fun FinanceApp() {
                 )
             }
         }
+        // --- NEW: Route for the Reports screen ---
+        composable("reports_screen") {
+            ReportsScreen(navController = navController)
+        }
     }
 }
 
@@ -147,6 +151,10 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
             TopAppBar(
                 title = { Text("Dashboard") },
                 actions = {
+                    // --- NEW: Button to navigate to the new Reports screen ---
+                    IconButton(onClick = { navController.navigate("reports_screen") }) {
+                        Icon(imageVector = Icons.Default.BarChart, contentDescription = "Reports")
+                    }
                     IconButton(onClick = { navController.navigate("category_list") }) {
                         Icon(imageVector = Icons.Default.Category, contentDescription = "Categories")
                     }
@@ -178,6 +186,36 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
     }
 }
 
+// --- NEW: Reports Screen Composable ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReportsScreen(navController: NavController) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Reports") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Charts and reports will be displayed here.", style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+
+// --- Other existing composables are unchanged and included for completeness ---
 @Composable
 fun NetWorthCard(netWorth: Double) {
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
@@ -204,7 +242,7 @@ fun MonthlySummaryCard(income: Double, expenses: Double) {
                     Text(
                         text = "₹${"%.2f".format(income)}",
                         style = MaterialTheme.typography.titleLarge,
-                        color = Color(0xFF006400)
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -275,8 +313,6 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
     }
 }
 
-
-// --- Transaction Screens ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionListScreen(navController: NavController, viewModel: TransactionViewModel) {
@@ -366,6 +402,7 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 }
             }
 
+
             ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
                 OutlinedTextField(
                     value = selectedAccount?.name ?: "Select Account",
@@ -405,16 +442,18 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
 
             Button(
                 onClick = {
-                    val success = viewModel.addTransaction(
-                        description = description,
-                        categoryId = selectedCategory?.id,
-                        amountStr = amount,
-                        accountId = selectedAccount!!.id,
-                        notes = notes.takeIf { it.isNotBlank() },
-                        date = selectedDateTime.timeInMillis
-                    )
-                    if (success) {
-                        navController.popBackStack()
+                    if (selectedAccount != null) {
+                        val success = viewModel.addTransaction(
+                            description,
+                            selectedCategory?.id,
+                            amount,
+                            selectedAccount!!.id,
+                            notes.takeIf { it.isNotBlank() },
+                            selectedDateTime.timeInMillis
+                        )
+                        if (success) {
+                            navController.popBackStack()
+                        }
                     }
                 },
                 modifier = Modifier.align(Alignment.End),
@@ -678,35 +717,6 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
         )
     }
 }
-// Helper composable for TimePickerDialog as it's not a standard Material3 dialog
-@Composable
-fun TimePickerDialog(
-    title: String = "Select Time",
-    onDismissRequest: () -> Unit,
-    onConfirm: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismissRequest,
-        title = { Text(title) },
-        text = {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                content()
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("OK")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismissRequest) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
 
 @Composable
 fun TransactionList(transactions: List<TransactionDetails>, navController: NavController) {
@@ -757,14 +767,14 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
                 Text(
                     text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Text(
                 text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = if (transactionDetails.transaction.amount < 0) MaterialTheme.colorScheme.error else Color(0xFF006400)
+                color = if (transactionDetails.transaction.amount < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
             )
         }
     }
@@ -1079,13 +1089,13 @@ fun AccountTransactionItem(transaction: Transaction) {
             Text(
                 text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transaction.date)),
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Text(
             text = "₹${"%.2f".format(transaction.amount)}",
             style = MaterialTheme.typography.bodyLarge,
-            color = if (transaction.amount < 0) Color.Red else Color(0xFF006400)
+            color = if (transaction.amount < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
         )
     }
 }
@@ -1580,4 +1590,33 @@ fun EditCategoryScreen(
             }
         )
     }
+}
+
+// Helper composable for TimePickerDialog as it's not a standard Material3 dialog
+@Composable
+fun TimePickerDialog(
+    title: String = "Select Time",
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(title) },
+        text = {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                content()
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("OK")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("Cancel")
+            }
+        }
+    )
 }
