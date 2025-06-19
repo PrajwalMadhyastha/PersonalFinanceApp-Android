@@ -31,14 +31,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
-    fun addTransaction(description: String, categoryId: Int?, amountStr: String, accountId: Int, notes: String?) {
+    fun addTransaction(description: String, categoryId: Int?, amountStr: String, accountId: Int, notes: String?, date: Long) {
         val amount = amountStr.toDoubleOrNull() ?: return
 
         val newTransaction = Transaction(
             description = description,
             categoryId = categoryId,
             amount = amount,
-            date = System.currentTimeMillis(),
+            date = date, // Use the provided date
             accountId = accountId,
             notes = notes
         )

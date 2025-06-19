@@ -317,6 +317,12 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    val selectedDateTime by remember {
+        mutableStateOf(Calendar.getInstance())
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -332,27 +338,23 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth()
-            )
+            OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth())
 
-            OutlinedTextField(
-                value = amount,
-                onValueChange = { amount = it },
-                label = { Text("Amount") },
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
+                    Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
+                }
+                Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
+                    Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
+                }
+            }
 
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Notes (Optional)") },
-                modifier = Modifier.fillMaxWidth()
-            )
 
             ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
                 OutlinedTextField(
@@ -372,7 +374,6 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                     }
                 }
             }
-
             ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
                 OutlinedTextField(
                     value = selectedCategory?.name ?: "Select Category",
@@ -395,7 +396,7 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
             Button(
                 onClick = {
                     if (selectedAccount != null && description.isNotBlank()) {
-                        viewModel.addTransaction(description, selectedCategory?.id, amount, selectedAccount!!.id, notes.takeIf { it.isNotBlank() })
+                        viewModel.addTransaction(description, selectedCategory?.id, amount, selectedAccount!!.id, notes.takeIf { it.isNotBlank() }, selectedDateTime.timeInMillis)
                         navController.popBackStack()
                     }
                 },
@@ -406,7 +407,51 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
             }
         }
     }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            val newCalendar = Calendar.getInstance()
+                            newCalendar.timeInMillis = it
+                            selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
+                            selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
+                            selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
+            initialMinute = selectedDateTime.get(Calendar.MINUTE)
+        )
+        TimePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            onConfirm = {
+                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
+                showTimePicker = false
+            }
+        ) {
+            TimePicker(state = timePickerState)
+        }
+    }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -427,11 +472,17 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
 
     var showDeleteDialog by remember { mutableStateOf(false) }
 
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    val selectedDateTime = remember { Calendar.getInstance() }
+
+
     LaunchedEffect(transaction, accounts, categories) {
         transaction?.let { txn ->
             description = txn.description
             amount = txn.amount.toString()
             notes = txn.notes ?: ""
+            selectedDateTime.timeInMillis = txn.date
             selectedAccount = accounts.find { it.id == txn.accountId }
             selectedCategory = categories.find { it.id == txn.categoryId }
         }
@@ -458,26 +509,22 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = { Text("Amount") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
+                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth())
 
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes (Optional)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
+                        Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
+                    }
+                    Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
+                        Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
+                    }
+                }
 
                 ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
                     OutlinedTextField(
@@ -525,7 +572,8 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                             amount = updatedAmount,
                             accountId = selectedAccount?.id ?: currentTransaction.accountId,
                             categoryId = selectedCategory?.id,
-                            notes = notes.takeIf { it.isNotBlank() }
+                            notes = notes.takeIf { it.isNotBlank() },
+                            date = selectedDateTime.timeInMillis
                         )
                         viewModel.updateTransaction(updatedTransaction)
                         navController.popBackStack()
@@ -535,6 +583,49 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                     Text("Update Transaction")
                 }
             }
+        }
+    }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            val newCalendar = Calendar.getInstance()
+                            newCalendar.timeInMillis = it
+                            selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
+                            selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
+                            selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
+            initialMinute = selectedDateTime.get(Calendar.MINUTE)
+        )
+        TimePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            onConfirm = {
+                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
+                showTimePicker = false
+            }
+        ) {
+            TimePicker(state = timePickerState)
         }
     }
 
@@ -558,6 +649,36 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
         )
     }
 }
+
+// Helper composable for TimePickerDialog as it's not a standard Material3 dialog
+@Composable
+fun TimePickerDialog(
+    title: String = "Select Time",
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(title) },
+        text = {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                content()
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("OK")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
 
 @Composable
 fun TransactionList(transactions: List<TransactionDetails>, navController: NavController) {
