@@ -1,6 +1,6 @@
 package com.example.personalfinanceapp
 
-import android.graphics.Color as AndroidColor // Use an alias to avoid conflict
+import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,15 +20,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
@@ -38,6 +42,14 @@ import com.github.mikephil.charting.data.PieDataSet
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.*
+
+// --- NEW: Data class to define our main navigation destinations ---
+sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
+    object Dashboard : BottomNavItem("dashboard", Icons.Default.Dashboard, "Dashboard")
+    object Transactions : BottomNavItem("transaction_list", Icons.Default.ReceiptLong, "History")
+    object Reports : BottomNavItem("reports_screen", Icons.Default.BarChart, "Reports")
+    object More : BottomNavItem("more_screen", Icons.Default.Menu, "More")
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,9 +63,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// --- UPDATED: FinanceApp now sets up the main Scaffold and NavHost ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FinanceApp() {
     val navController = rememberNavController()
+
+    // --- ViewModels ---
     val transactionViewModel: TransactionViewModel = viewModel()
     val accountViewModel: AccountViewModel = viewModel()
     val budgetViewModel: BudgetViewModel = viewModel()
@@ -61,85 +77,129 @@ fun FinanceApp() {
     val categoryViewModel: CategoryViewModel = viewModel()
     val reportsViewModel: ReportsViewModel = viewModel()
 
-    NavHost(navController = navController, startDestination = "dashboard") {
-        composable("dashboard") {
-            DashboardScreen(navController = navController, viewModel = dashboardViewModel)
-        }
-        composable("transaction_list") {
-            TransactionListScreen(navController = navController, viewModel = transactionViewModel)
-        }
-        composable("add_transaction") {
-            AddTransactionScreen(navController = navController, viewModel = transactionViewModel)
-        }
-        composable(
-            "edit_transaction/{transactionId}",
-            arguments = listOf(navArgument("transactionId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val transactionId = backStackEntry.arguments?.getInt("transactionId")
-            if (transactionId != null) {
-                EditTransactionScreen(
-                    navController = navController,
-                    viewModel = transactionViewModel,
-                    transactionId = transactionId
-                )
+    // --- List of main navigation items ---
+    val items = listOf(
+        BottomNavItem.Dashboard,
+        BottomNavItem.Transactions,
+        BottomNavItem.Reports,
+        BottomNavItem.More,
+    )
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentDestination = navBackStackEntry?.destination
+
+                items.forEach { screen ->
+                    NavigationBarItem(
+                        icon = { Icon(screen.icon, contentDescription = screen.label) },
+                        label = { Text(screen.label) },
+                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                        onClick = {
+                            navController.navigate(screen.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
+                }
             }
         }
-        composable("account_list") {
-            AccountListScreen(navController = navController, viewModel = accountViewModel)
-        }
-        composable("add_account") {
-            AddAccountScreen(navController = navController, viewModel = accountViewModel)
-        }
-        composable(
-            "edit_account/{accountId}",
-            arguments = listOf(navArgument("accountId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val accountId = backStackEntry.arguments?.getInt("accountId")
-            if (accountId != null) {
-                EditAccountScreen(
-                    navController = navController,
-                    viewModel = accountViewModel,
-                    accountId = accountId
-                )
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = BottomNavItem.Dashboard.route, // Start on Dashboard
+            modifier = Modifier.padding(innerPadding)
+        ) {
+            composable(BottomNavItem.Dashboard.route) {
+                DashboardScreen(navController = navController, viewModel = dashboardViewModel)
             }
-        }
-        composable(
-            "account_detail/{accountId}",
-            arguments = listOf(navArgument("accountId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val accountId = backStackEntry.arguments?.getInt("accountId")
-            if (accountId != null) {
-                AccountDetailScreen(
-                    navController = navController,
-                    viewModel = accountViewModel,
-                    accountId = accountId
-                )
+            composable(BottomNavItem.Transactions.route) {
+                TransactionListScreen(navController = navController, viewModel = transactionViewModel)
             }
-        }
-        composable("budget_screen") {
-            BudgetScreen(navController = navController, viewModel = budgetViewModel)
-        }
-        composable("add_budget") {
-            AddBudgetScreen(navController = navController, viewModel = budgetViewModel)
-        }
-        composable("category_list") {
-            CategoryListScreen(navController = navController, viewModel = categoryViewModel)
-        }
-        composable(
-            "edit_category/{categoryId}",
-            arguments = listOf(navArgument("categoryId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val categoryId = backStackEntry.arguments?.getInt("categoryId")
-            if (categoryId != null) {
-                EditCategoryScreen(
-                    navController = navController,
-                    viewModel = categoryViewModel,
-                    categoryId = categoryId
-                )
+            composable(BottomNavItem.Reports.route) {
+                ReportsScreen(navController = navController, viewModel = reportsViewModel)
             }
-        }
-        composable("reports_screen") {
-            ReportsScreen(navController = navController, viewModel = reportsViewModel)
+            // --- NEW: A "More" screen to hold links to management pages ---
+            composable(BottomNavItem.More.route) {
+                MoreScreen(navController = navController)
+            }
+
+            // --- Secondary screens (not in bottom nav) ---
+            composable("add_transaction") {
+                AddTransactionScreen(navController = navController, viewModel = transactionViewModel)
+            }
+            composable(
+                "edit_transaction/{transactionId}",
+                arguments = listOf(navArgument("transactionId") { type = NavType.IntType })
+            ) { backStackEntry ->
+                val transactionId = backStackEntry.arguments?.getInt("transactionId")
+                if (transactionId != null) {
+                    EditTransactionScreen(
+                        navController = navController,
+                        viewModel = transactionViewModel,
+                        transactionId = transactionId
+                    )
+                }
+            }
+            composable("account_list") {
+                AccountListScreen(navController = navController, viewModel = accountViewModel)
+            }
+            composable("add_account") {
+                AddAccountScreen(navController = navController, viewModel = accountViewModel)
+            }
+            composable(
+                "edit_account/{accountId}",
+                arguments = listOf(navArgument("accountId") { type = NavType.IntType })
+            ) { backStackEntry ->
+                val accountId = backStackEntry.arguments?.getInt("accountId")
+                if (accountId != null) {
+                    EditAccountScreen(
+                        navController = navController,
+                        viewModel = accountViewModel,
+                        accountId = accountId
+                    )
+                }
+            }
+            composable(
+                "account_detail/{accountId}",
+                arguments = listOf(navArgument("accountId") { type = NavType.IntType })
+            ) { backStackEntry ->
+                val accountId = backStackEntry.arguments?.getInt("accountId")
+                if (accountId != null) {
+                    AccountDetailScreen(
+                        navController = navController,
+                        viewModel = accountViewModel,
+                        accountId = accountId
+                    )
+                }
+            }
+            composable("budget_screen") {
+                BudgetScreen(navController = navController, viewModel = budgetViewModel)
+            }
+            composable("add_budget") {
+                AddBudgetScreen(navController = navController, viewModel = budgetViewModel)
+            }
+            composable("category_list") {
+                CategoryListScreen(navController = navController, viewModel = categoryViewModel)
+            }
+            composable(
+                "edit_category/{categoryId}",
+                arguments = listOf(navArgument("categoryId") { type = NavType.IntType })
+            ) { backStackEntry ->
+                val categoryId = backStackEntry.arguments?.getInt("categoryId")
+                if (categoryId != null) {
+                    EditCategoryScreen(
+                        navController = navController,
+                        viewModel = categoryViewModel,
+                        categoryId = categoryId
+                    )
+                }
+            }
         }
     }
 }
@@ -156,23 +216,7 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Dashboard") },
-                actions = {
-                    IconButton(onClick = { navController.navigate("reports_screen") }) {
-                        Icon(imageVector = Icons.Default.BarChart, contentDescription = "Reports")
-                    }
-                    IconButton(onClick = { navController.navigate("category_list") }) {
-                        Icon(imageVector = Icons.Default.Category, contentDescription = "Categories")
-                    }
-                    IconButton(onClick = { navController.navigate("account_list") }) {
-                        Icon(imageVector = Icons.Default.AccountBalanceWallet, contentDescription = "Accounts")
-                    }
-                    IconButton(onClick = { navController.navigate("budget_screen") }) {
-                        Icon(imageVector = Icons.Default.Assessment, contentDescription = "Budgets")
-                    }
-                }
-            )
+            TopAppBar(title = { Text("Dashboard") })
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
@@ -189,6 +233,143 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
             item { MonthlySummaryCard(income = monthlyIncome, expenses = monthlyExpenses) }
             item { BudgetWatchCard(budgetStatus = budgetStatus) }
             item { RecentActivityCard(transactions = recentTransactions, navController = navController) }
+        }
+    }
+}
+
+// --- NEW: A "More" screen for navigating to management pages ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MoreScreen(navController: NavController) {
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("More Options") })
+        }
+    ) { innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding)) {
+            ListItem(
+                headlineContent = { Text("Manage Accounts") },
+                leadingContent = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
+                modifier = Modifier.clickable { navController.navigate("account_list") }
+            )
+            Divider()
+            ListItem(
+                headlineContent = { Text("Manage Categories") },
+                leadingContent = { Icon(Icons.Default.Category, contentDescription = null) },
+                modifier = Modifier.clickable { navController.navigate("category_list") }
+            )
+            Divider()
+            ListItem(
+                headlineContent = { Text("Manage Budgets") },
+                leadingContent = { Icon(Icons.Default.Assessment, contentDescription = null) },
+                modifier = Modifier.clickable { navController.navigate("budget_screen") }
+            )
+            Divider()
+        }
+    }
+}
+
+// --- UPDATED: TransactionListScreen now has a simpler TopAppBar ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransactionListScreen(navController: NavController, viewModel: TransactionViewModel) {
+    val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Transaction History") })
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
+                Icon(Icons.Filled.Add, contentDescription = "Add transaction")
+            }
+        }
+    ) { innerPadding ->
+        TransactionList(transactions = transactions, navController = navController)
+    }
+}
+
+// --- UPDATED: ReportsScreen now has a simpler TopAppBar ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel) {
+    val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Reports for ${viewModel.monthYear}") })
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp)
+        ) {
+            if (pieData == null || pieData?.entryCount == 0) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No expense data for this month to generate a report.")
+                }
+            } else {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Spending by Category", style = MaterialTheme.typography.titleLarge)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        AndroidView(
+                            factory = { context ->
+                                PieChart(context).apply {
+                                    description.isEnabled = false
+                                    isDrawHoleEnabled = true
+                                    setEntryLabelColor(AndroidColor.BLACK)
+                                    setEntryLabelTextSize(12f)
+                                    legend.isEnabled = false
+                                }
+                            },
+                            update = { chart ->
+                                chart.data = pieData
+                                chart.invalidate()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(350.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        ChartLegend(pieData = pieData)
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// ... The rest of your file is unchanged, but included below for completeness ...
+@Composable
+fun ChartLegend(pieData: PieData?) {
+    // Safely get the dataset from the PieData object.
+    val dataSet = pieData?.dataSet as? PieDataSet ?: return
+
+    // Use a classic for loop for maximum compatibility with the Java library.
+    // This explicitly gets each entry and its corresponding color by index.
+    Column {
+        for (i in 0 until dataSet.entryCount) {
+            val entry = dataSet.getEntryForIndex(i)
+            val color = dataSet.getColor(i)
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color(color)) // Convert the Android integer color to a Compose Color
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                // The 'label' property of PieEntry holds the category name.
+                Text(text = "${entry.label} - ₹${"%.2f".format(entry.value)}")
+            }
         }
     }
 }
@@ -287,33 +468,6 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
                 })
             }
         }
-    }
-}
-
-
-// --- Transaction Screens ---
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TransactionListScreen(navController: NavController, viewModel: TransactionViewModel) {
-    val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Transactions") },
-                actions = {
-                    IconButton(onClick = { navController.navigate("dashboard") }) {
-                        Icon(imageVector = Icons.Default.Home, contentDescription = "Dashboard")
-                    }
-                }
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
-                Icon(Icons.Filled.Add, contentDescription = "Add transaction")
-            }
-        }
-    ) { innerPadding ->
-        TransactionList(transactions = transactions, navController = navController)
     }
 }
 
@@ -773,21 +927,8 @@ fun AccountListScreen(navController: NavController, viewModel: AccountViewModel)
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
-                },
-                actions = {
-                    IconButton(onClick = { navController.navigate("dashboard") }) {
-                        Icon(imageVector = Icons.Default.Home, contentDescription = "Dashboard")
-                    }
-                    IconButton(onClick = { navController.navigate("budget_screen") }) {
-                        Icon(imageVector = Icons.Default.Assessment, contentDescription = "Budgets")
-                    }
                 }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { navController.navigate("add_account") }) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Account")
-            }
         }
     ) { innerPadding ->
         LazyColumn(
@@ -1594,94 +1735,4 @@ fun TimePickerDialog(
             }
         }
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel) {
-    val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Reports for ${viewModel.monthYear}") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp)
-        ) {
-            if (pieData == null || pieData?.entryCount == 0) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No expense data for this month to generate a report.")
-                }
-            } else {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Spending by Category", style = MaterialTheme.typography.titleLarge)
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        AndroidView(
-                            factory = { context ->
-                                PieChart(context).apply {
-                                    description.isEnabled = false
-                                    isDrawHoleEnabled = true
-                                    setEntryLabelColor(AndroidColor.BLACK)
-                                    setEntryLabelTextSize(12f)
-                                    legend.isEnabled = false
-                                }
-                            },
-                            update = { chart ->
-                                chart.data = pieData
-                                chart.invalidate()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(350.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        ChartLegend(pieData = pieData)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ChartLegend(pieData: PieData?) {
-    // Safely get the dataset from the PieData object.
-    val dataSet = pieData?.dataSet as? PieDataSet ?: return
-
-    // Use a classic for loop for maximum compatibility with the Java library.
-    // This explicitly gets each entry and its corresponding color by index.
-    Column {
-        for (i in 0 until dataSet.entryCount) {
-            val entry = dataSet.getEntryForIndex(i)
-            val color = dataSet.getColor(i)
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(vertical = 4.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .clip(CircleShape)
-                        .background(Color(color)) // Convert the Android integer color to a Compose Color
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                // The 'label' property of PieEntry holds the category name.
-                Text(text = "${entry.label} - ₹${"%.2f".format(entry.value)}")
-            }
-        }
-    }
 }
