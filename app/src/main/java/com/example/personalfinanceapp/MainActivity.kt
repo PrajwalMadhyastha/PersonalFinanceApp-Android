@@ -46,7 +46,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // --- Data class to define our main navigation destinations ---
-// CORRECTED: Using valid icons from Icons.Filled
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
     object Dashboard : BottomNavItem("dashboard", Icons.Filled.Home, "Dashboard")
     object Transactions : BottomNavItem("transaction_list", Icons.Filled.Receipt, "History")
@@ -113,7 +112,6 @@ fun FinanceApp() {
             startDestination = BottomNavItem.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            // UPDATED: Passing the budgetViewModel to the DashboardScreen
             composable(BottomNavItem.Dashboard.route) {
                 DashboardScreen(navController, dashboardViewModel, budgetViewModel)
             }
@@ -284,6 +282,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = vi
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // --- Pie Chart Card (Unchanged) ---
             item {
                 Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
                     Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -309,38 +308,16 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = vi
                     }
                 }
             }
+
+            // --- Bar Chart Card (REFINED) ---
             item {
                 Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
                     Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Income vs. Expense Trend", style = MaterialTheme.typography.titleLarge)
                         Spacer(modifier = Modifier.height(16.dp))
                         if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
-                            val (barData, labels) = trendDataPair!!
-                            AndroidView(
-                                factory = { context ->
-                                    BarChart(context).apply {
-                                        description.isEnabled = false
-                                        legend.isEnabled = true
-                                        xAxis.position = XAxis.XAxisPosition.BOTTOM
-                                        xAxis.setDrawGridLines(false)
-                                        xAxis.valueFormatter = IndexAxisValueFormatter(labels)
-                                        xAxis.granularity = 1f
-                                        xAxis.setCenterAxisLabels(true)
-                                        axisLeft.axisMinimum = 0f
-                                        axisRight.isEnabled = false
-                                    }
-                                },
-                                update = { chart ->
-                                    val groupSpace = 0.4f
-                                    val barSpace = 0.05f
-                                    val barWidth = 0.25f
-                                    barData.barWidth = barWidth
-                                    chart.data = barData
-                                    chart.groupBars(0f, groupSpace, barSpace)
-                                    chart.invalidate()
-                                },
-                                modifier = Modifier.fillMaxWidth().height(250.dp)
-                            )
+                            // This is the refined BarChart implementation
+                            GroupedBarChart(trendDataPair!!)
                         } else {
                             Box(modifier = Modifier.fillMaxWidth().height(250.dp), contentAlignment = Alignment.Center) {
                                 Text("Not enough data for trend analysis.")
@@ -351,6 +328,63 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = vi
             }
         }
     }
+}
+
+@Composable
+fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
+    val (barData, labels) = trendDataPair
+
+    AndroidView(
+        factory = { context ->
+            // FACTORY: For one-time, data-independent setup
+            BarChart(context).apply {
+                description.isEnabled = false
+                legend.isEnabled = true
+                setDrawGridBackground(false)
+
+                xAxis.position = XAxis.XAxisPosition.BOTTOM
+                xAxis.setDrawGridLines(false)
+                xAxis.granularity = 1f // Essential for labels to align with bars
+
+                axisLeft.axisMinimum = 0f
+                axisLeft.setDrawGridLines(true)
+
+                axisRight.isEnabled = false
+            }
+        },
+        update = { chart ->
+            // UPDATE: For applying data and data-dependent properties
+
+            // 1. Define the widths and spacing for the grouped bars
+            val barWidth = 0.25f
+            val barSpace = 0.05f
+            val groupSpace = 0.4f
+            barData.barWidth = barWidth
+
+            // 2. Apply the data to the chart
+            chart.data = barData
+
+            // 3. Set the labels for the X-Axis
+            chart.xAxis.valueFormatter = IndexAxisValueFormatter(labels)
+
+            // 4. Set the visible range of the x-axis
+            // This is crucial for groupBars to work correctly
+            chart.xAxis.axisMinimum = 0f
+            chart.xAxis.axisMaximum = labels.size.toFloat()
+
+            // 5. Center the labels under the groups
+            chart.xAxis.setCenterAxisLabels(true)
+
+            // 6. Group the bars. The 'fromX' (first param) should be the starting point.
+            chart.groupBars(0f, groupSpace, barSpace)
+
+            // 7. Refresh the chart to apply all changes
+            chart.invalidate()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(250.dp)
+    )
 }
 
 
@@ -488,6 +522,9 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
 
+    var transactionType by remember { mutableStateOf("expense") }
+    val transactionTypes = listOf("Expense", "Income")
+
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
     var isAccountDropdownExpanded by remember { mutableStateOf(false) }
@@ -498,9 +535,7 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
-    val selectedDateTime by remember {
-        mutableStateOf(Calendar.getInstance())
-    }
+    val selectedDateTime by remember { mutableStateOf(Calendar.getInstance()) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
@@ -521,88 +556,104 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
             )
         }
     ) { innerPadding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth())
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
-                    Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
-                }
-                Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
-                    Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
-                }
-            }
-
-
-            ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
-                OutlinedTextField(
-                    value = selectedAccount?.name ?: "Select Account",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Account") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor()
-                )
-                ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
-                    accounts.forEach { account ->
-                        DropdownMenuItem(text = { Text(account.name) }, onClick = {
-                            selectedAccount = account
-                            isAccountDropdownExpanded = false
-                        })
-                    }
-                }
-            }
-            ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
-                OutlinedTextField(
-                    value = selectedCategory?.name ?: "Select Category",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Category") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor()
-                )
-                ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                    categories.forEach { category ->
-                        DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                            selectedCategory = category
-                            isCategoryDropdownExpanded = false
-                        })
+            item {
+                TabRow(selectedTabIndex = if (transactionType == "expense") 0 else 1) {
+                    transactionTypes.forEachIndexed { index, title ->
+                        Tab(
+                            selected = (if (transactionType == "expense") 0 else 1) == index,
+                            onClick = { transactionType = if (index == 0) "expense" else "income" },
+                            text = { Text(title) }
+                        )
                     }
                 }
             }
 
-            Button(
-                onClick = {
-                    if (selectedAccount != null) {
+            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
+            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
+                        Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
+                    }
+                    Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
+                        Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
+                    }
+                }
+            }
+
+            item {
+                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedAccount?.name ?: "Select Account",
+                        onValueChange = {}, readOnly = true, label = { Text("Account") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
+                        accounts.forEach { account ->
+                            DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                                selectedAccount = account
+                                isAccountDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            item {
+                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedCategory?.name ?: "Select Category",
+                        onValueChange = {}, readOnly = true, label = { Text("Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                        categories.forEach { category ->
+                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                selectedCategory = category
+                                isCategoryDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            item {
+                Button(
+                    onClick = {
                         val success = viewModel.addTransaction(
-                            description,
-                            selectedCategory?.id,
-                            amount,
-                            selectedAccount!!.id,
-                            notes.takeIf { it.isNotBlank() },
-                            selectedDateTime.timeInMillis
+                            description = description,
+                            categoryId = selectedCategory?.id,
+                            amountStr = amount,
+                            accountId = selectedAccount!!.id,
+                            notes = notes.takeIf { it.isNotBlank() },
+                            date = selectedDateTime.timeInMillis,
+                            transactionType = transactionType
                         )
                         if (success) {
                             navController.popBackStack()
                         }
-                    }
-                },
-                modifier = Modifier.align(Alignment.End),
-                enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank()
-            ) {
-                Text("Save Transaction")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank()
+                ) {
+                    Text("Save Transaction")
+                }
             }
         }
     }
@@ -615,8 +666,7 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 TextButton(
                     onClick = {
                         datePickerState.selectedDateMillis?.let {
-                            val newCalendar = Calendar.getInstance()
-                            newCalendar.timeInMillis = it
+                            val newCalendar = Calendar.getInstance().apply { timeInMillis = it }
                             selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
                             selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
                             selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
@@ -625,19 +675,12 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                     }
                 ) { Text("OK") }
             },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
+        ) { DatePicker(state = datePickerState) }
     }
 
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(
-            initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
-            initialMinute = selectedDateTime.get(Calendar.MINUTE)
-        )
+        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(Calendar.MINUTE))
         TimePickerDialog(
             onDismissRequest = { showTimePicker = false },
             onConfirm = {
@@ -645,13 +688,11 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
                 showTimePicker = false
             }
-        ) {
-            TimePicker(state = timePickerState)
-        }
+        ) { TimePicker(state = timePickerState) }
     }
 }
 
-
+// --- EditTransactionScreen ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditTransactionScreen(navController: NavController, viewModel: TransactionViewModel, transactionId: Int) {
@@ -661,6 +702,9 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
 
+    var transactionType by remember { mutableStateOf("expense") }
+    val transactionTypes = listOf("Expense", "Income")
+
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
     var isAccountDropdownExpanded by remember { mutableStateOf(false) }
@@ -669,8 +713,8 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
+    // --- CORRECTED: Typo fixed from 'mutableState of' to 'mutableStateOf' ---
     var showDeleteDialog by remember { mutableStateOf(false) }
-
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     val selectedDateTime = remember { Calendar.getInstance() }
@@ -693,6 +737,7 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
             selectedDateTime.timeInMillis = txn.date
             selectedAccount = accounts.find { it.id == txn.accountId }
             selectedCategory = categories.find { it.id == txn.categoryId }
+            transactionType = txn.transactionType
         }
     }
 
@@ -711,87 +756,105 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
         }
     ) { innerPadding ->
         transaction?.let { currentTransaction ->
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth())
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
-                        Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
-                    }
-                    Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
-                        Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
-                    }
-                }
-
-                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
-                    OutlinedTextField(
-                        value = selectedAccount?.name ?: "Select Account",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Account") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
-                        accounts.forEach { account ->
-                            DropdownMenuItem(text = { Text(account.name) }, onClick = {
-                                selectedAccount = account
-                                isAccountDropdownExpanded = false
-                            })
+                item {
+                    TabRow(selectedTabIndex = if (transactionType == "expense") 0 else 1) {
+                        transactionTypes.forEachIndexed { index, title ->
+                            Tab(
+                                selected = (if (transactionType == "expense") 0 else 1) == index,
+                                onClick = { transactionType = if (index == 0) "expense" else "income" },
+                                text = { Text(title) }
+                            )
                         }
                     }
                 }
 
-                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
-                    OutlinedTextField(
-                        value = selectedCategory?.name ?: "Select Category",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Category") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                        categories.forEach { category ->
-                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                selectedCategory = category
-                                isCategoryDropdownExpanded = false
-                            })
+                item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
+                item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
+                            Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
+                        }
+                        Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
+                            Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
                         }
                     }
                 }
 
-                Button(
-                    onClick = {
-                        val updatedAmount = amount.toDoubleOrNull() ?: 0.0
-                        val updatedTransaction = currentTransaction.copy(
-                            description = description,
-                            amount = updatedAmount,
-                            accountId = selectedAccount?.id ?: currentTransaction.accountId,
-                            categoryId = selectedCategory?.id,
-                            notes = notes.takeIf { it.isNotBlank() },
-                            date = selectedDateTime.timeInMillis
+                item {
+                    ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                        OutlinedTextField(
+                            value = selectedAccount?.name ?: "Select Account",
+                            onValueChange = {}, readOnly = true, label = { Text("Account") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
                         )
-                        val success = viewModel.updateTransaction(updatedTransaction)
-                        if (success) {
-                            navController.popBackStack()
+                        ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
+                            accounts.forEach { account ->
+                                DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                                    selectedAccount = account
+                                    isAccountDropdownExpanded = false
+                                })
+                            }
                         }
-                    },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Text("Update Transaction")
+                    }
+                }
+
+                item {
+                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                        OutlinedTextField(
+                            value = selectedCategory?.name ?: "Select Category",
+                            onValueChange = {}, readOnly = true, label = { Text("Category") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                            categories.forEach { category ->
+                                DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                    selectedCategory = category
+                                    isCategoryDropdownExpanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Button(
+                        onClick = {
+                            val updatedAmount = amount.toDoubleOrNull() ?: 0.0
+                            val updatedTransaction = currentTransaction.copy(
+                                description = description,
+                                amount = updatedAmount,
+                                accountId = selectedAccount?.id ?: currentTransaction.accountId,
+                                categoryId = selectedCategory?.id,
+                                notes = notes.takeIf { it.isNotBlank() },
+                                date = selectedDateTime.timeInMillis,
+                                transactionType = transactionType
+                            )
+                            val success = viewModel.updateTransaction(updatedTransaction)
+                            if (success) {
+                                navController.popBackStack()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Update Transaction")
+                    }
                 }
             }
         }
@@ -805,8 +868,7 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                 TextButton(
                     onClick = {
                         datePickerState.selectedDateMillis?.let {
-                            val newCalendar = Calendar.getInstance()
-                            newCalendar.timeInMillis = it
+                            val newCalendar = Calendar.getInstance().apply { timeInMillis = it }
                             selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
                             selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
                             selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
@@ -815,19 +877,12 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                     }
                 ) { Text("OK") }
             },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
+        ) { DatePicker(state = datePickerState) }
     }
 
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(
-            initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
-            initialMinute = selectedDateTime.get(Calendar.MINUTE)
-        )
+        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(Calendar.MINUTE))
         TimePickerDialog(
             onDismissRequest = { showTimePicker = false },
             onConfirm = {
@@ -835,9 +890,7 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                 selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
                 showTimePicker = false
             }
-        ) {
-            TimePicker(state = timePickerState)
-        }
+        ) { TimePicker(state = timePickerState) }
     }
 
     if (showDeleteDialog) {
@@ -898,7 +951,7 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
                     Text(
                         text = transactionDetails.transaction.notes!!,
                         style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        fontStyle = FontStyle.Italic,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -917,7 +970,7 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
                 text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = if (transactionDetails.transaction.amount < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                color = if (transactionDetails.transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
             )
         }
     }
@@ -1144,6 +1197,7 @@ fun AccountDetailScreen(
 ) {
     val account by viewModel.getAccountById(accountId).collectAsState(initial = null)
     val balance by viewModel.getAccountBalance(accountId).collectAsState(initial = 0.0)
+    // --- CORRECTED: This now correctly collects the list of TransactionDetails ---
     val transactions by viewModel.getTransactionsForAccount(accountId).collectAsState(initial = emptyList())
 
     Scaffold(
@@ -1201,8 +1255,9 @@ fun AccountDetailScreen(
                 }
             } else {
                 LazyColumn {
-                    items(transactions) { transaction ->
-                        AccountTransactionItem(transaction = transaction)
+                    // --- CORRECTED: We now pass `details.transaction` to the item composable ---
+                    items(transactions) { details ->
+                        AccountTransactionItem(transaction = details.transaction)
                         Divider()
                     }
                 }
@@ -1230,7 +1285,7 @@ fun AccountTransactionItem(transaction: Transaction) {
         Text(
             text = "₹${"%.2f".format(transaction.amount)}",
             style = MaterialTheme.typography.bodyLarge,
-            color = if (transaction.amount < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+            color = if (transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
         )
     }
 }

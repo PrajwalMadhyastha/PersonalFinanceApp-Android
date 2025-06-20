@@ -18,7 +18,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val allAccounts: Flow<List<Account>>
     val allCategories: Flow<List<Category>>
 
-    // --- NEW: StateFlow for communicating validation errors to the UI ---
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError = _validationError.asStateFlow()
 
@@ -37,25 +36,34 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
-    // --- UPDATED: addTransaction function with validation logic ---
-    fun addTransaction(description: String, categoryId: Int?, amountStr: String, accountId: Int, notes: String?, date: Long): Boolean {
+    // --- UPDATED: Now accepts transactionType ---
+    fun addTransaction(
+        description: String,
+        categoryId: Int?,
+        amountStr: String,
+        accountId: Int,
+        notes: String?,
+        date: Long,
+        transactionType: String // New parameter
+    ): Boolean {
         if (description.isBlank()) {
             _validationError.value = "Description cannot be empty."
             return false
         }
         val amount = amountStr.toDoubleOrNull()
-        if (amount == null || amount == 0.0) {
-            _validationError.value = "Please enter a valid, non-zero amount."
+        if (amount == null || amount <= 0.0) { // Amount must be positive
+            _validationError.value = "Please enter a valid, positive amount."
             return false
         }
 
         val newTransaction = Transaction(
             description = description,
             categoryId = categoryId,
-            amount = amount,
+            amount = amount, // Amount is now always positive
             date = date,
             accountId = accountId,
-            notes = notes
+            notes = notes,
+            transactionType = transactionType // Set the type
         )
         viewModelScope.launch {
             transactionRepository.insert(newTransaction)
@@ -64,14 +72,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return true
     }
 
-    // --- UPDATED: updateTransaction function with validation logic ---
+    // --- UPDATED: Validation logic simplified ---
     fun updateTransaction(transaction: Transaction): Boolean {
         if (transaction.description.isBlank()) {
             _validationError.value = "Description cannot be empty."
             return false
         }
-        if (transaction.amount == 0.0) {
-            _validationError.value = "Amount cannot be zero."
+        if (transaction.amount <= 0.0) { // Amount must be positive
+            _validationError.value = "Amount must be a valid, positive number."
             return false
         }
 
@@ -86,7 +94,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.delete(transaction)
     }
 
-    // --- NEW: Function to clear the error state ---
     fun clearError() {
         _validationError.value = null
     }

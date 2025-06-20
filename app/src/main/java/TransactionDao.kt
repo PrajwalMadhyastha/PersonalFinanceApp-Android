@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
+    // ... (all your existing DAO methods are here)
+
     @Query("""
         SELECT
             T.*,
@@ -39,6 +41,18 @@ interface TransactionDao {
     """)
     fun getTransactionDetailsForRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
 
+    // --- NEW: This is the method required by AccountViewModel ---
+    @Query("""
+        SELECT T.*, A.name as accountName, C.name as categoryName
+        FROM transactions AS T
+        LEFT JOIN accounts AS A ON T.accountId = A.id
+        LEFT JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.accountId = :accountId
+        ORDER BY T.date DESC
+    """)
+    fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>>
+
+
     @Query("SELECT * FROM transactions")
     fun getAllTransactionsSimple(): Flow<List<Transaction>>
 
@@ -54,7 +68,7 @@ interface TransactionDao {
     @Query("""
         SELECT SUM(T.amount) FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
-        WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate
+        WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate AND T.transactionType = 'expense'
     """)
     fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?>
 
@@ -62,29 +76,17 @@ interface TransactionDao {
         SELECT C.name as categoryName, SUM(T.amount) as totalAmount
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.amount < 0 AND T.date BETWEEN :startDate AND :endDate
+        WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
         GROUP BY C.name
         ORDER BY totalAmount ASC
     """)
     fun getSpendingByCategoryForMonth(startDate: Long, endDate: Long): Flow<List<CategorySpending>>
 
-    // --- NEW: Query to get monthly income and expense summaries ---
-    @Query("""
-        SELECT strftime('%Y', date / 1000, 'unixepoch') as year, 
-               strftime('%m', date / 1000, 'unixepoch') as month, 
-               SUM(amount) as totalAmount
-        FROM transactions
-        WHERE date >= :sinceDate
-        GROUP BY year, month, CASE WHEN amount > 0 THEN 'income' ELSE 'expense' END
-        ORDER BY year, month
-    """)
-    fun getMonthlySummaries(sinceDate: Long): Flow<List<MonthlySummary>>
-
     @Query("""
         SELECT
             strftime('%Y-%m', date / 1000, 'unixepoch') as monthYear,
-            SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as totalIncome,
-            SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END) as totalExpenses
+            SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
         FROM transactions
         WHERE date >= :startDate
         GROUP BY monthYear
@@ -95,6 +97,12 @@ interface TransactionDao {
 
     @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
     suspend fun countTransactionsForCategory(categoryId: Int): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(transactions: List<Transaction>)
+
+    @Query("DELETE FROM transactions")
+    suspend fun deleteAll()
 
     @Insert
     suspend fun insert(transaction: Transaction)

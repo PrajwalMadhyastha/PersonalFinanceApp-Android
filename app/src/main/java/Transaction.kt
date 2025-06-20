@@ -31,10 +31,12 @@ data class Transaction(
     val id: Int = 0,
     val description: String,
     val categoryId: Int?,
+    // The amount is now always positive.
     val amount: Double,
     val date: Long,
     val accountId: Int,
+    val notes: String?,
 
-    // --- NEW: A nullable string for optional notes ---
-    val notes: String?
+    // --- NEW: Added to distinguish between income and expense ---
+    val transactionType: String = "expense" // Default to 'expense'
 )

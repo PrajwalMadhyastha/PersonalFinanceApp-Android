@@ -4,70 +4,58 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class AccountViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val accountRepository: AccountRepository
+    private val repository: AccountRepository
     private val transactionRepository: TransactionRepository
 
-    // This new property will be consumed by the UI.
-    // It combines accounts and transactions to produce a list of accounts with their calculated balances.
+    // This is the data your UI will observe. It now comes directly from the repository.
     val accountsWithBalance: Flow<List<AccountWithBalance>>
 
     init {
-        val accountDao = AppDatabase.getInstance(application).accountDao()
-        val transactionDao = AppDatabase.getInstance(application).transactionDao()
+        val db = AppDatabase.getInstance(application)
+        repository = AccountRepository(db.accountDao())
+        transactionRepository = TransactionRepository(db.transactionDao())
 
-        accountRepository = AccountRepository(accountDao)
-        transactionRepository = TransactionRepository(transactionDao)
+        // --- CORRECTED: Directly use the powerful query from the DAO via the repository ---
+        // This is much more efficient than using 'combine' and calculating in the ViewModel.
+        accountsWithBalance = repository.accountsWithBalance
+    }
 
-        // The 'combine' operator takes two Flows (all accounts and all transactions).
-        // Whenever either flow emits a new list, this block of code is executed.
-        accountsWithBalance = accountRepository.allAccounts.combine(
-            transactionRepository.getAllTransactionsSimple()
-        ) { accounts, transactions ->
-            // We now have the latest lists of accounts and transactions.
-            // We map over the list of accounts...
-            accounts.map { account ->
-                // ...and for each account, we calculate its balance by filtering the
-                // transactions list and summing the amounts.
-                val calculatedBalance = transactions
-                    .filter { it.accountId == account.id }
-                    .sumOf { it.amount }
-                // Finally, we create our new data object.
-                AccountWithBalance(account = account, balance = calculatedBalance)
-            }
+    fun getAccountById(accountId: Int): Flow<Account?> = repository.getAccountById(accountId)
+
+    // --- CORRECTED: The balance calculation now correctly uses the transactionType ---
+    // Helper function to calculate a single account's balance for the detail view
+    fun getAccountBalance(accountId: Int): Flow<Double> {
+        // This leverages the existing getTransactionsForAccount and then sums the amounts correctly.
+        return transactionRepository.getTransactionsForAccount(accountId).map { transactions ->
+            transactions.sumOf { if (it.transactionType == "income") it.amount else -it.amount }
         }
     }
 
-    // --- The rest of the functions are unchanged ---
-
-    fun getAccountBalance(accountId: Int): Flow<Double> {
-        return transactionRepository.getTransactionsForAccount(accountId)
-            .map { transactions ->
-                transactions.sumOf { it.amount }
-            }
+    // Pass through for the detail screen to get full transaction details
+    fun getTransactionsForAccount(accountId: Int): Flow<List<TransactionDetails>> {
+        // NOTE: You'll need to add getTransactionsForAccountDetails to your TransactionRepository
+        // that calls the corresponding DAO method.
+        return transactionRepository.getTransactionsForAccountDetails(accountId)
     }
 
-    fun getAccountById(id: Int): Flow<Account?> = accountRepository.getAccountById(id)
-
-    fun addAccount(accountName: String, accountType: String) = viewModelScope.launch {
-        val newAccount = Account(name = accountName, type = accountType, balance = 0.0)
-        accountRepository.insert(newAccount)
+    // --- CORRECTED: The Account object no longer has a 'balance' parameter in its constructor ---
+    fun addAccount(name: String, type: String) = viewModelScope.launch {
+        if (name.isNotBlank() && type.isNotBlank()) {
+            // Create the Account object without a balance.
+            repository.insert(Account(name = name, type = type))
+        }
     }
 
     fun updateAccount(account: Account) = viewModelScope.launch {
-        accountRepository.update(account)
+        repository.update(account)
     }
 
     fun deleteAccount(account: Account) = viewModelScope.launch {
-        accountRepository.delete(account)
-    }
-
-    fun getTransactionsForAccount(accountId: Int): Flow<List<Transaction>> {
-        return transactionRepository.getTransactionsForAccount(accountId)
+        repository.delete(account)
     }
 }

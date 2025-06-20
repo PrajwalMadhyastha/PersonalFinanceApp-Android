@@ -8,6 +8,7 @@ data class Account(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     val name: String,
-    val type: String,      // <-- ADD THIS LINE
-    val balance: Double
+    val type: String
+    // The balance field is intentionally removed from the database entity.
+    // It will be calculated on-the-fly.
 )

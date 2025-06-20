@@ -31,11 +31,12 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
         // Date logic for current month's pie chart
         val monthStart = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
-        val monthEnd = Calendar.getInstance().apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23) }.timeInMillis
+        val monthEnd = Calendar.getInstance().apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59) }.timeInMillis
 
         spendingByCategoryPieData = transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd)
             .map { spendingList ->
-                val entries = spendingList.map { PieEntry(Math.abs(it.totalAmount).toFloat(), it.categoryName) }
+                // UPDATED: No longer need Math.abs() as amounts are positive.
+                val entries = spendingList.map { PieEntry(it.totalAmount.toFloat(), it.categoryName) }
                 val dataSet = PieDataSet(entries, "Spending by Category").apply {
                     colors = ColorTemplate.MATERIAL_COLORS.toList()
                     valueTextSize = 12f
@@ -53,7 +54,8 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
                 trends.forEachIndexed { index, trend ->
                     incomeEntries.add(BarEntry(index.toFloat(), trend.totalIncome.toFloat()))
-                    expenseEntries.add(BarEntry(index.toFloat(), Math.abs(trend.totalExpenses).toFloat()))
+                    // UPDATED: No longer need Math.abs() for expenses.
+                    expenseEntries.add(BarEntry(index.toFloat(), trend.totalExpenses.toFloat()))
                     val date = SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(trend.monthYear)
                     labels.add(SimpleDateFormat("MMM", Locale.getDefault()).format(date ?: Date()))
                 }
