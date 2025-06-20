@@ -1,11 +1,19 @@
 package com.example.personalfinanceapp
 
 import android.graphics.Color as AndroidColor
+import android.graphics.Typeface
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,13 +28,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -42,10 +60,13 @@ import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
+import com.github.mikephil.charting.utils.ColorTemplate
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.sin
 
 // --- Data class to define our main navigation destinations ---
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
@@ -79,7 +100,7 @@ fun FinanceApp() {
     val dashboardViewModel: DashboardViewModel = viewModel()
     val categoryViewModel: CategoryViewModel = viewModel()
     val reportsViewModel: ReportsViewModel = viewModel()
-    val settingsViewModel: SettingsViewModel = viewModel() // NEW
+    val settingsViewModel: SettingsViewModel = viewModel()
 
     val items = listOf(
         BottomNavItem.Dashboard,
@@ -115,7 +136,6 @@ fun FinanceApp() {
             startDestination = BottomNavItem.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            // --- UPDATED: Pass the settingsViewModel to the DashboardScreen ---
             composable(BottomNavItem.Dashboard.route) {
                 DashboardScreen(navController, dashboardViewModel, budgetViewModel, settingsViewModel)
             }
@@ -128,7 +148,6 @@ fun FinanceApp() {
             composable(BottomNavItem.More.route) {
                 MoreScreen(navController)
             }
-            // --- NEW: Add the SettingsScreen to the navigation graph ---
             composable("settings_screen") {
                 SettingsScreen(navController = navController, viewModel = settingsViewModel)
             }
@@ -160,26 +179,29 @@ fun FinanceApp() {
     }
 }
 
-// --- Dashboard ---
+// --- DashboardScreen ---
+// --- UPDATED: To display the new OverallBudgetCard ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     navController: NavController,
     viewModel: DashboardViewModel,
     budgetViewModel: BudgetViewModel,
-    settingsViewModel: SettingsViewModel // NEW
+    settingsViewModel: SettingsViewModel
 ) {
     val netWorth by viewModel.netWorth.collectAsState(initial = 0.0)
     val monthlyIncome by viewModel.monthlyIncome.collectAsState(initial = 0.0)
     val monthlyExpenses by viewModel.monthlyExpenses.collectAsState(initial = 0.0)
-    val recentTransactions by viewModel.recentTransactions.collectAsState(initial = emptyList())
     val budgetStatus by viewModel.budgetStatus.collectAsState(initial = emptyList())
+    val recentTransactions by viewModel.recentTransactions.collectAsState(initial = emptyList())
+
+    // --- NEW: Collect overall budget data ---
+    val overallBudget by settingsViewModel.overallBudget.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Dashboard") },
-                // --- NEW: Action icon to navigate to Settings ---
                 actions = {
                     IconButton(onClick = { navController.navigate("settings_screen") }) {
                         Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings")
@@ -198,6 +220,13 @@ fun DashboardScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // --- NEW: Add the budget chart card ---
+            item {
+                OverallBudgetCard(
+                    totalBudget = overallBudget,
+                    amountSpent = monthlyExpenses.toFloat()
+                )
+            }
             item { NetWorthCard(netWorth) }
             item { MonthlySummaryCard(monthlyIncome, monthlyExpenses) }
             item { BudgetWatchCard(budgetStatus, budgetViewModel) }
@@ -205,6 +234,196 @@ fun DashboardScreen(
         }
     }
 }
+
+@Composable
+fun OverallBudgetCard(totalBudget: Float, amountSpent: Float) {
+    if (totalBudget <= 0) {
+        return
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+        ) {
+            Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                // The Liquid Tumbler visualization
+                LiquidTumbler(
+                    progress = (amountSpent / totalBudget),
+                    modifier = Modifier.size(120.dp)
+                )
+
+                // The text summary
+                Column {
+                    Text("Spent", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        text = "₹${"%.2f".format(amountSpent)}",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Remaining", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        text = "₹${"%.2f".format(totalBudget - amountSpent)}",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+// --- LiquidTumbler Composable (CORRECTED) ---
+@Composable
+fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
+    val clampedProgress = progress.coerceIn(0f, 1f)
+
+    val animatedProgress by animateFloatAsState(
+        targetValue = clampedProgress,
+        animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
+        label = "LiquidFillAnimation"
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "WaveAnimation")
+    val waveOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = LinearEasing)
+        ), label = "WaveOffset"
+    )
+
+    // --- CORRECTED: Resolve colors and pixel values in the Composable context ---
+    val waterColor = when {
+        clampedProgress >= 1f -> MaterialTheme.colorScheme.error
+        clampedProgress > 0.8f -> Color(0xFFFBC02D) // Amber
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val glassColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val strokeWidthPx = with(LocalDensity.current) { 4.dp.toPx() }
+
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+
+            val glassPath = Path().apply {
+                moveTo(width * 0.1f, height * 0.05f)
+                lineTo(width * 0.2f, height * 0.95f)
+                quadraticBezierTo(width * 0.5f, height * 1.05f, width * 0.8f, height * 0.95f)
+                lineTo(width * 0.9f, height * 0.05f)
+                close()
+            }
+
+            // --- CORRECTED: Use the pre-resolved values ---
+            drawPath(
+                path = glassPath,
+                color = glassColor,
+                style = Stroke(width = strokeWidthPx)
+            )
+
+            clipPath(glassPath) {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(waterColor.copy(alpha = 0.5f), waterColor),
+                        startY = height * (1 - animatedProgress),
+                        endY = height
+                    ),
+                    topLeft = Offset(0f, height * (1 - animatedProgress)),
+                    size = size
+                )
+
+                val wavePath = Path().apply {
+                    moveTo(-width, height * (1 - animatedProgress))
+                    for (i in 0..width.toInt() * 2) {
+                        lineTo(
+                            i.toFloat(),
+                            height * (1 - animatedProgress) + sin((i * 0.03f) + (waveOffset * Math.PI.toFloat())) * 5f
+                        )
+                    }
+                    lineTo(width * 2, height)
+                    lineTo(-width, height)
+                    close()
+                }
+                drawPath(path = wavePath, color = waterColor)
+            }
+        }
+        Text(
+            text = "${(clampedProgress * 100).toInt()}%",
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+// --- NEW: Composable to host the MPAndroidChart PieChart ---
+//@Composable
+//fun BudgetPieChart(totalBudget: Float, amountSpent: Float) {
+//    val remaining = totalBudget - amountSpent
+//    val percentageSpent = if (totalBudget > 0) (amountSpent / totalBudget) * 100 else 0f
+//
+//    val spentColor = MaterialTheme.colorScheme.error.toArgb()
+//    val remainingColor = MaterialTheme.colorScheme.primaryContainer.toArgb()
+//
+//    // --- CORRECTED: Get the color in the Composable context ---
+//    val centerTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
+//
+//    AndroidView(
+//        factory = { context ->
+//            PieChart(context).apply {
+//                description.isEnabled = false
+//                legend.isEnabled = false
+//                isDrawHoleEnabled = true
+//                setHoleColor(AndroidColor.TRANSPARENT)
+//                setUsePercentValues(true)
+//                setEntryLabelColor(AndroidColor.BLACK)
+//                setEntryLabelTypeface(Typeface.DEFAULT_BOLD)
+//            }
+//        },
+//        update = { chart ->
+//            val entries = mutableListOf<PieEntry>()
+//            if (amountSpent > 0) {
+//                entries.add(PieEntry(amountSpent, "Spent"))
+//            }
+//            if (remaining > 0) {
+//                entries.add(PieEntry(remaining, "Remaining"))
+//            }
+//
+//            val dataSet = PieDataSet(entries, "Budget").apply {
+//                colors = listOf(spentColor, remainingColor)
+//                setDrawValues(false)
+//            }
+//
+//            chart.data = PieData(dataSet)
+//
+//            chart.centerText = "%.1f%%".format(percentageSpent)
+//            chart.setCenterTextSize(24f)
+//            chart.setCenterTextTypeface(Typeface.DEFAULT_BOLD)
+//            // --- CORRECTED: Use the color variable here ---
+//            chart.setCenterTextColor(centerTextColor)
+//
+//            chart.invalidate()
+//        },
+//        modifier = Modifier.fillMaxSize()
+//    )
+//}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
