@@ -34,6 +34,9 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     fun getSpendingByCategoryForMonth(startDate: Long, endDate: Long): Flow<List<CategorySpending>> {
         return transactionDao.getSpendingByCategoryForMonth(startDate, endDate)
     }
+    fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>> {
+        return transactionDao.getMonthlyTrends(startDate)
+    }
 
     suspend fun countTransactionsForCategory(categoryId: Int): Int {
         return transactionDao.countTransactionsForCategory(categoryId)

@@ -58,7 +58,6 @@ interface TransactionDao {
     """)
     fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?>
 
-    // --- NEW: Query to get total spending grouped by category for a specific month ---
     @Query("""
         SELECT C.name as categoryName, SUM(T.amount) as totalAmount
         FROM transactions AS T
@@ -68,6 +67,31 @@ interface TransactionDao {
         ORDER BY totalAmount ASC
     """)
     fun getSpendingByCategoryForMonth(startDate: Long, endDate: Long): Flow<List<CategorySpending>>
+
+    // --- NEW: Query to get monthly income and expense summaries ---
+    @Query("""
+        SELECT strftime('%Y', date / 1000, 'unixepoch') as year, 
+               strftime('%m', date / 1000, 'unixepoch') as month, 
+               SUM(amount) as totalAmount
+        FROM transactions
+        WHERE date >= :sinceDate
+        GROUP BY year, month, CASE WHEN amount > 0 THEN 'income' ELSE 'expense' END
+        ORDER BY year, month
+    """)
+    fun getMonthlySummaries(sinceDate: Long): Flow<List<MonthlySummary>>
+
+    @Query("""
+        SELECT
+            strftime('%Y-%m', date / 1000, 'unixepoch') as monthYear,
+            SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as totalIncome,
+            SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END) as totalExpenses
+        FROM transactions
+        WHERE date >= :startDate
+        GROUP BY monthYear
+        ORDER BY monthYear ASC
+    """)
+    fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>>
+
 
     @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
     suspend fun countTransactionsForCategory(categoryId: Int): Int
