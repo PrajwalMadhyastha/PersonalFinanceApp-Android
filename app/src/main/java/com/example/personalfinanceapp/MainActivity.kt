@@ -2,6 +2,7 @@ package com.example.personalfinanceapp
 
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,12 +72,15 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun FinanceApp() {
     val navController = rememberNavController()
+    // --- Initialize all ViewModels here ---
     val transactionViewModel: TransactionViewModel = viewModel()
     val accountViewModel: AccountViewModel = viewModel()
     val budgetViewModel: BudgetViewModel = viewModel()
     val dashboardViewModel: DashboardViewModel = viewModel()
     val categoryViewModel: CategoryViewModel = viewModel()
     val reportsViewModel: ReportsViewModel = viewModel()
+    val settingsViewModel: SettingsViewModel = viewModel() // NEW
+
     val items = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
@@ -95,9 +100,7 @@ fun FinanceApp() {
                         selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                         onClick = {
                             navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
                             }
@@ -112,8 +115,9 @@ fun FinanceApp() {
             startDestination = BottomNavItem.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
+            // --- UPDATED: Pass the settingsViewModel to the DashboardScreen ---
             composable(BottomNavItem.Dashboard.route) {
-                DashboardScreen(navController, dashboardViewModel, budgetViewModel)
+                DashboardScreen(navController, dashboardViewModel, budgetViewModel, settingsViewModel)
             }
             composable(BottomNavItem.Transactions.route) {
                 TransactionListScreen(navController, transactionViewModel)
@@ -124,59 +128,33 @@ fun FinanceApp() {
             composable(BottomNavItem.More.route) {
                 MoreScreen(navController)
             }
-            composable("add_transaction") {
-                AddTransactionScreen(navController, transactionViewModel)
+            // --- NEW: Add the SettingsScreen to the navigation graph ---
+            composable("settings_screen") {
+                SettingsScreen(navController = navController, viewModel = settingsViewModel)
             }
-            composable(
-                "edit_transaction/{transactionId}",
-                arguments = listOf(navArgument("transactionId") { type = NavType.IntType })
-            ) { backStackEntry ->
+
+            // ... other navigation routes remain unchanged ...
+            composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
+            composable("edit_transaction/{transactionId}", arguments = listOf(navArgument("transactionId") { type = NavType.IntType })) { backStackEntry ->
                 val transactionId = backStackEntry.arguments?.getInt("transactionId")
-                if (transactionId != null) {
-                    EditTransactionScreen(navController, transactionViewModel, transactionId)
-                }
+                if (transactionId != null) { EditTransactionScreen(navController, transactionViewModel, transactionId) }
             }
-            composable("account_list") {
-                AccountListScreen(navController, accountViewModel)
-            }
-            composable("add_account") {
-                AddAccountScreen(navController, accountViewModel)
-            }
-            composable(
-                "edit_account/{accountId}",
-                arguments = listOf(navArgument("accountId") { type = NavType.IntType })
-            ) { backStackEntry ->
+            composable("account_list") { AccountListScreen(navController, accountViewModel) }
+            composable("add_account") { AddAccountScreen(navController, accountViewModel) }
+            composable("edit_account/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
                 val accountId = backStackEntry.arguments?.getInt("accountId")
-                if (accountId != null) {
-                    EditAccountScreen(navController, accountViewModel, accountId)
-                }
+                if (accountId != null) { EditAccountScreen(navController, accountViewModel, accountId) }
             }
-            composable(
-                "account_detail/{accountId}",
-                arguments = listOf(navArgument("accountId") { type = NavType.IntType })
-            ) { backStackEntry ->
+            composable("account_detail/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
                 val accountId = backStackEntry.arguments?.getInt("accountId")
-                if (accountId != null) {
-                    AccountDetailScreen(navController, accountViewModel, accountId)
-                }
+                if (accountId != null) { AccountDetailScreen(navController, accountViewModel, accountId) }
             }
-            composable("budget_screen") {
-                BudgetScreen(navController, budgetViewModel)
-            }
-            composable("add_budget") {
-                AddBudgetScreen(navController, budgetViewModel)
-            }
-            composable("category_list") {
-                CategoryListScreen(navController, categoryViewModel)
-            }
-            composable(
-                "edit_category/{categoryId}",
-                arguments = listOf(navArgument("categoryId") { type = NavType.IntType })
-            ) { backStackEntry ->
+            composable("budget_screen") { BudgetScreen(navController, budgetViewModel) }
+            composable("add_budget") { AddBudgetScreen(navController, budgetViewModel) }
+            composable("category_list") { CategoryListScreen(navController, categoryViewModel) }
+            composable("edit_category/{categoryId}", arguments = listOf(navArgument("categoryId") { type = NavType.IntType })) { backStackEntry ->
                 val categoryId = backStackEntry.arguments?.getInt("categoryId")
-                if (categoryId != null) {
-                    EditCategoryScreen(navController, categoryViewModel, categoryId)
-                }
+                if (categoryId != null) { EditCategoryScreen(navController, categoryViewModel, categoryId) }
             }
         }
     }
@@ -185,7 +163,12 @@ fun FinanceApp() {
 // --- Dashboard ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel, budgetViewModel: BudgetViewModel) {
+fun DashboardScreen(
+    navController: NavController,
+    viewModel: DashboardViewModel,
+    budgetViewModel: BudgetViewModel,
+    settingsViewModel: SettingsViewModel // NEW
+) {
     val netWorth by viewModel.netWorth.collectAsState(initial = 0.0)
     val monthlyIncome by viewModel.monthlyIncome.collectAsState(initial = 0.0)
     val monthlyExpenses by viewModel.monthlyExpenses.collectAsState(initial = 0.0)
@@ -194,7 +177,15 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Dashboard") })
+            TopAppBar(
+                title = { Text("Dashboard") },
+                // --- NEW: Action icon to navigate to Settings ---
+                actions = {
+                    IconButton(onClick = { navController.navigate("settings_screen") }) {
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                }
+            )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
@@ -209,9 +200,69 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
         ) {
             item { NetWorthCard(netWorth) }
             item { MonthlySummaryCard(monthlyIncome, monthlyExpenses) }
-            // UPDATED: Passing the required budgetViewModel to the card
             item { BudgetWatchCard(budgetStatus, budgetViewModel) }
             item { RecentActivityCard(recentTransactions, navController) }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(navController: NavController, viewModel: SettingsViewModel) {
+    // Collect the budget value from the ViewModel's StateFlow
+    val currentBudget by viewModel.overallBudget.collectAsState()
+
+    // Local state for the text field, initialized with the collected value
+    var budgetInput by remember(currentBudget) {
+        mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "")
+    }
+
+    val context = LocalContext.current
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Set your total spending budget for the current month.",
+                style = MaterialTheme.typography.bodyLarge
+            )
+
+            OutlinedTextField(
+                value = budgetInput,
+                onValueChange = { budgetInput = it },
+                label = { Text("Overall Monthly Budget") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                leadingIcon = { Text("₹") }
+            )
+
+            Button(
+                onClick = {
+                    viewModel.saveOverallBudget(budgetInput)
+                    // Provide user feedback and navigate back
+                    Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show()
+                    navController.popBackStack()
+                },
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text("Save")
+            }
         }
     }
 }
