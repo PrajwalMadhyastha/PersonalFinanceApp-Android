@@ -187,7 +187,7 @@ fun FinanceApp() {
     }
 }
 
-// --- DashboardScreen (UPDATED with Navigation Buttons) ---
+// --- DashboardScreen (UPDATED) ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -256,14 +256,20 @@ fun DashboardScreen(
                 }
             }
 
-            // --- NEW: Navigation Buttons ---
+            // --- CORRECTED: Using consistent navigation logic for buttons ---
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     FilledTonalButton(
-                        onClick = { navController.navigate(BottomNavItem.Reports.route) },
+                        onClick = {
+                            navController.navigate(BottomNavItem.Reports.route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -271,7 +277,13 @@ fun DashboardScreen(
                         Text("View Trends")
                     }
                     FilledTonalButton(
-                        onClick = { navController.navigate(BottomNavItem.Reports.route) },
+                        onClick = {
+                            navController.navigate(BottomNavItem.Reports.route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -282,8 +294,8 @@ fun DashboardScreen(
             }
 
             item { NetWorthCard(netWorth) }
-            item { BudgetWatchCard(budgetStatus, budgetViewModel) }
             item { RecentActivityCard(recentTransactions, navController) }
+            item { BudgetWatchCard(budgetStatus, budgetViewModel) }
         }
     }
 }
@@ -860,7 +872,7 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Recent Activity", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text("Recent Transactions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 TextButton(onClick = { navController.navigate("transaction_list") }) {
                     Text("View All")
                 }
