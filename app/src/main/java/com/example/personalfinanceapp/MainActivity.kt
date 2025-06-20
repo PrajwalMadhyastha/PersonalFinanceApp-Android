@@ -68,6 +68,14 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.sin
 
+private fun formatAmountCompact(amount: Float): String {
+    return when {
+        amount >= 1_000_000 -> "₹${"%.1f".format(amount / 1_000_000)}M"
+        amount >= 1_000 -> "₹${"%.1f".format(amount / 1_000)}k"
+        else -> "₹${"%.0f".format(amount)}"
+    }
+}
+
 // --- Data class to define our main navigation destinations ---
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
     object Dashboard : BottomNavItem("dashboard", Icons.Filled.Home, "Dashboard")
@@ -137,7 +145,7 @@ fun FinanceApp() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(BottomNavItem.Dashboard.route) {
-                DashboardScreen(navController, dashboardViewModel, budgetViewModel, settingsViewModel)
+                DashboardScreen(navController, dashboardViewModel, budgetViewModel)
             }
             composable(BottomNavItem.Transactions.route) {
                 TransactionListScreen(navController, transactionViewModel)
@@ -179,24 +187,21 @@ fun FinanceApp() {
     }
 }
 
-// --- DashboardScreen ---
-// --- UPDATED: To display the new OverallBudgetCard ---
+// --- DashboardScreen (UPDATED with Navigation Buttons) ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     navController: NavController,
     viewModel: DashboardViewModel,
-    budgetViewModel: BudgetViewModel,
-    settingsViewModel: SettingsViewModel
+    budgetViewModel: BudgetViewModel
 ) {
-    val netWorth by viewModel.netWorth.collectAsState(initial = 0.0)
-    val monthlyIncome by viewModel.monthlyIncome.collectAsState(initial = 0.0)
-    val monthlyExpenses by viewModel.monthlyExpenses.collectAsState(initial = 0.0)
-    val budgetStatus by viewModel.budgetStatus.collectAsState(initial = emptyList())
-    val recentTransactions by viewModel.recentTransactions.collectAsState(initial = emptyList())
-
-    // --- NEW: Collect overall budget data ---
-    val overallBudget by settingsViewModel.overallBudget.collectAsState()
+    val netWorth by viewModel.netWorth.collectAsState()
+    val monthlyIncome by viewModel.monthlyIncome.collectAsState()
+    val monthlyExpenses by viewModel.monthlyExpenses.collectAsState()
+    val overallBudget by viewModel.overallMonthlyBudget.collectAsState()
+    val safeToSpend by viewModel.safeToSpendPerDay.collectAsState()
+    val budgetStatus by viewModel.budgetStatus.collectAsState()
+    val recentTransactions by viewModel.recentTransactions.collectAsState()
 
     Scaffold(
         topBar = {
@@ -220,20 +225,105 @@ fun DashboardScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // --- NEW: Add the budget chart card ---
             item {
                 OverallBudgetCard(
                     totalBudget = overallBudget,
                     amountSpent = monthlyExpenses.toFloat()
                 )
             }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StatCard(
+                        label = "Monthly Income",
+                        amount = monthlyIncome.toFloat(),
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatCard(
+                        label = "Total Budget",
+                        amount = overallBudget,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatCard(
+                        label = "Safe to Spend",
+                        amount = safeToSpend,
+                        modifier = Modifier.weight(1f),
+                        isPerDay = true
+                    )
+                }
+            }
+
+            // --- NEW: Navigation Buttons ---
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = { navController.navigate(BottomNavItem.Reports.route) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Trends")
+                    }
+                    FilledTonalButton(
+                        onClick = { navController.navigate(BottomNavItem.Reports.route) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Categories")
+                    }
+                }
+            }
+
             item { NetWorthCard(netWorth) }
-            item { MonthlySummaryCard(monthlyIncome, monthlyExpenses) }
             item { BudgetWatchCard(budgetStatus, budgetViewModel) }
             item { RecentActivityCard(recentTransactions, navController) }
         }
     }
 }
+
+
+// --- StatCard Composable (UPDATED) ---
+@Composable
+fun StatCard(
+    label: String,
+    amount: Float,
+    modifier: Modifier = Modifier,
+    isPerDay: Boolean = false
+) {
+    Card(
+        modifier = modifier,
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            // --- UPDATED: Call the top-level helper function directly ---
+            Text(
+                text = "${formatAmountCompact(amount)}${if (isPerDay) "/day" else ""}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
 
 @Composable
 fun OverallBudgetCard(totalBudget: Float, amountSpent: Float) {

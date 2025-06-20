@@ -3,7 +3,6 @@ package com.example.personalfinanceapp
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -16,30 +15,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val transactionRepository: TransactionRepository
     private val accountRepository: AccountRepository
     private val budgetDao: BudgetDao
-    // --- NEW: Add dependency on SettingsRepository ---
     private val settingsRepository: SettingsRepository
 
-    // --- Flows for Dashboard UI ---
     val netWorth: StateFlow<Double>
     val monthlyIncome: StateFlow<Double>
     val monthlyExpenses: StateFlow<Double>
     val recentTransactions: StateFlow<List<TransactionDetails>>
     val budgetStatus: StateFlow<List<BudgetWithSpending>>
-
-    // --- NEW: Flows to expose budget data ---
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
-
+    // --- NEW: StateFlow for the "Safe to Spend" metric ---
+    val safeToSpendPerDay: StateFlow<Float>
 
     init {
         val db = AppDatabase.getInstance(application)
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
         budgetDao = db.budgetDao()
-        // --- NEW: Initialize SettingsRepository ---
         settingsRepository = SettingsRepository(application)
 
-        // --- Correct Date Range Calculation ---
         val calendar = Calendar.getInstance()
         val monthStart = calendar.apply {
             set(Calendar.DAY_OF_MONTH, 1)
@@ -60,7 +54,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
 
-        // --- Calculate Monthly Summary ---
         monthlyIncome = transactionsThisMonth.map { transactions ->
             transactions
                 .filter { it.transaction.transactionType == "income" }
@@ -73,26 +66,30 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 .sumOf { it.transaction.amount }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-        // --- Get Overall Budget from SharedPreferences ---
         overallMonthlyBudget = settingsRepository.getOverallBudgetForCurrentMonth()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-        // --- NEW: Calculate Amount Remaining ---
         amountRemaining = combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses ->
             budget - expenses.toFloat()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
+        // --- NEW: "Safe to Spend" Calculation Logic ---
+        safeToSpendPerDay = combine(amountRemaining) { (remaining) ->
+            val today = Calendar.getInstance()
+            val lastDayOfMonth = today.getActualMaximum(Calendar.DAY_OF_MONTH)
+            val remainingDays = (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1)
 
-        // --- Calculate Net Worth ---
+            if (remaining > 0) remaining / remainingDays else 0f
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+
         netWorth = accountRepository.accountsWithBalance.map { list ->
             list.sumOf { it.balance }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-        // --- Get Recent Transactions ---
         recentTransactions = transactionRepository.allTransactions.map { it.take(5) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        // --- Calculate Category-Specific Budget Status ---
         val currentMonth = Calendar.getInstance().get(Calendar.MONTH) + 1
         val currentYear = Calendar.getInstance().get(Calendar.YEAR)
         val budgets = budgetDao.getBudgetsForMonth(currentMonth, currentYear)
