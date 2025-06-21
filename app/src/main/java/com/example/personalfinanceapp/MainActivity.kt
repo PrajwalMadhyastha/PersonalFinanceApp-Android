@@ -1,5 +1,7 @@
 package com.example.personalfinanceapp
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
 import android.graphics.Typeface
 import android.os.Bundle
@@ -7,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -14,8 +17,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,7 +38,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -46,6 +48,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -62,12 +65,13 @@ import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
-import com.github.mikephil.charting.utils.ColorTemplate
+import androidx.activity.compose.rememberLauncherForActivityResult
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.sin
 
+// --- Helper function for compact number formatting ---
 private fun formatAmountCompact(amount: Float): String {
     return when {
         amount >= 1_000_000 -> "₹${"%.1f".format(amount / 1_000_000)}M"
@@ -76,6 +80,7 @@ private fun formatAmountCompact(amount: Float): String {
     }
 }
 
+// --- Navigation Destinations ---
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
     object Dashboard : BottomNavItem("dashboard", Icons.Filled.Home, "Dashboard")
     object Transactions : BottomNavItem("transaction_list", Icons.Filled.Receipt, "History")
@@ -95,23 +100,24 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// --- Root Composable for the App ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FinanceApp() {
     val navController = rememberNavController()
+    val dashboardViewModel: DashboardViewModel = viewModel()
+    val budgetViewModel: BudgetViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
     val accountViewModel: AccountViewModel = viewModel()
-    val budgetViewModel: BudgetViewModel = viewModel()
-    val dashboardViewModel: DashboardViewModel = viewModel()
     val categoryViewModel: CategoryViewModel = viewModel()
     val reportsViewModel: ReportsViewModel = viewModel()
     val settingsViewModel: SettingsViewModel = viewModel()
 
-    val items = listOf(
+    val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
         BottomNavItem.Reports,
-        BottomNavItem.Settings,
+        BottomNavItem.Settings
     )
 
     Scaffold(
@@ -119,7 +125,7 @@ fun FinanceApp() {
             NavigationBar {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentDestination = navBackStackEntry?.destination
-                items.forEach { screen ->
+                bottomNavItems.forEach { screen ->
                     NavigationBarItem(
                         icon = { Icon(screen.icon, contentDescription = screen.label) },
                         label = { Text(screen.label) },
@@ -141,44 +147,23 @@ fun FinanceApp() {
             startDestination = BottomNavItem.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(BottomNavItem.Dashboard.route) {
-                DashboardScreen(navController, dashboardViewModel, budgetViewModel)
-            }
-            composable(BottomNavItem.Transactions.route) {
-                TransactionListScreen(navController, transactionViewModel)
-            }
-            composable(BottomNavItem.Reports.route) {
-                ReportsScreen(navController, reportsViewModel)
-            }
-            composable(BottomNavItem.Settings.route) {
-                SettingsScreen(navController = navController)
-            }
+            composable(BottomNavItem.Dashboard.route) { DashboardScreen(navController, dashboardViewModel, budgetViewModel) }
+            composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, transactionViewModel) }
+            composable(BottomNavItem.Reports.route) { ReportsScreen(navController, reportsViewModel) }
+            composable(BottomNavItem.Settings.route) { SettingsScreen(navController) }
+
+            // Other secondary screens
             composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
             composable("edit_transaction/{transactionId}", arguments = listOf(navArgument("transactionId") { type = NavType.IntType })) { backStackEntry ->
                 val transactionId = backStackEntry.arguments?.getInt("transactionId")
                 if (transactionId != null) { EditTransactionScreen(navController, transactionViewModel, transactionId) }
             }
             composable("account_list") { AccountListScreen(navController, accountViewModel) }
-            composable("add_account") { AddAccountScreen(navController, accountViewModel) }
-            composable("edit_account/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
-                val accountId = backStackEntry.arguments?.getInt("accountId")
-                if (accountId != null) { EditAccountScreen(navController, accountViewModel, accountId) }
-            }
-            composable("account_detail/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
-                val accountId = backStackEntry.arguments?.getInt("accountId")
-                if (accountId != null) { AccountDetailScreen(navController, accountViewModel, accountId) }
-            }
-            composable("budget_screen") { BudgetScreen(navController, budgetViewModel) }
-            composable("add_budget") { AddBudgetScreen(navController, budgetViewModel) }
-            composable("category_list") { CategoryListScreen(navController, categoryViewModel) }
-            composable("edit_category/{categoryId}", arguments = listOf(navArgument("categoryId") { type = NavType.IntType })) { backStackEntry ->
-                val categoryId = backStackEntry.arguments?.getInt("categoryId")
-                if (categoryId != null) { EditCategoryScreen(navController, categoryViewModel, categoryId) }
-            }
         }
     }
 }
 
+// --- Dashboard Screen ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -222,31 +207,21 @@ fun DashboardScreen(
                     amountSpent = monthlyExpenses.toFloat()
                 )
             }
-
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     StatCard(label = "Monthly Income", amount = monthlyIncome.toFloat(), modifier = Modifier.weight(1f))
                     StatCard(label = "Total Budget", amount = overallBudget, modifier = Modifier.weight(1f))
                     StatCard(label = "Safe to Spend", amount = safeToSpend, modifier = Modifier.weight(1f), isPerDay = true)
                 }
             }
-
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     FilledTonalButton(
-                        onClick = {
-                            navController.navigate(BottomNavItem.Reports.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        onClick = { navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }},
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -254,13 +229,11 @@ fun DashboardScreen(
                         Text("View Trends")
                     }
                     FilledTonalButton(
-                        onClick = {
-                            navController.navigate(BottomNavItem.Reports.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        onClick = { navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }},
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -269,7 +242,6 @@ fun DashboardScreen(
                     }
                 }
             }
-
             item { NetWorthCard(netWorth) }
             item { RecentActivityCard(recentTransactions, navController) }
             item { BudgetWatchCard(budgetStatus, budgetViewModel) }
@@ -277,10 +249,24 @@ fun DashboardScreen(
     }
 }
 
+// --- Settings Screen ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(navController: NavController) {
     val settingsViewModel: SettingsViewModel = viewModel()
+    val context = LocalContext.current
+
+    var hasSmsPermission by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            hasSmsPermission = isGranted
+            Toast.makeText(context, if (isGranted) "SMS Permission Granted!" else "SMS Permission Denied.", Toast.LENGTH_SHORT).show()
+        }
+    )
 
     Scaffold(
         topBar = {
@@ -297,23 +283,13 @@ fun SettingsScreen(navController: NavController) {
         }
     ) { innerPadding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             val currentBudget by settingsViewModel.overallBudget.collectAsState()
-            var budgetInput by remember(currentBudget) {
-                mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "")
-            }
-            val context = LocalContext.current
+            var budgetInput by remember(currentBudget) { mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "") }
 
-            Text(
-                "Set your total spending budget for the current month.",
-                style = MaterialTheme.typography.bodyLarge
-            )
-
+            Text("General", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
             OutlinedTextField(
                 value = budgetInput,
                 onValueChange = { budgetInput = it },
@@ -322,20 +298,36 @@ fun SettingsScreen(navController: NavController) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 leadingIcon = { Text("₹") }
             )
-
             Button(
                 onClick = {
                     settingsViewModel.saveOverallBudget(budgetInput)
                     Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show()
-                    navController.popBackStack()
                 },
                 modifier = Modifier.align(Alignment.End)
-            ) {
-                Text("Save")
-            }
+            ) { Text("Save Budget") }
+
+            Divider(modifier = Modifier.padding(vertical = 16.dp))
+
+            Text("Permissions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+            ListItem(
+                headlineContent = { Text("Read SMS for Transactions") },
+                supportingContent = { Text("Allow the app to automatically detect transactions.") },
+                leadingContent = { Icon(Icons.Default.Message, contentDescription = null) },
+                trailingContent = {
+                    Switch(
+                        checked = hasSmsPermission,
+                        onCheckedChange = {
+                            if (!hasSmsPermission) {
+                                permissionLauncher.launch(Manifest.permission.READ_SMS)
+                            }
+                        }
+                    )
+                }
+            )
         }
     }
 }
+
 
 
 // --- StatCard Composable (UPDATED) ---
@@ -563,67 +555,6 @@ fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
 //        modifier = Modifier.fillMaxSize()
 //    )
 //}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsScreen(navController: NavController, viewModel: SettingsViewModel) {
-    // Collect the budget value from the ViewModel's StateFlow
-    val currentBudget by viewModel.overallBudget.collectAsState()
-
-    // Local state for the text field, initialized with the collected value
-    var budgetInput by remember(currentBudget) {
-        mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "")
-    }
-
-    val context = LocalContext.current
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                "Set your total spending budget for the current month.",
-                style = MaterialTheme.typography.bodyLarge
-            )
-
-            OutlinedTextField(
-                value = budgetInput,
-                onValueChange = { budgetInput = it },
-                label = { Text("Overall Monthly Budget") },
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                leadingIcon = { Text("₹") }
-            )
-
-            Button(
-                onClick = {
-                    viewModel.saveOverallBudget(budgetInput)
-                    // Provide user feedback and navigate back
-                    Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show()
-                    navController.popBackStack()
-                },
-                modifier = Modifier.align(Alignment.End)
-            ) {
-                Text("Save")
-            }
-        }
-    }
-}
 
 // --- NEW: A "More" screen for navigating to management pages ---
 @OptIn(ExperimentalMaterial3Api::class)
