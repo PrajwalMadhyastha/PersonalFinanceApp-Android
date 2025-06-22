@@ -161,6 +161,13 @@ fun FinanceApp() {
 
             // --- THIS WAS THE MISSING ROUTE CAUSING THE CRASH ---
             composable("sms_debug_screen") { SmsDebugScreen(navController, settingsViewModel) }
+            composable("approve_transaction_screen") {
+                ApproveTransactionScreen(
+                    navController = navController,
+                    settingsViewModel = settingsViewModel,
+                    transactionViewModel = transactionViewModel
+                )
+            }
 
             // All other secondary screens
             composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
@@ -430,8 +437,136 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) 
                     PotentialTransactionItem(
                         transaction = pt,
                         onDismiss = { viewModel.dismissPotentialTransaction(it) },
-                        onApprove = { /* Logic to be added later */ }
+                        onApprove = {
+                            // --- UPDATED: Set the transaction for approval and navigate ---
+                            viewModel.selectTransactionForApproval(it)
+                            navController.navigate("approve_transaction_screen")
+                        }
                     )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ApproveTransactionScreen(
+    navController: NavController,
+    settingsViewModel: SettingsViewModel,
+    transactionViewModel: TransactionViewModel
+) {
+    val potentialTransaction by settingsViewModel.selectedTransactionForApproval.collectAsState()
+
+    // This screen is only useful if there's a transaction to approve.
+    // If not, it will just show a loading state or nothing, then navigate back.
+    if (potentialTransaction == null) {
+        LaunchedEffect(Unit) {
+            navController.popBackStack()
+        }
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    // State for this screen's form
+    var description by remember { mutableStateOf(potentialTransaction?.merchantName ?: "Unknown Transaction") }
+    val amount = potentialTransaction?.amount?.toString() ?: "0.0"
+    var notes by remember { mutableStateOf("") }
+
+    val accounts by transactionViewModel.allAccounts.collectAsState(initial = emptyList())
+    var selectedAccount by remember { mutableStateOf<Account?>(null) }
+    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
+
+    val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Approve Transaction") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Filled.ArrowBack, "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount, onValueChange = {}, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth()) }
+
+            // Account Dropdown
+            item {
+                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedAccount?.name ?: "Select Account",
+                        onValueChange = {}, readOnly = true, label = { Text("Account") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
+                        accounts.forEach { account ->
+                            DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                                selectedAccount = account
+                                isAccountDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            // Category Dropdown
+            item {
+                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedCategory?.name ?: "Select Category",
+                        onValueChange = {}, readOnly = true, label = { Text("Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                        categories.forEach { category ->
+                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                selectedCategory = category
+                                isCategoryDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+
+            item {
+                Button(
+                    onClick = {
+                        val trx = potentialTransaction!!
+                        val success = transactionViewModel.addTransaction(
+                            description = description,
+                            categoryId = selectedCategory?.id,
+                            amountStr = trx.amount.toString(),
+                            accountId = selectedAccount!!.id,
+                            notes = notes.takeIf { it.isNotBlank() },
+                            date = System.currentTimeMillis(), // Use current time for simplicity
+                            transactionType = trx.transactionType
+                        )
+                        if (success) {
+                            settingsViewModel.dismissPotentialTransaction(trx)
+                            navController.popBackStack()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = selectedAccount != null && selectedCategory != null
+                ) {
+                    Text("Save Transaction")
                 }
             }
         }
@@ -1073,15 +1208,27 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Recent Transactions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { navController.navigate("transaction_list") }) {
-                    Text("View All")
-                }
+                TextButton(
+                    onClick = {
+                        // --- CORRECTED: Use the same navigation logic as the bottom bar ---
+                        navController.navigate(BottomNavItem.Transactions.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                ) { Text("View All") }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            transactions.forEach { details ->
-                TransactionItem(transactionDetails = details, onClick = {
-                    navController.navigate("edit_transaction/${details.transaction.id}")
-                })
+            if(transactions.isEmpty()){
+                Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp))
+            } else {
+                transactions.forEach { details ->
+                    TransactionItem(transactionDetails = details) {
+                        // This navigation is correct as it's a detail screen, not a main tab
+                        navController.navigate("edit_transaction/${details.transaction.id}")
+                    }
+                }
             }
         }
     }

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -19,6 +20,8 @@ import kotlinx.coroutines.withContext
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsRepository: SettingsRepository
+    // --- NEW: Add dependency on TransactionRepository to check for duplicates ---
+    private val transactionRepository: TransactionRepository
 
     val overallBudget: StateFlow<Float>
 
@@ -28,8 +31,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
     val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
 
+    private val _selectedTransactionForApproval = MutableStateFlow<PotentialTransaction?>(null)
+    val selectedTransactionForApproval: StateFlow<PotentialTransaction?> = _selectedTransactionForApproval.asStateFlow()
+
+
     init {
+        val db = AppDatabase.getInstance(application)
         settingsRepository = SettingsRepository(application)
+        // --- NEW: Initialize TransactionRepository ---
+        transactionRepository = TransactionRepository(db.transactionDao())
+
         overallBudget = settingsRepository.getOverallBudgetForCurrentMonth()
             .stateIn(
                 scope = viewModelScope,
@@ -47,13 +58,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val context = getApplication<Application>().applicationContext
 
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            _smsMessages.value = emptyList()
             _potentialTransactions.value = emptyList()
             return
         }
 
         viewModelScope.launch {
+            // Step 1: Fetch raw SMS messages
             val rawMessages = withContext(Dispatchers.IO) {
+                // ... (SMS fetching logic remains the same) ...
                 val messageList = mutableListOf<SmsMessage>()
                 val projection = arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE)
                 val cursor = context.contentResolver.query(
@@ -81,24 +93,37 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
                 messageList
             }
-
             _smsMessages.value = rawMessages
 
+            // Step 2: Parse all fetched messages
             val parsedList = withContext(Dispatchers.Default) {
                 rawMessages.mapNotNull { SmsParser.parse(it.body) }
             }
 
-            _potentialTransactions.value = parsedList
+            // --- NEW: Step 3: Filter out duplicates ---
+            val existingTransactions = transactionRepository.allTransactions.first() // Get current list from db
+            val newPotentialTransactions = parsedList.filter { potential ->
+                // A transaction is considered a duplicate if we find one in the DB
+                // with the same amount and a description that matches the parsed merchant name.
+                // This is a simple heuristic and can be improved later.
+                existingTransactions.none { existing ->
+                    val descriptionMatch = existing.transaction.description == potential.merchantName
+                    val amountMatch = existing.transaction.amount == potential.amount
+                    descriptionMatch && amountMatch
+                }
+            }
+
+            _potentialTransactions.value = newPotentialTransactions
         }
     }
 
-    /**
-     * Removes a potential transaction from the review list.
-     * @param transaction The item to be removed.
-     */
     fun dismissPotentialTransaction(transaction: PotentialTransaction) {
         val currentList = _potentialTransactions.value.toMutableList()
         currentList.remove(transaction)
         _potentialTransactions.value = currentList
+    }
+
+    fun selectTransactionForApproval(transaction: PotentialTransaction) {
+        _selectedTransactionForApproval.value = transaction
     }
 }
