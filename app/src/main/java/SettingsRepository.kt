@@ -22,6 +22,8 @@ class SettingsRepository(context: Context) {
         private const val PREF_NAME = "finance_app_settings"
         private const val KEY_BUDGET_PREFIX = "overall_budget_"
         private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
+        private const val KEY_WEEKLY_SUMMARY_ENABLED = "weekly_summary_enabled"
+        private const val KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED = "unknown_transaction_popup_enabled"
     }
 
     /**
@@ -103,6 +105,34 @@ class SettingsRepository(context: Context) {
             awaitClose {
                 prefs.unregisterOnSharedPreferenceChangeListener(listener)
             }
+        }
+    }
+    fun saveWeeklySummaryEnabled(isEnabled: Boolean) {
+        prefs.edit().putBoolean(KEY_WEEKLY_SUMMARY_ENABLED, isEnabled).apply()
+    }
+    fun getWeeklySummaryEnabled(): Flow<Boolean> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == KEY_WEEKLY_SUMMARY_ENABLED) { trySend(prefs.getBoolean(key, true)) } // Default to true
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getBoolean(KEY_WEEKLY_SUMMARY_ENABLED, true))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    // --- NEW: Functions for Unknown Transaction Popup ---
+    fun saveUnknownTransactionPopupEnabled(isEnabled: Boolean) {
+        prefs.edit().putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled).apply()
+    }
+    fun getUnknownTransactionPopupEnabled(): Flow<Boolean> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED) { trySend(prefs.getBoolean(key, true)) } // Default to true
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
 }

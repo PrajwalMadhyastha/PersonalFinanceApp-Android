@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -25,8 +27,7 @@ import com.example.personalfinanceapp.SettingsRepository
 import com.example.personalfinanceapp.SettingsViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,27 +37,33 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
     val settingsRepository = remember { SettingsRepository(context) }
-    val isAppLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = false)
 
+    // State for all settings
+    val isAppLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = false)
+    val isWeeklySummaryEnabled by settingsRepository.getWeeklySummaryEnabled().collectAsState(initial = true)
+    val isUnknownTransactionPopupEnabled by settingsRepository.getUnknownTransactionPopupEnabled().collectAsState(initial = true)
+
+    // Permission Handlers
     var hasSmsPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
         )
     }
-    val smsPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { perms ->
-        hasSmsPermission = perms.all { it.value }
-    }
-
     var hasNotificationPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         )
     }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        hasSmsPermission = perms[Manifest.permission.READ_SMS] == true && perms[Manifest.permission.RECEIVE_SMS] == true
+        // Notification permission is handled by its own launcher
+    }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -91,154 +98,180 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("Settings") },
                 navigationIcon = {
-                    if (navController.previousBackStackEntry != null) {
-                        IconButton(onClick = { navController.navigateUp() }) {
-                            Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
-                        }
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
         }
     ) { innerPadding ->
-        // --- CORRECTED: Replaced Column with LazyColumn to enable scrolling ---
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            contentPadding = PaddingValues(vertical = 8.dp),
         ) {
-            // General Settings Section
+            // General Section
+            item { SettingSectionHeader("General") }
             item {
-                val currentBudget by viewModel.overallBudget.collectAsState()
-                var budgetInput by remember(currentBudget) {
-                    mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "")
-                }
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    val currentBudget by viewModel.overallBudget.collectAsState()
+                    var budgetInput by remember(currentBudget) { mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "") }
 
-                Text("General", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
-                OutlinedTextField(
-                    value = budgetInput,
-                    onValueChange = { budgetInput = it },
-                    label = { Text("Overall Monthly Budget") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    leadingIcon = { Text("₹") }
-                )
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        viewModel.saveOverallBudget(budgetInput)
-                        Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Save Budget") }
+                    OutlinedTextField(
+                        value = budgetInput,
+                        onValueChange = { budgetInput = it },
+                        label = { Text("Overall Monthly Budget") },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        leadingIcon = { Text("₹") }
+                    )
+                    Button(
+                        onClick = { viewModel.saveOverallBudget(budgetInput); Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Save Budget") }
+                }
             }
 
-            // Security Settings Section
+            // Security Section
+            item { SettingSectionHeader("Security") }
             item {
-                Divider(modifier = Modifier.padding(vertical = 16.dp))
-                Text("Security", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-                ListItem(
-                    headlineContent = { Text("Enable App Lock") },
-                    supportingContent = { Text("Use biometrics or screen lock to secure the app.") },
-                    leadingContent = { Icon(Icons.Default.Lock, contentDescription = null) },
-                    trailingContent = {
-                        Switch(
-                            checked = isAppLockEnabled,
-                            onCheckedChange = { isEnabled ->
-                                scope.launch {
-                                    settingsRepository.saveAppLockEnabled(isEnabled)
-                                }
-                            }
-                        )
-                    }
+                SettingsToggleItem(
+                    title = "Enable App Lock",
+                    subtitle = "Use biometrics or screen lock to secure the app.",
+                    icon = Icons.Default.Lock,
+                    checked = isAppLockEnabled,
+                    onCheckedChange = { settingsRepository.saveAppLockEnabled(it) }
+                )
+            }
+
+            // Notifications Section
+            item { SettingSectionHeader("Notifications") }
+            item {
+                SettingsToggleItem(
+                    title = "Weekly Summary Notification",
+                    subtitle = "Receive a summary of your finances every week.",
+                    icon = Icons.Default.CalendarToday,
+                    checked = isWeeklySummaryEnabled,
+                    onCheckedChange = { settingsRepository.saveWeeklySummaryEnabled(it) }
+                )
+            }
+            item {
+                SettingsToggleItem(
+                    title = "Popup for Unknown Transactions",
+                    subtitle = "Show notification for SMS from new merchants.",
+                    icon = Icons.Default.NotificationsActive,
+                    checked = isUnknownTransactionPopupEnabled,
+                    onCheckedChange = { settingsRepository.saveUnknownTransactionPopupEnabled(it) }
                 )
             }
 
             // Permissions Section
+            item { SettingSectionHeader("Permissions") }
             item {
-                Divider(modifier = Modifier.padding(vertical = 16.dp))
-                Text("Permissions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-                ListItem(
-                    headlineContent = { Text("SMS Access") },
-                    supportingContent = { Text("Allow reading and receiving SMS for auto-detection.") },
-                    leadingContent = { Icon(Icons.Default.Message, contentDescription = null) },
-                    trailingContent = {
-                        Switch(
-                            checked = hasSmsPermission,
-                            onCheckedChange = {
-                                if (!hasSmsPermission) {
-                                    smsPermissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
-                                }
-                            }
-                        )
+                SettingsToggleItem(
+                    title = "SMS Access",
+                    subtitle = "Allow reading and receiving SMS for auto-detection.",
+                    icon = Icons.Default.Message,
+                    checked = hasSmsPermission,
+                    onCheckedChange = {
+                        if (!hasSmsPermission) {
+                            permissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+                        }
                     }
                 )
-                ListItem(
-                    headlineContent = { Text("Enable Notifications") },
-                    supportingContent = { Text("Show an alert when a new transaction is detected.") },
-                    leadingContent = { Icon(Icons.Default.Notifications, contentDescription = null) },
-                    trailingContent = {
-                        Switch(
-                            checked = hasNotificationPermission,
-                            onCheckedChange = {
-                                if(!hasNotificationPermission) {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                            }
-                        )
+            }
+            item {
+                SettingsToggleItem(
+                    title = "Enable Notifications",
+                    subtitle = "Show an alert when a new transaction is detected.",
+                    icon = Icons.Default.Notifications,
+                    checked = hasNotificationPermission,
+                    onCheckedChange = {
+                        if(!hasNotificationPermission) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                     }
                 )
             }
 
-            // SMS Automation Section
+            // Data Management Section
+            item { SettingSectionHeader("Data Management") }
             item {
-                Divider(modifier = Modifier.padding(vertical = 16.dp))
-                Text("SMS Automation", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    SettingsActionItem(
+                        text = "Rescan SMS Inbox",
+                        icon = Icons.Default.Refresh,
                         onClick = {
                             if (hasSmsPermission) {
+                                viewModel.loadAndParseSms()
                                 navController.navigate("review_sms_screen")
                             } else {
                                 Toast.makeText(context, "Please grant SMS permission first.", Toast.LENGTH_SHORT).show()
                             }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.RateReview, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Review SMS")
-                    }
-                    OutlinedButton(
-                        onClick = { navController.navigate("sms_debug_screen") },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("SMS Debug")
-                    }
+                        }
+                    )
+                    SettingsActionItem(
+                        text = "Export Data",
+                        icon = Icons.Default.UploadFile,
+                        onClick = {
+                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                            val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
+                            fileSaverLauncher.launch(fileName)
+                        }
+                    )
+                    SettingsActionItem(
+                        text = "Import Data",
+                        icon = Icons.Default.Download,
+                        onClick = { /* To be implemented later */ }
+                    )
                 }
             }
-
-            // Data Management Section
-            item {
-                Divider(modifier = Modifier.padding(vertical = 16.dp))
-                Text("Data Management", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-                Button(
-                    onClick = {
-                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                        val date = sdf.format(Date())
-                        val fileName = "FinanceApp_Backup_$date.json"
-                        fileSaverLauncher.launch(fileName)
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Export All Data")
-                }
-            }
-
         }
+    }
+}
+
+@Composable
+private fun SettingSectionHeader(title: String) {
+    Text(
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 16.dp, end = 16.dp)
+    )
+    Divider()
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsToggleItem(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
+        leadingContent = { Icon(icon, contentDescription = null) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+        modifier = Modifier.padding(horizontal = 16.dp)
+    )
+}
+
+@Composable
+private fun SettingsActionItem(
+    text: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(text)
+        Spacer(Modifier.weight(1f))
     }
 }
