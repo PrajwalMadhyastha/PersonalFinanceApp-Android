@@ -210,6 +210,18 @@ fun SettingsScreen(
                 )
             }
 
+            item { SettingSectionHeader("Backup & Restore") }
+            item {
+                SettingsToggleItem(
+                    title = "Automatic Cloud Backup",
+                    subtitle = "Your data is automatically backed up to your Google Account.",
+                    icon = Icons.Default.CloudUpload,
+                    checked = true, // Always on, as it's handled by Android
+                    enabled = false, // User cannot disable this from the app
+                    onCheckedChange = {}
+                )
+            }
+
             // Data Management Section
             item { SettingSectionHeader("Data Management") }
             item {
@@ -278,7 +290,8 @@ private fun SettingsToggleItem(
     subtitle: String,
     icon: ImageVector,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     ListItem(
         headlineContent = { Text(title) },
