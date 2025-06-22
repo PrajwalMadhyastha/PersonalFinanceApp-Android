@@ -9,7 +9,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import kotlinx.coroutines.flow.map
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -45,6 +48,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -62,6 +66,7 @@ import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.PieData
+import androidx.navigation.navDeepLink
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
@@ -147,18 +152,47 @@ fun FinanceApp() {
             startDestination = BottomNavItem.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
+            // Primary Screens from Bottom Nav
             composable(BottomNavItem.Dashboard.route) { DashboardScreen(navController, dashboardViewModel, budgetViewModel) }
             composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, transactionViewModel) }
             composable(BottomNavItem.Reports.route) { ReportsScreen(navController, reportsViewModel) }
-            composable(BottomNavItem.Settings.route) { SettingsScreen(navController) }
+            composable(BottomNavItem.Settings.route) { SettingsScreen(navController, settingsViewModel) }
 
-            // Other secondary screens
+            // --- THIS WAS THE MISSING ROUTE CAUSING THE CRASH ---
+            composable("sms_debug_screen") { SmsDebugScreen(navController, settingsViewModel) }
+
+            // All other secondary screens
             composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
             composable("edit_transaction/{transactionId}", arguments = listOf(navArgument("transactionId") { type = NavType.IntType })) { backStackEntry ->
                 val transactionId = backStackEntry.arguments?.getInt("transactionId")
                 if (transactionId != null) { EditTransactionScreen(navController, transactionViewModel, transactionId) }
             }
             composable("account_list") { AccountListScreen(navController, accountViewModel) }
+            composable("add_account") { AddAccountScreen(navController, accountViewModel) }
+            composable(
+                "edit_account/{accountId}",
+                arguments = listOf(navArgument("accountId") { type = NavType.IntType })
+            ) { backStackEntry ->
+                val accountId = backStackEntry.arguments?.getInt("accountId")
+                if (accountId != null) { EditAccountScreen(navController, accountViewModel, accountId) }
+            }
+            composable(
+                "account_detail/{accountId}",
+                arguments = listOf(navArgument("accountId") { type = NavType.IntType })
+            ) { backStackEntry ->
+                val accountId = backStackEntry.arguments?.getInt("accountId")
+                if (accountId != null) { AccountDetailScreen(navController, accountViewModel, accountId) }
+            }
+            composable("budget_screen") { BudgetScreen(navController, budgetViewModel) }
+            composable("add_budget") { AddBudgetScreen(navController, budgetViewModel) }
+            composable("category_list") { CategoryListScreen(navController, categoryViewModel) }
+            composable(
+                "edit_category/{categoryId}",
+                arguments = listOf(navArgument("categoryId") { type = NavType.IntType })
+            ) { backStackEntry ->
+                val categoryId = backStackEntry.arguments?.getInt("categoryId")
+                if (categoryId != null) { EditCategoryScreen(navController, categoryViewModel, categoryId) }
+            }
         }
     }
 }
@@ -252,21 +286,22 @@ fun DashboardScreen(
 // --- Settings Screen ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(navController: NavController) {
-    val settingsViewModel: SettingsViewModel = viewModel()
+fun SettingsScreen(navController: NavController, viewModel: SettingsViewModel) {
     val context = LocalContext.current
-
     var hasSmsPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { isGranted ->
-            hasSmsPermission = isGranted
-            Toast.makeText(context, if (isGranted) "SMS Permission Granted!" else "SMS Permission Denied.", Toast.LENGTH_SHORT).show()
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        hasSmsPermission = isGranted
+        if (isGranted) {
+            Toast.makeText(context, "SMS Permission Granted!", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "SMS Permission Denied.", Toast.LENGTH_SHORT).show()
         }
-    )
+    }
 
     Scaffold(
         topBar = {
@@ -286,7 +321,7 @@ fun SettingsScreen(navController: NavController) {
             modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            val currentBudget by settingsViewModel.overallBudget.collectAsState()
+            val currentBudget by viewModel.overallBudget.collectAsState()
             var budgetInput by remember(currentBudget) { mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "") }
 
             Text("General", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
@@ -299,10 +334,7 @@ fun SettingsScreen(navController: NavController) {
                 leadingIcon = { Text("₹") }
             )
             Button(
-                onClick = {
-                    settingsViewModel.saveOverallBudget(budgetInput)
-                    Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show()
-                },
+                onClick = { viewModel.saveOverallBudget(budgetInput); Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show() },
                 modifier = Modifier.align(Alignment.End)
             ) { Text("Save Budget") }
 
@@ -316,14 +348,91 @@ fun SettingsScreen(navController: NavController) {
                 trailingContent = {
                     Switch(
                         checked = hasSmsPermission,
-                        onCheckedChange = {
-                            if (!hasSmsPermission) {
-                                permissionLauncher.launch(Manifest.permission.READ_SMS)
-                            }
-                        }
+                        onCheckedChange = { if (!hasSmsPermission) { permissionLauncher.launch(Manifest.permission.READ_SMS) } }
                     )
                 }
             )
+
+            Divider(modifier = Modifier.padding(vertical = 16.dp))
+
+            // --- NEW: Button to navigate to the debug screen ---
+            Text("Debugging", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+            Button(onClick = { navController.navigate("sms_debug_screen") }) {
+                Text("View Raw SMS Data")
+            }
+        }
+    }
+}
+
+// A simple composable to display a single SMS for testing purposes.
+@Composable
+fun SmsMessageItem(sms: SmsMessage) {
+    val date = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(sms.date))
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(sms.sender, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            Text(date, style = MaterialTheme.typography.labelSmall)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(sms.body, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel) {
+    val smsMessages by viewModel.smsMessages.collectAsState()
+    val context = LocalContext.current
+    val hasSmsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("SMS Debug Log") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
+            Button(
+                onClick = {
+                    if (hasSmsPermission) {
+                        viewModel.loadSmsMessages()
+                    } else {
+                        Toast.makeText(context, "Grant SMS permission in settings first.", Toast.LENGTH_LONG).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Load SMS Messages")
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            if (smsMessages.isEmpty() && hasSmsPermission) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No messages found, or tap 'Load' to refresh.")
+                }
+            } else if (!hasSmsPermission) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Permission not granted.", textAlign = TextAlign.Center)
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(smsMessages) { sms ->
+                        Card {
+                            Column(Modifier.padding(8.dp)) {
+                                Text(sms.sender, fontWeight = FontWeight.Bold)
+                                Text(sms.body, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
