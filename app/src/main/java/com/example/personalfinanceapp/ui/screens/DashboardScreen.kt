@@ -1,0 +1,124 @@
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.example.personalfinanceapp.BottomNavItem
+import com.example.personalfinanceapp.BudgetViewModel
+import com.example.personalfinanceapp.DashboardViewModel
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetWatchCard
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.NetWorthCard
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.OverallBudgetCard
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.RecentActivityCard
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.StatCard
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DashboardScreen(
+    navController: NavController,
+    viewModel: DashboardViewModel,
+    budgetViewModel: BudgetViewModel
+) {
+    val netWorth by viewModel.netWorth.collectAsState()
+    val monthlyIncome by viewModel.monthlyIncome.collectAsState()
+    val monthlyExpenses by viewModel.monthlyExpenses.collectAsState()
+    val overallBudget by viewModel.overallMonthlyBudget.collectAsState()
+    val safeToSpend by viewModel.safeToSpendPerDay.collectAsState()
+    val budgetStatus by viewModel.budgetStatus.collectAsState()
+    val recentTransactions by viewModel.recentTransactions.collectAsState()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Dashboard") },
+                actions = {
+                    IconButton(onClick = { navController.navigate(BottomNavItem.Settings.route) }) {
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Transaction")
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                OverallBudgetCard(
+                    totalBudget = overallBudget,
+                    amountSpent = monthlyExpenses.toFloat()
+                )
+            }
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatCard(label = "Monthly Income", amount = monthlyIncome.toFloat(), modifier = Modifier.weight(1f))
+                    StatCard(label = "Total Budget", amount = overallBudget, modifier = Modifier.weight(1f))
+                    StatCard(label = "Safe to Spend", amount = safeToSpend, modifier = Modifier.weight(1f), isPerDay = true)
+                }
+            }
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    FilledTonalButton(
+                        onClick = { navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }},
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Trends")
+                    }
+                    FilledTonalButton(
+                        onClick = { navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }},
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Categories")
+                    }
+                }
+            }
+            item { NetWorthCard(netWorth) }
+            item { RecentActivityCard(recentTransactions, navController) }
+            item { BudgetWatchCard(budgetStatus, budgetViewModel) }
+        }
+    }
+}
