@@ -2,11 +2,9 @@ package com.example.personalfinanceapp
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
-/**
- * Stores a user-defined mapping between an SMS sender address
- * and a clean merchant name. This acts as the app's "memory".
- */
+@Serializable
 @Entity(tableName = "merchant_mappings")
 data class MerchantMapping(
     @PrimaryKey

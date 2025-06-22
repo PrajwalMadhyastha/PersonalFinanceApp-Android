@@ -2,60 +2,43 @@ package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import android.widget.Toast
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.Account
-import com.example.personalfinanceapp.Category
-import com.example.personalfinanceapp.SettingsViewModel
-import com.example.personalfinanceapp.TransactionViewModel
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.PotentialTransactionItem
+import com.example.personalfinanceapp.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) {
+fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel = viewModel()) {
     val potentialTransactions by viewModel.potentialTransactions.collectAsState()
+    val context = LocalContext.current
+    LaunchedEffect(key1 = Unit) {
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+        if (hasPermission) {
+            Log.d("ReviewSmsScreen", "Permission granted. Calling loadAndParseSms().")
+            viewModel.loadAndParseSms()
+        } else {
+            Log.w("ReviewSmsScreen", "Navigated here, but READ_SMS permission is missing.")
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -63,7 +46,7 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) 
                 title = { Text("Review Potential Transactions") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -74,9 +57,9 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) 
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No transactions to review.", style = MaterialTheme.typography.titleMedium)
-                    Text("Go back to Settings to scan again.", style = MaterialTheme.typography.bodyMedium)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("No new transactions to review.", style = MaterialTheme.typography.titleMedium)
+                    Text("Go back to Settings and tap 'Review SMS' to scan again.", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                 }
             }
         } else {
@@ -97,7 +80,6 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) 
                         transaction = pt,
                         onDismiss = { viewModel.dismissPotentialTransaction(it) },
                         onApprove = {
-                            // --- UPDATED: Set the transaction for approval and navigate ---
                             viewModel.selectTransactionForApproval(it)
                             navController.navigate("approve_transaction_screen")
                         }
@@ -108,9 +90,186 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) 
     }
 }
 
+@Composable
+fun PotentialTransactionItem(
+    transaction: PotentialTransaction,
+    onDismiss: (PotentialTransaction) -> Unit,
+    onApprove: (PotentialTransaction) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            val amountColor = if (transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = transaction.merchantName ?: "Unknown Merchant",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "₹${"%.2f".format(transaction.amount)}",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = amountColor,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Type: ${transaction.transactionType.replaceFirstChar { it.uppercase() }}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Original Message: ${transaction.originalMessage}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                OutlinedButton(onClick = { onDismiss(transaction) }) {
+                    Text("Dismiss")
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { onApprove(transaction) }) {
+                    Text("Approve")
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel) {
+fun ApproveTransactionScreen(
+    navController: NavController,
+    settingsViewModel: SettingsViewModel = viewModel(),
+    transactionViewModel: TransactionViewModel = viewModel()
+) {
+    val potentialTransaction by settingsViewModel.selectedTransactionForApproval.collectAsState()
+
+    if (potentialTransaction == null) {
+        LaunchedEffect(Unit) {
+            navController.popBackStack()
+        }
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    var description by remember(potentialTransaction) { mutableStateOf(potentialTransaction?.merchantName ?: "Unknown Transaction") }
+    val amount = potentialTransaction?.amount?.toString() ?: "0.0"
+    var notes by remember { mutableStateOf("") }
+
+    val accounts by transactionViewModel.allAccounts.collectAsState(initial = emptyList())
+    var selectedAccount by remember { mutableStateOf<Account?>(null) }
+    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
+
+    val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Approve Transaction") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description / Merchant") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount, onValueChange = {}, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth()) }
+
+            item {
+                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedAccount?.name ?: "Select Account",
+                        onValueChange = {}, readOnly = true, label = { Text("Account") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
+                        accounts.forEach { account ->
+                            DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                                selectedAccount = account
+                                isAccountDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            item {
+                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedCategory?.name ?: "Select Category",
+                        onValueChange = {}, readOnly = true, label = { Text("Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                        categories.forEach { category ->
+                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                selectedCategory = category
+                                isCategoryDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+
+            item {
+                Button(
+                    onClick = {
+                        val trx = potentialTransaction!!
+                        settingsViewModel.saveMerchantMapping(trx.smsSender, description)
+                        val success = transactionViewModel.addTransaction(
+                            description = description,
+                            categoryId = selectedCategory?.id,
+                            amountStr = trx.amount.toString(),
+                            accountId = selectedAccount!!.id,
+                            notes = notes.takeIf { it.isNotBlank() },
+                            date = System.currentTimeMillis(),
+                            transactionType = trx.transactionType,
+                            sourceSmsId = trx.sourceSmsId
+                        )
+                        if (success) {
+                            settingsViewModel.dismissPotentialTransaction(trx)
+                            navController.popBackStack()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = selectedAccount != null && selectedCategory != null
+                ) {
+                    Text("Save Transaction")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel = viewModel()) {
     val smsMessages by viewModel.smsMessages.collectAsState()
     val context = LocalContext.current
     val hasSmsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
@@ -127,7 +286,7 @@ fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel) {
                 title = { Text("SMS Debug Log") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 }
             )
@@ -167,136 +326,6 @@ fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel) {
                             }
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ApproveTransactionScreen(
-    navController: NavController,
-    settingsViewModel: SettingsViewModel,
-    transactionViewModel: TransactionViewModel
-) {
-    val potentialTransaction by settingsViewModel.selectedTransactionForApproval.collectAsState()
-
-    // This screen is only useful if there's a transaction to approve.
-    // If not, it will just show a loading state or nothing, then navigate back.
-    if (potentialTransaction == null) {
-        LaunchedEffect(Unit) {
-            navController.popBackStack()
-        }
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-
-    // State for this screen's form
-    var description by remember { mutableStateOf(potentialTransaction?.merchantName ?: "Unknown Transaction") }
-    val amount = potentialTransaction?.amount?.toString() ?: "0.0"
-    var notes by remember { mutableStateOf("") }
-
-    val accounts by transactionViewModel.allAccounts.collectAsState(initial = emptyList())
-    var selectedAccount by remember { mutableStateOf<Account?>(null) }
-    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
-
-    val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
-    var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Approve Transaction") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, "Back")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier.padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = amount, onValueChange = {}, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth()) }
-
-            // Account Dropdown
-            item {
-                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
-                    OutlinedTextField(
-                        value = selectedAccount?.name ?: "Select Account",
-                        onValueChange = {}, readOnly = true, label = { Text("Account") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
-                        accounts.forEach { account ->
-                            DropdownMenuItem(text = { Text(account.name) }, onClick = {
-                                selectedAccount = account
-                                isAccountDropdownExpanded = false
-                            })
-                        }
-                    }
-                }
-            }
-
-            // Category Dropdown
-            item {
-                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
-                    OutlinedTextField(
-                        value = selectedCategory?.name ?: "Select Category",
-                        onValueChange = {}, readOnly = true, label = { Text("Category") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                        categories.forEach { category ->
-                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                selectedCategory = category
-                                isCategoryDropdownExpanded = false
-                            })
-                        }
-                    }
-                }
-            }
-
-            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
-
-            item {
-                Button(
-                    onClick = {
-                        val trx = potentialTransaction!!
-                        val finalNotes = if (notes.isNotBlank()) {
-                            "$notes\n\n(sms_id:${trx.sourceSmsId})"
-                        } else {
-                            "(sms_id:${trx.sourceSmsId})"
-                        }
-                        settingsViewModel.saveMerchantMapping(trx.smsSender, description)
-                        val success = transactionViewModel.addTransaction(
-                            description = description,
-                            categoryId = selectedCategory?.id,
-                            amountStr = trx.amount.toString(),
-                            accountId = selectedAccount!!.id,
-                            notes = notes.takeIf { it.isNotBlank() },
-                            date = System.currentTimeMillis(), // Use current time for simplicity
-                            transactionType = trx.transactionType
-                        )
-                        if (success) {
-                            settingsViewModel.dismissPotentialTransaction(trx)
-                            navController.popBackStack()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = selectedAccount != null && selectedCategory != null
-                ) {
-                    Text("Save Transaction")
                 }
             }
         }

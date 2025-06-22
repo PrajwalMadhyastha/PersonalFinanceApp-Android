@@ -184,7 +184,8 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                             accountId = selectedAccount!!.id,
                             notes = notes.takeIf { it.isNotBlank() },
                             date = selectedDateTime.timeInMillis,
-                            transactionType = transactionType
+                            transactionType = transactionType,
+                            sourceSmsId = null
                         )
                         if (success) {
                             navController.popBackStack()

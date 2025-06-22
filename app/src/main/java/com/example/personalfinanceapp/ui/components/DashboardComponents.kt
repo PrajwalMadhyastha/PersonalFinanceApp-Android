@@ -293,38 +293,6 @@ fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
 //    )
 //}
 
-// --- NEW: A "More" screen for navigating to management pages ---
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MoreScreen(navController: NavController) {
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("More Options") })
-        }
-    ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding)) {
-            ListItem(
-                headlineContent = { Text("Manage Accounts") },
-                leadingContent = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
-                modifier = Modifier.clickable { navController.navigate("account_list") }
-            )
-            Divider()
-            ListItem(
-                headlineContent = { Text("Manage Categories") },
-                leadingContent = { Icon(Icons.Default.Category, contentDescription = null) },
-                modifier = Modifier.clickable { navController.navigate("category_list") }
-            )
-            Divider()
-            ListItem(
-                headlineContent = { Text("Manage Budgets") },
-                leadingContent = { Icon(Icons.Default.Assessment, contentDescription = null) },
-                modifier = Modifier.clickable { navController.navigate("budget_screen") }
-            )
-            Divider()
-        }
-    }
-}
-
 @Composable
 fun NetWorthCard(netWorth: Double) {
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {

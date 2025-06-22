@@ -4,7 +4,9 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(
     tableName = "transactions",
     indices = [
@@ -38,5 +40,6 @@ data class Transaction(
     val notes: String?,
 
     // --- NEW: Added to distinguish between income and expense ---
-    val transactionType: String = "expense" // Default to 'expense'
+    val transactionType: String = "expense", // Default to 'expense'
+    val sourceSmsId: Long? = null
 )

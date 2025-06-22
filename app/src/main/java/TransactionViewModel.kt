@@ -36,7 +36,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
-    // --- UPDATED: Now accepts transactionType ---
+    // --- UPDATED: Now accepts sourceSmsId ---
     fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -44,14 +44,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         accountId: Int,
         notes: String?,
         date: Long,
-        transactionType: String // New parameter
+        transactionType: String,
+        sourceSmsId: Long? // New parameter
     ): Boolean {
         if (description.isBlank()) {
             _validationError.value = "Description cannot be empty."
             return false
         }
         val amount = amountStr.toDoubleOrNull()
-        if (amount == null || amount <= 0.0) { // Amount must be positive
+        if (amount == null || amount <= 0.0) {
             _validationError.value = "Please enter a valid, positive amount."
             return false
         }
@@ -59,16 +60,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         val newTransaction = Transaction(
             description = description,
             categoryId = categoryId,
-            amount = amount, // Amount is now always positive
+            amount = amount,
             date = date,
             accountId = accountId,
             notes = notes,
-            transactionType = transactionType // Set the type
+            transactionType = transactionType,
+            sourceSmsId = sourceSmsId // Pass the ID to the constructor
         )
         viewModelScope.launch {
             transactionRepository.insert(newTransaction)
         }
-        _validationError.value = null // Clear error on success
+        _validationError.value = null
         return true
     }
 

@@ -10,6 +10,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -100,4 +101,5 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 }

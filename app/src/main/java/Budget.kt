@@ -2,7 +2,9 @@ package com.example.personalfinanceapp
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(tableName = "budgets")
 data class Budget(
     @PrimaryKey(autoGenerate = true)

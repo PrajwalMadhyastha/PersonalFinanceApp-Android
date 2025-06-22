@@ -24,4 +24,7 @@ interface BudgetDao {
     // This query is more efficient as it performs the calculation in the database.
     @Query("SELECT SUM(amount) FROM transactions WHERE categoryId = (SELECT id FROM categories WHERE name = :categoryName) AND strftime('%m', date / 1000, 'unixepoch') + 0 = :month AND strftime('%Y', date / 1000, 'unixepoch') + 0 = :year AND transactionType = 'expense'")
     fun getActualSpendingForCategory(categoryName: String, month: Int, year: Int): Flow<Double?>
+
+    @Query("SELECT * FROM budgets")
+    fun getAllBudgets(): Flow<List<Budget>>
 }

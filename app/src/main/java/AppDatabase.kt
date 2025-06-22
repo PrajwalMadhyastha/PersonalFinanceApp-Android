@@ -11,10 +11,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-// --- UPDATED: Add MerchantMapping to entities and increment version to 3 ---
+// --- UPDATED: Version incremented to 4 ---
 @Database(
     entities = [Transaction::class, Account::class, Category::class, Budget::class, MerchantMapping::class],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -23,13 +23,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
     abstract fun categoryDao(): CategoryDao
     abstract fun budgetDao(): BudgetDao
-    // --- NEW: Add the abstract function for the new DAO ---
     abstract fun merchantMappingDao(): MerchantMappingDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        // Migration from 1 to 2: Add transactionType
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN transactionType TEXT NOT NULL DEFAULT 'expense'")
@@ -38,10 +38,9 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: The migration logic from version 2 to 3 ---
+        // Migration from 2 to 3: Add merchant_mappings table
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Create the new merchant_mappings table
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `merchant_mappings` (
                         `smsSender` TEXT NOT NULL, 
@@ -52,6 +51,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration from 3 to 4 to add the sourceSmsId column ---
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN sourceSmsId INTEGER")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -59,8 +65,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "finance_database"
                 )
-                    // --- UPDATED: Add both migrations to the builder ---
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    // --- UPDATED: Add all migrations, including the new MIGRATION_3_4 ---
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .addCallback(DatabaseCallback(context))
                     .build()
                 INSTANCE = instance
