@@ -69,6 +69,7 @@ fun SettingsScreen(
     ) { isGranted ->
         hasNotificationPermission = isGranted
     }
+    var showImportConfirmDialog by remember { mutableStateOf(false) }
 
     val fileSaverLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
@@ -87,6 +88,22 @@ fun SettingsScreen(
                         }
                     } else {
                         Toast.makeText(context, "Error exporting data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    val success = DataExportService.importDataFromJson(context, it)
+                    if (success) {
+                        Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -200,14 +217,7 @@ fun SettingsScreen(
                     SettingsActionItem(
                         text = "Rescan SMS Inbox",
                         icon = Icons.Default.Refresh,
-                        onClick = {
-                            if (hasSmsPermission) {
-                                viewModel.loadAndParseSms()
-                                navController.navigate("review_sms_screen")
-                            } else {
-                                Toast.makeText(context, "Please grant SMS permission first.", Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                        onClick = { /* ... */ }
                     )
                     SettingsActionItem(
                         text = "Export Data",
@@ -221,11 +231,32 @@ fun SettingsScreen(
                     SettingsActionItem(
                         text = "Import Data",
                         icon = Icons.Default.Download,
-                        onClick = { /* To be implemented later */ }
+                        onClick = { showImportConfirmDialog = true } // Show confirmation dialog
                     )
                 }
             }
         }
+    }
+
+    // --- NEW: Confirmation Dialog for Data Import ---
+    if (showImportConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportConfirmDialog = false },
+            title = { Text("Import Data?") },
+            text = { Text("This will delete all current data and replace it with the data from your backup file. This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showImportConfirmDialog = false
+                        // Launch the file picker
+                        filePickerLauncher.launch(arrayOf("application/json"))
+                    }
+                ) { Text("Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportConfirmDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 }
 

@@ -6,14 +6,19 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Data Access Object for the merchant_mappings table.
- */
 @Dao
 interface MerchantMappingDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(mapping: MerchantMapping)
+
+    // --- NEW: Function to insert a list of mappings during import ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(mappings: List<MerchantMapping>)
+
+    // --- NEW: Function to clear the table during import ---
+    @Query("DELETE FROM merchant_mappings")
+    suspend fun deleteAll()
 
     @Query("SELECT * FROM merchant_mappings")
     fun getAllMappings(): Flow<List<MerchantMapping>>

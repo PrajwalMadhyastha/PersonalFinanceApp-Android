@@ -1,55 +1,82 @@
 package com.example.personalfinanceapp
 
 import android.content.Context
+import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/**
- * A service class responsible for exporting user data to a JSON format.
- */
 object DataExportService {
 
-    // Configure the JSON encoder for pretty printing
-    private val json = Json { prettyPrint = true }
+    private val json = Json { prettyPrint = true; isLenient = true; ignoreUnknownKeys = true }
 
-    /**
-     * Gathers all data from the database and encodes it into a JSON string.
-     * This operation is performed on a background thread.
-     *
-     * @param context The application context to access the database.
-     * @return A String containing all app data in JSON format, or null on error.
-     */
     suspend fun exportToJsonString(context: Context): String? {
         return withContext(Dispatchers.IO) {
             try {
                 val db = AppDatabase.getInstance(context)
 
-                // Fetch all data from each table
-                val transactions = db.transactionDao().getAllTransactionsSimple().first()
-                val accounts = db.accountDao().getAllAccounts().first()
-                val categories = db.categoryDao().getAllCategories().first()
-                val budgets = db.budgetDao().getAllBudgets().first() // A new DAO method is needed here
-                val mappings = db.merchantMappingDao().getAllMappings().first()
-
-                // Assemble the backup data object
                 val backupData = AppDataBackup(
-                    transactions = transactions,
-                    accounts = accounts,
-                    categories = categories,
-                    budgets = budgets,
-                    merchantMappings = mappings
+                    transactions = db.transactionDao().getAllTransactionsSimple().first(),
+                    accounts = db.accountDao().getAllAccounts().first(),
+                    categories = db.categoryDao().getAllCategories().first(),
+                    budgets = db.budgetDao().getAllBudgets().first(),
+                    merchantMappings = db.merchantMappingDao().getAllMappings().first()
                 )
 
-                // Encode the data object into a JSON string
                 json.encodeToString(backupData)
-
             } catch (e: Exception) {
-                // Log the error in a real app
                 e.printStackTrace()
                 null
+            }
+        }
+    }
+
+    /**
+     * NEW: Wipes the entire database and restores it from a JSON backup.
+     * @param context The application context.
+     * @param uri The URI of the JSON file selected by the user.
+     * @return True if successful, false otherwise.
+     */
+    suspend fun importDataFromJson(context: Context, uri: Uri): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Step 1: Read the JSON content from the file URI
+                val jsonString = context.contentResolver.openInputStream(uri)?.bufferedReader().use { it?.readText() }
+                if (jsonString == null) {
+                    return@withContext false
+                }
+
+                // Step 2: Parse the JSON into our backup data class
+                val backupData = json.decodeFromString<AppDataBackup>(jsonString)
+
+                // Step 3: Get database instance and DAOs
+                val db = AppDatabase.getInstance(context)
+                val transactionDao = db.transactionDao()
+                val accountDao = db.accountDao()
+                val categoryDao = db.categoryDao()
+                val budgetDao = db.budgetDao()
+                val merchantMappingDao = db.merchantMappingDao()
+
+                // Step 4: WIPE ALL EXISTING DATA
+                transactionDao.deleteAll()
+                accountDao.deleteAll()
+                categoryDao.deleteAll()
+                budgetDao.deleteAll()
+                merchantMappingDao.deleteAll()
+
+                // Step 5: Insert all the data from the backup
+                accountDao.insertAll(backupData.accounts)
+                categoryDao.insertAll(backupData.categories)
+                budgetDao.insertAll(backupData.budgets)
+                merchantMappingDao.insertAll(backupData.merchantMappings)
+                transactionDao.insertAll(backupData.transactions)
+
+                true // Return success
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false // Return failure
             }
         }
     }
