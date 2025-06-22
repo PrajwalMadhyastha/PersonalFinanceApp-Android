@@ -408,7 +408,10 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) 
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No potential transactions found.\nGo back and ensure SMS permission is granted.", textAlign = TextAlign.Center)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("No transactions to review.", style = MaterialTheme.typography.titleMedium)
+                    Text("Go back to Settings to scan again.", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         } else {
             LazyColumn(
@@ -424,7 +427,11 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) 
                     )
                 }
                 items(potentialTransactions) { pt ->
-                    PotentialTransactionItem(pt)
+                    PotentialTransactionItem(
+                        transaction = pt,
+                        onDismiss = { viewModel.dismissPotentialTransaction(it) },
+                        onApprove = { /* Logic to be added later */ }
+                    )
                 }
             }
         }
@@ -433,7 +440,11 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) 
 
 // --- NEW: Composable for a single potential transaction item ---
 @Composable
-fun PotentialTransactionItem(transaction: PotentialTransaction) {
+fun PotentialTransactionItem(
+    transaction: PotentialTransaction,
+    onDismiss: (PotentialTransaction) -> Unit,
+    onApprove: (PotentialTransaction) -> Unit
+) {
     Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             val amountColor = if (transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
@@ -465,6 +476,21 @@ fun PotentialTransactionItem(transaction: PotentialTransaction) {
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+
+            Spacer(Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                OutlinedButton(onClick = { onDismiss(transaction) }) {
+                    Text("Dismiss")
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { onApprove(transaction) }) {
+                    Text("Approve")
+                }
+            }
         }
     }
 }

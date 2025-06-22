@@ -22,14 +22,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val overallBudget: StateFlow<Float>
 
-    // StateFlow for raw SMS messages (for debug screen)
     private val _smsMessages = MutableStateFlow<List<SmsMessage>>(emptyList())
     val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
 
-    // --- NEW: StateFlow for parsed transactions ---
     private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
     val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
-
 
     init {
         settingsRepository = SettingsRepository(application)
@@ -46,14 +43,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         settingsRepository.saveOverallBudgetForCurrentMonth(amount)
     }
 
-    /**
-     * Loads SMS messages and then parses them to find potential transactions.
-     * Updates both the raw SMS list and the potential transactions list.
-     */
     fun loadAndParseSms() {
         val context = getApplication<Application>().applicationContext
 
-        // Ensure permission is granted before proceeding
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             _smsMessages.value = emptyList()
             _potentialTransactions.value = emptyList()
@@ -61,7 +53,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            // Step 1: Fetch raw SMS messages on an I/O thread
             val rawMessages = withContext(Dispatchers.IO) {
                 val messageList = mutableListOf<SmsMessage>()
                 val projection = arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE)
@@ -70,7 +61,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     projection,
                     null,
                     null,
-                    "${Telephony.Sms.DATE} DESC LIMIT 200" // Limit for performance
+                    "${Telephony.Sms.DATE} DESC LIMIT 200"
                 )
 
                 cursor?.use { c ->
@@ -91,16 +82,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 messageList
             }
 
-            // Update the raw messages StateFlow (for the debug screen)
             _smsMessages.value = rawMessages
 
-            // Step 2: Parse the messages on a computational thread
             val parsedList = withContext(Dispatchers.Default) {
                 rawMessages.mapNotNull { SmsParser.parse(it.body) }
             }
 
-            // Step 3: Update the potential transactions StateFlow
             _potentialTransactions.value = parsedList
         }
+    }
+
+    /**
+     * Removes a potential transaction from the review list.
+     * @param transaction The item to be removed.
+     */
+    fun dismissPotentialTransaction(transaction: PotentialTransaction) {
+        val currentList = _potentialTransactions.value.toMutableList()
+        currentList.remove(transaction)
+        _potentialTransactions.value = currentList
     }
 }
