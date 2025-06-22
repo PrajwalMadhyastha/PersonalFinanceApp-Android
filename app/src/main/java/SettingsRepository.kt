@@ -21,6 +21,7 @@ class SettingsRepository(context: Context) {
     companion object {
         private const val PREF_NAME = "finance_app_settings"
         private const val KEY_BUDGET_PREFIX = "overall_budget_"
+        private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
     }
 
     /**
@@ -53,6 +54,28 @@ class SettingsRepository(context: Context) {
      *
      * @return A Flow that emits the budget amount (Float). Defaults to 0f if not set.
      */
+
+    fun saveAppLockEnabled(isEnabled: Boolean) {
+        prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, isEnabled).apply()
+    }
+
+    // --- NEW: Flow to read the app lock preference ---
+    fun getAppLockEnabled(): Flow<Boolean> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_APP_LOCK_ENABLED) {
+                    trySend(sharedPreferences.getBoolean(KEY_APP_LOCK_ENABLED, false))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getBoolean(KEY_APP_LOCK_ENABLED, false))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+    fun isAppLockEnabledBlocking(): Boolean {
+        return prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
+    }
+
     fun getOverallBudgetForCurrentMonth(): Flow<Float> {
         val calendar = Calendar.getInstance()
         val year = calendar.get(Calendar.YEAR)

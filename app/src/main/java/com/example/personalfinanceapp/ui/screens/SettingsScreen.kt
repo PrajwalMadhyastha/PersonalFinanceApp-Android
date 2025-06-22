@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material3.Button
@@ -38,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,26 +47,39 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.example.personalfinanceapp.SettingsRepository
 import com.example.personalfinanceapp.SettingsViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(navController: NavController, viewModel: SettingsViewModel) {
+fun SettingsScreen(
+    navController: NavController,
+    viewModel: SettingsViewModel = viewModel() // CORRECTED: ViewModel is now a parameter
+) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val settingsRepository = remember { SettingsRepository(context) }
+    val isAppLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = false)
+
     var hasSmsPermission by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_SMS
+            ) == PackageManager.PERMISSION_GRANTED
+        )
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        contract = ActivityResultContracts.RequestPermission(),
     ) { isGranted: Boolean ->
         hasSmsPermission = isGranted
-        if (isGranted) {
-            Toast.makeText(context, "SMS Permission Granted!", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(context, "SMS Permission Denied.", Toast.LENGTH_SHORT).show()
-        }
+        val message = if (isGranted) "SMS Permission Granted!" else "SMS Permission Denied."
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
     Scaffold(
@@ -82,11 +97,17 @@ fun SettingsScreen(navController: NavController, viewModel: SettingsViewModel) {
         }
     ) { innerPadding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // General Settings Section
             val currentBudget by viewModel.overallBudget.collectAsState()
-            var budgetInput by remember(currentBudget) { mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "") }
+            var budgetInput by remember(currentBudget) {
+                mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "")
+            }
 
             Text("General", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
             OutlinedTextField(
@@ -98,12 +119,34 @@ fun SettingsScreen(navController: NavController, viewModel: SettingsViewModel) {
                 leadingIcon = { Text("₹") }
             )
             Button(
-                onClick = { viewModel.saveOverallBudget(budgetInput); Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show() },
+                onClick = {
+                    viewModel.saveOverallBudget(budgetInput)
+                    Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show()
+                },
                 modifier = Modifier.align(Alignment.End)
             ) { Text("Save Budget") }
 
+            // Security Settings Section
             Divider(modifier = Modifier.padding(vertical = 16.dp))
+            Text("Security", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+            ListItem(
+                headlineContent = { Text("Enable App Lock") },
+                supportingContent = { Text("Use biometrics or screen lock to secure the app.") },
+                leadingContent = { Icon(Icons.Default.Lock, contentDescription = null) },
+                trailingContent = {
+                    Switch(
+                        checked = isAppLockEnabled,
+                        onCheckedChange = { isEnabled ->
+                            scope.launch {
+                                settingsRepository.saveAppLockEnabled(isEnabled)
+                            }
+                        }
+                    )
+                }
+            )
 
+            // Permissions Section
+            Divider(modifier = Modifier.padding(vertical = 16.dp))
             Text("Permissions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
             ListItem(
                 headlineContent = { Text("Read SMS for Transactions") },
@@ -112,14 +155,13 @@ fun SettingsScreen(navController: NavController, viewModel: SettingsViewModel) {
                 trailingContent = {
                     Switch(
                         checked = hasSmsPermission,
-                        onCheckedChange = { if (!hasSmsPermission) { permissionLauncher.launch(
-                            Manifest.permission.READ_SMS) } }
+                        onCheckedChange = { if (!hasSmsPermission) { permissionLauncher.launch(Manifest.permission.READ_SMS) } }
                     )
                 }
             )
 
+            // SMS Automation Section
             Divider(modifier = Modifier.padding(vertical = 16.dp))
-
             Text("SMS Automation", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(

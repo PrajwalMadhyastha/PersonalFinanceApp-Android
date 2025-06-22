@@ -1,9 +1,10 @@
 package com.example.personalfinanceapp
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -11,6 +12,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -18,23 +23,10 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.AccountListScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.AddTransactionScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.DashboardScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.EditAccountScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.EditTransactionScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.ReportsScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.ReviewSmsScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.SettingsScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.SmsDebugScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.TransactionListScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.AddAccountScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.AccountDetailScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.BudgetScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.AddBudgetScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.ApproveTransactionScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.CategoryListScreen
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.EditCategoryScreen
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.*
+import kotlinx.coroutines.launch
+import androidx.compose.ui.Alignment
+import androidx.biometric.BiometricPrompt // Add this line
 
 
 // --- Navigation Destinations ---
@@ -45,14 +37,112 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
     object Settings : BottomNavItem("settings_screen", Icons.Filled.Settings, "Settings")
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() { // Must be AppCompatActivity or FragmentActivity for Biometrics
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             PersonalFinanceAppTheme {
-                FinanceApp()
+                FinanceAppWithLockScreen()
             }
+        }
+    }
+}
+
+@Composable
+fun FinanceAppWithLockScreen() {
+    val context = LocalContext.current
+    val settingsRepository = remember { SettingsRepository(context) }
+
+    // Use a coroutine scope to read the initial value from SharedPreferences
+    val scope = rememberCoroutineScope()
+    val initialLockState = remember { mutableStateOf<Boolean?>(null) }
+
+    LaunchedEffect(key1 = Unit) {
+        scope.launch {
+            // Read the setting once on startup.
+            initialLockState.value = settingsRepository.isAppLockEnabledBlocking()
+        }
+    }
+
+    val isAppLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = initialLockState.value ?: false)
+    var isLocked by remember(isAppLockEnabled) { mutableStateOf(isAppLockEnabled) }
+
+    // This effect ensures that if the user toggles the lock off while the app is open, it unlocks.
+    LaunchedEffect(isAppLockEnabled) {
+        if (!isAppLockEnabled) {
+            isLocked = false
+        }
+    }
+
+    if (initialLockState.value == null) {
+        // Show a loading screen while reading initial settings
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+    } else if (isLocked) {
+        LockScreen(
+            onUnlock = {
+                isLocked = false
+            }
+        )
+    } else {
+        FinanceApp()
+    }
+}
+
+
+// --- Screen to display while app is locked ---
+@Composable
+fun LockScreen(onUnlock: () -> Unit) {
+    val context = LocalContext.current
+    val activity = LocalContext.current as FragmentActivity
+    val executor = remember { ContextCompat.getMainExecutor(context) }
+
+    val promptInfo = remember {
+        BiometricPrompt.PromptInfo.Builder()
+            .setTitle("App Locked")
+            .setSubtitle("Authenticate to access your finances")
+            .setNegativeButtonText("Cancel")
+            .build()
+    }
+
+    val biometricPrompt = remember {
+        BiometricPrompt(activity, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    onUnlock() // This sets isLocked to false
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    // Don't show toast for user cancellation
+                    if (errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON && errorCode != BiometricPrompt.ERROR_USER_CANCELED) {
+                        Toast.makeText(context, "Authentication error: $errString", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    Toast.makeText(context, "Authentication failed", Toast.LENGTH_SHORT).show()
+                }
+            })
+    }
+
+    // Automatically trigger the prompt when the LockScreen is shown
+    LaunchedEffect(Unit) {
+        biometricPrompt.authenticate(promptInfo)
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Button(onClick = { biometricPrompt.authenticate(promptInfo) }) {
+            Icon(Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Unlock App")
         }
     }
 }
