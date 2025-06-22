@@ -11,9 +11,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
+// --- UPDATED: Add MerchantMapping to entities and increment version to 3 ---
 @Database(
-    entities = [Transaction::class, Account::class, Category::class, Budget::class],
-    version = 2,
+    entities = [Transaction::class, Account::class, Category::class, Budget::class, MerchantMapping::class],
+    version = 3,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -22,6 +23,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
     abstract fun categoryDao(): CategoryDao
     abstract fun budgetDao(): BudgetDao
+    // --- NEW: Add the abstract function for the new DAO ---
+    abstract fun merchantMappingDao(): MerchantMappingDao
 
     companion object {
         @Volatile
@@ -35,6 +38,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: The migration logic from version 2 to 3 ---
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Create the new merchant_mappings table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `merchant_mappings` (
+                        `smsSender` TEXT NOT NULL, 
+                        `merchantName` TEXT NOT NULL, 
+                        PRIMARY KEY(`smsSender`)
+                    )
+                """.trimIndent())
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -42,7 +59,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "finance_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    // --- UPDATED: Add both migrations to the builder ---
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .addCallback(DatabaseCallback(context))
                     .build()
                 INSTANCE = instance
@@ -74,9 +92,9 @@ abstract class AppDatabase : RoomDatabase() {
 
                 // --- 1. Populate Accounts ---
                 accountDao.insertAll(listOf(
-                    Account(id = 1, name = "Savings Account", type = "Bank"),
-                    Account(id = 2, name = "Credit Card", type = "Credit"),
-                    Account(id = 3, name = "Cash Wallet", type = "Wallet")
+                    Account(id = 1, name = "SBI", type = "Savings"),
+                    Account(id = 2, name = "HDFC", type = "Credit Card"),
+                    Account(id = 3, name = "ICICI", type = "Savings")
                 ))
 
                 // --- 2. Populate Categories ---
@@ -84,8 +102,8 @@ abstract class AppDatabase : RoomDatabase() {
                     Category(id = 1, name = "Salary"),
                     Category(id = 2, name = "Groceries"),
                     Category(id = 3, name = "Rent"),
-                    Category(id = 4, name = "Dining Out"),
-                    Category(id = 5, name = "Freelance Income"),
+                    Category(id = 4, name = "Food"),
+                    Category(id = 5, name = "Transportation"),
                     Category(id = 6, name = "Utilities")
                 ))
 
@@ -109,7 +127,7 @@ abstract class AppDatabase : RoomDatabase() {
                     Transaction(description = "Dinner with friends", categoryId = 4, amount = 1200.0, date = expenseDate2, accountId = 2, notes = null, transactionType = "expense"),
                     // A transaction from last month to test reports
                     Transaction(description = "Apartment Rent", categoryId = 3, amount = 25000.0, date = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis, accountId = 1, notes = "Monthly rent payment", transactionType = "expense"),
-                    Transaction(description = "Freelance Project", categoryId = 5, amount = 15000.0, date = Calendar.getInstance().apply{ add(Calendar.DAY_OF_MONTH, -2)}.timeInMillis, accountId = 1, notes = "Logo design", transactionType = "income"),
+                    Transaction(description = "Bus", categoryId = 5, amount = 150.0, date = Calendar.getInstance().apply{ add(Calendar.DAY_OF_MONTH, -2)}.timeInMillis, accountId = 1, notes = "Travel", transactionType = "expense"),
                     Transaction(description = "Electricity Bill", categoryId = 6, amount = 850.0, date = Calendar.getInstance().apply{ add(Calendar.DAY_OF_MONTH, -1)}.timeInMillis, accountId = 3, notes = "Power bill", transactionType = "expense")
                 ))
 
@@ -119,7 +137,7 @@ abstract class AppDatabase : RoomDatabase() {
 
                 budgetDao.insertAll(listOf(
                     Budget(categoryName = "Groceries", amount = 10000.0, month = month, year = year),
-                    Budget(categoryName = "Dining Out", amount = 5000.0, month = month, year = year),
+                    Budget(categoryName = "Food", amount = 5000.0, month = month, year = year),
                     Budget(categoryName = "Utilities", amount = 2000.0, month = month, year = year)
                 ))
             }

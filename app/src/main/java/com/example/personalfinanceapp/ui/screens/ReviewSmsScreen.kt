@@ -273,6 +273,12 @@ fun ApproveTransactionScreen(
                 Button(
                     onClick = {
                         val trx = potentialTransaction!!
+                        val finalNotes = if (notes.isNotBlank()) {
+                            "$notes\n\n(sms_id:${trx.sourceSmsId})"
+                        } else {
+                            "(sms_id:${trx.sourceSmsId})"
+                        }
+                        settingsViewModel.saveMerchantMapping(trx.smsSender, description)
                         val success = transactionViewModel.addTransaction(
                             description = description,
                             categoryId = selectedCategory?.id,

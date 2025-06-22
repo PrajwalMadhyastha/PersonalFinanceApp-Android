@@ -22,6 +22,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val settingsRepository: SettingsRepository
     // --- NEW: Add dependency on TransactionRepository to check for duplicates ---
     private val transactionRepository: TransactionRepository
+    private val merchantMappingRepository: MerchantMappingRepository
 
     val overallBudget: StateFlow<Float>
 
@@ -40,6 +41,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         settingsRepository = SettingsRepository(application)
         // --- NEW: Initialize TransactionRepository ---
         transactionRepository = TransactionRepository(db.transactionDao())
+        merchantMappingRepository = MerchantMappingRepository(db.merchantMappingDao())
 
         overallBudget = settingsRepository.getOverallBudgetForCurrentMonth()
             .stateIn(
@@ -56,64 +58,63 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun loadAndParseSms() {
         val context = getApplication<Application>().applicationContext
-
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             _potentialTransactions.value = emptyList()
             return
         }
 
         viewModelScope.launch {
-            // Step 1: Fetch raw SMS messages
-            val rawMessages = withContext(Dispatchers.IO) {
-                // ... (SMS fetching logic remains the same) ...
-                val messageList = mutableListOf<SmsMessage>()
-                val projection = arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE)
-                val cursor = context.contentResolver.query(
-                    Telephony.Sms.Inbox.CONTENT_URI,
-                    projection,
-                    null,
-                    null,
-                    "${Telephony.Sms.DATE} DESC LIMIT 200"
-                )
+            val existingMappings = withContext(Dispatchers.IO) {
+                merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
+            }
+            // Step 1: Get IDs of already imported SMS messages from our DB
+            val existingSmsIds = withContext(Dispatchers.IO) {
+                transactionRepository.allTransactions.first()
+                    .mapNotNull { transactionDetail ->
+                        // Extract the ID from the notes field
+                        transactionDetail.transaction.notes?.let { notes ->
+                            val match = "sms_id:(\\d+)".toRegex().find(notes)
+                            match?.groups?.get(1)?.value?.toLongOrNull()
+                        }
+                    }.toSet() // Use a Set for efficient lookup
+            }
 
+            // Step 2: Fetch raw SMS messages from the device
+            val rawMessages = withContext(Dispatchers.IO) {
+                val messageList = mutableListOf<SmsMessage>()
+                val projection = arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE)
+                val cursor = context.contentResolver.query(
+                    Telephony.Sms.Inbox.CONTENT_URI, projection, null, null, "${Telephony.Sms.DATE} DESC LIMIT 200"
+                )
                 cursor?.use { c ->
+                    val idIndex = c.getColumnIndexOrThrow(Telephony.Sms._ID)
                     val addressIndex = c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
                     val bodyIndex = c.getColumnIndexOrThrow(Telephony.Sms.BODY)
                     val dateIndex = c.getColumnIndexOrThrow(Telephony.Sms.DATE)
-
                     while (c.moveToNext()) {
-                        messageList.add(
-                            SmsMessage(
-                                sender = c.getString(addressIndex),
-                                body = c.getString(bodyIndex),
-                                date = c.getLong(dateIndex)
-                            )
-                        )
+                        val smsId = c.getLong(idIndex)
+                        // --- Step 3: The De-duplication ---
+                        // Only add the message if its ID is not in our set of imported IDs
+                        if (!existingSmsIds.contains(smsId)) {
+                            messageList.add(SmsMessage(id = smsId, sender = c.getString(addressIndex), body = c.getString(bodyIndex), date = c.getLong(dateIndex)))
+                        }
                     }
                 }
                 messageList
             }
-            _smsMessages.value = rawMessages
 
-            // Step 2: Parse all fetched messages
+            // Step 4: Parse the filtered, new messages
             val parsedList = withContext(Dispatchers.Default) {
-                rawMessages.mapNotNull { SmsParser.parse(it.body) }
+                rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
             }
 
-            // --- NEW: Step 3: Filter out duplicates ---
-            val existingTransactions = transactionRepository.allTransactions.first() // Get current list from db
-            val newPotentialTransactions = parsedList.filter { potential ->
-                // A transaction is considered a duplicate if we find one in the DB
-                // with the same amount and a description that matches the parsed merchant name.
-                // This is a simple heuristic and can be improved later.
-                existingTransactions.none { existing ->
-                    val descriptionMatch = existing.transaction.description == potential.merchantName
-                    val amountMatch = existing.transaction.amount == potential.amount
-                    descriptionMatch && amountMatch
-                }
-            }
+            _potentialTransactions.value = parsedList
+        }
+    }
 
-            _potentialTransactions.value = newPotentialTransactions
+    fun saveMerchantMapping(sender: String, merchantName: String) = viewModelScope.launch(Dispatchers.IO) {
+        if(sender.isNotBlank() && merchantName.isNotBlank()){
+            merchantMappingRepository.insert(MerchantMapping(smsSender = sender, merchantName = merchantName))
         }
     }
 

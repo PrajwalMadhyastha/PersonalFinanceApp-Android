@@ -10,6 +10,8 @@ package com.example.personalfinanceapp
  * @param originalMessage The original SMS body, for reference and debugging.
  */
 data class PotentialTransaction(
+    val sourceSmsId: Long,
+    val smsSender: String,
     val amount: Double,
     val transactionType: String,
     val merchantName: String?,
