@@ -157,6 +157,7 @@ fun FinanceApp() {
             composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, transactionViewModel) }
             composable(BottomNavItem.Reports.route) { ReportsScreen(navController, reportsViewModel) }
             composable(BottomNavItem.Settings.route) { SettingsScreen(navController, settingsViewModel) }
+            composable("review_sms_screen") { ReviewSmsScreen(navController, settingsViewModel) }
 
             // --- THIS WAS THE MISSING ROUTE CAUSING THE CRASH ---
             composable("sms_debug_screen") { SmsDebugScreen(navController, settingsViewModel) }
@@ -355,26 +356,116 @@ fun SettingsScreen(navController: NavController, viewModel: SettingsViewModel) {
 
             Divider(modifier = Modifier.padding(vertical = 16.dp))
 
-            // --- NEW: Button to navigate to the debug screen ---
-            Text("Debugging", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-            Button(onClick = { navController.navigate("sms_debug_screen") }) {
-                Text("View Raw SMS Data")
+            Text("SMS Automation", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        if (hasSmsPermission) {
+                            viewModel.loadAndParseSms()
+                            navController.navigate("review_sms_screen")
+                        } else {
+                            Toast.makeText(context, "Please grant SMS permission first.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.RateReview, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Review SMS")
+                }
+                OutlinedButton(
+                    onClick = { navController.navigate("sms_debug_screen") },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("SMS Debug")
+                }
             }
         }
     }
 }
 
-// A simple composable to display a single SMS for testing purposes.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmsMessageItem(sms: SmsMessage) {
-    val date = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(sms.date))
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(sms.sender, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-            Text(date, style = MaterialTheme.typography.labelSmall)
+fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel) {
+    val potentialTransactions by viewModel.potentialTransactions.collectAsState()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Review Potential Transactions") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
         }
-        Spacer(Modifier.height(4.dp))
-        Text(sms.body, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    ) { innerPadding ->
+        if (potentialTransactions.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No potential transactions found.\nGo back and ensure SMS permission is granted.", textAlign = TextAlign.Center)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Text(
+                        "${potentialTransactions.size} potential transactions found.",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                items(potentialTransactions) { pt ->
+                    PotentialTransactionItem(pt)
+                }
+            }
+        }
+    }
+}
+
+// --- NEW: Composable for a single potential transaction item ---
+@Composable
+fun PotentialTransactionItem(transaction: PotentialTransaction) {
+    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            val amountColor = if (transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = transaction.merchantName ?: "Unknown Merchant",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "₹${"%.2f".format(transaction.amount)}",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = amountColor,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Type: ${transaction.transactionType.replaceFirstChar { it.uppercase() }}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Original Message: ${transaction.originalMessage}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -384,6 +475,12 @@ fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel) {
     val smsMessages by viewModel.smsMessages.collectAsState()
     val context = LocalContext.current
     val hasSmsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+
+    LaunchedEffect(hasSmsPermission) {
+        if (hasSmsPermission) {
+            viewModel.loadAndParseSms()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -401,21 +498,21 @@ fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel) {
             Button(
                 onClick = {
                     if (hasSmsPermission) {
-                        viewModel.loadSmsMessages()
+                        viewModel.loadAndParseSms()
                     } else {
                         Toast.makeText(context, "Grant SMS permission in settings first.", Toast.LENGTH_LONG).show()
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Load SMS Messages")
+                Text("Refresh SMS Messages")
             }
 
             Spacer(Modifier.height(16.dp))
 
             if (smsMessages.isEmpty() && hasSmsPermission) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No messages found, or tap 'Load' to refresh.")
+                    Text("No messages found.")
                 }
             } else if (!hasSmsPermission) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

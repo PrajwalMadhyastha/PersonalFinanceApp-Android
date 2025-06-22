@@ -22,9 +22,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val overallBudget: StateFlow<Float>
 
-    // --- NEW: StateFlow to hold the list of SMS messages ---
+    // StateFlow for raw SMS messages (for debug screen)
     private val _smsMessages = MutableStateFlow<List<SmsMessage>>(emptyList())
     val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
+
+    // --- NEW: StateFlow for parsed transactions ---
+    private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
+    val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
+
 
     init {
         settingsRepository = SettingsRepository(application)
@@ -42,37 +47,32 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Loads SMS messages from the device's inbox.
-     * This function checks for permission before querying the ContentProvider.
+     * Loads SMS messages and then parses them to find potential transactions.
+     * Updates both the raw SMS list and the potential transactions list.
      */
-    fun loadSmsMessages() {
+    fun loadAndParseSms() {
         val context = getApplication<Application>().applicationContext
 
-        // 1. Check if permission is granted. If not, do nothing.
+        // Ensure permission is granted before proceeding
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            // In a real app, you might show a message to the user.
-            _smsMessages.value = emptyList() // Ensure the list is clear if permission is revoked.
+            _smsMessages.value = emptyList()
+            _potentialTransactions.value = emptyList()
             return
         }
 
         viewModelScope.launch {
-            // Use withContext(Dispatchers.IO) for a blocking call like contentResolver.query
-            val messages = withContext(Dispatchers.IO) {
+            // Step 1: Fetch raw SMS messages on an I/O thread
+            val rawMessages = withContext(Dispatchers.IO) {
                 val messageList = mutableListOf<SmsMessage>()
-
-                // 2. Define the columns you want to retrieve from the SMS table.
                 val projection = arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE)
-
-                // 3. Query the SMS ContentProvider.
                 val cursor = context.contentResolver.query(
                     Telephony.Sms.Inbox.CONTENT_URI,
                     projection,
                     null,
                     null,
-                    "${Telephony.Sms.DATE} DESC" // Get newest messages first
+                    "${Telephony.Sms.DATE} DESC LIMIT 200" // Limit for performance
                 )
 
-                // 4. Safely process the cursor.
                 cursor?.use { c ->
                     val addressIndex = c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
                     val bodyIndex = c.getColumnIndexOrThrow(Telephony.Sms.BODY)
@@ -88,11 +88,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         )
                     }
                 }
-                messageList // Return the populated list
+                messageList
             }
 
-            // 5. Update the StateFlow with the new list of messages.
-            _smsMessages.value = messages
+            // Update the raw messages StateFlow (for the debug screen)
+            _smsMessages.value = rawMessages
+
+            // Step 2: Parse the messages on a computational thread
+            val parsedList = withContext(Dispatchers.Default) {
+                rawMessages.mapNotNull { SmsParser.parse(it.body) }
+            }
+
+            // Step 3: Update the potential transactions StateFlow
+            _potentialTransactions.value = parsedList
         }
     }
 }
