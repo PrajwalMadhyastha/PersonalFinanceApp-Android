@@ -29,10 +29,12 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.*
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.net.URLDecoder
 import java.util.concurrent.Executor
 
 // --- Navigation Destinations ---
@@ -204,7 +206,27 @@ fun FinanceApp() {
             composable(BottomNavItem.Settings.route) { SettingsScreen(navController, viewModel()) }
             composable("review_sms_screen") { ReviewSmsScreen(navController, viewModel()) }
             composable("sms_debug_screen") { SmsDebugScreen(navController, viewModel()) }
-            composable("approve_transaction_screen") { ApproveTransactionScreen(navController, viewModel(), viewModel()) }
+            composable(
+                route = "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}",
+                arguments = listOf(
+                    navArgument("amount") { type = NavType.FloatType },
+                    navArgument("type") { type = NavType.StringType },
+                    navArgument("merchant") { type = NavType.StringType },
+                    navArgument("smsId") { type = NavType.LongType },
+                    navArgument("smsSender") { type = NavType.StringType }
+                ),
+                deepLinks = listOf(navDeepLink { uriPattern = "app://personalfinanceapp.example.com/approve?amount={amount}&type={type}&merchant={merchant}&smsId={smsId}&smsSender={smsSender}" })
+            ) { backStackEntry ->
+                val arguments = requireNotNull(backStackEntry.arguments)
+                ApproveTransactionScreen(
+                    navController = navController,
+                    amount = arguments.getFloat("amount"),
+                    transactionType = arguments.getString("type") ?: "expense",
+                    merchant = URLDecoder.decode(arguments.getString("merchant") ?: "Unknown", "UTF-8"),
+                    smsId = arguments.getLong("smsId"),
+                    smsSender = arguments.getString("smsSender") ?: ""
+                )
+            }
             composable("add_transaction") { AddTransactionScreen(navController, viewModel()) }
             composable("edit_transaction/{transactionId}", arguments = listOf(navArgument("transactionId") { type = NavType.IntType })) { backStackEntry ->
                 val transactionId = backStackEntry.arguments?.getInt("transactionId")

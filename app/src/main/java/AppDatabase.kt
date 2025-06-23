@@ -11,10 +11,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-// --- UPDATED: Version incremented to 4 ---
 @Database(
-    entities = [Transaction::class, Account::class, Category::class, Budget::class, MerchantMapping::class],
-    version = 4,
+    entities = [
+        Transaction::class,
+        Account::class,
+        Category::class,
+        Budget::class,
+        MerchantMapping::class,
+        RecurringTransaction::class
+    ],
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,12 +30,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun budgetDao(): BudgetDao
     abstract fun merchantMappingDao(): MerchantMappingDao
+    abstract fun recurringTransactionDao(): RecurringTransactionDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        // Migration from 1 to 2: Add transactionType
+        // --- Migration from 1 to 2: Add transactionType column ---
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN transactionType TEXT NOT NULL DEFAULT 'expense'")
@@ -38,7 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // Migration from 2 to 3: Add merchant_mappings table
+        // --- Migration from 2 to 3: Add merchant_mappings table ---
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -51,10 +58,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration from 3 to 4 to add the sourceSmsId column ---
+        // --- Migration from 3 to 4: Add sourceSmsId column ---
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN sourceSmsId INTEGER")
+            }
+        }
+
+        // --- Migration from 4 to 5: Add recurring_transactions table ---
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `recurring_transactions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `description` TEXT NOT NULL, 
+                        `amount` REAL NOT NULL, 
+                        `transactionType` TEXT NOT NULL, 
+                        `recurrenceInterval` TEXT NOT NULL, 
+                        `startDate` INTEGER NOT NULL, 
+                        `accountId` INTEGER NOT NULL, 
+                        `categoryId` INTEGER, 
+                        FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, 
+                        FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_transactions_accountId` ON `recurring_transactions` (`accountId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_transactions_categoryId` ON `recurring_transactions` (`categoryId`)")
             }
         }
 
@@ -65,8 +94,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "finance_database"
                 )
-                    // --- UPDATED: Add all migrations, including the new MIGRATION_3_4 ---
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .addCallback(DatabaseCallback(context))
                     .build()
                 INSTANCE = instance
@@ -78,8 +106,7 @@ abstract class AppDatabase : RoomDatabase() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 CoroutineScope(Dispatchers.IO).launch {
-                    val database = getInstance(context)
-                    populateDatabase(database)
+                    populateDatabase(getInstance(context))
                 }
             }
 

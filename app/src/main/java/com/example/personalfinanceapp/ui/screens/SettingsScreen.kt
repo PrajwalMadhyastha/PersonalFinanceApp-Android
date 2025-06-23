@@ -38,6 +38,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settingsRepository = remember { SettingsRepository(context) }
+    val isScanning by viewModel.isScanning.collectAsState()
 
     // State for all settings
     val isAppLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = false)
@@ -229,7 +230,16 @@ fun SettingsScreen(
                     SettingsActionItem(
                         text = "Rescan SMS Inbox",
                         icon = Icons.Default.Refresh,
-                        onClick = { /* ... */ }
+                        onClick = {
+                            val hasSmsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+                            if (hasSmsPermission) {
+                                Toast.makeText(context, "Scanning all messages...", Toast.LENGTH_SHORT).show()
+                                viewModel.rescanAllSmsMessages()
+                                navController.navigate("review_sms_screen")
+                            } else {
+                                Toast.makeText(context, "Please grant SMS permission first.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     )
                     SettingsActionItem(
                         text = "Export Data",
@@ -245,6 +255,20 @@ fun SettingsScreen(
                         icon = Icons.Default.Download,
                         onClick = { showImportConfirmDialog = true } // Show confirmation dialog
                     )
+                }
+            }
+        }
+    }
+    if (isScanning) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(16.dp))
+                    Text("Scanning SMS Inbox...", style = MaterialTheme.typography.titleMedium)
                 }
             }
         }

@@ -24,20 +24,16 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.personalfinanceapp.*
+import java.net.URLEncoder
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel = viewModel()) {
     val potentialTransactions by viewModel.potentialTransactions.collectAsState()
-    val context = LocalContext.current
-    LaunchedEffect(key1 = Unit) {
-        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
-        if (hasPermission) {
-            Log.d("ReviewSmsScreen", "Permission granted. Calling loadAndParseSms().")
-            viewModel.loadAndParseSms()
-        } else {
-            Log.w("ReviewSmsScreen", "Navigated here, but READ_SMS permission is missing.")
-        }
+
+    // Load transactions when the screen is first displayed
+    LaunchedEffect(Unit) {
+        viewModel.rescanAllSmsMessages()
     }
 
     Scaffold(
@@ -59,7 +55,7 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel =
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("No new transactions to review.", style = MaterialTheme.typography.titleMedium)
-                    Text("Go back to Settings and tap 'Review SMS' to scan again.", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Text("Go back to Settings and tap 'Rescan' to find transactions.", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                 }
             }
         } else {
@@ -79,9 +75,11 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel =
                     PotentialTransactionItem(
                         transaction = pt,
                         onDismiss = { viewModel.dismissPotentialTransaction(it) },
-                        onApprove = {
-                            viewModel.selectTransactionForApproval(it)
-                            navController.navigate("approve_transaction_screen")
+                        onApprove = { transaction ->
+                            // --- CORRECTED: Build a detailed route with arguments ---
+                            val merchant = URLEncoder.encode(transaction.merchantName ?: "Unknown", "UTF-8")
+                            val route = "approve_transaction_screen/${transaction.amount}/${transaction.transactionType}/${merchant}/${transaction.sourceSmsId}/${transaction.smsSender}"
+                            navController.navigate(route)
                         }
                     )
                 }
@@ -150,23 +148,16 @@ fun PotentialTransactionItem(
 @Composable
 fun ApproveTransactionScreen(
     navController: NavController,
+    transactionViewModel: TransactionViewModel = viewModel(),
     settingsViewModel: SettingsViewModel = viewModel(),
-    transactionViewModel: TransactionViewModel = viewModel()
+    // --- CORRECTED: Receive data as parameters, not from ViewModel state ---
+    amount: Float,
+    transactionType: String,
+    merchant: String,
+    smsId: Long,
+    smsSender: String
 ) {
-    val potentialTransaction by settingsViewModel.selectedTransactionForApproval.collectAsState()
-
-    if (potentialTransaction == null) {
-        LaunchedEffect(Unit) {
-            navController.popBackStack()
-        }
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-
-    var description by remember(potentialTransaction) { mutableStateOf(potentialTransaction?.merchantName ?: "Unknown Transaction") }
-    val amount = potentialTransaction?.amount?.toString() ?: "0.0"
+    var description by remember { mutableStateOf(merchant) }
     var notes by remember { mutableStateOf("") }
 
     val accounts by transactionViewModel.allAccounts.collectAsState(initial = emptyList())
@@ -195,7 +186,7 @@ fun ApproveTransactionScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description / Merchant") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = amount, onValueChange = {}, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount.toString(), onValueChange = {}, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth()) }
 
             item {
                 ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
@@ -240,28 +231,26 @@ fun ApproveTransactionScreen(
             item {
                 Button(
                     onClick = {
-                        val trx = potentialTransaction!!
-                        settingsViewModel.saveMerchantMapping(trx.smsSender, description)
+                        settingsViewModel.saveMerchantMapping(smsSender, description)
+
                         val success = transactionViewModel.addTransaction(
                             description = description,
                             categoryId = selectedCategory?.id,
-                            amountStr = trx.amount.toString(),
+                            amountStr = amount.toString(),
                             accountId = selectedAccount!!.id,
                             notes = notes.takeIf { it.isNotBlank() },
                             date = System.currentTimeMillis(),
-                            transactionType = trx.transactionType,
-                            sourceSmsId = trx.sourceSmsId
+                            transactionType = transactionType,
+                            sourceSmsId = smsId // Use the passed-in ID
                         )
                         if (success) {
-                            settingsViewModel.dismissPotentialTransaction(trx)
+                            // No need to dismiss here, the list will be re-filtered on next scan
                             navController.popBackStack()
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = selectedAccount != null && selectedCategory != null
-                ) {
-                    Text("Save Transaction")
-                }
+                ) { Text("Save Transaction") }
             }
         }
     }
@@ -276,7 +265,7 @@ fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel = 
 
     LaunchedEffect(hasSmsPermission) {
         if (hasSmsPermission) {
-            viewModel.loadAndParseSms()
+            viewModel.rescanAllSmsMessages()
         }
     }
 
@@ -286,7 +275,7 @@ fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel = 
                 title = { Text("SMS Debug Log") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -296,7 +285,7 @@ fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel = 
             Button(
                 onClick = {
                     if (hasSmsPermission) {
-                        viewModel.loadAndParseSms()
+                        viewModel.rescanAllSmsMessages()
                     } else {
                         Toast.makeText(context, "Grant SMS permission in settings first.", Toast.LENGTH_LONG).show()
                     }
