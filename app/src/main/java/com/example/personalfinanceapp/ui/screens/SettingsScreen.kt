@@ -222,7 +222,17 @@ fun SettingsScreen(
                     onCheckedChange = {}
                 )
             }
-
+            item { SettingSectionHeader("Automation") }
+            item {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    SettingsActionItem(
+                        text = "Manage Recurring Transactions",
+                        icon = Icons.Default.Autorenew,
+                        onClick = { navController.navigate("recurring_transactions") }
+                    )
+                    // ... other automation buttons
+                }
+            }
             // Data Management Section
             item { SettingSectionHeader("Data Management") }
             item {

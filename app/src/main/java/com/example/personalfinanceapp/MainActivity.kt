@@ -243,6 +243,8 @@ fun FinanceApp() {
                 if (accountId != null) { AccountDetailScreen(navController, viewModel(), accountId) }
             }
             composable("budget_screen") { BudgetScreen(navController, viewModel()) }
+            composable("recurring_transactions") { RecurringTransactionScreen(navController) }
+            composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
             composable("add_budget") { AddBudgetScreen(navController, viewModel()) }
             composable("category_list") { CategoryListScreen(navController, viewModel()) }
             composable("edit_category/{categoryId}", arguments = listOf(navArgument("categoryId") { type = NavType.IntType })) { backStackEntry ->
