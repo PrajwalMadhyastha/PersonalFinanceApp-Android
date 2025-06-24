@@ -9,6 +9,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
+import java.net.URLEncoder
 
 object NotificationHelper {
 
@@ -22,10 +23,11 @@ object NotificationHelper {
             return
         }
 
+        val encodedMerchant = URLEncoder.encode(potentialTransaction.merchantName ?: "Unknown", "UTF-8")
         val approveUri = (
                 "$DEEP_LINK_URI/approve?amount=${potentialTransaction.amount}" +
                         "&type=${potentialTransaction.transactionType}" +
-                        "&merchant=${potentialTransaction.merchantName ?: "Unknown"}" +
+                        "&merchant=$encodedMerchant" +
                         "&smsId=${potentialTransaction.sourceSmsId}" +
                         "&smsSender=${potentialTransaction.smsSender}"
                 ).toUri()
@@ -61,7 +63,6 @@ object NotificationHelper {
 
     /**
      * NEW: Creates and displays a notification for the weekly summary.
-     * Tapping this notification will open the main dashboard.
      */
     fun showWeeklySummaryNotification(
         context: Context,
@@ -72,12 +73,11 @@ object NotificationHelper {
             return
         }
 
-        // Intent to open the main app activity
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
 
-        val pendingIntent = PendingIntent.getActivity(context, 100, intent, PendingIntent.FLAG_IMMUTABLE)
+        val pendingIntent = PendingIntent.getActivity(context, 101, intent, PendingIntent.FLAG_IMMUTABLE)
 
         val summaryText = "Income: ₹${"%.2f".format(totalIncome)} | Expenses: ₹${"%.2f".format(totalExpenses)}"
 
@@ -91,7 +91,6 @@ object NotificationHelper {
             .setAutoCancel(true)
             .build()
 
-        // Use a unique ID for the summary notification
         NotificationManagerCompat.from(context).notify(3, notification)
     }
 }

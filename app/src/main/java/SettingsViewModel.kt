@@ -2,7 +2,9 @@ package com.example.personalfinanceapp
 
 import android.app.Application
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.Telephony
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.*
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -17,6 +21,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val transactionRepository = TransactionRepository(AppDatabase.getInstance(application).transactionDao())
     private val merchantMappingRepository = MerchantMappingRepository(AppDatabase.getInstance(application).merchantMappingDao())
     private val context = application
+
+    // --- ADDED: StateFlow to hold the results of the CSV validation ---
+    private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
+    val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
 
     val overallBudget: StateFlow<Float> = settingsRepository.getOverallBudgetForCurrentMonth().stateIn(
         scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = 0f)
@@ -70,9 +78,82 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setUnknownTransactionPopupEnabled(enabled: Boolean) {
+        settingsRepository.saveUnknownTransactionPopupEnabled(enabled)
+    }
+
+    /**
+     * NEW: Validates a CSV file without importing it.
+     * It checks for correct column count, valid data formats, and existing
+     * accounts/categories, then updates the validation report StateFlow.
+     */
+    fun validateCsvFile(uri: Uri) {
         viewModelScope.launch {
-            settingsRepository.saveUnknownTransactionPopupEnabled(enabled)
+            withContext(Dispatchers.IO) {
+                try {
+                    val db = AppDatabase.getInstance(context)
+                    val accountDao = db.accountDao()
+                    val categoryDao = db.categoryDao()
+
+                    val validRows = mutableListOf<ValidatedRow>()
+                    val invalidRows = mutableListOf<InvalidRow>()
+                    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                    var lineNumber = 1
+
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
+                        lines.drop(1).forEach { line ->
+                            lineNumber++
+                            val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
+
+                            if (tokens.size < 6) {
+                                invalidRows.add(InvalidRow(lineNumber, line, "Invalid column count. Expected at least 6, found ${tokens.size}."))
+                                return@forEach
+                            }
+
+                            val date = dateFormat.parse(tokens[0])
+                            if (date == null) {
+                                invalidRows.add(InvalidRow(lineNumber, line, "Invalid date format. Expected 'yyyy-MM-dd HH:mm:ss'."))
+                                return@forEach
+                            }
+
+                            val amount = tokens[2].toDoubleOrNull()
+                            if (amount == null || amount <= 0) {
+                                invalidRows.add(InvalidRow(lineNumber, line, "Amount must be a valid, positive number."))
+                                return@forEach
+                            }
+
+                            val categoryName = tokens[4]
+                            val category = categoryDao.findByName(categoryName)
+                            if (category == null) {
+                                invalidRows.add(InvalidRow(lineNumber, line, "Category '$categoryName' not found."))
+                                return@forEach
+                            }
+
+                            val accountName = tokens[5]
+                            val account = accountDao.findByName(accountName)
+                            if (account == null) {
+                                invalidRows.add(InvalidRow(lineNumber, line, "Account '$accountName' not found."))
+                                return@forEach
+                            }
+
+                            validRows.add(ValidatedRow(
+                                lineNumber = lineNumber,
+                                transaction = Transaction(description = tokens[1], amount = amount, date = date.time, transactionType = tokens[3], accountId = account.id, categoryId = category.id, notes = tokens.getOrNull(6)),
+                                categoryName = categoryName,
+                                accountName = accountName
+                            ))
+                        }
+                    }
+                    _csvValidationReport.value = CsvValidationReport(validRows, invalidRows, validRows.size + invalidRows.size)
+                } catch (e: Exception) {
+                    Log.e("SettingsViewModel", "CSV validation failed", e)
+                    _csvValidationReport.value = CsvValidationReport(invalidRows = listOf(InvalidRow(0, "", "An error occurred during validation: ${e.message}")))
+                }
+            }
         }
+    }
+
+    fun clearCsvValidationReport() {
+        _csvValidationReport.value = null
     }
 
     fun rescanAllSmsMessages() {
@@ -87,19 +168,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
             }
             val rawMessages = withContext(Dispatchers.IO) {
-                val messageList = mutableListOf<SmsMessage>()
-                val projection = arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE)
-                val cursor = context.contentResolver.query(Telephony.Sms.Inbox.CONTENT_URI, projection, null, null, null)
-                cursor?.use { c ->
-                    val idIndex = c.getColumnIndexOrThrow(Telephony.Sms._ID)
-                    val addressIndex = c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
-                    val bodyIndex = c.getColumnIndexOrThrow(Telephony.Sms.BODY)
-                    val dateIndex = c.getColumnIndexOrThrow(Telephony.Sms.DATE)
-                    while (c.moveToNext()) {
-                        messageList.add(SmsMessage(id = c.getLong(idIndex), sender = c.getString(addressIndex), body = c.getString(bodyIndex), date = c.getLong(dateIndex)))
-                    }
-                }
-                messageList
+                val smsRepository = SmsRepository(context)
+                smsRepository.fetchAllSms()
             }
             _smsMessages.value = rawMessages
 

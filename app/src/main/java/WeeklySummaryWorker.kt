@@ -9,6 +9,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 
+/**
+ * A background worker that calculates the user's financial summary for the past 7 days
+ * and displays it as a system notification.
+ */
 class WeeklySummaryWorker(
     private val context: Context,
     workerParams: WorkerParameters
@@ -21,36 +25,35 @@ class WeeklySummaryWorker(
                 val db = AppDatabase.getInstance(context)
                 val transactionDao = db.transactionDao()
 
-                // 1. Calculate the date range for the last 7 days
+                // 1. Calculate the start and end timestamps for the last 7 days.
                 val calendar = Calendar.getInstance()
                 val endDate = calendar.timeInMillis
                 calendar.add(Calendar.DAY_OF_YEAR, -7)
                 val startDate = calendar.timeInMillis
 
-                // 2. Fetch transactions for the last week
+                // 2. Fetch transactions for the last week using the existing DAO method.
                 val transactions = transactionDao.getTransactionDetailsForRange(startDate, endDate).first()
                 Log.d("WeeklySummaryWorker", "Found ${transactions.size} transactions in the last 7 days.")
 
-
-                // 3. Calculate total income and expenses
+                // 3. Calculate total income and expenses.
                 var totalIncome = 0.0
                 var totalExpenses = 0.0
-                transactions.forEach {
-                    if (it.transaction.transactionType == "income") {
-                        totalIncome += it.transaction.amount
+                transactions.forEach { details ->
+                    if (details.transaction.transactionType == "income") {
+                        totalIncome += details.transaction.amount
                     } else {
-                        totalExpenses += it.transaction.amount
+                        totalExpenses += details.transaction.amount
                     }
                 }
 
-                // 4. Send the summary notification
+                // 4. Send the summary notification via the helper.
                 NotificationHelper.showWeeklySummaryNotification(context, totalIncome, totalExpenses)
 
                 Log.d("WeeklySummaryWorker", "Worker finished successfully.")
                 Result.success()
             } catch (e: Exception) {
                 Log.e("WeeklySummaryWorker", "Worker failed", e)
-                Result.retry()
+                Result.retry() // Retry the job if it fails
             }
         }
     }
