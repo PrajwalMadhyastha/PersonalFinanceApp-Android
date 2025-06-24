@@ -199,13 +199,18 @@ fun FinanceApp() {
             startDestination = BottomNavItem.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            // --- CORRECTED: Each screen now correctly gets its own ViewModels ---
             composable(BottomNavItem.Dashboard.route) { DashboardScreen(navController, viewModel(), viewModel()) }
             composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, viewModel()) }
             composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
             composable(BottomNavItem.Settings.route) { SettingsScreen(navController, viewModel()) }
             composable("search_screen") { SearchScreen(navController) }
-            composable("review_sms_screen") { ReviewSmsScreen(navController, viewModel()) }
+
+            // --- UPDATED: Added deep link to the review screen ---
+            composable(
+                route = "review_sms_screen",
+                deepLinks = listOf(navDeepLink { uriPattern = "app://personalfinanceapp.example.com/review_sms" })
+            ) { ReviewSmsScreen(navController, viewModel()) }
+
             composable("sms_debug_screen") { SmsDebugScreen(navController, viewModel()) }
             composable(
                 route = "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}",

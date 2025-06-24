@@ -9,6 +9,7 @@ val androidx_test_version = "1.6.1"
 val test_ext_junit_version = "1.2.1"
 val espresso_version = "3.6.1"
 val tracing_version = "1.2.0" // Added for tracing fix
+val work_version = "2.9.0"
 
 
 plugins {
@@ -115,4 +116,5 @@ dependencies {
 
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("androidx.work:work-runtime-ktx:$work_version")
 }

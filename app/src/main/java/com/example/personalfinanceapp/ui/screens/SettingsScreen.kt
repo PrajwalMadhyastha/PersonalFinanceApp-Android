@@ -44,6 +44,9 @@ fun SettingsScreen(
     val isAppLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = false)
     val isWeeklySummaryEnabled by settingsRepository.getWeeklySummaryEnabled().collectAsState(initial = true)
     val isUnknownTransactionPopupEnabled by settingsRepository.getUnknownTransactionPopupEnabled().collectAsState(initial = true)
+    // --- ADDED: State for the new reminder toggle ---
+    val isDailyReminderEnabled by viewModel.dailyReminderEnabled.collectAsState()
+
 
     // Permission Handlers
     var hasSmsPermission by remember {
@@ -62,7 +65,6 @@ fun SettingsScreen(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { perms ->
         hasSmsPermission = perms[Manifest.permission.READ_SMS] == true && perms[Manifest.permission.RECEIVE_SMS] == true
-        // Notification permission is handled by its own launcher
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -127,7 +129,6 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(vertical = 8.dp),
         ) {
-            // General Section
             item { SettingSectionHeader("General") }
             item {
                 Column(Modifier.padding(horizontal = 16.dp)) {
@@ -149,7 +150,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Security Section
             item { SettingSectionHeader("Security") }
             item {
                 SettingsToggleItem(
@@ -161,8 +161,19 @@ fun SettingsScreen(
                 )
             }
 
-            // Notifications Section
             item { SettingSectionHeader("Notifications") }
+            // --- ADDED: Daily Reminder Toggle Switch ---
+            item {
+                SettingsToggleItem(
+                    title = "Daily Review Reminder",
+                    subtitle = "Get a notification if you have transactions waiting for your approval.",
+                    icon = Icons.Default.NotificationsActive,
+                    checked = isDailyReminderEnabled,
+                    onCheckedChange = { enabled ->
+                        viewModel.setDailyReminder(enabled)
+                    }
+                )
+            }
             item {
                 SettingsToggleItem(
                     title = "Weekly Summary Notification",
@@ -176,13 +187,12 @@ fun SettingsScreen(
                 SettingsToggleItem(
                     title = "Popup for Unknown Transactions",
                     subtitle = "Show notification for SMS from new merchants.",
-                    icon = Icons.Default.NotificationsActive,
+                    icon = Icons.Default.Notifications,
                     checked = isUnknownTransactionPopupEnabled,
                     onCheckedChange = { settingsRepository.saveUnknownTransactionPopupEnabled(it) }
                 )
             }
 
-            // Permissions Section
             item { SettingSectionHeader("Permissions") }
             item {
                 SettingsToggleItem(
@@ -200,7 +210,7 @@ fun SettingsScreen(
             item {
                 SettingsToggleItem(
                     title = "Enable Notifications",
-                    subtitle = "Show an alert when a new transaction is detected.",
+                    subtitle = "Show alerts for new transactions and reminders.",
                     icon = Icons.Default.Notifications,
                     checked = hasNotificationPermission,
                     onCheckedChange = {
@@ -211,29 +221,6 @@ fun SettingsScreen(
                 )
             }
 
-            item { SettingSectionHeader("Backup & Restore") }
-            item {
-                SettingsToggleItem(
-                    title = "Automatic Cloud Backup",
-                    subtitle = "Your data is automatically backed up to your Google Account.",
-                    icon = Icons.Default.CloudUpload,
-                    checked = true, // Always on, as it's handled by Android
-                    enabled = false, // User cannot disable this from the app
-                    onCheckedChange = {}
-                )
-            }
-            item { SettingSectionHeader("Automation") }
-            item {
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    SettingsActionItem(
-                        text = "Manage Recurring Transactions",
-                        icon = Icons.Default.Autorenew,
-                        onClick = { navController.navigate("recurring_transactions") }
-                    )
-                    // ... other automation buttons
-                }
-            }
-            // Data Management Section
             item { SettingSectionHeader("Data Management") }
             item {
                 Column(Modifier.padding(horizontal = 16.dp)) {
@@ -241,7 +228,6 @@ fun SettingsScreen(
                         text = "Rescan SMS Inbox",
                         icon = Icons.Default.Refresh,
                         onClick = {
-                            val hasSmsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
                             if (hasSmsPermission) {
                                 Toast.makeText(context, "Scanning all messages...", Toast.LENGTH_SHORT).show()
                                 viewModel.rescanAllSmsMessages()
@@ -263,7 +249,7 @@ fun SettingsScreen(
                     SettingsActionItem(
                         text = "Import Data",
                         icon = Icons.Default.Download,
-                        onClick = { showImportConfirmDialog = true } // Show confirmation dialog
+                        onClick = { showImportConfirmDialog = true }
                     )
                 }
             }
@@ -284,7 +270,6 @@ fun SettingsScreen(
         }
     }
 
-    // --- NEW: Confirmation Dialog for Data Import ---
     if (showImportConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showImportConfirmDialog = false },
@@ -294,7 +279,6 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         showImportConfirmDialog = false
-                        // Launch the file picker
                         filePickerLauncher.launch(arrayOf("application/json"))
                     }
                 ) { Text("Import") }
@@ -331,7 +315,7 @@ private fun SettingsToggleItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
         leadingContent = { Icon(icon, contentDescription = null) },
-        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
         modifier = Modifier.padding(horizontal = 16.dp)
     )
 }

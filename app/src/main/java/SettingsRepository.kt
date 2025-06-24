@@ -24,6 +24,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
         private const val KEY_WEEKLY_SUMMARY_ENABLED = "weekly_summary_enabled"
         private const val KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED = "unknown_transaction_popup_enabled"
+        private const val KEY_DAILY_REMINDER_ENABLED = "daily_reminder_enabled"
     }
 
     /**
@@ -59,6 +60,21 @@ class SettingsRepository(context: Context) {
 
     fun saveAppLockEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, isEnabled).apply()
+    }
+    fun saveDailyReminderEnabled(isEnabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DAILY_REMINDER_ENABLED, isEnabled).apply()
+    }
+    fun getDailyReminderEnabled(): Flow<Boolean> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == KEY_DAILY_REMINDER_ENABLED) {
+                    trySend(prefs.getBoolean(key, false)) // Default to false
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getBoolean(KEY_DAILY_REMINDER_ENABLED, false))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
     }
 
     // --- NEW: Flow to read the app lock preference ---

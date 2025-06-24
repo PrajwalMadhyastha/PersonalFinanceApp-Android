@@ -1,10 +1,8 @@
 package com.example.personalfinanceapp
 
-import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
 import android.provider.Telephony
-import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -12,50 +10,65 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val settingsRepository: SettingsRepository
-    private val transactionRepository: TransactionRepository
-    private val merchantMappingRepository: MerchantMappingRepository
+    private val settingsRepository = SettingsRepository(application)
+    // CORRECTED: Instantiated the repositories based on your existing project files
+    private val transactionRepository = TransactionRepository(AppDatabase.getInstance(application).transactionDao())
+    private val merchantMappingRepository = MerchantMappingRepository(AppDatabase.getInstance(application).merchantMappingDao())
 
-    val overallBudget: StateFlow<Float>
+    private val context = application
+
+    val overallBudget: StateFlow<Float> = settingsRepository.getOverallBudgetForCurrentMonth().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0f
+    )
+
+    // CORRECTED: Now calls the correct new method from the updated repository
+    val dailyReminderEnabled: StateFlow<Boolean> = settingsRepository.getDailyReminderEnabled().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
 
     private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
     val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
 
-    // --- RE-ADDED: StateFlow for the raw SMS messages for the debug screen ---
-    private val _smsMessages = MutableStateFlow<List<SmsMessage>>(emptyList())
-    val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
-
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
-    init {
-        val db = AppDatabase.getInstance(application)
-        settingsRepository = SettingsRepository(application)
-        transactionRepository = TransactionRepository(db.transactionDao())
-        merchantMappingRepository = MerchantMappingRepository(db.merchantMappingDao())
+    private val _smsMessages = MutableStateFlow<List<SmsMessage>>(emptyList())
+    val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
 
-        overallBudget = settingsRepository.getOverallBudgetForCurrentMonth()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initialValue = 0f)
+    fun saveOverallBudget(budget: String) {
+        val budgetFloat = budget.toFloatOrNull() ?: 0f
+        settingsRepository.saveOverallBudgetForCurrentMonth(budgetFloat)
+    }
+
+    // CORRECTED: Now correctly calls the repository and manager
+    fun setDailyReminder(enabled: Boolean) {
+        settingsRepository.saveDailyReminderEnabled(enabled)
+        if (enabled) {
+            ReminderManager.scheduleDailyReminder(context)
+        } else {
+            ReminderManager.cancelDailyReminder(context)
+        }
     }
 
     fun rescanAllSmsMessages() {
-        val context = getApplication<Application>().applicationContext
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             return
         }
 
         viewModelScope.launch {
             _isScanning.value = true
-
             val existingMappings = withContext(Dispatchers.IO) {
                 merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
             }
             val existingSmsIds = withContext(Dispatchers.IO) {
-                transactionRepository.getAllTransactionsSimple().first().mapNotNull { it.sourceSmsId }.toSet()
+                transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
             }
 
             val rawMessages = withContext(Dispatchers.IO) {
@@ -75,38 +88,26 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
                 messageList
             }
-
-            // CORRECTED: Ensure the raw SMS list is updated for the debug screen
             _smsMessages.value = rawMessages
 
             val parsedList = withContext(Dispatchers.Default) {
                 rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
             }
 
-            val newPotentialTransactions = parsedList.filter { potential ->
+            _potentialTransactions.value = parsedList.filter { potential ->
                 !existingSmsIds.contains(potential.sourceSmsId)
             }
-
-            _potentialTransactions.value = newPotentialTransactions
             _isScanning.value = false
         }
     }
 
     fun dismissPotentialTransaction(transaction: PotentialTransaction) {
-        val currentList = _potentialTransactions.value.toMutableList()
-        currentList.remove(transaction)
-        _potentialTransactions.value = currentList
+        _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
     }
 
-
-    fun saveMerchantMapping(sender: String, merchantName: String) = viewModelScope.launch(Dispatchers.IO) {
-        if(sender.isNotBlank() && merchantName.isNotBlank()){
+    fun saveMerchantMapping(sender: String, merchantName: String) {
+        viewModelScope.launch {
             merchantMappingRepository.insert(MerchantMapping(smsSender = sender, merchantName = merchantName))
         }
-    }
-
-    fun saveOverallBudget(amountStr: String) {
-        val amount = amountStr.toFloatOrNull() ?: 0f
-        settingsRepository.saveOverallBudgetForCurrentMonth(amount)
     }
 }
