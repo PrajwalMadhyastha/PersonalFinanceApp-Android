@@ -38,13 +38,11 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val isScanning by viewModel.isScanning.collectAsState()
 
-    // State for all settings, now driven by the ViewModel where appropriate
     val isAppLockEnabled by viewModel.appLockEnabled.collectAsState()
     val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReminderEnabled by viewModel.dailyReminderEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
 
-    // Permission Handlers
     var hasSmsPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
@@ -87,6 +85,30 @@ fun SettingsScreen(
                         }
                     } else {
                         Toast.makeText(context, "Error exporting data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+
+    // --- ADDED: Launcher for saving the CSV file ---
+    val csvFileSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    val csvString = DataExportService.exportToCsvString(context)
+                    if (csvString != null) {
+                        try {
+                            context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                                outputStream.write(csvString.toByteArray())
+                            }
+                            Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error saving CSV file.", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "Error exporting CSV data.", Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -164,9 +186,7 @@ fun SettingsScreen(
                     subtitle = "Get a notification if you have transactions waiting for approval.",
                     icon = Icons.Default.NotificationsActive,
                     checked = isDailyReminderEnabled,
-                    onCheckedChange = { enabled ->
-                        viewModel.setDailyReminder(enabled)
-                    }
+                    onCheckedChange = { viewModel.setDailyReminder(it) }
                 )
             }
             item {
@@ -175,9 +195,7 @@ fun SettingsScreen(
                     subtitle = "Receive a summary of your finances every week.",
                     icon = Icons.Default.CalendarToday,
                     checked = isWeeklySummaryEnabled,
-                    onCheckedChange = { enabled ->
-                        viewModel.setWeeklySummaryEnabled(enabled)
-                    }
+                    onCheckedChange = { viewModel.setWeeklySummaryEnabled(it) }
                 )
             }
             item {
@@ -235,12 +253,22 @@ fun SettingsScreen(
                         }
                     )
                     SettingsActionItem(
-                        text = "Export Data",
-                        icon = Icons.Default.UploadFile,
+                        text = "Export Data as JSON",
+                        icon = Icons.Default.DataObject,
                         onClick = {
                             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                             val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
                             fileSaverLauncher.launch(fileName)
+                        }
+                    )
+                    // --- ADDED: The new "Export as CSV" button ---
+                    SettingsActionItem(
+                        text = "Export Transactions as CSV",
+                        icon = Icons.Default.GridOn,
+                        onClick = {
+                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                            val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
+                            csvFileSaverLauncher.launch(fileName)
                         }
                     )
                     SettingsActionItem(
