@@ -23,7 +23,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.personalfinanceapp.DataExportService
-import com.example.personalfinanceapp.SettingsRepository
 import com.example.personalfinanceapp.SettingsViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -37,16 +36,13 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settingsRepository = remember { SettingsRepository(context) }
     val isScanning by viewModel.isScanning.collectAsState()
 
-    // State for all settings
-    val isAppLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = false)
-    val isWeeklySummaryEnabled by settingsRepository.getWeeklySummaryEnabled().collectAsState(initial = true)
-    val isUnknownTransactionPopupEnabled by settingsRepository.getUnknownTransactionPopupEnabled().collectAsState(initial = true)
-    // --- ADDED: State for the new reminder toggle ---
+    // State for all settings, now driven by the ViewModel where appropriate
+    val isAppLockEnabled by viewModel.appLockEnabled.collectAsState()
+    val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReminderEnabled by viewModel.dailyReminderEnabled.collectAsState()
-
+    val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
 
     // Permission Handlers
     var hasSmsPermission by remember {
@@ -157,16 +153,15 @@ fun SettingsScreen(
                     subtitle = "Use biometrics or screen lock to secure the app.",
                     icon = Icons.Default.Lock,
                     checked = isAppLockEnabled,
-                    onCheckedChange = { settingsRepository.saveAppLockEnabled(it) }
+                    onCheckedChange = { viewModel.setAppLockEnabled(it) }
                 )
             }
 
             item { SettingSectionHeader("Notifications") }
-            // --- ADDED: Daily Reminder Toggle Switch ---
             item {
                 SettingsToggleItem(
                     title = "Daily Review Reminder",
-                    subtitle = "Get a notification if you have transactions waiting for your approval.",
+                    subtitle = "Get a notification if you have transactions waiting for approval.",
                     icon = Icons.Default.NotificationsActive,
                     checked = isDailyReminderEnabled,
                     onCheckedChange = { enabled ->
@@ -180,7 +175,9 @@ fun SettingsScreen(
                     subtitle = "Receive a summary of your finances every week.",
                     icon = Icons.Default.CalendarToday,
                     checked = isWeeklySummaryEnabled,
-                    onCheckedChange = { settingsRepository.saveWeeklySummaryEnabled(it) }
+                    onCheckedChange = { enabled ->
+                        viewModel.setWeeklySummaryEnabled(enabled)
+                    }
                 )
             }
             item {
@@ -189,7 +186,7 @@ fun SettingsScreen(
                     subtitle = "Show notification for SMS from new merchants.",
                     icon = Icons.Default.Notifications,
                     checked = isUnknownTransactionPopupEnabled,
-                    onCheckedChange = { settingsRepository.saveUnknownTransactionPopupEnabled(it) }
+                    onCheckedChange = { viewModel.setUnknownTransactionPopupEnabled(it) }
                 )
             }
 
