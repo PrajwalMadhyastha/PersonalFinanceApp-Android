@@ -204,6 +204,7 @@ fun FinanceApp() {
             composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, viewModel()) }
             composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
             composable(BottomNavItem.Settings.route) { SettingsScreen(navController, viewModel()) }
+            composable("search_screen") { SearchScreen(navController) }
             composable("review_sms_screen") { ReviewSmsScreen(navController, viewModel()) }
             composable("sms_debug_screen") { SmsDebugScreen(navController, viewModel()) }
             composable(

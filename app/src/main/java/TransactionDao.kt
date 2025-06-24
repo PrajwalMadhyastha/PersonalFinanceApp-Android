@@ -94,6 +94,29 @@ interface TransactionDao {
     """)
     fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>>
 
+    @Query("""
+        SELECT t.*, a.name as accountName, c.name as categoryName
+        FROM transactions t
+        LEFT JOIN accounts a ON t.accountId = a.id
+        LEFT JOIN categories c ON t.categoryId = c.id
+        WHERE
+            (:keyword = '' OR t.description LIKE '%' || :keyword || '%' OR t.notes LIKE '%' || :keyword || '%') AND
+            (:accountId IS NULL OR t.accountId = :accountId) AND
+            (:categoryId IS NULL OR t.categoryId = :categoryId) AND
+            (:transactionType IS NULL OR t.transactionType = :transactionType) AND
+            (:startDate IS NULL OR t.date >= :startDate) AND
+            (:endDate IS NULL OR t.date <= :endDate)
+        ORDER BY t.date DESC
+    """)
+    suspend fun searchTransactions(
+        keyword: String,
+        accountId: Int?,
+        categoryId: Int?,
+        transactionType: String?,
+        startDate: Long?,
+        endDate: Long?
+    ): List<TransactionDetails>
+
 
     @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
     suspend fun countTransactionsForCategory(categoryId: Int): Int

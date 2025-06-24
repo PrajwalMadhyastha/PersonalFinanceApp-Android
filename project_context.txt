@@ -1,0 +1,3827 @@
+Project Context for Personal Finance App
+Generated on: Tue Jun 24 13:47:13 IST 2025
+========================================
+
+================== FILE: ./app/build.gradle.kts ==================
+// It's good practice to define versions in one place.
+val room_version = "2.6.1"
+val lifecycle_version = "2.8.2"
+val activity_compose_version = "1.9.0"
+val core_ktx_version = "1.13.1"
+val navigation_version = "2.7.7"
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
+}
+
+android {
+    namespace = "com.example.personalfinanceapp"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.example.personalfinanceapp"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary = true
+        }
+        ksp {
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+    buildFeatures {
+        compose = true
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+configurations.all {
+    resolutionStrategy {
+        force("androidx.core:core-ktx:$core_ktx_version")
+        force("androidx.core:core:$core_ktx_version")
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:$core_ktx_version")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycle_version")
+    implementation("androidx.activity:activity-compose:$activity_compose_version")
+
+    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+
+    implementation("androidx.room:room-runtime:$room_version")
+    implementation("androidx.room:room-ktx:$room_version")
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    ksp("androidx.room:room-compiler:$room_version")
+
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycle_version")
+    implementation("androidx.navigation:navigation-compose:$navigation_version")
+
+    implementation("com.google.android.material:material:1.12.0")
+
+    // --- Using MPAndroidChart for all charts ---
+    implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+
+    // --- Vico dependencies have been removed ---
+
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+}
+
+
+
+================== FILE: ./app/src/main/AndroidManifest.xml ==================
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <application
+        android:name=".MainApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.PersonalFinanceApp"
+        tools:targetApi="31">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.PersonalFinanceApp">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="personalfinanceapp.example.com"
+                    android:scheme="app" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter android:priority="999">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>
+
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AddRecurringTransactionScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.Account
+import com.example.personalfinanceapp.Category
+import com.example.personalfinanceapp.RecurringTransactionViewModel
+import com.example.personalfinanceapp.TransactionViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddRecurringTransactionScreen(navController: NavController) {
+    val recurringViewModel: RecurringTransactionViewModel = viewModel()
+    // CORRECTED: Create the TransactionViewModel the standard way
+    val transactionViewModel: TransactionViewModel = viewModel()
+
+    var description by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var transactionType by remember { mutableStateOf("expense") }
+
+    val recurrenceIntervals = listOf("Daily", "Weekly", "Monthly", "Yearly")
+    var selectedInterval by remember { mutableStateOf(recurrenceIntervals[2]) }
+    var intervalExpanded by remember { mutableStateOf(false) }
+
+    val accounts by transactionViewModel.allAccounts.collectAsState(initial = emptyList())
+    var selectedAccount by remember { mutableStateOf<Account?>(null) }
+    var accountExpanded by remember { mutableStateOf(false) }
+
+    val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Add Recurring Transaction") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
+
+            item {
+                Row {
+                    FilterChip(selected = transactionType == "expense", onClick = { transactionType = "expense" }, label = { Text("Expense") }, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(selected = transactionType == "income", onClick = { transactionType = "income" }, label = { Text("Income") }, modifier = Modifier.weight(1f))
+                }
+            }
+
+            item {
+                ExposedDropdownMenuBox(expanded = intervalExpanded, onExpandedChange = { intervalExpanded = !intervalExpanded }) {
+                    OutlinedTextField(value = selectedInterval, onValueChange = {}, readOnly = true, label = { Text("Repeats") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = intervalExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                    ExposedDropdownMenu(expanded = intervalExpanded, onDismissRequest = { intervalExpanded = false }) {
+                        recurrenceIntervals.forEach { interval -> DropdownMenuItem(text = { Text(interval) }, onClick = { selectedInterval = interval; intervalExpanded = false }) }
+                    }
+                }
+            }
+
+            item {
+                ExposedDropdownMenuBox(expanded = accountExpanded, onExpandedChange = { accountExpanded = !accountExpanded }) {
+                    OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {}, readOnly = true, label = { Text("Account") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                    ExposedDropdownMenu(expanded = accountExpanded, onDismissRequest = { accountExpanded = false }) {
+                        accounts.forEach { account -> DropdownMenuItem(text = { Text(account.name) }, onClick = { selectedAccount = account; accountExpanded = false }) }
+                    }
+                }
+            }
+
+            item {
+                ExposedDropdownMenuBox(expanded = categoryExpanded, onExpandedChange = { categoryExpanded = !categoryExpanded }) {
+                    OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {}, readOnly = true, label = { Text("Category") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                    ExposedDropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
+                        categories.forEach { category -> DropdownMenuItem(text = { Text(category.name) }, onClick = { selectedCategory = category; categoryExpanded = false }) }
+                    }
+                }
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        val amountDouble = amount.toDoubleOrNull()
+                        if (amountDouble != null && selectedAccount != null) {
+                            recurringViewModel.addRecurringTransaction(
+                                description, amountDouble, transactionType, selectedInterval, System.currentTimeMillis(), selectedAccount!!.id, selectedCategory?.id
+                            )
+                            navController.popBackStack()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = description.isNotBlank() && amount.isNotBlank() && selectedAccount != null
+                ) {
+                    Text("Save Rule")
+                }
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/CategoryListScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.Category
+import com.example.personalfinanceapp.CategoryViewModel
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.DeleteCategoryDialog
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.EditCategoryDialog
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CategoryListScreen(navController: NavController, viewModel: CategoryViewModel) {
+    val categories by viewModel.allCategories.collectAsState(initial = emptyList())
+    var newCategoryName by remember { mutableStateOf("") }
+
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(key1 = viewModel.uiEvent) {
+        viewModel.uiEvent.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Manage Categories") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = newCategoryName,
+                    onValueChange = { newCategoryName = it },
+                    label = { Text("New Category Name") },
+                    modifier = Modifier.weight(1f)
+                )
+                Button(
+                    onClick = {
+                        if (newCategoryName.isNotBlank()) {
+                            viewModel.addCategory(newCategoryName)
+                            newCategoryName = ""
+                        }
+                    },
+                    enabled = newCategoryName.isNotBlank()
+                ) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Divider()
+
+            LazyColumn {
+                items(categories) { category ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = category.name, modifier = Modifier.weight(1f))
+                        IconButton(onClick = {
+                            selectedCategory = category
+                            showEditDialog = true
+                        }) {
+                            Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Category")
+                        }
+                        IconButton(onClick = {
+                            selectedCategory = category
+                            showDeleteDialog = true
+                        }) {
+                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Category", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    Divider()
+                }
+            }
+        }
+    }
+
+    if (showEditDialog) {
+        selectedCategory?.let {
+            EditCategoryDialog(
+                category = it,
+                onDismiss = { showEditDialog = false },
+                onConfirm = { updatedCategory ->
+                    viewModel.updateCategory(updatedCategory)
+                    showEditDialog = false
+                }
+            )
+        }
+    }
+
+    if (showDeleteDialog) {
+        selectedCategory?.let {
+            DeleteCategoryDialog(
+                category = it,
+                onDismiss = { showDeleteDialog = false },
+                onConfirm = {
+                    viewModel.deleteCategory(it)
+                    showDeleteDialog = false
+                }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditCategoryScreen(
+    navController: NavController,
+    viewModel: CategoryViewModel,
+    categoryId: Int
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    var categoryName by remember { mutableStateOf("") }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var categoryToDelete by remember { mutableStateOf<Category?>(null) }
+
+    LaunchedEffect(key1 = categoryId) {
+        val category = viewModel.getCategoryById(categoryId)
+        if (category != null) {
+            categoryName = category.name
+        }
+    }
+
+    LaunchedEffect(key1 = viewModel.uiEvent) {
+        viewModel.uiEvent.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Edit Category") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        categoryToDelete = Category(id = categoryId, name = categoryName)
+                        showDeleteDialog = true
+                    }) {
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Category")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedTextField(
+                value = categoryName,
+                onValueChange = { categoryName = it },
+                label = { Text("Category Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = {
+                    if (categoryName.isNotBlank()) {
+                        viewModel.updateCategory(Category(id = categoryId, name = categoryName))
+                        navController.popBackStack()
+                    }
+                },
+                modifier = Modifier.align(Alignment.End),
+                enabled = categoryName.isNotBlank()
+            ) {
+                Text("Update Category")
+            }
+        }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Confirm Deletion") },
+            text = { Text("Are you sure you want to delete this category? This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        categoryToDelete?.let {
+                            viewModel.deleteCategory(it)
+                        }
+                        showDeleteDialog = false
+                        navController.popBackStack()
+                    }
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AddBudgetScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.BudgetViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddBudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
+    var categoryName by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Add New Budget") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = categoryName,
+                onValueChange = { categoryName = it },
+                label = { Text("Category Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                label = { Text("Budget Amount") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    if (categoryName.isNotBlank() && amount.isNotBlank()) {
+                        viewModel.addBudget(categoryName, amount)
+                        navController.popBackStack()
+                    }
+                },
+                modifier = Modifier.align(Alignment.End),
+                enabled = categoryName.isNotBlank() && amount.isNotBlank()
+            ) {
+                Text("Save Budget")
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/SmsWorkflowScreens.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.util.Log
+import android.widget.Toast
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.*
+import java.net.URLEncoder
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel = viewModel()) {
+    val potentialTransactions by viewModel.potentialTransactions.collectAsState()
+
+    // Load transactions when the screen is first displayed
+    LaunchedEffect(Unit) {
+        viewModel.rescanAllSmsMessages()
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Review Potential Transactions") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        if (potentialTransactions.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("No new transactions to review.", style = MaterialTheme.typography.titleMedium)
+                    Text("Go back to Settings and tap 'Rescan' to find transactions.", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Text(
+                        "${potentialTransactions.size} potential transactions found.",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                items(potentialTransactions) { pt ->
+                    PotentialTransactionItem(
+                        transaction = pt,
+                        onDismiss = { viewModel.dismissPotentialTransaction(it) },
+                        onApprove = { transaction ->
+                            // --- CORRECTED: Build a detailed route with arguments ---
+                            val merchant = URLEncoder.encode(transaction.merchantName ?: "Unknown", "UTF-8")
+                            val route = "approve_transaction_screen/${transaction.amount}/${transaction.transactionType}/${merchant}/${transaction.sourceSmsId}/${transaction.smsSender}"
+                            navController.navigate(route)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PotentialTransactionItem(
+    transaction: PotentialTransaction,
+    onDismiss: (PotentialTransaction) -> Unit,
+    onApprove: (PotentialTransaction) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            val amountColor = if (transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = transaction.merchantName ?: "Unknown Merchant",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "₹${"%.2f".format(transaction.amount)}",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = amountColor,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Type: ${transaction.transactionType.replaceFirstChar { it.uppercase() }}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Original Message: ${transaction.originalMessage}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                OutlinedButton(onClick = { onDismiss(transaction) }) {
+                    Text("Dismiss")
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { onApprove(transaction) }) {
+                    Text("Approve")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ApproveTransactionScreen(
+    navController: NavController,
+    transactionViewModel: TransactionViewModel = viewModel(),
+    settingsViewModel: SettingsViewModel = viewModel(),
+    // --- CORRECTED: Receive data as parameters, not from ViewModel state ---
+    amount: Float,
+    transactionType: String,
+    merchant: String,
+    smsId: Long,
+    smsSender: String
+) {
+    var description by remember { mutableStateOf(merchant) }
+    var notes by remember { mutableStateOf("") }
+
+    val accounts by transactionViewModel.allAccounts.collectAsState(initial = emptyList())
+    var selectedAccount by remember { mutableStateOf<Account?>(null) }
+    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
+
+    val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Approve Transaction") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description / Merchant") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount.toString(), onValueChange = {}, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth()) }
+
+            item {
+                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedAccount?.name ?: "Select Account",
+                        onValueChange = {}, readOnly = true, label = { Text("Account") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
+                        accounts.forEach { account ->
+                            DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                                selectedAccount = account
+                                isAccountDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            item {
+                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedCategory?.name ?: "Select Category",
+                        onValueChange = {}, readOnly = true, label = { Text("Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                        categories.forEach { category ->
+                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                selectedCategory = category
+                                isCategoryDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+
+            item {
+                Button(
+                    onClick = {
+                        settingsViewModel.saveMerchantMapping(smsSender, description)
+
+                        val success = transactionViewModel.addTransaction(
+                            description = description,
+                            categoryId = selectedCategory?.id,
+                            amountStr = amount.toString(),
+                            accountId = selectedAccount!!.id,
+                            notes = notes.takeIf { it.isNotBlank() },
+                            date = System.currentTimeMillis(),
+                            transactionType = transactionType,
+                            sourceSmsId = smsId // Use the passed-in ID
+                        )
+                        if (success) {
+                            // No need to dismiss here, the list will be re-filtered on next scan
+                            navController.popBackStack()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = selectedAccount != null && selectedCategory != null
+                ) { Text("Save Transaction") }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel = viewModel()) {
+    val smsMessages by viewModel.smsMessages.collectAsState()
+    val context = LocalContext.current
+    val hasSmsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+
+    LaunchedEffect(hasSmsPermission) {
+        if (hasSmsPermission) {
+            viewModel.rescanAllSmsMessages()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("SMS Debug Log") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
+            Button(
+                onClick = {
+                    if (hasSmsPermission) {
+                        viewModel.rescanAllSmsMessages()
+                    } else {
+                        Toast.makeText(context, "Grant SMS permission in settings first.", Toast.LENGTH_LONG).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Refresh SMS Messages")
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            if (smsMessages.isEmpty() && hasSmsPermission) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No messages found.")
+                }
+            } else if (!hasSmsPermission) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Permission not granted.", textAlign = TextAlign.Center)
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(smsMessages) { sms ->
+                        Card {
+                            Column(Modifier.padding(8.dp)) {
+                                Text(sms.sender, fontWeight = FontWeight.Bold)
+                                Text(sms.body, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/EditAccountScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.AccountViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditAccountScreen(
+    navController: NavController,
+    viewModel: AccountViewModel,
+    accountId: Int
+) {
+    val account by viewModel.getAccountById(accountId).collectAsState(initial = null)
+    var accountName by remember { mutableStateOf("") }
+    var accountType by remember { mutableStateOf("") }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(account) {
+        account?.let {
+            accountName = it.name
+            accountType = it.type
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Edit Account") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showDeleteDialog = true }) {
+                        Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete Account")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        account?.let { currentAccount ->
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = accountName,
+                    onValueChange = { accountName = it },
+                    label = { Text("Account Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = accountType,
+                    onValueChange = { accountType = it },
+                    label = { Text("Account Type") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        val updatedAccount = currentAccount.copy(
+                            name = accountName,
+                            type = accountType
+                        )
+                        viewModel.updateAccount(updatedAccount)
+                        navController.popBackStack()
+                    },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Update Account")
+                }
+            }
+        }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Confirm Deletion") },
+            text = { Text("Are you sure you want to delete this account? This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        account?.let {
+                            viewModel.deleteAccount(it)
+                            showDeleteDialog = false
+                            navController.popBackStack()
+                        }
+                    }
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AddTransactionScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.Account
+import com.example.personalfinanceapp.Category
+import com.example.personalfinanceapp.TransactionViewModel
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.TimePickerDialog
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddTransactionScreen(navController: NavController, viewModel: TransactionViewModel) {
+    var description by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+
+    var transactionType by remember { mutableStateOf("expense") }
+    val transactionTypes = listOf("Expense", "Income")
+
+    val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
+    var selectedAccount by remember { mutableStateOf<Account?>(null) }
+    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
+
+    val categories by viewModel.allCategories.collectAsState(initial = emptyList())
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    val selectedDateTime by remember { mutableStateOf(Calendar.getInstance()) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val validationError by viewModel.validationError.collectAsState()
+
+    LaunchedEffect(validationError) {
+        validationError?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Add New Transaction") },
+                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(
+                    Icons.Filled.ArrowBack, "Back") } }
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            item {
+                TabRow(selectedTabIndex = if (transactionType == "expense") 0 else 1) {
+                    transactionTypes.forEachIndexed { index, title ->
+                        Tab(
+                            selected = (if (transactionType == "expense") 0 else 1) == index,
+                            onClick = { transactionType = if (index == 0) "expense" else "income" },
+                            text = { Text(title) }
+                        )
+                    }
+                }
+            }
+
+            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
+            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
+                        Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
+                    }
+                    Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
+                        Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
+                    }
+                }
+            }
+
+            item {
+                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedAccount?.name ?: "Select Account",
+                        onValueChange = {}, readOnly = true, label = { Text("Account") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
+                        accounts.forEach { account ->
+                            DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                                selectedAccount = account
+                                isAccountDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            item {
+                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                    OutlinedTextField(
+                        value = selectedCategory?.name ?: "Select Category",
+                        onValueChange = {}, readOnly = true, label = { Text("Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                        categories.forEach { category ->
+                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                selectedCategory = category
+                                isCategoryDropdownExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        val success = viewModel.addTransaction(
+                            description = description,
+                            categoryId = selectedCategory?.id,
+                            amountStr = amount,
+                            accountId = selectedAccount!!.id,
+                            notes = notes.takeIf { it.isNotBlank() },
+                            date = selectedDateTime.timeInMillis,
+                            transactionType = transactionType,
+                            sourceSmsId = null
+                        )
+                        if (success) {
+                            navController.popBackStack()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank()
+                ) {
+                    Text("Save Transaction")
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            val newCalendar = Calendar.getInstance().apply { timeInMillis = it }
+                            selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
+                            selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
+                            selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
+        ) { DatePicker(state = datePickerState) }
+    }
+
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(
+            Calendar.MINUTE))
+        TimePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            onConfirm = {
+                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
+                showTimePicker = false
+            }
+        ) { TimePicker(state = timePickerState) }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AccountListScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.AccountViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AccountListScreen(navController: NavController, viewModel: AccountViewModel) {
+    // CORRECTED: Changed 'allAccounts' to 'accountsWithBalance'. This assumes your
+    // AccountViewModel has a property like: val accountsWithBalance: Flow<List<AccountWithBalance>>
+    val accounts by viewModel.accountsWithBalance.collectAsState(initial = emptyList())
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Manage Accounts") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_account") }) {
+                Icon(Icons.Filled.Add, contentDescription = "Add Account")
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(contentPadding = innerPadding) {
+            items(accounts) { account ->
+                ListItem(
+                    headlineContent = { Text(account.account.name) },
+                    supportingContent = { Text("Balance: ₹${"%.2f".format(account.balance)}") },
+                    trailingContent = {
+                        IconButton(onClick = { navController.navigate("edit_account/${account.account.id}") }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit Account")
+                        }
+                    },
+                    modifier = Modifier.clickable { navController.navigate("account_detail/${account.account.id}") }
+                )
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/BudgetScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetItem
+import com.example.personalfinanceapp.BudgetViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
+    val budgets by viewModel.budgetsForCurrentMonth.collectAsState(initial = emptyList())
+    val monthYear = viewModel.getCurrentMonthYearString()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Budgets for $monthYear") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { navController.navigate("dashboard") }) {
+                        Icon(imageVector = Icons.Filled.Home, contentDescription = "Dashboard")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_budget") }) {
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Budget")
+            }
+        }
+    ) { innerPadding ->
+        if (budgets.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                Text("No budgets set for this month. Add one!")
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(budgets) { budget ->
+                    BudgetItem(budget = budget, viewModel = viewModel)
+                }
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/SettingsScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.DataExportService
+import com.example.personalfinanceapp.SettingsRepository
+import com.example.personalfinanceapp.SettingsViewModel
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    navController: NavController,
+    viewModel: SettingsViewModel = viewModel()
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val settingsRepository = remember { SettingsRepository(context) }
+    val isScanning by viewModel.isScanning.collectAsState()
+
+    // State for all settings
+    val isAppLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = false)
+    val isWeeklySummaryEnabled by settingsRepository.getWeeklySummaryEnabled().collectAsState(initial = true)
+    val isUnknownTransactionPopupEnabled by settingsRepository.getUnknownTransactionPopupEnabled().collectAsState(initial = true)
+
+    // Permission Handlers
+    var hasSmsPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        hasSmsPermission = perms[Manifest.permission.READ_SMS] == true && perms[Manifest.permission.RECEIVE_SMS] == true
+        // Notification permission is handled by its own launcher
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasNotificationPermission = isGranted
+    }
+    var showImportConfirmDialog by remember { mutableStateOf(false) }
+
+    val fileSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    val jsonString = DataExportService.exportToJsonString(context)
+                    if (jsonString != null) {
+                        try {
+                            context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                                outputStream.write(jsonString.toByteArray())
+                            }
+                            Toast.makeText(context, "Data exported successfully!", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error saving file.", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "Error exporting data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    val success = DataExportService.importDataFromJson(context, it)
+                    if (success) {
+                        Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            contentPadding = PaddingValues(vertical = 8.dp),
+        ) {
+            // General Section
+            item { SettingSectionHeader("General") }
+            item {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    val currentBudget by viewModel.overallBudget.collectAsState()
+                    var budgetInput by remember(currentBudget) { mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "") }
+
+                    OutlinedTextField(
+                        value = budgetInput,
+                        onValueChange = { budgetInput = it },
+                        label = { Text("Overall Monthly Budget") },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        leadingIcon = { Text("₹") }
+                    )
+                    Button(
+                        onClick = { viewModel.saveOverallBudget(budgetInput); Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Save Budget") }
+                }
+            }
+
+            // Security Section
+            item { SettingSectionHeader("Security") }
+            item {
+                SettingsToggleItem(
+                    title = "Enable App Lock",
+                    subtitle = "Use biometrics or screen lock to secure the app.",
+                    icon = Icons.Default.Lock,
+                    checked = isAppLockEnabled,
+                    onCheckedChange = { settingsRepository.saveAppLockEnabled(it) }
+                )
+            }
+
+            // Notifications Section
+            item { SettingSectionHeader("Notifications") }
+            item {
+                SettingsToggleItem(
+                    title = "Weekly Summary Notification",
+                    subtitle = "Receive a summary of your finances every week.",
+                    icon = Icons.Default.CalendarToday,
+                    checked = isWeeklySummaryEnabled,
+                    onCheckedChange = { settingsRepository.saveWeeklySummaryEnabled(it) }
+                )
+            }
+            item {
+                SettingsToggleItem(
+                    title = "Popup for Unknown Transactions",
+                    subtitle = "Show notification for SMS from new merchants.",
+                    icon = Icons.Default.NotificationsActive,
+                    checked = isUnknownTransactionPopupEnabled,
+                    onCheckedChange = { settingsRepository.saveUnknownTransactionPopupEnabled(it) }
+                )
+            }
+
+            // Permissions Section
+            item { SettingSectionHeader("Permissions") }
+            item {
+                SettingsToggleItem(
+                    title = "SMS Access",
+                    subtitle = "Allow reading and receiving SMS for auto-detection.",
+                    icon = Icons.Default.Message,
+                    checked = hasSmsPermission,
+                    onCheckedChange = {
+                        if (!hasSmsPermission) {
+                            permissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+                        }
+                    }
+                )
+            }
+            item {
+                SettingsToggleItem(
+                    title = "Enable Notifications",
+                    subtitle = "Show an alert when a new transaction is detected.",
+                    icon = Icons.Default.Notifications,
+                    checked = hasNotificationPermission,
+                    onCheckedChange = {
+                        if(!hasNotificationPermission) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                )
+            }
+
+            item { SettingSectionHeader("Backup & Restore") }
+            item {
+                SettingsToggleItem(
+                    title = "Automatic Cloud Backup",
+                    subtitle = "Your data is automatically backed up to your Google Account.",
+                    icon = Icons.Default.CloudUpload,
+                    checked = true, // Always on, as it's handled by Android
+                    enabled = false, // User cannot disable this from the app
+                    onCheckedChange = {}
+                )
+            }
+            item { SettingSectionHeader("Automation") }
+            item {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    SettingsActionItem(
+                        text = "Manage Recurring Transactions",
+                        icon = Icons.Default.Autorenew,
+                        onClick = { navController.navigate("recurring_transactions") }
+                    )
+                    // ... other automation buttons
+                }
+            }
+            // Data Management Section
+            item { SettingSectionHeader("Data Management") }
+            item {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    SettingsActionItem(
+                        text = "Rescan SMS Inbox",
+                        icon = Icons.Default.Refresh,
+                        onClick = {
+                            val hasSmsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+                            if (hasSmsPermission) {
+                                Toast.makeText(context, "Scanning all messages...", Toast.LENGTH_SHORT).show()
+                                viewModel.rescanAllSmsMessages()
+                                navController.navigate("review_sms_screen")
+                            } else {
+                                Toast.makeText(context, "Please grant SMS permission first.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                    SettingsActionItem(
+                        text = "Export Data",
+                        icon = Icons.Default.UploadFile,
+                        onClick = {
+                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                            val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
+                            fileSaverLauncher.launch(fileName)
+                        }
+                    )
+                    SettingsActionItem(
+                        text = "Import Data",
+                        icon = Icons.Default.Download,
+                        onClick = { showImportConfirmDialog = true } // Show confirmation dialog
+                    )
+                }
+            }
+        }
+    }
+    if (isScanning) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(16.dp))
+                    Text("Scanning SMS Inbox...", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+    }
+
+    // --- NEW: Confirmation Dialog for Data Import ---
+    if (showImportConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportConfirmDialog = false },
+            title = { Text("Import Data?") },
+            text = { Text("This will delete all current data and replace it with the data from your backup file. This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showImportConfirmDialog = false
+                        // Launch the file picker
+                        filePickerLauncher.launch(arrayOf("application/json"))
+                    }
+                ) { Text("Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportConfirmDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SettingSectionHeader(title: String) {
+    Text(
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 16.dp, end = 16.dp)
+    )
+    Divider()
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsToggleItem(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
+        leadingContent = { Icon(icon, contentDescription = null) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+        modifier = Modifier.padding(horizontal = 16.dp)
+    )
+}
+
+@Composable
+private fun SettingsActionItem(
+    text: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(text)
+        Spacer(Modifier.weight(1f))
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/TransactionListScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.TransactionViewModel
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.TransactionList
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransactionListScreen(navController: NavController, viewModel: TransactionViewModel) {
+    val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Transaction History") })
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
+                Icon(Icons.Filled.Add, contentDescription = "Add transaction")
+            }
+        }
+    ) { innerPadding ->
+        TransactionList(transactions = transactions, navController = navController)
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AccountDetailScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.AccountViewModel
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.AccountTransactionItem
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AccountDetailScreen(
+    navController: NavController,
+    viewModel: AccountViewModel,
+    accountId: Int
+) {
+    val account by viewModel.getAccountById(accountId).collectAsState(initial = null)
+    val balance by viewModel.getAccountBalance(accountId).collectAsState(initial = 0.0)
+    // --- CORRECTED: This now correctly collects the list of TransactionDetails ---
+    val transactions by viewModel.getTransactionsForAccount(accountId).collectAsState(initial = emptyList())
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(account?.name ?: "Account Details") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp)
+                .fillMaxSize()
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Current Balance",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "₹${"%.2f".format(balance)}",
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Recent Transactions",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            if (transactions.isEmpty()) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Text("No transactions for this account yet.")
+                }
+            } else {
+                LazyColumn {
+                    // --- CORRECTED: We now pass `details.transaction` to the item composable ---
+                    items(transactions) { details ->
+                        AccountTransactionItem(transaction = details.transaction)
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/DashboardScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.example.personalfinanceapp.BottomNavItem
+import com.example.personalfinanceapp.BudgetViewModel
+import com.example.personalfinanceapp.DashboardViewModel
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetWatchCard
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.NetWorthCard
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.OverallBudgetCard
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.RecentActivityCard
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.StatCard
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DashboardScreen(
+    navController: NavController,
+    viewModel: DashboardViewModel,
+    budgetViewModel: BudgetViewModel
+) {
+    val netWorth by viewModel.netWorth.collectAsState()
+    val monthlyIncome by viewModel.monthlyIncome.collectAsState()
+    val monthlyExpenses by viewModel.monthlyExpenses.collectAsState()
+    val overallBudget by viewModel.overallMonthlyBudget.collectAsState()
+    val safeToSpend by viewModel.safeToSpendPerDay.collectAsState()
+    val budgetStatus by viewModel.budgetStatus.collectAsState()
+    val recentTransactions by viewModel.recentTransactions.collectAsState()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Dashboard") },
+                actions = {
+                    IconButton(onClick = { navController.navigate(BottomNavItem.Settings.route) }) {
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Transaction")
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                OverallBudgetCard(
+                    totalBudget = overallBudget,
+                    amountSpent = monthlyExpenses.toFloat()
+                )
+            }
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatCard(label = "Monthly Income", amount = monthlyIncome.toFloat(), modifier = Modifier.weight(1f))
+                    StatCard(label = "Total Budget", amount = overallBudget, modifier = Modifier.weight(1f))
+                    StatCard(label = "Safe to Spend", amount = safeToSpend, modifier = Modifier.weight(1f), isPerDay = true)
+                }
+            }
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    FilledTonalButton(
+                        onClick = { navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }},
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Trends")
+                    }
+                    FilledTonalButton(
+                        onClick = { navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }},
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Categories")
+                    }
+                }
+            }
+            item { NetWorthCard(netWorth) }
+            item { RecentActivityCard(recentTransactions, navController) }
+            item { BudgetWatchCard(budgetStatus, budgetViewModel) }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/RecurringTransactionScreens.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.*
+import java.util.*
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RecurringTransactionScreen(navController: NavController) {
+    val viewModel: RecurringTransactionViewModel = viewModel()
+    val recurringTransactions by viewModel.allRecurringTransactions.collectAsState(initial = emptyList())
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Recurring Transactions") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { navController.navigate("add_recurring_transaction") }) {
+                Icon(Icons.Default.Add, contentDescription = "Add Recurring Transaction")
+            }
+        }
+    ) { innerPadding ->
+        if (recurringTransactions.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                Text("No recurring transactions set up.")
+            }
+        } else {
+            LazyColumn(
+                contentPadding = innerPadding,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
+                items(recurringTransactions) { rule ->
+                    ListItem(
+                        headlineContent = { Text(rule.description) },
+                        supportingContent = { Text("₹${rule.amount} every ${rule.recurrenceInterval.lowercase(Locale.getDefault())}") },
+                        trailingContent = {
+                            Text(
+                                text = rule.transactionType.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() },
+                                color = if (rule.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    )
+                    Divider()
+                }
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AddAccountScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.AccountViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddAccountScreen(navController: NavController, viewModel: AccountViewModel) {
+    var accountName by remember { mutableStateOf("") }
+    var accountType by remember { mutableStateOf("") }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Add New Account") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = accountName,
+                onValueChange = { accountName = it },
+                label = { Text("Account Name (e.g., Savings, Credit Card)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = accountType,
+                onValueChange = { accountType = it },
+                label = { Text("Account Type (e.g., Bank, Wallet)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    if (accountName.isNotBlank() && accountType.isNotBlank()) {
+                        viewModel.addAccount(accountName, accountType)
+                        navController.popBackStack()
+                    }
+                },
+                modifier = Modifier.align(Alignment.End),
+                enabled = accountName.isNotBlank() && accountType.isNotBlank()
+            ) {
+                Text("Save Account")
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/EditTransactionScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.Account
+import com.example.personalfinanceapp.Category
+import com.example.personalfinanceapp.TransactionViewModel
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.TimePickerDialog
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditTransactionScreen(navController: NavController, viewModel: TransactionViewModel, transactionId: Int) {
+    val transaction by viewModel.getTransactionById(transactionId).collectAsState(initial = null)
+
+    var description by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+
+    var transactionType by remember { mutableStateOf("expense") }
+    val transactionTypes = listOf("Expense", "Income")
+
+    val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
+    var selectedAccount by remember { mutableStateOf<Account?>(null) }
+    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
+
+    val categories by viewModel.allCategories.collectAsState(initial = emptyList())
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    // --- CORRECTED: Typo fixed from 'mutableState of' to 'mutableStateOf' ---
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    val selectedDateTime = remember { Calendar.getInstance() }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val validationError by viewModel.validationError.collectAsState()
+
+    LaunchedEffect(validationError) {
+        validationError?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(transaction, accounts, categories) {
+        transaction?.let { txn ->
+            description = txn.description
+            amount = txn.amount.toString()
+            notes = txn.notes ?: ""
+            selectedDateTime.timeInMillis = txn.date
+            selectedAccount = accounts.find { it.id == txn.accountId }
+            selectedCategory = categories.find { it.id == txn.categoryId }
+            transactionType = txn.transactionType
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Edit Transaction") },
+                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(
+                    Icons.Filled.ArrowBack, "Back") } },
+                actions = {
+                    IconButton(onClick = { showDeleteDialog = true }) {
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Transaction")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        transaction?.let { currentTransaction ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                item {
+                    TabRow(selectedTabIndex = if (transactionType == "expense") 0 else 1) {
+                        transactionTypes.forEachIndexed { index, title ->
+                            Tab(
+                                selected = (if (transactionType == "expense") 0 else 1) == index,
+                                onClick = { transactionType = if (index == 0) "expense" else "income" },
+                                text = { Text(title) }
+                            )
+                        }
+                    }
+                }
+
+                item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
+                item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
+                            Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
+                        }
+                        Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
+                            Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
+                        }
+                    }
+                }
+
+                item {
+                    ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                        OutlinedTextField(
+                            value = selectedAccount?.name ?: "Select Account",
+                            onValueChange = {}, readOnly = true, label = { Text("Account") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
+                            accounts.forEach { account ->
+                                DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                                    selectedAccount = account
+                                    isAccountDropdownExpanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                        OutlinedTextField(
+                            value = selectedCategory?.name ?: "Select Category",
+                            onValueChange = {}, readOnly = true, label = { Text("Category") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                            categories.forEach { category ->
+                                DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                    selectedCategory = category
+                                    isCategoryDropdownExpanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Button(
+                        onClick = {
+                            val updatedAmount = amount.toDoubleOrNull() ?: 0.0
+                            val updatedTransaction = currentTransaction.copy(
+                                description = description,
+                                amount = updatedAmount,
+                                accountId = selectedAccount?.id ?: currentTransaction.accountId,
+                                categoryId = selectedCategory?.id,
+                                notes = notes.takeIf { it.isNotBlank() },
+                                date = selectedDateTime.timeInMillis,
+                                transactionType = transactionType
+                            )
+                            val success = viewModel.updateTransaction(updatedTransaction)
+                            if (success) {
+                                navController.popBackStack()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Update Transaction")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            val newCalendar = Calendar.getInstance().apply { timeInMillis = it }
+                            selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
+                            selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
+                            selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
+        ) { DatePicker(state = datePickerState) }
+    }
+
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(
+            Calendar.MINUTE))
+        TimePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            onConfirm = {
+                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
+                showTimePicker = false
+            }
+        ) { TimePicker(state = timePickerState) }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Confirm Deletion") },
+            text = { Text("Are you sure you want to permanently delete this transaction?") },
+            confirmButton = {
+                Button(onClick = {
+                    transaction?.let {
+                        viewModel.deleteTransaction(it)
+                        showDeleteDialog = false
+                        navController.popBackStack()
+                    }
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/ReportsScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import android.graphics.Color
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.ReportsViewModel
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.ChartLegend
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.GroupedBarChart
+import com.github.mikephil.charting.charts.PieChart
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = viewModel()) {
+    val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
+    val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Reports") }) }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // --- Pie Chart Card (Unchanged) ---
+            item {
+                Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Spending by Category for ${viewModel.monthYear}", style = MaterialTheme.typography.titleLarge)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        if (pieData == null || pieData?.entryCount == 0) {
+                            Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+                                Text("No expense data for this month.")
+                            }
+                        } else {
+                            AndroidView(
+                                factory = { context ->
+                                    PieChart(context).apply {
+                                        description.isEnabled = false; isDrawHoleEnabled = true; setHoleColor(
+                                        Color.TRANSPARENT); setEntryLabelColor(Color.BLACK); setEntryLabelTextSize(12f); legend.isEnabled = false
+                                    }
+                                },
+                                update = { chart -> chart.data = pieData; chart.invalidate() },
+                                modifier = Modifier.fillMaxWidth().height(300.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            ChartLegend(pieData)
+                        }
+                    }
+                }
+            }
+
+            // --- Bar Chart Card (REFINED) ---
+            item {
+                Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Income vs. Expense Trend", style = MaterialTheme.typography.titleLarge)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
+                            // This is the refined BarChart implementation
+                            GroupedBarChart(trendDataPair!!)
+                        } else {
+                            Box(modifier = Modifier.fillMaxWidth().height(250.dp), contentAlignment = Alignment.Center) {
+                                Text("Not enough data for trend analysis.")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/components/UtilityComponents.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.example.personalfinanceapp.PotentialTransaction
+import com.github.mikephil.charting.charts.BarChart
+import com.github.mikephil.charting.components.XAxis
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.PieData
+import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
+
+@Composable
+fun TimePickerDialog(
+    title: String = "Select Time",
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(title) },
+        text = {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                content()
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("OK")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun ChartLegend(pieData: PieData?) {
+    // Safely get the dataset from the PieData object.
+    val dataSet = pieData?.dataSet as? PieDataSet ?: return
+
+    // Use a classic for loop for maximum compatibility with the Java library.
+    // This explicitly gets each entry and its corresponding color by index.
+    Column {
+        for (i in 0 until dataSet.entryCount) {
+            val entry = dataSet.getEntryForIndex(i)
+            val color = dataSet.getColor(i)
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color(color)) // Convert the Android integer color to a Compose Color
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                // The 'label' property of PieEntry holds the category name.
+                Text(text = "${entry.label} - ₹${"%.2f".format(entry.value)}")
+            }
+        }
+    }
+}
+
+@Composable
+fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
+    val (barData, labels) = trendDataPair
+
+    AndroidView(
+        factory = { context ->
+            // FACTORY: For one-time, data-independent setup
+            BarChart(context).apply {
+                description.isEnabled = false
+                legend.isEnabled = true
+                setDrawGridBackground(false)
+
+                xAxis.position = XAxis.XAxisPosition.BOTTOM
+                xAxis.setDrawGridLines(false)
+                xAxis.granularity = 1f // Essential for labels to align with bars
+
+                axisLeft.axisMinimum = 0f
+                axisLeft.setDrawGridLines(true)
+
+                axisRight.isEnabled = false
+            }
+        },
+        update = { chart ->
+            // UPDATE: For applying data and data-dependent properties
+
+            // 1. Define the widths and spacing for the grouped bars
+            val barWidth = 0.25f
+            val barSpace = 0.05f
+            val groupSpace = 0.4f
+            barData.barWidth = barWidth
+
+            // 2. Apply the data to the chart
+            chart.data = barData
+
+            // 3. Set the labels for the X-Axis
+            chart.xAxis.valueFormatter = IndexAxisValueFormatter(labels)
+
+            // 4. Set the visible range of the x-axis
+            // This is crucial for groupBars to work correctly
+            chart.xAxis.axisMinimum = 0f
+            chart.xAxis.axisMaximum = labels.size.toFloat()
+
+            // 5. Center the labels under the groups
+            chart.xAxis.setCenterAxisLabels(true)
+
+            // 6. Group the bars. The 'fromX' (first param) should be the starting point.
+            chart.groupBars(0f, groupSpace, barSpace)
+
+            // 7. Refresh the chart to apply all changes
+            chart.invalidate()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(250.dp)
+    )
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/components/DashboardComponents.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
+
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.example.personalfinanceapp.BottomNavItem
+import com.example.personalfinanceapp.Budget
+import com.example.personalfinanceapp.BudgetViewModel
+import com.example.personalfinanceapp.BudgetWithSpending
+import com.example.personalfinanceapp.TransactionDetails
+import kotlinx.coroutines.flow.map
+import kotlin.math.sin
+
+private fun formatAmountCompact(amount: Float): String {
+    return when {
+        amount >= 1_000_000 -> "₹${"%.1f".format(amount / 1_000_000)}M"
+        amount >= 1_000 -> "₹${"%.1f".format(amount / 1_000)}k"
+        else -> "₹${"%.0f".format(amount)}"
+    }
+}
+
+@Composable
+fun StatCard(
+    label: String,
+    amount: Float,
+    modifier: Modifier = Modifier,
+    isPerDay: Boolean = false
+) {
+    Card(
+        modifier = modifier,
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            // --- UPDATED: Call the top-level helper function directly ---
+            Text(
+                text = "${formatAmountCompact(amount)}${if (isPerDay) "/day" else ""}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+fun OverallBudgetCard(totalBudget: Float, amountSpent: Float) {
+    if (totalBudget <= 0) {
+        return
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+        ) {
+            Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                // The Liquid Tumbler visualization
+                LiquidTumbler(
+                    progress = (amountSpent / totalBudget),
+                    modifier = Modifier.size(120.dp)
+                )
+
+                // The text summary
+                Column {
+                    Text("Spent", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        text = "₹${"%.2f".format(amountSpent)}",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Remaining", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        text = "₹${"%.2f".format(totalBudget - amountSpent)}",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+// --- LiquidTumbler Composable (CORRECTED) ---
+@Composable
+fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
+    val clampedProgress = progress.coerceIn(0f, 1f)
+
+    val animatedProgress by animateFloatAsState(
+        targetValue = clampedProgress,
+        animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
+        label = "LiquidFillAnimation"
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "WaveAnimation")
+    val waveOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = LinearEasing)
+        ), label = "WaveOffset"
+    )
+
+    // --- CORRECTED: Resolve colors and pixel values in the Composable context ---
+    val waterColor = when {
+        clampedProgress >= 1f -> MaterialTheme.colorScheme.error
+        clampedProgress > 0.8f -> Color(0xFFFBC02D) // Amber
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val glassColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val strokeWidthPx = with(LocalDensity.current) { 4.dp.toPx() }
+
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+
+            val glassPath = Path().apply {
+                moveTo(width * 0.1f, height * 0.05f)
+                lineTo(width * 0.2f, height * 0.95f)
+                quadraticBezierTo(width * 0.5f, height * 1.05f, width * 0.8f, height * 0.95f)
+                lineTo(width * 0.9f, height * 0.05f)
+                close()
+            }
+
+            // --- CORRECTED: Use the pre-resolved values ---
+            drawPath(
+                path = glassPath,
+                color = glassColor,
+                style = Stroke(width = strokeWidthPx)
+            )
+
+            clipPath(glassPath) {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(waterColor.copy(alpha = 0.5f), waterColor),
+                        startY = height * (1 - animatedProgress),
+                        endY = height
+                    ),
+                    topLeft = Offset(0f, height * (1 - animatedProgress)),
+                    size = size
+                )
+
+                val wavePath = Path().apply {
+                    moveTo(-width, height * (1 - animatedProgress))
+                    for (i in 0..width.toInt() * 2) {
+                        lineTo(
+                            i.toFloat(),
+                            height * (1 - animatedProgress) + sin((i * 0.03f) + (waveOffset * Math.PI.toFloat())) * 5f
+                        )
+                    }
+                    lineTo(width * 2, height)
+                    lineTo(-width, height)
+                    close()
+                }
+                drawPath(path = wavePath, color = waterColor)
+            }
+        }
+        Text(
+            text = "${(clampedProgress * 100).toInt()}%",
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+// --- NEW: Composable to host the MPAndroidChart PieChart ---
+//@Composable
+//fun BudgetPieChart(totalBudget: Float, amountSpent: Float) {
+//    val remaining = totalBudget - amountSpent
+//    val percentageSpent = if (totalBudget > 0) (amountSpent / totalBudget) * 100 else 0f
+//
+//    val spentColor = MaterialTheme.colorScheme.error.toArgb()
+//    val remainingColor = MaterialTheme.colorScheme.primaryContainer.toArgb()
+//
+//    // --- CORRECTED: Get the color in the Composable context ---
+//    val centerTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
+//
+//    AndroidView(
+//        factory = { context ->
+//            PieChart(context).apply {
+//                description.isEnabled = false
+//                legend.isEnabled = false
+//                isDrawHoleEnabled = true
+//                setHoleColor(AndroidColor.TRANSPARENT)
+//                setUsePercentValues(true)
+//                setEntryLabelColor(AndroidColor.BLACK)
+//                setEntryLabelTypeface(Typeface.DEFAULT_BOLD)
+//            }
+//        },
+//        update = { chart ->
+//            val entries = mutableListOf<PieEntry>()
+//            if (amountSpent > 0) {
+//                entries.add(PieEntry(amountSpent, "Spent"))
+//            }
+//            if (remaining > 0) {
+//                entries.add(PieEntry(remaining, "Remaining"))
+//            }
+//
+//            val dataSet = PieDataSet(entries, "Budget").apply {
+//                colors = listOf(spentColor, remainingColor)
+//                setDrawValues(false)
+//            }
+//
+//            chart.data = PieData(dataSet)
+//
+//            chart.centerText = "%.1f%%".format(percentageSpent)
+//            chart.setCenterTextSize(24f)
+//            chart.setCenterTextTypeface(Typeface.DEFAULT_BOLD)
+//            // --- CORRECTED: Use the color variable here ---
+//            chart.setCenterTextColor(centerTextColor)
+//
+//            chart.invalidate()
+//        },
+//        modifier = Modifier.fillMaxSize()
+//    )
+//}
+
+@Composable
+fun NetWorthCard(netWorth: Double) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Net Worth", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "₹${"%.2f".format(netWorth)}",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun RecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent Transactions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(
+                    onClick = {
+                        // --- CORRECTED: Use the same navigation logic as the bottom bar ---
+                        navController.navigate(BottomNavItem.Transactions.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                ) { Text("View All") }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            if(transactions.isEmpty()){
+                Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp))
+            } else {
+                transactions.forEach { details ->
+                    TransactionItem(transactionDetails = details) {
+                        // This navigation is correct as it's a detail screen, not a main tab
+                        navController.navigate("edit_transaction/${details.transaction.id}")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BudgetWatchCard(budgetStatus: List<BudgetWithSpending>, viewModel: BudgetViewModel) {
+    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            if (budgetStatus.isEmpty()) {
+                Text("No budgets set for this month.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                budgetStatus.forEach { budgetWithSpendingItem ->
+                    BudgetItem(budget = budgetWithSpendingItem.budget, viewModel = viewModel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
+    val spendingFlow = remember(budget.categoryName) {
+        viewModel.getActualSpending(budget.categoryName).map { spending ->
+            Math.abs(spending ?: 0.0)
+        }
+    }
+    val actualSpending by spendingFlow.collectAsState(initial = 0.0)
+
+    val progress = if (budget.amount > 0) (actualSpending / budget.amount).toFloat() else 0f
+    val amountRemaining = budget.amount - actualSpending
+
+    val progressColor = when {
+        progress > 1f -> MaterialTheme.colorScheme.error
+        progress > 0.8f -> Color(0xFFFBC02D) // Amber
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = budget.categoryName,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "₹${"%.2f".format(budget.amount)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(8.dp),
+                color = progressColor
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    text = "Spent: ₹${"%.2f".format(actualSpending)}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = "Remaining: ₹${"%.2f".format(amountRemaining)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (amountRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/components/TransactionItem.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.Transaction
+import com.example.personalfinanceapp.TransactionDetails
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        onClick = onClick
+    ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = transactionDetails.transaction.description,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                if (!transactionDetails.transaction.notes.isNullOrBlank()) {
+                    Text(
+                        text = transactionDetails.transaction.notes!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Text(
+                    text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (transactionDetails.transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+fun AccountTransactionItem(transaction: Transaction) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = transaction.description, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transaction.date)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = "₹${"%.2f".format(transaction.amount)}",
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+fun TransactionList(transactions: List<TransactionDetails>, navController: NavController) {
+    if (transactions.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No transactions yet. Add one!")
+        }
+    } else {
+        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+            items(transactions) { details ->
+                TransactionItem(transactionDetails = details, onClick = {
+                    navController.navigate("edit_transaction/${details.transaction.id}")
+                })
+            }
+        }
+    }
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/components/CategoryDialogs.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
+
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.example.personalfinanceapp.Category
+
+@Composable
+fun EditCategoryDialog(
+    category: Category,
+    onDismiss: () -> Unit,
+    onConfirm: (Category) -> Unit
+) {
+    var updatedName by remember { mutableStateOf(category.name) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Category") },
+        text = {
+            OutlinedTextField(
+                value = updatedName,
+                onValueChange = { updatedName = it },
+                label = { Text("Category Name") }
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (updatedName.isNotBlank()) {
+                        onConfirm(category.copy(name = updatedName))
+                    }
+                },
+                enabled = updatedName.isNotBlank()
+            ) {
+                Text("Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun DeleteCategoryDialog(
+    category: Category,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete Category") },
+        text = { Text("Are you sure you want to delete the category '${category.name}'? This cannot be undone.") },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/theme/Color.kt ==================
+package com.example.personalfinanceapp.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+val Purple80 = Color(0xFFD0BCFF)
+val PurpleGrey80 = Color(0xFFCCC2DC)
+val Pink80 = Color(0xFFEFB8C8)
+
+val Purple40 = Color(0xFF6650a4)
+val PurpleGrey40 = Color(0xFF625b71)
+val Pink40 = Color(0xFF7D5260)-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/theme/Theme.kt ==================
+package com.example.personalfinanceapp.ui.theme
+
+import android.app.Activity
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+
+private val DarkColorScheme = darkColorScheme(
+    primary = Purple80,
+    secondary = PurpleGrey80,
+    tertiary = Pink80
+)
+
+private val LightColorScheme = lightColorScheme(
+    primary = Purple40,
+    secondary = PurpleGrey40,
+    tertiary = Pink40
+
+    /* Other default colors to override
+    background = Color(0xFFFFFBFE),
+    surface = Color(0xFFFFFBFE),
+    onPrimary = Color.White,
+    onSecondary = Color.White,
+    onTertiary = Color.White,
+    onBackground = Color(0xFF1C1B1F),
+    onSurface = Color(0xFF1C1B1F),
+    */
+)
+
+@Composable
+fun PersonalFinanceAppTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    // Dynamic color is available on Android 12+
+    dynamicColor: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    val colorScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = LocalContext.current
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = Typography,
+        content = content
+    )
+}-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/theme/Type.kt ==================
+package com.example.personalfinanceapp.ui.theme
+
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+
+// Set of Material typography styles to start with
+val Typography = Typography(
+    bodyLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.5.sp
+    )
+    /* Other default text styles to override
+    titleLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+        letterSpacing = 0.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.5.sp
+    )
+    */
+)-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/MainActivity.kt ==================
+package com.example.personalfinanceapp
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
+import androidx.navigation.compose.*
+import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.*
+import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import java.net.URLDecoder
+import java.util.concurrent.Executor
+
+// --- Navigation Destinations ---
+sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
+    object Dashboard : BottomNavItem("dashboard", Icons.Filled.Home, "Dashboard")
+    object Transactions : BottomNavItem("transaction_list", Icons.Filled.Receipt, "History")
+    object Reports : BottomNavItem("reports_screen", Icons.Filled.Assessment, "Reports")
+    object Settings : BottomNavItem("settings_screen", Icons.Filled.Settings, "Settings")
+}
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        val settingsRepository = SettingsRepository(this)
+        val initialLockStatus = settingsRepository.isAppLockEnabledBlocking()
+
+        setContent {
+            PersonalFinanceAppTheme {
+                FinanceAppWithLockScreen(isInitiallyLocked = initialLockStatus)
+            }
+        }
+    }
+}
+
+@Composable
+fun FinanceAppWithLockScreen(isInitiallyLocked: Boolean) {
+    val context = LocalContext.current
+    val settingsRepository = remember { SettingsRepository(context) }
+
+    var isLocked by remember { mutableStateOf(isInitiallyLocked) }
+    val appLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = isInitiallyLocked)
+
+    // --- PERMISSION ONBOARDING LOGIC ---
+    val permissionsToRequest = arrayOf(
+        Manifest.permission.READ_SMS,
+        Manifest.permission.RECEIVE_SMS,
+        Manifest.permission.POST_NOTIFICATIONS
+    )
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        val allPermissionsGranted = perms.all { it.value }
+        if (!allPermissionsGranted) {
+            Toast.makeText(context, "Some permissions were denied. The app may not function fully.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Check for permissions on the first launch
+    LaunchedEffect(key1 = true) {
+        val areAllPermissionsGranted = permissionsToRequest.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+        if (!areAllPermissionsGranted) {
+            permissionLauncher.launch(permissionsToRequest)
+        }
+    }
+    // --- END PERMISSION LOGIC ---
+
+    LaunchedEffect(appLockEnabled) {
+        if (!appLockEnabled) {
+            isLocked = false
+        }
+    }
+
+    if (isLocked) {
+        LockScreen(onUnlock = { isLocked = false })
+    } else {
+        FinanceApp()
+    }
+}
+
+
+@Composable
+fun LockScreen(onUnlock: () -> Unit) {
+    val context = LocalContext.current
+    val activity = LocalContext.current as FragmentActivity
+    val executor: Executor = remember { ContextCompat.getMainExecutor(context) }
+
+    val promptInfo = remember {
+        BiometricPrompt.PromptInfo.Builder()
+            .setTitle("App Locked")
+            .setSubtitle("Authenticate to access your finances")
+            .setNegativeButtonText("Cancel")
+            .build()
+    }
+
+    val biometricPrompt = remember {
+        BiometricPrompt(activity, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    onUnlock()
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    if (errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON && errorCode != BiometricPrompt.ERROR_USER_CANCELED) {
+                        Toast.makeText(context, "Authentication error: $errString", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    Toast.makeText(context, "Authentication failed", Toast.LENGTH_SHORT).show()
+                }
+            })
+    }
+
+    LaunchedEffect(Unit) {
+        biometricPrompt.authenticate(promptInfo)
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Button(onClick = { biometricPrompt.authenticate(promptInfo) }) {
+            Icon(Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Unlock App")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FinanceApp() {
+    val navController = rememberNavController()
+    val bottomNavItems = listOf(
+        BottomNavItem.Dashboard,
+        BottomNavItem.Transactions,
+        BottomNavItem.Reports,
+        BottomNavItem.Settings
+    )
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentDestination = navBackStackEntry?.destination
+                bottomNavItems.forEach { screen ->
+                    NavigationBarItem(
+                        icon = { Icon(screen.icon, contentDescription = screen.label) },
+                        label = { Text(screen.label) },
+                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                        onClick = {
+                            navController.navigate(screen.route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = BottomNavItem.Dashboard.route,
+            modifier = Modifier.padding(innerPadding)
+        ) {
+            // --- CORRECTED: Each screen now correctly gets its own ViewModels ---
+            composable(BottomNavItem.Dashboard.route) { DashboardScreen(navController, viewModel(), viewModel()) }
+            composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, viewModel()) }
+            composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
+            composable(BottomNavItem.Settings.route) { SettingsScreen(navController, viewModel()) }
+            composable("review_sms_screen") { ReviewSmsScreen(navController, viewModel()) }
+            composable("sms_debug_screen") { SmsDebugScreen(navController, viewModel()) }
+            composable(
+                route = "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}",
+                arguments = listOf(
+                    navArgument("amount") { type = NavType.FloatType },
+                    navArgument("type") { type = NavType.StringType },
+                    navArgument("merchant") { type = NavType.StringType },
+                    navArgument("smsId") { type = NavType.LongType },
+                    navArgument("smsSender") { type = NavType.StringType }
+                ),
+                deepLinks = listOf(navDeepLink { uriPattern = "app://personalfinanceapp.example.com/approve?amount={amount}&type={type}&merchant={merchant}&smsId={smsId}&smsSender={smsSender}" })
+            ) { backStackEntry ->
+                val arguments = requireNotNull(backStackEntry.arguments)
+                ApproveTransactionScreen(
+                    navController = navController,
+                    amount = arguments.getFloat("amount"),
+                    transactionType = arguments.getString("type") ?: "expense",
+                    merchant = URLDecoder.decode(arguments.getString("merchant") ?: "Unknown", "UTF-8"),
+                    smsId = arguments.getLong("smsId"),
+                    smsSender = arguments.getString("smsSender") ?: ""
+                )
+            }
+            composable("add_transaction") { AddTransactionScreen(navController, viewModel()) }
+            composable("edit_transaction/{transactionId}", arguments = listOf(navArgument("transactionId") { type = NavType.IntType })) { backStackEntry ->
+                val transactionId = backStackEntry.arguments?.getInt("transactionId")
+                if (transactionId != null) { EditTransactionScreen(navController, viewModel(), transactionId) }
+            }
+            composable("account_list") { AccountListScreen(navController, viewModel()) }
+            composable("add_account") { AddAccountScreen(navController, viewModel()) }
+            composable("edit_account/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
+                val accountId = backStackEntry.arguments?.getInt("accountId")
+                if (accountId != null) { EditAccountScreen(navController, viewModel(), accountId) }
+            }
+            composable("account_detail/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
+                val accountId = backStackEntry.arguments?.getInt("accountId")
+                if (accountId != null) { AccountDetailScreen(navController, viewModel(), accountId) }
+            }
+            composable("budget_screen") { BudgetScreen(navController, viewModel()) }
+            composable("recurring_transactions") { RecurringTransactionScreen(navController) }
+            composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
+            composable("add_budget") { AddBudgetScreen(navController, viewModel()) }
+            composable("category_list") { CategoryListScreen(navController, viewModel()) }
+            composable("edit_category/{categoryId}", arguments = listOf(navArgument("categoryId") { type = NavType.IntType })) { backStackEntry ->
+                val categoryId = backStackEntry.arguments?.getInt("categoryId")
+                if (categoryId != null) { EditCategoryScreen(navController, viewModel(), categoryId) }
+            }
+        }
+    }
+}
+-e 
+
+

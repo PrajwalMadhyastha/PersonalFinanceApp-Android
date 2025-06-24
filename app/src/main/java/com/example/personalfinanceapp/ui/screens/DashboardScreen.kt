@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +59,9 @@ fun DashboardScreen(
             TopAppBar(
                 title = { Text("Dashboard") },
                 actions = {
+                    IconButton(onClick = { navController.navigate("search_screen") }) {
+                        Icon(imageVector = Icons.Default.Search, contentDescription = "Search")
+                    }
                     IconButton(onClick = { navController.navigate(BottomNavItem.Settings.route) }) {
                         Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings")
                     }
