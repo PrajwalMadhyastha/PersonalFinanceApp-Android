@@ -1,5 +1,6 @@
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
+import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -27,12 +28,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.example.personalfinanceapp.BottomNavItem
 import com.example.personalfinanceapp.BudgetViewModel
 import com.example.personalfinanceapp.DashboardViewModel
+import com.example.personalfinanceapp.DashboardViewModelFactory
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetWatchCard
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.NetWorthCard
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.OverallBudgetCard
@@ -43,7 +47,8 @@ import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.componen
 @Composable
 fun DashboardScreen(
     navController: NavController,
-    viewModel: DashboardViewModel,
+    // CORRECTED: Use the factory to create the ViewModel
+    viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
     budgetViewModel: BudgetViewModel
 ) {
     val netWorth by viewModel.netWorth.collectAsState()

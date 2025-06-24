@@ -1,7 +1,6 @@
 package com.example.personalfinanceapp
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -10,12 +9,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.util.Calendar
 
-class DashboardViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val transactionRepository: TransactionRepository
-    private val accountRepository: AccountRepository
-    private val budgetDao: BudgetDao
+/**
+ * ViewModel for the Dashboard screen.
+ * This class is now testable because its dependencies are provided via the constructor.
+ */
+class DashboardViewModel(
+    private val transactionRepository: TransactionRepository,
+    private val accountRepository: AccountRepository,
+    private val budgetDao: BudgetDao,
     private val settingsRepository: SettingsRepository
+) : ViewModel() {
 
     val netWorth: StateFlow<Double>
     val monthlyIncome: StateFlow<Double>
@@ -24,16 +27,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val budgetStatus: StateFlow<List<BudgetWithSpending>>
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
-    // --- NEW: StateFlow for the "Safe to Spend" metric ---
     val safeToSpendPerDay: StateFlow<Float>
 
     init {
-        val db = AppDatabase.getInstance(application)
-        transactionRepository = TransactionRepository(db.transactionDao())
-        accountRepository = AccountRepository(db.accountDao())
-        budgetDao = db.budgetDao()
-        settingsRepository = SettingsRepository(application)
-
         val calendar = Calendar.getInstance()
         val monthStart = calendar.apply {
             set(Calendar.DAY_OF_MONTH, 1)
@@ -73,8 +69,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             budget - expenses.toFloat()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-        // --- NEW: "Safe to Spend" Calculation Logic ---
-        safeToSpendPerDay = combine(amountRemaining) { (remaining) ->
+        safeToSpendPerDay = amountRemaining.map { remaining ->
             val today = Calendar.getInstance()
             val lastDayOfMonth = today.getActualMaximum(Calendar.DAY_OF_MONTH)
             val remainingDays = (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1)

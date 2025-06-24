@@ -10,6 +10,8 @@ val test_ext_junit_version = "1.2.1"
 val espresso_version = "3.6.1"
 val tracing_version = "1.2.0" // Added for tracing fix
 val work_version = "2.9.0"
+val robolectric_version = "4.13"
+val coroutines_test_version = "1.8.1"
 
 
 plugins {
@@ -63,6 +65,11 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 configurations.all {
@@ -109,6 +116,13 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:$espresso_version")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+
+    // --- ADDED: Dependencies for local unit testing ---
+    testImplementation("androidx.test:core-ktx:$androidx_test_version")
+    testImplementation("androidx.test.ext:junit:$test_ext_junit_version")
+    testImplementation("org.robolectric:robolectric:$robolectric_version")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines_test_version")
+    testImplementation("androidx.arch.core:core-testing:2.2.0")
 
     // Debug dependencies
     debugImplementation("androidx.compose.ui:ui-tooling")
