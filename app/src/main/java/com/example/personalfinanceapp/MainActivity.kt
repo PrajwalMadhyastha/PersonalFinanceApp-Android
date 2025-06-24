@@ -1,6 +1,7 @@
 package com.example.personalfinanceapp
 
 import android.Manifest
+import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
@@ -199,7 +200,12 @@ fun FinanceApp() {
             startDestination = BottomNavItem.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(BottomNavItem.Dashboard.route) { DashboardScreen(navController, viewModel(), viewModel()) }
+            composable(BottomNavItem.Dashboard.route) {
+                val context = LocalContext.current.applicationContext as Application
+                val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(context))
+                val budgetViewModel: BudgetViewModel = viewModel()
+                DashboardScreen(navController, dashboardViewModel, budgetViewModel)
+            }
             composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, viewModel()) }
             composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
             composable(BottomNavItem.Settings.route) { SettingsScreen(navController, viewModel()) }

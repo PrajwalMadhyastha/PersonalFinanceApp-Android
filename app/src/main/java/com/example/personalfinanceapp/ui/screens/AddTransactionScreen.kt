@@ -80,10 +80,11 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
 
+    // CORRECTED: The viewModel.clearError() call has been removed to prevent a race condition.
+    // The Snackbar will now remain visible until dismissed by the user or another action.
     LaunchedEffect(validationError) {
         validationError?.let {
             snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
         }
     }
 

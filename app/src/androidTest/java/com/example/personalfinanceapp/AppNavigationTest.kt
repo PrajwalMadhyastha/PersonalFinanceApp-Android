@@ -16,26 +16,6 @@ import org.junit.runner.Description
 import org.junit.runner.RunWith
 import org.junit.runners.model.Statement
 
-/**
- * A custom JUnit Rule to disable the app lock feature before a test runs.
- * This ensures the lock screen does not interfere with UI tests.
- */
-class DisableAppLockRule : TestRule {
-    override fun apply(base: Statement, description: Description): Statement {
-        return object : Statement() {
-            override fun evaluate() {
-                try {
-                    val context = InstrumentationRegistry.getInstrumentation().targetContext
-                    val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-                    prefs.edit().putBoolean("app_lock_enabled", false).commit()
-                    base.evaluate()
-                } finally {
-                    // Cleanup if needed
-                }
-            }
-        }
-    }
-}
 
 /**
  * Instrumented UI test for the main app navigation.

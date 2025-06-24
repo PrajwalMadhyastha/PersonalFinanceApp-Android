@@ -76,6 +76,7 @@ configurations.all {
     resolutionStrategy {
         force("androidx.core:core-ktx:$core_ktx_version")
         force("androidx.core:core:$core_ktx_version")
+        force("androidx.tracing:tracing-ktx:$tracing_version")
     }
 }
 
