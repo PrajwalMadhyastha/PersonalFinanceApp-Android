@@ -91,6 +91,9 @@ fun SettingsScreen(
         }
     )
 
+    var showImportJsonDialog by remember { mutableStateOf(false) }
+    var showImportCsvDialog by remember { mutableStateOf(false) }
+
     // --- ADDED: Launcher for saving the CSV file ---
     val csvFileSaverLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv"),
@@ -122,6 +125,36 @@ fun SettingsScreen(
                 scope.launch {
                     val success = DataExportService.importDataFromJson(context, it)
                     if (success) {
+                        Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+
+    val csvImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    if(DataExportService.importFromCsv(context, it)) {
+                        Toast.makeText(context, "CSV data imported successfully!", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Failed to import CSV data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+
+    val jsonImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    if (DataExportService.importDataFromJson(context, it)) {
                         Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
                     } else {
                         Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
@@ -271,6 +304,18 @@ fun SettingsScreen(
                             csvFileSaverLauncher.launch(fileName)
                         }
                     )
+
+                    SettingsActionItem(
+                        text = "Import from JSON",
+                        icon = Icons.Default.Download,
+                        onClick = { showImportJsonDialog = true }
+                    )
+                    // --- ADDED: CSV Import Button ---
+                    SettingsActionItem(
+                        text = "Import from CSV",
+                        icon = Icons.Default.PostAdd,
+                        onClick = { showImportCsvDialog = true }
+                    )
                     SettingsActionItem(
                         text = "Import Data",
                         icon = Icons.Default.Download,
@@ -295,6 +340,23 @@ fun SettingsScreen(
         }
     }
 
+    if (showImportCsvDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportCsvDialog = false },
+            title = { Text("Import from CSV?") },
+            text = { Text("This will add transactions from the CSV file. If transactions already exist, this may create duplicates. Are you sure you want to continue?") },
+            confirmButton = {
+                Button(onClick = {
+                    showImportCsvDialog = false
+                    csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values"))
+                }) { Text("Continue") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     if (showImportConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showImportConfirmDialog = false },
@@ -313,7 +375,26 @@ fun SettingsScreen(
             }
         )
     }
+
+    if (showImportJsonDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportJsonDialog = false },
+            title = { Text("Import from JSON?") },
+            text = { Text("This will DELETE all current data and replace it. This cannot be undone.") },
+            confirmButton = {
+                Button(onClick = {
+                    showImportJsonDialog = false
+                    jsonImportLauncher.launch(arrayOf("application/json"))
+                }) { Text("Wipe and Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportJsonDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 }
+
+
 
 @Composable
 private fun SettingSectionHeader(title: String) {

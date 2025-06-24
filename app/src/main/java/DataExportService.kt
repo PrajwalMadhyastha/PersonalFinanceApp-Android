@@ -2,6 +2,7 @@ package com.example.personalfinanceapp
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -29,7 +30,7 @@ object DataExportService {
 
                 json.encodeToString(backupData)
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("DataExportService", "Error exporting to JSON", e)
                 null
             }
         }
@@ -39,9 +40,7 @@ object DataExportService {
         return withContext(Dispatchers.IO) {
             try {
                 val jsonString = context.contentResolver.openInputStream(uri)?.bufferedReader().use { it?.readText() }
-                if (jsonString == null) {
-                    return@withContext false
-                }
+                if (jsonString == null) return@withContext false
 
                 val backupData = json.decodeFromString<AppDataBackup>(jsonString)
 
@@ -66,17 +65,12 @@ object DataExportService {
 
                 true
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("DataExportService", "Error importing from JSON", e)
                 false
             }
         }
     }
 
-    /**
-     * NEW: Exports all transactions to a single CSV-formatted string.
-     * Fetches all transaction details and builds a CSV string with a header row.
-     * @return A string containing the data in CSV format, or null on error.
-     */
     suspend fun exportToCsvString(context: Context): String? {
         return withContext(Dispatchers.IO) {
             try {
@@ -84,12 +78,10 @@ object DataExportService {
                 val transactions = db.transactionDao().getAllTransactions().first()
                 val csvBuilder = StringBuilder()
 
-                // Append header row
                 csvBuilder.append("Date,Description,Amount,Type,Category,Account,Notes\n")
 
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
-                // Append each transaction as a new row
                 transactions.forEach { details ->
                     val date = dateFormat.format(Date(details.transaction.date))
                     val description = escapeCsvField(details.transaction.description)
@@ -103,17 +95,88 @@ object DataExportService {
                 }
                 csvBuilder.toString()
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("DataExportService", "Error exporting to CSV", e)
                 null
             }
         }
     }
 
-    /**
-     * Helper function to properly escape a field for CSV format.
-     * If a field contains a comma, a quote, or a newline, it wraps the field in double quotes
-     * and doubles up any existing double quotes within the field.
-     */
+    suspend fun importFromCsv(context: Context, uri: Uri): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val db = AppDatabase.getInstance(context)
+                val accountDao = db.accountDao()
+                val categoryDao = db.categoryDao()
+                val transactionDao = db.transactionDao()
+
+                val newTransactions = mutableListOf<Transaction>()
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
+                    // Use .iterator() to avoid issues with concurrent modification
+                    val lineIterator = lines.iterator()
+                    // Skip header row
+                    if (lineIterator.hasNext()) {
+                        lineIterator.next()
+                    }
+
+                    while(lineIterator.hasNext()) {
+                        val line = lineIterator.next()
+                        val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex())
+                            .map { it.trim().removeSurrounding("\"") }
+
+                        if (tokens.size >= 6) {
+                            val date = dateFormat.parse(tokens[0])?.time ?: System.currentTimeMillis()
+                            val description = tokens[1]
+                            val amount = tokens[2].toDoubleOrNull() ?: 0.0
+                            val type = tokens[3]
+                            val categoryName = tokens[4]
+                            val accountName = tokens[5]
+                            val notes = if (tokens.size > 6) tokens[6] else null
+
+                            var category: Category? = categoryDao.findByName(categoryName)
+                            if (category == null && categoryName.isNotBlank()) {
+                                categoryDao.insert(Category(name = categoryName))
+                                category = categoryDao.findByName(categoryName) // Query again to get the object with the ID
+                            }
+
+                            var account: Account? = accountDao.findByName(accountName)
+                            if (account == null && accountName.isNotBlank()) {
+                                accountDao.insert(Account(name = accountName, type = "Imported"))
+                                account = accountDao.findByName(accountName) // Query again to get the object with the ID
+                            }
+
+                            // Ensure account and category were successfully found or created before adding transaction
+                            if (account != null && category != null) {
+                                newTransactions.add(
+                                    Transaction(
+                                        description = description,
+                                        amount = amount,
+                                        date = date,
+                                        transactionType = type,
+                                        accountId = account.id,
+                                        categoryId = category.id,
+                                        notes = notes
+                                    )
+                                )
+                            } else {
+                                Log.w("DataExportService", "Skipping row due to missing account/category: $line")
+                            }
+                        }
+                    }
+                }
+
+                if (newTransactions.isNotEmpty()) {
+                    transactionDao.insertAll(newTransactions)
+                }
+                true
+            } catch (e: Exception) {
+                Log.e("DataExportService", "Error importing from CSV", e)
+                false
+            }
+        }
+    }
+
     private fun escapeCsvField(field: String): String {
         if (field.contains(",") || field.contains("\"") || field.contains("\n")) {
             return "\"${field.replace("\"", "\"\"")}\""
