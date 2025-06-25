@@ -1,3 +1,7 @@
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/screens/SettingsScreen.kt
+// NOTE: Cleaned up redundant Data Import logic for clarity.
+// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import android.Manifest
@@ -8,7 +12,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -18,10 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.personalfinanceapp.DataExportService
 import com.example.personalfinanceapp.SettingsViewModel
@@ -43,7 +44,7 @@ fun SettingsScreen(
     val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReminderEnabled by viewModel.dailyReminderEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
-
+    var showSmsRationaleDialog by remember { mutableStateOf(false) }
     var hasSmsPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
@@ -58,8 +59,12 @@ fun SettingsScreen(
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { perms ->
-        hasSmsPermission = perms[Manifest.permission.READ_SMS] == true && perms[Manifest.permission.RECEIVE_SMS] == true
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        hasSmsPermission = allGranted
+        if (!allGranted) {
+            Toast.makeText(context, "Some SMS permissions were denied.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -67,9 +72,8 @@ fun SettingsScreen(
     ) { isGranted ->
         hasNotificationPermission = isGranted
     }
-    var showImportConfirmDialog by remember { mutableStateOf(false) }
 
-    val fileSaverLauncher = rememberLauncherForActivityResult(
+    val jsonFileSaverLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
         onResult = { uri ->
             uri?.let {
@@ -95,7 +99,6 @@ fun SettingsScreen(
     var showImportJsonDialog by remember { mutableStateOf(false) }
     var showImportCsvDialog by remember { mutableStateOf(false) }
 
-    // --- ADDED: Launcher for saving the CSV file ---
     val csvFileSaverLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv"),
         onResult = { uri ->
@@ -119,22 +122,6 @@ fun SettingsScreen(
         }
     )
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-        onResult = { uri ->
-            uri?.let {
-                scope.launch {
-                    val success = DataExportService.importDataFromJson(context, it)
-                    if (success) {
-                        Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }
-    )
-
     val csvImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri ->
@@ -145,6 +132,9 @@ fun SettingsScreen(
             }
         }
     )
+
+    // REMOVED: Redundant file picker launcher.
+    // val filePickerLauncher = remember...
 
     val jsonImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -173,6 +163,31 @@ fun SettingsScreen(
             )
         }
     ) { innerPadding ->
+        if (showSmsRationaleDialog) {
+            AlertDialog(
+                onDismissRequest = { showSmsRationaleDialog = false },
+                title = { Text("Permission Required") },
+                text = { Text("To automatically capture transactions, this app needs permission to read and receive SMS messages. Your data is processed only on your device and is never shared.") },
+                confirmButton = {
+                    Button(onClick = {
+                        showSmsRationaleDialog = false
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.READ_SMS,
+                                Manifest.permission.RECEIVE_SMS
+                            )
+                        )
+                    }) {
+                        Text("Continue")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSmsRationaleDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(vertical = 8.dp),
@@ -240,11 +255,12 @@ fun SettingsScreen(
                     subtitle = "Allow reading and receiving SMS for auto-detection.",
                     icon = Icons.Default.Message,
                     checked = hasSmsPermission,
-                    onCheckedChange = {
-                        if (!hasSmsPermission) {
-                            permissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+                    onCheckedChange = { isChecked ->
+                        if (isChecked && !hasSmsPermission) {
+                            showSmsRationaleDialog = true
                         }
-                    }
+                    },
+                    enabled = !hasSmsPermission
                 )
             }
             item {
@@ -283,10 +299,9 @@ fun SettingsScreen(
                         onClick = {
                             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                             val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
-                            fileSaverLauncher.launch(fileName)
+                            jsonFileSaverLauncher.launch(fileName)
                         }
                     )
-                    // --- ADDED: The new "Export as CSV" button ---
                     SettingsActionItem(
                         text = "Export Transactions as CSV",
                         icon = Icons.Default.GridOn,
@@ -302,17 +317,12 @@ fun SettingsScreen(
                         icon = Icons.Default.Download,
                         onClick = { showImportJsonDialog = true }
                     )
-                    // --- ADDED: CSV Import Button ---
                     SettingsActionItem(
                         text = "Import from CSV",
                         icon = Icons.Default.PostAdd,
                         onClick = { showImportCsvDialog = true }
                     )
-                    SettingsActionItem(
-                        text = "Import Data",
-                        icon = Icons.Default.Download,
-                        onClick = { showImportConfirmDialog = true }
-                    )
+                    // REMOVED: Redundant "Import Data" action item
                 }
             }
         }
@@ -349,24 +359,8 @@ fun SettingsScreen(
         )
     }
 
-    if (showImportConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showImportConfirmDialog = false },
-            title = { Text("Import Data?") },
-            text = { Text("This will delete all current data and replace it with the data from your backup file. This cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showImportConfirmDialog = false
-                        filePickerLauncher.launch(arrayOf("application/json"))
-                    }
-                ) { Text("Import") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showImportConfirmDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
+    // REMOVED: Redundant dialog for the generic "Import Data"
+    // if (showImportConfirmDialog) { ... }
 
     if (showImportJsonDialog) {
         AlertDialog(
@@ -399,7 +393,6 @@ fun SettingSectionHeader(title: String) {
     Divider()
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsToggleItem(
     title: String,
