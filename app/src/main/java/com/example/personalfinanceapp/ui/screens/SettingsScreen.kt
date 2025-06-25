@@ -213,8 +213,10 @@ fun SettingsScreen(
             )
         }
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(vertical = 9.dp),
         ) {
             item { SettingSectionHeader("App Management") }
             item {
@@ -301,7 +303,6 @@ fun SettingsScreen(
                 )
             }
 
-            item { SettingSectionHeader("Data Management") }
             item { SettingSectionHeader("SMS Scanning") }
             // --- NEW: UI for selecting the scan start date ---
             item {
@@ -313,20 +314,30 @@ fun SettingsScreen(
                 )
             }
             item {
-                Column(Modifier.padding(horizontal = 16.dp)) {
                     SettingsActionItem(
                         text = "Rescan SMS Inbox",
                         icon = Icons.Default.Refresh,
                         onClick = {
                             if (hasSmsPermission) {
-                                Toast.makeText(context, "Scanning all messages...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    "Scanning all messages...",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                                 viewModel.rescanAllSmsMessages()
                                 navController.navigate("review_sms_screen")
                             } else {
-                                Toast.makeText(context, "Please grant SMS permission first.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    "Please grant SMS permission first.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
                     )
+            }
+                item { SettingSectionHeader("Data Management") }
+                item {
                     SettingsActionItem(
                         text = "Export Data as JSON",
                         icon = Icons.Default.DataObject,
@@ -336,6 +347,9 @@ fun SettingsScreen(
                             jsonFileSaverLauncher.launch(fileName)
                         }
                     )
+                }
+
+                item {
                     SettingsActionItem(
                         text = "Export Transactions as CSV",
                         icon = Icons.Default.GridOn,
@@ -345,20 +359,22 @@ fun SettingsScreen(
                             csvFileSaverLauncher.launch(fileName)
                         }
                     )
+                }
 
+                item {
                     SettingsActionItem(
                         text = "Import from JSON",
                         icon = Icons.Default.Download,
                         onClick = { showImportJsonDialog = true }
                     )
+                }
+                item {
                     SettingsActionItem(
                         text = "Import from CSV",
                         icon = Icons.Default.PostAdd,
                         onClick = { showImportCsvDialog = true }
                     )
-                    // REMOVED: Redundant "Import Data" action item
                 }
-            }
         }
     }
     if (isScanning) {
