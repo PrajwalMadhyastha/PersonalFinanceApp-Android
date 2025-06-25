@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,6 +40,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isScanning by viewModel.isScanning.collectAsState()
+
+    var showDatePickerDialog by remember { mutableStateOf(false) }
+    val smsScanStartDate by viewModel.smsScanStartDate.collectAsState()
+    val dateFormatter = remember { SimpleDateFormat("dd MMMM, yyyy", Locale.getDefault()) }
 
     val isAppLockEnabled by viewModel.appLockEnabled.collectAsState()
     val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
@@ -163,6 +168,25 @@ fun SettingsScreen(
             )
         }
     ) { innerPadding ->
+        if (showDatePickerDialog) {
+            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
+            DatePickerDialog(
+                onDismissRequest = { showDatePickerDialog = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            datePickerState.selectedDateMillis?.let {
+                                viewModel.saveSmsScanStartDate(it)
+                            }
+                            showDatePickerDialog = false
+                        }
+                    ) { Text("OK") }
+                },
+                dismissButton = { TextButton(onClick = { showDatePickerDialog = false }) { Text("Cancel") } }
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
         if (showSmsRationaleDialog) {
             AlertDialog(
                 onDismissRequest = { showSmsRationaleDialog = false },
@@ -253,7 +277,7 @@ fun SettingsScreen(
                 SettingsToggleItem(
                     title = "SMS Access",
                     subtitle = "Allow reading and receiving SMS for auto-detection.",
-                    icon = Icons.Default.Message,
+                    icon = Icons.AutoMirrored.Filled.Message,
                     checked = hasSmsPermission,
                     onCheckedChange = { isChecked ->
                         if (isChecked && !hasSmsPermission) {
@@ -278,6 +302,16 @@ fun SettingsScreen(
             }
 
             item { SettingSectionHeader("Data Management") }
+            item { SettingSectionHeader("SMS Scanning") }
+            // --- NEW: UI for selecting the scan start date ---
+            item {
+                SettingsActionItem(
+                    text = "Start Scanning From",
+                    subtitle = dateFormatter.format(Date(smsScanStartDate)),
+                    icon = Icons.Default.DateRange,
+                    onClick = { showDatePickerDialog = true }
+                )
+            }
             item {
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     SettingsActionItem(
@@ -414,6 +448,7 @@ private fun SettingsToggleItem(
 @Composable
 private fun SettingsActionItem(
     text: String,
+    subtitle: String? = null,
     icon: ImageVector,
     onClick: () -> Unit
 ) {
@@ -422,9 +457,13 @@ private fun SettingsActionItem(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(16.dp))
-        Text(text)
-        Spacer(Modifier.weight(1f))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }

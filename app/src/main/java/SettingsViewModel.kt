@@ -24,6 +24,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val context = application
     private val accountRepository = AccountRepository(db.accountDao())
     private val categoryRepository = CategoryRepository(db.categoryDao())
+    val smsScanStartDate: StateFlow<Long>
 
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
@@ -51,6 +52,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val _smsMessages = MutableStateFlow<List<SmsMessage>>(emptyList())
     val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
+
+    init {
+        // --- NEW: Initialize the smsScanStartDate StateFlow ---
+        smsScanStartDate = settingsRepository.getSmsScanStartDate()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = 0L
+            )
+    }
+
+    fun saveSmsScanStartDate(date: Long) {
+        viewModelScope.launch {
+            settingsRepository.saveSmsScanStartDate(date)
+        }
+    }
 
     fun saveOverallBudget(budget: String) {
         val budgetFloat = budget.toFloatOrNull() ?: 0f
@@ -267,17 +284,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         viewModelScope.launch {
             _isScanning.value = true
+
+            // --- UPDATED: Get the current start date and pass it to the repository ---
+            val startDate = smsScanStartDate.first()
+            val rawMessages = withContext(Dispatchers.IO) {
+                SmsRepository(context).fetchAllSms(startDate)
+            }
+
             val existingMappings = withContext(Dispatchers.IO) {
                 merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
             }
             val existingSmsIds = withContext(Dispatchers.IO) {
                 transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
             }
-            val rawMessages = withContext(Dispatchers.IO) {
-                val smsRepository = SmsRepository(context)
-                smsRepository.fetchAllSms()
-            }
-            _smsMessages.value = rawMessages
 
             val parsedList = withContext(Dispatchers.Default) {
                 rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }

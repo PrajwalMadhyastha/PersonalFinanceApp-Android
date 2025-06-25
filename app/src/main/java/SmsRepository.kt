@@ -14,7 +14,7 @@ class SmsRepository(private val context: Context) {
      * Fetches all SMS messages from the device's inbox.
      * @return A list of SmsMessage objects.
      */
-    fun fetchAllSms(): List<SmsMessage> {
+    fun fetchAllSms(startDate: Long?): List<SmsMessage> {
         val smsList = mutableListOf<SmsMessage>()
         // Define the columns we want to retrieve
         val projection = arrayOf(
@@ -23,6 +23,18 @@ class SmsRepository(private val context: Context) {
             Telephony.Sms.BODY,
             Telephony.Sms.DATE
         )
+        val selection: String?
+        val selectionArgs: Array<String>?
+
+        if (startDate != null) {
+            selection = "${Telephony.Sms.DATE} >= ?"
+            selectionArgs = arrayOf(startDate.toString())
+            Log.d("SmsRepository", "Querying SMS with start date: $startDate")
+        } else {
+            selection = null
+            selectionArgs = null
+            Log.d("SmsRepository", "Querying all SMS messages.")
+        }
 
         // Query the SMS inbox, sorting by date in descending order
         val cursor = context.contentResolver.query(

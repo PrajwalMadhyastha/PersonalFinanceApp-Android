@@ -30,7 +30,7 @@ class ReviewReminderWorker(
 
                 // 2. Fetch all SMS messages from the device
                 val smsRepository = SmsRepository(context)
-                val allSms = smsRepository.fetchAllSms()
+                val allSms = smsRepository.fetchAllSms(startDate = null)
                 Log.d("ReviewReminderWorker", "Fetched ${allSms.size} SMS messages.")
 
                 // 3. Get existing merchant mappings and already-imported SMS IDs for de-duplication

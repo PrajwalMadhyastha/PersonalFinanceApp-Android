@@ -25,6 +25,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_WEEKLY_SUMMARY_ENABLED = "weekly_summary_enabled"
         private const val KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED = "unknown_transaction_popup_enabled"
         private const val KEY_DAILY_REMINDER_ENABLED = "daily_reminder_enabled"
+        private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
     }
 
     /**
@@ -49,6 +50,26 @@ class SettingsRepository(context: Context) {
 
         // Use the 'edit' KTX extension function for a concise transaction.
         prefs.edit().putFloat(key, amount).apply()
+    }
+
+    fun saveSmsScanStartDate(date: Long) {
+        prefs.edit().putLong(KEY_SMS_SCAN_START_DATE, date).apply()
+    }
+
+    // --- NEW: Flow to read the scan start date preference ---
+    fun getSmsScanStartDate(): Flow<Long> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_SMS_SCAN_START_DATE) {
+                    trySend(sharedPreferences.getLong(KEY_SMS_SCAN_START_DATE, 0L))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            // Default to 30 days ago if no setting is saved
+            val thirtyDaysAgo = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -30) }.timeInMillis
+            trySend(prefs.getLong(KEY_SMS_SCAN_START_DATE, thirtyDaysAgo))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
     }
 
     /**
