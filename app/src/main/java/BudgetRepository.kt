@@ -13,7 +13,19 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
         return budgetDao.getActualSpendingForCategory(categoryName, month, year)
     }
 
+    suspend fun update(budget: Budget) {
+        budgetDao.update(budget)
+    }
+
     suspend fun insert(budget: Budget) {
         budgetDao.insert(budget)
+    }
+
+    suspend fun delete(budget: Budget) {
+        budgetDao.delete(budget)
+    }
+
+    fun getBudgetById(id: Int): Flow<Budget?> {
+        return budgetDao.getById(id)
     }
 }

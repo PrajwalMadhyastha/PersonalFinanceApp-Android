@@ -177,25 +177,20 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(vertical = 8.dp),
         ) {
-            item { SettingSectionHeader("General") }
+            item { SettingSectionHeader("App Management") }
             item {
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    val currentBudget by viewModel.overallBudget.collectAsState()
-                    var budgetInput by remember(currentBudget) { mutableStateOf(if (currentBudget > 0) currentBudget.toString() else "") }
-
-                    OutlinedTextField(
-                        value = budgetInput,
-                        onValueChange = { budgetInput = it },
-                        label = { Text("Overall Monthly Budget") },
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        leadingIcon = { Text("₹") }
-                    )
-                    Button(
-                        onClick = { viewModel.saveOverallBudget(budgetInput); Toast.makeText(context, "Budget Saved!", Toast.LENGTH_SHORT).show() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Save Budget") }
-                }
+                SettingsActionItem(
+                    text = "Manage Budgets",
+                    icon = Icons.Default.Savings,
+                    onClick = { navController.navigate("budget_screen") }
+                )
+            }
+            item {
+                SettingsActionItem(
+                    text = "Manage Categories",
+                    icon = Icons.Default.Category,
+                    onClick = { navController.navigate("category_list") }
+                )
             }
 
             item { SettingSectionHeader("Security") }

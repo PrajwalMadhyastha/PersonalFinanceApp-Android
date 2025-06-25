@@ -162,6 +162,7 @@ fun LockScreen(onUnlock: () -> Unit) {
 @Composable
 fun FinanceApp() {
     val navController = rememberNavController()
+    // --- UPDATED: Added the new Budgets item to the list ---
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
@@ -246,6 +247,8 @@ fun FinanceApp() {
                 )
             }
             composable("add_transaction") { AddTransactionScreen(navController, viewModel()) }
+            composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
+            composable(BottomNavItem.Settings.route) { SettingsScreen(navController, settingsViewModel) }
             composable("edit_transaction/{transactionId}?isFromCsv={isFromCsv}&lineNumber={lineNumber}&rowDataJson={rowDataJson}",
                 arguments = listOf(
                     navArgument("transactionId") { type = NavType.IntType; defaultValue = -1 },
@@ -277,7 +280,7 @@ fun FinanceApp() {
                 val accountId = backStackEntry.arguments?.getInt("accountId")
                 if (accountId != null) { AccountDetailScreen(navController, viewModel(), accountId) }
             }
-            composable("budget_screen") { BudgetScreen(navController, viewModel()) }
+            composable("budget_screen") { BudgetScreen(navController, budgetViewModel) }
             composable(
                 "edit_imported_transaction/{lineNumber}/{rowDataJson}",
                 arguments = listOf(
@@ -300,8 +303,18 @@ fun FinanceApp() {
             }
             composable("recurring_transactions") { RecurringTransactionScreen(navController) }
             composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
-            composable("add_budget") { AddBudgetScreen(navController, viewModel()) }
             composable("category_list") { CategoryListScreen(navController, viewModel()) }
+            composable("add_budget") { AddEditBudgetScreen(navController, budgetViewModel, null) }
+            composable(
+                "edit_budget/{budgetId}",
+                arguments = listOf(navArgument("budgetId") { type = NavType.IntType })
+            ) { backStackEntry ->
+                AddEditBudgetScreen(
+                    navController = navController,
+                    viewModel = budgetViewModel,
+                    budgetId = backStackEntry.arguments?.getInt("budgetId")
+                )
+            }
             composable("edit_category/{categoryId}", arguments = listOf(navArgument("categoryId") { type = NavType.IntType })) { backStackEntry ->
                 val categoryId = backStackEntry.arguments?.getInt("categoryId")
                 if (categoryId != null) { EditCategoryScreen(navController, viewModel(), categoryId) }

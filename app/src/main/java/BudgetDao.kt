@@ -1,9 +1,6 @@
 package com.example.personalfinanceapp
 
-import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
+import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -27,4 +24,13 @@ interface BudgetDao {
 
     @Query("SELECT * FROM budgets")
     fun getAllBudgets(): Flow<List<Budget>>
+
+    @Query("SELECT * FROM budgets WHERE id = :id")
+    fun getById(id: Int): Flow<Budget?>
+
+    @Update
+    suspend fun update(budget: Budget)
+
+    @Delete
+    suspend fun delete(budget: Budget)
 }

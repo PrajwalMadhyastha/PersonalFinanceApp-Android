@@ -1,38 +1,50 @@
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/screens/BudgetScreen.kt
+// PURPOSE: A unified screen for managing all budget types.
+// NOTE: Category budgets are now editable and deletable from this screen.
+// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import android.widget.Toast
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetItem
+import com.example.personalfinanceapp.Budget
 import com.example.personalfinanceapp.BudgetViewModel
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetItem
+import kotlinx.coroutines.flow.map
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
-    val budgets by viewModel.budgetsForCurrentMonth.collectAsState(initial = emptyList())
+fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = viewModel()) {
+    val categoryBudgets by viewModel.budgetsForCurrentMonth.collectAsState(initial = emptyList())
+    val overallBudget by viewModel.overallBudget.collectAsState()
     val monthYear = viewModel.getCurrentMonthYearString()
+    val context = LocalContext.current
+
+    var overallBudgetInput by remember(overallBudget) {
+        mutableStateOf(if (overallBudget > 0) "%.2f".format(overallBudget) else "")
+    }
+
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var budgetToDelete by remember { mutableStateOf<Budget?>(null) }
+
 
     Scaffold(
         topBar = {
@@ -42,35 +54,140 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel) {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
-                },
-                actions = {
-                    IconButton(onClick = { navController.navigate("dashboard") }) {
-                        Icon(imageVector = Icons.Filled.Home, contentDescription = "Dashboard")
-                    }
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { navController.navigate("add_budget") }) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Budget")
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Category Budget")
             }
         }
     ) { innerPadding ->
-        if (budgets.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-                Text("No budgets set for this month. Add one!")
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Card(elevation = CardDefaults.cardElevation(2.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth()
+                    ) {
+                        Text("Overall Monthly Budget", style = MaterialTheme.typography.titleLarge)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = overallBudgetInput,
+                            onValueChange = { overallBudgetInput = it },
+                            label = { Text("Total Budget Amount") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            leadingIcon = { Text("₹") }
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                viewModel.saveOverallBudget(overallBudgetInput)
+                                Toast.makeText(context, "Overall Budget Saved!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Save Overall Budget")
+                        }
+                    }
+                }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(budgets) { budget ->
-                    BudgetItem(budget = budget, viewModel = viewModel)
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Category Budgets", style = MaterialTheme.typography.titleLarge)
+                    // CORRECTED: Moved the Add button here as an icon button
+                    IconButton(onClick = { navController.navigate("add_budget") }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Category Budget")
+                    }
+                }
+                Divider(modifier = Modifier.padding(top = 8.dp))
+            }
+
+            if (categoryBudgets.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No category budgets set. Tap the '+' button to add one.")
+                    }
+                }
+            } else {
+                items(categoryBudgets) { budget ->
+                    SimpleBudgetItem(
+                        budget = budget,
+                        onEdit = { navController.navigate("edit_budget/${budget.id}") },
+                        onDelete = {
+                            budgetToDelete = budget
+                            showDeleteDialog = true
+                        }
+                    )
                 }
             }
         }
     }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Budget?") },
+            text = { Text("Are you sure you want to delete the budget for '${budgetToDelete?.categoryName}'?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        budgetToDelete?.let { viewModel.deleteBudget(it) }
+                        showDeleteDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+/**
+ * An item specifically for the BudgetScreen that includes Edit and Delete actions.
+ */
+@Composable
+fun SimpleBudgetItem(
+    budget: Budget,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(budget.categoryName, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = "Budget: ₹${"%.2f".format(budget.amount)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onEdit) {
+            Icon(Icons.Default.Edit, contentDescription = "Edit Budget")
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "Delete Budget", tint = MaterialTheme.colorScheme.error)
+        }
+    }
+    Divider()
 }
