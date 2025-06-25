@@ -40,7 +40,7 @@ import java.util.concurrent.Executor
 
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
     object Dashboard : BottomNavItem("dashboard", Icons.Filled.Home, "Dashboard")
-    object Transactions : BottomNavItem("transaction_list", Icons.Filled.Receipt, "History")
+    object Transactions : BottomNavItem("transaction_list", Icons.Filled.Receipt, "Transactions")
     object Reports : BottomNavItem("reports_screen", Icons.Filled.Assessment, "Reports")
     object Settings : BottomNavItem("settings_screen", Icons.Filled.Settings, "Settings")
 }
@@ -169,10 +169,13 @@ fun FinanceApp() {
         BottomNavItem.Settings
     )
 
-    // --- CORRECTED: ViewModel is now created once and shared between settings-related screens ---
+    // ---  CORRECTED: ViewModels are instantiated ONCE here, outside the NavHost. ---
+    // This ensures a single instance is shared by all screens that need it.
     val settingsViewModel: SettingsViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
-
+    val accountViewModel: AccountViewModel = viewModel()
+    val categoryViewModel: CategoryViewModel = viewModel()
+    val budgetViewModel: BudgetViewModel = viewModel()
 
     Scaffold(
         bottomBar = {
@@ -233,6 +236,8 @@ fun FinanceApp() {
                 val arguments = requireNotNull(backStackEntry.arguments)
                 ApproveTransactionScreen(
                     navController = navController,
+                    transactionViewModel = transactionViewModel,
+                    settingsViewModel = settingsViewModel,
                     amount = arguments.getFloat("amount"),
                     transactionType = arguments.getString("type") ?: "expense",
                     merchant = URLDecoder.decode(arguments.getString("merchant") ?: "Unknown", "UTF-8"),

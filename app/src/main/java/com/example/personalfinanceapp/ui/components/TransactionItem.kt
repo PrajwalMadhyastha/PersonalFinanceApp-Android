@@ -96,13 +96,25 @@ fun AccountTransactionItem(transaction: Transaction) {
 }
 
 @Composable
-fun TransactionList(transactions: List<TransactionDetails>, navController: NavController) {
+fun TransactionList(
+    transactions: List<TransactionDetails>,
+    navController: NavController,
+    // CORRECTED: Added contentPadding parameter to be passed from the Scaffold.
+    contentPadding: PaddingValues = PaddingValues(0.dp)
+) {
     if (transactions.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier.fillMaxSize().padding(contentPadding),
+            contentAlignment = Alignment.Center
+        ) {
             Text("No transactions yet. Add one!")
         }
     } else {
-        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+        LazyColumn(
+            // CORRECTED: Applied the padding from the Scaffold here.
+            modifier = Modifier.fillMaxSize().padding(contentPadding),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp) // Keep some internal padding
+        ) {
             items(transactions) { details ->
                 TransactionItem(transactionDetails = details, onClick = {
                     navController.navigate("edit_transaction/${details.transaction.id}")

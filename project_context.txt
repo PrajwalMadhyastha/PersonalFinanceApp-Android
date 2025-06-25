@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jun 25 17:25:21 IST 2025
+Generated on: Wed Jun 25 17:52:39 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -205,6 +205,7 @@ dependencies {
 
 
 
+---------- Main Source Files ----------
 ================== FILE: ./app/src/main/java/DashboardViewModelFactory.kt ==================
 package com.example.personalfinanceapp
 
@@ -5105,6 +5106,11 @@ fun AccountDetailScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/DashboardScreen.kt ==================
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/screens/DashboardScreen.kt
+// PURPOSE: The main dashboard UI.
+// NOTE: Added the `AccountSummaryCard` to the LazyColumn.
+// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import android.app.Application
@@ -5144,6 +5150,7 @@ import com.example.personalfinanceapp.BottomNavItem
 import com.example.personalfinanceapp.BudgetViewModel
 import com.example.personalfinanceapp.DashboardViewModel
 import com.example.personalfinanceapp.DashboardViewModelFactory
+import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.AccountSummaryCard
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetWatchCard
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.NetWorthCard
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.OverallBudgetCard
@@ -5154,7 +5161,6 @@ import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.componen
 @Composable
 fun DashboardScreen(
     navController: NavController,
-    // CORRECTED: Use the factory to create the ViewModel
     viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
     budgetViewModel: BudgetViewModel
 ) {
@@ -5165,6 +5171,9 @@ fun DashboardScreen(
     val safeToSpend by viewModel.safeToSpendPerDay.collectAsState()
     val budgetStatus by viewModel.budgetStatus.collectAsState()
     val recentTransactions by viewModel.recentTransactions.collectAsState()
+
+    // --- NEW: Collect the accounts summary state ---
+    val accountsSummary by viewModel.accountsSummary.collectAsState()
 
     Scaffold(
         topBar = {
@@ -5233,6 +5242,10 @@ fun DashboardScreen(
                 }
             }
             item { NetWorthCard(netWorth) }
+
+            // --- NEW: Add the AccountSummaryCard to the UI ---
+            item { AccountSummaryCard(accounts = accountsSummary, navController = navController) }
+
             item { RecentActivityCard(recentTransactions, navController) }
             item { BudgetWatchCard(budgetStatus, budgetViewModel) }
         }
@@ -6500,6 +6513,11 @@ fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/components/DashboardComponents.kt ==================
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/components/DashboardComponents.kt
+// PURPOSE: UI components for the Dashboard screen.
+// NOTE: Added the new `AccountSummaryCard` composable.
+// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
 
 import androidx.compose.animation.core.LinearEasing
@@ -6555,6 +6573,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.example.personalfinanceapp.AccountWithBalance
 import com.example.personalfinanceapp.BottomNavItem
 import com.example.personalfinanceapp.Budget
 import com.example.personalfinanceapp.BudgetViewModel
@@ -6655,7 +6674,6 @@ fun OverallBudgetCard(totalBudget: Float, amountSpent: Float) {
     }
 }
 
-// --- LiquidTumbler Composable (CORRECTED) ---
 @Composable
 fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
     val clampedProgress = progress.coerceIn(0f, 1f)
@@ -6675,7 +6693,6 @@ fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
         ), label = "WaveOffset"
     )
 
-    // --- CORRECTED: Resolve colors and pixel values in the Composable context ---
     val waterColor = when {
         clampedProgress >= 1f -> MaterialTheme.colorScheme.error
         clampedProgress > 0.8f -> Color(0xFFFBC02D) // Amber
@@ -6701,7 +6718,6 @@ fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
                 close()
             }
 
-            // --- CORRECTED: Use the pre-resolved values ---
             drawPath(
                 path = glassPath,
                 color = glassColor,
@@ -6743,57 +6759,6 @@ fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
     }
 }
 
-// --- NEW: Composable to host the MPAndroidChart PieChart ---
-//@Composable
-//fun BudgetPieChart(totalBudget: Float, amountSpent: Float) {
-//    val remaining = totalBudget - amountSpent
-//    val percentageSpent = if (totalBudget > 0) (amountSpent / totalBudget) * 100 else 0f
-//
-//    val spentColor = MaterialTheme.colorScheme.error.toArgb()
-//    val remainingColor = MaterialTheme.colorScheme.primaryContainer.toArgb()
-//
-//    // --- CORRECTED: Get the color in the Composable context ---
-//    val centerTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
-//
-//    AndroidView(
-//        factory = { context ->
-//            PieChart(context).apply {
-//                description.isEnabled = false
-//                legend.isEnabled = false
-//                isDrawHoleEnabled = true
-//                setHoleColor(AndroidColor.TRANSPARENT)
-//                setUsePercentValues(true)
-//                setEntryLabelColor(AndroidColor.BLACK)
-//                setEntryLabelTypeface(Typeface.DEFAULT_BOLD)
-//            }
-//        },
-//        update = { chart ->
-//            val entries = mutableListOf<PieEntry>()
-//            if (amountSpent > 0) {
-//                entries.add(PieEntry(amountSpent, "Spent"))
-//            }
-//            if (remaining > 0) {
-//                entries.add(PieEntry(remaining, "Remaining"))
-//            }
-//
-//            val dataSet = PieDataSet(entries, "Budget").apply {
-//                colors = listOf(spentColor, remainingColor)
-//                setDrawValues(false)
-//            }
-//
-//            chart.data = PieData(dataSet)
-//
-//            chart.centerText = "%.1f%%".format(percentageSpent)
-//            chart.setCenterTextSize(24f)
-//            chart.setCenterTextTypeface(Typeface.DEFAULT_BOLD)
-//            // --- CORRECTED: Use the color variable here ---
-//            chart.setCenterTextColor(centerTextColor)
-//
-//            chart.invalidate()
-//        },
-//        modifier = Modifier.fillMaxSize()
-//    )
-//}
 
 @Composable
 fun NetWorthCard(netWorth: Double) {
@@ -6809,6 +6774,70 @@ fun NetWorthCard(netWorth: Double) {
     }
 }
 
+/**
+ * NEW: A card to display a summary of all user accounts and their balances.
+ */
+@Composable
+fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavController) {
+    Card(
+        elevation = CardDefaults.cardElevation(4.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Your Accounts",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = {
+                        // Navigate to the full account list screen, which you already have
+                        navController.navigate("account_list")
+                    }
+                ) { Text("View All") }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            if (accounts.isEmpty()) {
+                Text("No accounts found. Add one from the Settings.", modifier = Modifier.padding(vertical = 16.dp))
+            } else {
+                Column {
+                    accounts.forEachIndexed { index, accountWithBalance ->
+                        if (index > 0) Divider()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { navController.navigate("account_detail/${accountWithBalance.account.id}") }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = accountWithBalance.account.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = accountWithBalance.account.type,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "₹${"%.2f".format(accountWithBalance.balance)}",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (accountWithBalance.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun RecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
@@ -6817,7 +6846,6 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
                 Text("Recent Transactions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 TextButton(
                     onClick = {
-                        // --- CORRECTED: Use the same navigation logic as the bottom bar ---
                         navController.navigate(BottomNavItem.Transactions.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
@@ -6832,7 +6860,6 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
             } else {
                 transactions.forEach { details ->
                     TransactionItem(transactionDetails = details) {
-                        // This navigation is correct as it's a detail screen, not a main tab
                         navController.navigate("edit_transaction/${details.transaction.id}")
                     }
                 }
@@ -6913,7 +6940,8 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
             }
         }
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/components/TransactionItem.kt ==================
@@ -7617,6 +7645,11 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
 
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/DashboardViewModel.kt
+// PURPOSE: Handles logic for the Dashboard.
+// NOTE: Added the `accountsSummary` StateFlow.
+// =================================================================================
 package com.example.personalfinanceapp
 
 import androidx.lifecycle.ViewModel
@@ -7647,6 +7680,10 @@ class DashboardViewModel(
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
     val safeToSpendPerDay: StateFlow<Float>
+
+    // --- NEW: Expose the list of accounts with their balances ---
+    val accountsSummary: StateFlow<List<AccountWithBalance>>
+
 
     init {
         val calendar = Calendar.getInstance()
@@ -7722,6 +7759,471 @@ class DashboardViewModel(
                 BudgetWithSpending(budget = budget, spent = spending)
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        // --- NEW: Initialize the new StateFlow ---
+        accountsSummary = accountRepository.accountsWithBalance
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+    }
+}
+-e 
+
+
+---------- Instrumented Test Files (UI Tests) ----------
+================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/AppNavigationTest.kt ==================
+package com.example.personalfinanceapp
+
+import android.Manifest
+import android.content.Context
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.rule.GrantPermissionRule
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
+import org.junit.runner.Description
+import org.junit.runner.RunWith
+import org.junit.runners.model.Statement
+
+
+/**
+ * Instrumented UI test for the main app navigation.
+ */
+@RunWith(AndroidJUnit4::class)
+class AppNavigationTest {
+
+    private val composeTestRule = createAndroidComposeRule<MainActivity>()
+
+    /**
+     * The RuleChain ensures our custom rules run in the correct order:
+     * 1. DisableAppLockRule runs first to turn off the app's biometric lock.
+     * 2. GrantPermissionRule runs next to handle system-level OS permissions.
+     * 3. The composeTestRule finally launches the activity into a clean, predictable state.
+     */
+    @get:Rule
+    val ruleChain: RuleChain = RuleChain
+        .outerRule(DisableAppLockRule())
+        .around(GrantPermissionRule.grant(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.POST_NOTIFICATIONS
+        ))
+        .around(composeTestRule)
+
+    /**
+     * Tests the navigation from the Dashboard screen to the Settings screen.
+     */
+    @Test
+    fun testAppNavigation_fromDashboardToSettings() {
+        // 1. Wait for the Dashboard screen to appear. This is the most robust way
+        // to handle any initial app setup or race conditions.
+        val isHeading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
+        composeTestRule.waitUntil(timeoutMillis = 10000) {
+            composeTestRule.onAllNodesWithText("Dashboard").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        // Now that the UI has settled, we can safely perform our assertions.
+        composeTestRule.onNode(
+            hasText("Dashboard") and isHeading
+        ).assertIsDisplayed()
+
+        // 2. Find and click the Settings icon button.
+        composeTestRule.onNodeWithContentDescription("Settings").performClick()
+
+        // 3. Verify that we have navigated to the Settings screen by waiting for
+        // the "GENERAL" text to appear (it's uppercased in the UI).
+        composeTestRule.waitUntil(timeoutMillis = 5000) {
+            composeTestRule.onAllNodesWithText("GENERAL").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        // Assert that the "Settings" title is now displayed.
+        composeTestRule.onNode(
+            hasText("Settings") and isHeading
+        ).assertIsDisplayed()
+
+        // Confirm the "GENERAL" header is visible as a final check.
+        composeTestRule.onNodeWithText("GENERAL").assertIsDisplayed()
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/TransactionFlowTest.kt ==================
+package com.example.personalfinanceapp
+
+class TransactionFlowTest {
+}-e 
+
+
+================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/ExampleInstrumentedTest.kt ==================
+package com.example.personalfinanceapp
+
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.ext.junit.runners.AndroidJUnit4
+
+import org.junit.Test
+import org.junit.runner.RunWith
+
+import org.junit.Assert.*
+
+/**
+ * Instrumented test, which will execute on an Android device.
+ *
+ * See [testing documentation](http://d.android.com/tools/testing).
+ */
+@RunWith(AndroidJUnit4::class)
+class ExampleInstrumentedTest {
+    @Test
+    fun useAppContext() {
+        // Context of the app under test.
+        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
+        assertEquals("com.example.personalfinanceapp", appContext.packageName)
+    }
+}-e 
+
+
+================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/DisableAppLockRule.kt ==================
+package com.example.personalfinanceapp
+
+import android.content.Context
+import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.rules.TestRule
+import org.junit.runner.Description
+import org.junit.runners.model.Statement
+
+/**
+ * A custom JUnit Rule to disable the app lock feature before a test runs.
+ * This rule accesses the app's SharedPreferences and sets the app lock flag to false,
+ * ensuring the lock screen does not interfere with UI tests.
+ */
+class DisableAppLockRule : TestRule {
+    override fun apply(base: Statement, description: Description): Statement {
+        return object : Statement() {
+            override fun evaluate() {
+                try {
+                    val context = InstrumentationRegistry.getInstrumentation().targetContext
+                    val prefs = context.getSharedPreferences("finance_app_settings", Context.MODE_PRIVATE)
+                    prefs.edit().putBoolean("app_lock_enabled", false).commit()
+                    base.evaluate()
+                } finally {
+                    // No cleanup needed, the app state is reset for each test run.
+                }
+            }
+        }
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/AppWorkflowTests.kt ==================
+package com.example.personalfinanceapp
+
+import android.Manifest
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.test.rule.GrantPermissionRule
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.runner.RunWith
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.util.UUID
+
+/**
+ * Instrumented UI test for common user workflows in the application.
+ */
+@RunWith(AndroidJUnit4::class)
+class AppWorkflowTests {
+
+    private val composeTestRule = createAndroidComposeRule<MainActivity>()
+
+    @get:Rule
+    val ruleChain: RuleChain = RuleChain
+        .outerRule(DisableAppLockRule())
+        .around(
+            GrantPermissionRule.grant(
+                Manifest.permission.READ_SMS,
+                Manifest.permission.RECEIVE_SMS,
+                Manifest.permission.POST_NOTIFICATIONS
+            )
+        )
+        .around(composeTestRule)
+
+    /**
+     * Tests the "happy path" workflow of adding a new transaction and verifying
+     * it appears on the dashboard.
+     */
+    @Test
+    fun test_addNewTransaction_appearsOnDashboard() {
+        val uniqueDescription = "Test Coffee Purchase ${UUID.randomUUID()}"
+
+        composeTestRule.waitUntil(timeoutMillis = 5000) {
+            composeTestRule.onAllNodesWithText("Dashboard").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithContentDescription("Add Transaction").performClick()
+
+        composeTestRule.onNodeWithText("Add New Transaction").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Description").performTextInput(uniqueDescription)
+        composeTestRule.onNodeWithText("Amount").performTextInput("150.0")
+        composeTestRule.onNodeWithText("Select Account").performClick()
+        composeTestRule.onNodeWithText("SBI").performClick()
+        composeTestRule.onNodeWithText("Select Category").performClick()
+        composeTestRule.onNodeWithText("Food").performClick()
+
+        composeTestRule.onNodeWithText("Save Transaction").performClick()
+
+        val newNode = composeTestRule.onNodeWithText(uniqueDescription, useUnmergedTree = true)
+        newNode.performScrollTo()
+        newNode.assertIsDisplayed()
+    }
+
+    /**
+     * Tests the "sad path" workflow where a user tries to save a transaction
+     * with invalid input (e.g., non-numeric amount).
+     */
+    @Test
+    fun test_addTransaction_failsWithInvalidAmount_showsValidationError() {
+        // 1. Navigate to Add Transaction Screen
+        composeTestRule.waitUntil(timeoutMillis = 5000) {
+            composeTestRule.onAllNodesWithText("Dashboard").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithContentDescription("Add Transaction").performClick()
+
+        // 2. Fill out the form, but with an invalid (non-numeric) amount.
+        composeTestRule.onNodeWithText("Add New Transaction").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Description").performTextInput("Test Invalid Amount")
+
+        // CORRECTED: Enter invalid text in the amount field to enable the button.
+        composeTestRule.onNodeWithText("Amount").performTextInput("not-a-number")
+
+        composeTestRule.onNodeWithText("Select Account").performClick()
+        composeTestRule.onNodeWithText("SBI").performClick()
+
+        composeTestRule.onNodeWithText("Select Category").performClick()
+        composeTestRule.onNodeWithText("Food").performClick()
+
+        // 3. Attempt to save the invalid transaction
+        composeTestRule.onNodeWithText("Save Transaction").performClick()
+
+        // 4. Verify the validation error
+        // Assert that we are still on the "Add New Transaction" screen.
+        composeTestRule.onNodeWithText("Add New Transaction").assertIsDisplayed()
+
+        // Assert that the snackbar with the specific validation error is shown.
+        val expectedError = "Please enter a valid, positive amount."
+        composeTestRule.onNodeWithText(expectedError).assertIsDisplayed()
+    }
+}
+-e 
+
+
+---------- Unit Test Files ----------
+================== FILE: ./app/src/test/java/com/example/personalfinanceapp/DashboardViewModelTest.kt ==================
+package com.example.personalfinanceapp
+
+import android.app.Application
+import android.os.Build
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.*
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+import java.util.Calendar
+
+@ExperimentalCoroutinesApi
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [Build.VERSION_CODES.UPSIDE_DOWN_CAKE]) // UPSIDE_DOWN_CAKE is API 34
+class DashboardViewModelTest {
+
+    @get:Rule
+    var instantTaskExecutorRule = InstantTaskExecutorRule()
+
+    private val testDispatcher = UnconfinedTestDispatcher()
+
+    private lateinit var database: AppDatabase
+    private lateinit var viewModel: DashboardViewModel
+    private lateinit var settingsRepository: SettingsRepository
+    private lateinit var transactionRepository: TransactionRepository
+    private lateinit var accountRepository: AccountRepository
+    private lateinit var budgetDao: BudgetDao
+
+
+    @Before
+    fun setup() {
+        Dispatchers.setMain(testDispatcher)
+
+        val context = ApplicationProvider.getApplicationContext<Application>()
+
+        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+
+        transactionRepository = TransactionRepository(database.transactionDao())
+        accountRepository = AccountRepository(database.accountDao())
+        settingsRepository = SettingsRepository(context)
+        budgetDao = database.budgetDao()
+
+        viewModel = DashboardViewModel(
+            transactionRepository = transactionRepository,
+            accountRepository = accountRepository,
+            budgetDao = budgetDao,
+            settingsRepository = settingsRepository
+        )
+    }
+
+    @After
+    fun tearDown() {
+        database.close()
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun test_safeToSpend_calculationIsCorrect() = runTest {
+        // --- ARRANGE ---
+        // 1. Set a budget.
+        val testBudget = 30000f
+        settingsRepository.saveOverallBudgetForCurrentMonth(testBudget)
+
+        // 2. Insert test data directly inside the runTest scope.
+        val accountDao = database.accountDao()
+        val categoryDao = database.categoryDao()
+        val transactionDao = database.transactionDao()
+
+        accountDao.insert(Account(id = 1, name = "Test Bank", type = "Savings"))
+        categoryDao.insert(Category(id = 1, name = "Food"))
+
+        val calendar = Calendar.getInstance()
+        transactionDao.insert(
+            Transaction(
+                description = "Groceries",
+                amount = 2500.0,
+                date = calendar.timeInMillis,
+                accountId = 1,
+                categoryId = 1,
+                transactionType = "expense",
+                notes = ""
+            )
+        )
+
+        // --- ACT ---
+        advanceUntilIdle() // Ensure all initial jobs in ViewModel are complete.
+        val safeToSpend = viewModel.safeToSpendPerDay.first()
+
+        // --- ASSERT ---
+        val monthlyExpenses = viewModel.monthlyExpenses.first()
+        val remainingBudget = testBudget - monthlyExpenses.toFloat()
+
+        val lastDayOfMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val currentDay = calendar.get(Calendar.DAY_OF_MONTH)
+        val remainingDays = (lastDayOfMonth - currentDay + 1).coerceAtLeast(1)
+
+        val expectedSafeToSpend = if (remainingBudget > 0) remainingBudget / remainingDays else 0f
+
+        assertEquals("Safe to spend calculation is incorrect", expectedSafeToSpend, safeToSpend, 0.01f)
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/test/java/com/example/personalfinanceapp/ExampleUnitTest.kt ==================
+package com.example.personalfinanceapp
+
+import org.junit.Test
+
+import org.junit.Assert.*
+
+/**
+ * Example local unit test, which will execute on the development machine (host).
+ *
+ * See [testing documentation](http://d.android.com/tools/testing).
+ */
+class ExampleUnitTest {
+    @Test
+    fun addition_isCorrect() {
+        assertEquals(4, 2 + 2)
+    }
+}-e 
+
+
+================== FILE: ./app/src/test/java/com/example/personalfinanceapp/SmsParserTest.kt ==================
+package com.example.personalfinanceapp
+
+import org.junit.Assert.*
+import org.junit.Test
+
+/**
+ * Unit tests for the SmsParser utility.
+ * These tests run on the local JVM and do not require an Android device or emulator.
+ */
+class SmsParserTest {
+
+    // A mock map of user-defined mappings, empty for these tests.
+    private val emptyMappings = emptyMap<String, String>()
+
+    @Test
+    fun `test parses debit message successfully`() {
+        val smsBody = "Your account with HDFC Bank has been debited for Rs. 750.50 at Amazon on 22-Jun-2025."
+        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNotNull("Parser should return a result for a debit message", result)
+        assertEquals(750.50, result?.amount)
+        assertEquals("expense", result?.transactionType)
+        assertEquals("Amazon", result?.merchantName)
+    }
+
+    @Test
+    fun `test parses credit message successfully`() {
+        val smsBody = "You have received a credit of INR 5,000.00 from Freelance Client."
+        val mockSms = SmsMessage(id = 2L, sender = "DM-SOMEBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNotNull("Parser should return a result for a credit message", result)
+        assertEquals(5000.00, result?.amount)
+        assertEquals("income", result?.transactionType)
+        assertEquals("Freelance Client", result?.merchantName)
+    }
+
+    @Test
+    fun `test returns null for non-financial message`() {
+        val smsBody = "Hello, just checking in. Are we still on for dinner tomorrow evening?"
+        val mockSms = SmsMessage(id = 3L, sender = "+1234567890", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNull("Parser should return null for a non-financial message", result)
+    }
+
+    @Test
+    fun `test parses HDFC debit message with complex merchant name`() {
+        val smsBody = "Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on 2025-06-22."
+        val mockSms = SmsMessage(id = 4L, sender = "JD-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNotNull(result)
+        assertEquals(388.19, result?.amount)
+        assertEquals("expense", result?.transactionType)
+        assertEquals("MC DONALDS", result?.merchantName) // Note: underscore is cleaned up
     }
 }
 -e 

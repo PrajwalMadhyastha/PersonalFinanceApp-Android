@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/TransactionDao.kt
+// PURPOSE: Data Access Object for Transactions.
+// NOTE: The `getAllTransactions` query has been corrected to fetch all records.
+// =================================================================================
 package com.example.personalfinanceapp
 
 import androidx.room.*
@@ -6,8 +11,10 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // ... (all your existing DAO methods are here)
-
+    /**
+     * CORRECTED: This query now fetches ALL transaction details without a LIMIT,
+     * ensuring the full history is loaded.
+     */
     @Query("""
         SELECT
             T.*,
@@ -41,9 +48,10 @@ interface TransactionDao {
     """)
     fun getTransactionDetailsForRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
 
-    // --- NEW: This is the method required by AccountViewModel ---
     @Query("""
-        SELECT T.*, A.name as accountName, C.name as categoryName
+        SELECT T.*,
+               A.name as accountName,
+               C.name as categoryName
         FROM transactions AS T
         LEFT JOIN accounts AS A ON T.accountId = A.id
         LEFT JOIN categories AS C ON T.categoryId = C.id
@@ -51,7 +59,6 @@ interface TransactionDao {
         ORDER BY T.date DESC
     """)
     fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>>
-
 
     @Query("SELECT * FROM transactions")
     fun getAllTransactionsSimple(): Flow<List<Transaction>>
@@ -116,7 +123,6 @@ interface TransactionDao {
         startDate: Long?,
         endDate: Long?
     ): List<TransactionDetails>
-
 
     @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
     suspend fun countTransactionsForCategory(categoryId: Int): Int

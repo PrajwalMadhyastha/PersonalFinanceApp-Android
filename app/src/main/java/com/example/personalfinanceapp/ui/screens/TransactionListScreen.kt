@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/screens/TransactionListScreen.kt
+// PURPOSE: Displays the full list of user transactions.
+// NOTE: Correctly passes the Scaffold's innerPadding to the TransactionList.
+// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import androidx.compose.material.icons.Icons
@@ -21,7 +26,7 @@ fun TransactionListScreen(navController: NavController, viewModel: TransactionVi
     val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Transaction History") })
+            TopAppBar(title = { Text("Transactions") })
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
@@ -29,6 +34,12 @@ fun TransactionListScreen(navController: NavController, viewModel: TransactionVi
             }
         }
     ) { innerPadding ->
-        TransactionList(transactions = transactions, navController = navController)
+        // CORRECTED: The innerPadding from the Scaffold is now passed to the
+        // TransactionList, ensuring it's not drawn under the TopAppBar.
+        TransactionList(
+            transactions = transactions,
+            navController = navController,
+            contentPadding = innerPadding
+        )
     }
 }

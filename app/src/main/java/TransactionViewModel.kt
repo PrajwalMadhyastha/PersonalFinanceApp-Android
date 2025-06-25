@@ -1,11 +1,15 @@
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/TransactionViewModel.kt
+// PURPOSE: Handles business logic for the transaction list and add/edit screens.
+// NOTE: Added extensive logging to debug data flow.
+// =================================================================================
 package com.example.personalfinanceapp
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
@@ -14,7 +18,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val accountRepository: AccountRepository
     private val categoryRepository: CategoryRepository
 
-    val allTransactions: Flow<List<TransactionDetails>>
+    val allTransactions: StateFlow<List<TransactionDetails>>
+
     val allAccounts: Flow<List<Account>>
     val allCategories: Flow<List<Category>>
 
@@ -28,6 +33,16 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         categoryRepository = CategoryRepository(db.categoryDao())
 
         allTransactions = transactionRepository.allTransactions
+            .onEach { transactions ->
+                // DEBUG LOG: See what the ViewModel is receiving from the repository
+                Log.d("TransactionFlowDebug", "ViewModel Received Update. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}")
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+
         allAccounts = accountRepository.allAccounts
         allCategories = categoryRepository.allCategories
     }
@@ -46,7 +61,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionType: String,
         sourceSmsId: Long?
     ): Boolean {
-        // CORRECTED: Clear any previous errors before starting a new validation.
         _validationError.value = null
 
         if (description.isBlank()) {
@@ -70,13 +84,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             sourceSmsId = sourceSmsId
         )
         viewModelScope.launch {
+            // DEBUG LOG: See when a transaction is being added
+            Log.d("TransactionFlowDebug", "ViewModel: Attempting to add transaction '${newTransaction.description}'")
             transactionRepository.insert(newTransaction)
         }
         return true
     }
 
     fun updateTransaction(transaction: Transaction): Boolean {
-        // CORRECTED: Clear any previous errors before starting a new validation.
         _validationError.value = null
 
         if (transaction.description.isBlank()) {
