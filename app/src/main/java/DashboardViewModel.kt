@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/DashboardViewModel.kt
+// PURPOSE: Handles logic for the Dashboard.
+// NOTE: Added the `accountsSummary` StateFlow.
+// =================================================================================
 package com.example.personalfinanceapp
 
 import androidx.lifecycle.ViewModel
@@ -28,6 +33,10 @@ class DashboardViewModel(
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
     val safeToSpendPerDay: StateFlow<Float>
+
+    // --- NEW: Expose the list of accounts with their balances ---
+    val accountsSummary: StateFlow<List<AccountWithBalance>>
+
 
     init {
         val calendar = Calendar.getInstance()
@@ -103,5 +112,13 @@ class DashboardViewModel(
                 BudgetWithSpending(budget = budget, spent = spending)
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        // --- NEW: Initialize the new StateFlow ---
+        accountsSummary = accountRepository.accountsWithBalance
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
     }
 }

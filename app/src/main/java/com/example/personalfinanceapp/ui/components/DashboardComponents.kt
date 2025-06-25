@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/components/DashboardComponents.kt
+// PURPOSE: UI components for the Dashboard screen.
+// NOTE: Added the new `AccountSummaryCard` composable.
+// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
 
 import androidx.compose.animation.core.LinearEasing
@@ -53,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.example.personalfinanceapp.AccountWithBalance
 import com.example.personalfinanceapp.BottomNavItem
 import com.example.personalfinanceapp.Budget
 import com.example.personalfinanceapp.BudgetViewModel
@@ -153,7 +159,6 @@ fun OverallBudgetCard(totalBudget: Float, amountSpent: Float) {
     }
 }
 
-// --- LiquidTumbler Composable (CORRECTED) ---
 @Composable
 fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
     val clampedProgress = progress.coerceIn(0f, 1f)
@@ -173,7 +178,6 @@ fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
         ), label = "WaveOffset"
     )
 
-    // --- CORRECTED: Resolve colors and pixel values in the Composable context ---
     val waterColor = when {
         clampedProgress >= 1f -> MaterialTheme.colorScheme.error
         clampedProgress > 0.8f -> Color(0xFFFBC02D) // Amber
@@ -199,7 +203,6 @@ fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
                 close()
             }
 
-            // --- CORRECTED: Use the pre-resolved values ---
             drawPath(
                 path = glassPath,
                 color = glassColor,
@@ -241,57 +244,6 @@ fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
     }
 }
 
-// --- NEW: Composable to host the MPAndroidChart PieChart ---
-//@Composable
-//fun BudgetPieChart(totalBudget: Float, amountSpent: Float) {
-//    val remaining = totalBudget - amountSpent
-//    val percentageSpent = if (totalBudget > 0) (amountSpent / totalBudget) * 100 else 0f
-//
-//    val spentColor = MaterialTheme.colorScheme.error.toArgb()
-//    val remainingColor = MaterialTheme.colorScheme.primaryContainer.toArgb()
-//
-//    // --- CORRECTED: Get the color in the Composable context ---
-//    val centerTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
-//
-//    AndroidView(
-//        factory = { context ->
-//            PieChart(context).apply {
-//                description.isEnabled = false
-//                legend.isEnabled = false
-//                isDrawHoleEnabled = true
-//                setHoleColor(AndroidColor.TRANSPARENT)
-//                setUsePercentValues(true)
-//                setEntryLabelColor(AndroidColor.BLACK)
-//                setEntryLabelTypeface(Typeface.DEFAULT_BOLD)
-//            }
-//        },
-//        update = { chart ->
-//            val entries = mutableListOf<PieEntry>()
-//            if (amountSpent > 0) {
-//                entries.add(PieEntry(amountSpent, "Spent"))
-//            }
-//            if (remaining > 0) {
-//                entries.add(PieEntry(remaining, "Remaining"))
-//            }
-//
-//            val dataSet = PieDataSet(entries, "Budget").apply {
-//                colors = listOf(spentColor, remainingColor)
-//                setDrawValues(false)
-//            }
-//
-//            chart.data = PieData(dataSet)
-//
-//            chart.centerText = "%.1f%%".format(percentageSpent)
-//            chart.setCenterTextSize(24f)
-//            chart.setCenterTextTypeface(Typeface.DEFAULT_BOLD)
-//            // --- CORRECTED: Use the color variable here ---
-//            chart.setCenterTextColor(centerTextColor)
-//
-//            chart.invalidate()
-//        },
-//        modifier = Modifier.fillMaxSize()
-//    )
-//}
 
 @Composable
 fun NetWorthCard(netWorth: Double) {
@@ -307,6 +259,70 @@ fun NetWorthCard(netWorth: Double) {
     }
 }
 
+/**
+ * NEW: A card to display a summary of all user accounts and their balances.
+ */
+@Composable
+fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavController) {
+    Card(
+        elevation = CardDefaults.cardElevation(4.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Your Accounts",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = {
+                        // Navigate to the full account list screen, which you already have
+                        navController.navigate("account_list")
+                    }
+                ) { Text("View All") }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            if (accounts.isEmpty()) {
+                Text("No accounts found. Add one from the Settings.", modifier = Modifier.padding(vertical = 16.dp))
+            } else {
+                Column {
+                    accounts.forEachIndexed { index, accountWithBalance ->
+                        if (index > 0) Divider()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { navController.navigate("account_detail/${accountWithBalance.account.id}") }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = accountWithBalance.account.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = accountWithBalance.account.type,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "₹${"%.2f".format(accountWithBalance.balance)}",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (accountWithBalance.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun RecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
@@ -315,7 +331,6 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
                 Text("Recent Transactions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 TextButton(
                     onClick = {
-                        // --- CORRECTED: Use the same navigation logic as the bottom bar ---
                         navController.navigate(BottomNavItem.Transactions.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
@@ -330,7 +345,6 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
             } else {
                 transactions.forEach { details ->
                     TransactionItem(transactionDetails = details) {
-                        // This navigation is correct as it's a detail screen, not a main tab
                         navController.navigate("edit_transaction/${details.transaction.id}")
                     }
                 }
