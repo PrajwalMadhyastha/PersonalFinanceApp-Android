@@ -4,13 +4,15 @@ package com.example.personalfinanceapp
  * An enum to represent the validation status of a single row from the CSV.
  */
 enum class CsvRowStatus {
-    VALID, // The row is perfect and can be imported immediately.
-    NEEDS_ACCOUNT_CREATION,
-    NEEDS_CATEGORY_CREATION,
-    NEEDS_BOTH_CREATION,
+    VALID,
     INVALID_COLUMN_COUNT,
     INVALID_DATE,
-    INVALID_AMOUNT
+    INVALID_AMOUNT,
+    ACCOUNT_NOT_FOUND,
+    CATEGORY_NOT_FOUND,
+    NEEDS_ACCOUNT_CREATION,
+    NEEDS_CATEGORY_CREATION,
+    NEEDS_BOTH_CREATION
 }
 
 /**

@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -19,7 +18,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.example.personalfinanceapp.*
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -36,38 +34,23 @@ fun CsvValidationScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val reviewableRows = remember { mutableStateListOf<ReviewableRow>() }
-    var reportInitialized by remember { mutableStateOf(false) }
-
+    // --- CORRECTED: Logic to handle data coming back from the Edit screen ---
     val backStackEntry = navController.currentBackStackEntry
-    // --- CORRECTED: Use standard assignment for nullable LiveData state ---
     val updatedRowJsonState = backStackEntry?.savedStateHandle?.getLiveData<String>("corrected_row")?.observeAsState()
-    val updatedRowLineState = backStackEntry?.savedStateHandle?.getLiveData<Int>("corrected_row_line")?.observeAsState()
 
-    // Access the value of the state object
-    val updatedRowJson = updatedRowJsonState?.value
-    val updatedRowLine = updatedRowLineState?.value
-
-    LaunchedEffect(updatedRowJson) {
-        if (updatedRowJson != null && updatedRowLine != null) {
+    LaunchedEffect(updatedRowJsonState?.value) {
+        val json = updatedRowJsonState?.value
+        val line = backStackEntry?.savedStateHandle?.get<Int>("corrected_row_line")
+        if (json != null && line != null) {
             val gson = Gson()
-            val correctedData: List<String> = gson.fromJson(updatedRowJson, object : TypeToken<List<String>>() {}.type)
-            val indexToUpdate = reviewableRows.indexOfFirst { it.lineNumber == updatedRowLine }
-            if (indexToUpdate != -1) {
-                // TODO: Re-validate the corrected row
-                val originalRow = reviewableRows[indexToUpdate]
-                reviewableRows[indexToUpdate] = originalRow.copy(rowData = correctedData)
-            }
-            backStackEntry?.savedStateHandle?.remove<String>("corrected_row")
-            backStackEntry?.savedStateHandle?.remove<Int>("corrected_row_line")
-        }
-    }
+            val correctedData: List<String> = gson.fromJson(json, object : TypeToken<List<String>>() {}.type)
 
-    LaunchedEffect(report) {
-        if (report != null && !reportInitialized) {
-            reviewableRows.clear()
-            reviewableRows.addAll(report!!.reviewableRows)
-            reportInitialized = true
+            // Call the ViewModel to handle the update and re-validation
+            viewModel.updateAndRevalidateRow(line, correctedData)
+
+            // Clear the result to prevent it from being processed again
+            backStackEntry.savedStateHandle.remove<String>("corrected_row")
+            backStackEntry.savedStateHandle.remove<Int>("corrected_row_line")
         }
     }
 
@@ -76,14 +59,12 @@ fun CsvValidationScreen(
             TopAppBar(
                 title = { Text("CSV Import Preview") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
+                    IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 }
             )
         },
         bottomBar = {
-            val importableRowCount = reviewableRows.count { it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT }
+            val importableRowCount = report?.reviewableRows?.count { it.status == CsvRowStatus.VALID || it.status == CsvRowStatus.NEEDS_ACCOUNT_CREATION || it.status == CsvRowStatus.NEEDS_CATEGORY_CREATION || it.status == CsvRowStatus.NEEDS_BOTH_CREATION } ?: 0
             if (report != null) {
                 Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     OutlinedButton(onClick = {
@@ -94,13 +75,11 @@ fun CsvValidationScreen(
                     Button(
                         onClick = {
                             scope.launch {
-                                val rowsToImport = reviewableRows.filter { it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT }
-                                viewModel.commitCsvImport(rowsToImport)
-                                Toast.makeText(context, "$importableRowCount transactions imported successfully!", Toast.LENGTH_LONG).show()
-                                navController.navigate("dashboard") {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        inclusive = true
-                                    }
+                                val rowsToImport = report?.reviewableRows?.filter { it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT }
+                                if (rowsToImport != null) {
+                                    viewModel.commitCsvImport(rowsToImport)
+                                    Toast.makeText(context, "$importableRowCount transactions imported!", Toast.LENGTH_LONG).show()
+                                    navController.navigate("dashboard") { popUpTo(0) }
                                 }
                             }
                         },
@@ -113,13 +92,7 @@ fun CsvValidationScreen(
     ) { innerPadding ->
         val currentReport = report
         if (currentReport == null) {
-            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(8.dp))
-                    Text("Analyzing file...")
-                }
-            }
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
             LazyColumn(
                 modifier = Modifier.padding(innerPadding),
@@ -128,10 +101,10 @@ fun CsvValidationScreen(
             ) {
                 item {
                     Text("Validation Complete", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("Review the rows below. Tap any row to edit it.")
+                    Text("Tap a row to edit it, or use the trash icon to ignore it.")
                 }
 
-                items(reviewableRows) { row ->
+                items(currentReport.reviewableRows, key = { it.lineNumber }) { row ->
                     EditableRowItem(
                         row = row,
                         onEditClick = {
@@ -141,7 +114,7 @@ fun CsvValidationScreen(
                             navController.navigate("edit_transaction/-1?isFromCsv=true&lineNumber=${row.lineNumber}&rowDataJson=$encodedJson")
                         },
                         onDeleteClick = {
-                            reviewableRows.remove(row)
+                            viewModel.removeRowFromReport(row)
                         }
                     )
                 }
@@ -151,11 +124,7 @@ fun CsvValidationScreen(
 }
 
 @Composable
-fun EditableRowItem(
-    row: ReviewableRow,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit
-) {
+fun EditableRowItem(row: ReviewableRow, onEditClick: () -> Unit, onDeleteClick: () -> Unit) {
     val backgroundColor = when (row.status) {
         CsvRowStatus.VALID -> MaterialTheme.colorScheme.surfaceVariant
         CsvRowStatus.NEEDS_ACCOUNT_CREATION, CsvRowStatus.NEEDS_CATEGORY_CREATION, CsvRowStatus.NEEDS_BOTH_CREATION -> MaterialTheme.colorScheme.tertiaryContainer
@@ -168,34 +137,18 @@ fun EditableRowItem(
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = "Status",
-                modifier = Modifier.padding(end = 12.dp)
-            )
+        Row(modifier = Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(imageVector = icon, contentDescription = "Status", modifier = Modifier.padding(end = 12.dp))
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .clickable(onClick = onEditClick)
                     .padding(vertical = 16.dp)
             ) {
-                Text(
-                    "Line ${row.lineNumber}: ${row.rowData.getOrNull(1) ?: "N/A"}",
-                    fontWeight = FontWeight.Bold
-                )
+                Text("Line ${row.lineNumber}: ${row.rowData.getOrNull(1) ?: "N/A"}", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    row.statusMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Text(row.statusMessage, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            // --- ADDED: Delete button for each row ---
             IconButton(onClick = onDeleteClick) {
                 Icon(Icons.Default.Delete, contentDescription = "Ignore this row")
             }
@@ -203,6 +156,5 @@ fun EditableRowItem(
                 Icon(Icons.Default.Edit, contentDescription = "Edit Row")
             }
         }
-
     }
 }

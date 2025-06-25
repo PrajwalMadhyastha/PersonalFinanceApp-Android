@@ -1,34 +1,22 @@
 Project Context for Personal Finance App
-Generated on: Tue Jun 24 17:55:25 IST 2025
+Generated on: Wed Jun 25 17:25:21 IST 2025
 ========================================
 
-================== FILE: ./build.gradle.kts (Project) ==================
-plugins {
-    id("com.android.application") version "8.4.1" apply false
-    // Set the Kotlin version for the entire project.
-    id("org.jetbrains.kotlin.android") version "2.0.0" apply false
-    // Set the KSP version for the entire project.
-    id("com.google.devtools.ksp") version "2.0.0-1.0.21" apply false
-    // --- ADDED: Declare the Compose Compiler plugin for the project ---
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false
-
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.0" apply false
-}
-
-
-================== FILE: ./app/build.gradle.kts (App) ==================
+================== FILE: ./app/build.gradle.kts ==================
 // It's good practice to define versions in one place.
 val room_version = "2.6.1"
 val lifecycle_version = "2.8.2"
 val activity_compose_version = "1.9.0"
 val core_ktx_version = "1.13.1"
 val navigation_version = "2.7.7"
-// --- REVISED: Unified and updated test library versions ---
 val androidx_test_version = "1.6.1"
 val test_ext_junit_version = "1.2.1"
 val espresso_version = "3.6.1"
-val tracing_version = "1.2.0" // Added for tracing fix
+val tracing_version = "1.2.0"
 val work_version = "2.9.0"
+val robolectric_version = "4.13"
+val coroutines_test_version = "1.8.1"
+val gson_version = "2.10.1"
 
 
 plugins {
@@ -82,12 +70,18 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 configurations.all {
     resolutionStrategy {
         force("androidx.core:core-ktx:$core_ktx_version")
         force("androidx.core:core:$core_ktx_version")
+        force("androidx.tracing:tracing-ktx:$tracing_version")
     }
 }
 
@@ -102,10 +96,13 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    // --- CORRECTED: Ensure the runtime-livedata dependency is present ---
+    implementation("androidx.compose.runtime:runtime-livedata")
 
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
     implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("com.google.firebase:firebase-crashlytics-buildtools:3.0.4")
     ksp("androidx.room:room-compiler:$room_version")
 
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycle_version")
@@ -115,11 +112,19 @@ dependencies {
 
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
+    implementation("com.google.code.gson:gson:$gson_version")
+
+    implementation("androidx.tracing:tracing-ktx:$tracing_version")
+
     // Local unit tests
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.test:core-ktx:$androidx_test_version")
+    testImplementation("androidx.test.ext:junit:$test_ext_junit_version")
+    testImplementation("org.robolectric:robolectric:$robolectric_version")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines_test_version")
+    testImplementation("androidx.arch.core:core-testing:2.2.0")
 
-    // --- REVISED: Instrumented UI tests ---
-    // THE FIX: Explicitly add tracing-ktx to resolve the NoSuchMethodError
+    // Instrumented UI tests
     androidTestImplementation("androidx.tracing:tracing-ktx:$tracing_version")
     androidTestImplementation("androidx.test:runner:$androidx_test_version")
     androidTestImplementation("androidx.test:core-ktx:$androidx_test_version")
@@ -200,217 +205,33 @@ dependencies {
 
 
 
-================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/AppNavigationTest.kt ==================
+================== FILE: ./app/src/main/java/DashboardViewModelFactory.kt ==================
 package com.example.personalfinanceapp
 
-import android.Manifest
-import android.content.Context
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.rule.GrantPermissionRule
-import org.junit.Rule
-import org.junit.Test
-import org.junit.rules.RuleChain
-import org.junit.rules.TestRule
-import org.junit.runner.Description
-import org.junit.runner.RunWith
-import org.junit.runners.model.Statement
+import android.app.Application
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 
 /**
- * A custom JUnit Rule to disable the app lock feature before a test runs.
- * This ensures the lock screen does not interfere with UI tests.
+ * Factory for creating a DashboardViewModel with a constructor that takes dependencies.
  */
-class DisableAppLockRule : TestRule {
-    override fun apply(base: Statement, description: Description): Statement {
-        return object : Statement() {
-            override fun evaluate() {
-                try {
-                    val context = InstrumentationRegistry.getInstrumentation().targetContext
-                    val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-                    prefs.edit().putBoolean("app_lock_enabled", false).commit()
-                    base.evaluate()
-                } finally {
-                    // Cleanup if needed
-                }
-            }
+class DashboardViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(DashboardViewModel::class.java)) {
+            val db = AppDatabase.getInstance(application)
+            val transactionRepository = TransactionRepository(db.transactionDao())
+            val accountRepository = AccountRepository(db.accountDao())
+            val settingsRepository = SettingsRepository(application)
+
+            @Suppress("UNCHECKED_CAST")
+            return DashboardViewModel(
+                transactionRepository = transactionRepository,
+                accountRepository = accountRepository,
+                budgetDao = db.budgetDao(),
+                settingsRepository = settingsRepository
+            ) as T
         }
-    }
-}
-
-/**
- * Instrumented UI test for the main app navigation.
- */
-@RunWith(AndroidJUnit4::class)
-class AppNavigationTest {
-
-    private val composeTestRule = createAndroidComposeRule<MainActivity>()
-
-    /**
-     * The RuleChain ensures our custom rules run in the correct order:
-     * 1. DisableAppLockRule runs first to turn off the app's biometric lock.
-     * 2. GrantPermissionRule runs next to handle system-level OS permissions.
-     * 3. The composeTestRule finally launches the activity into a clean, predictable state.
-     */
-    @get:Rule
-    val ruleChain: RuleChain = RuleChain
-        .outerRule(DisableAppLockRule())
-        .around(GrantPermissionRule.grant(
-            Manifest.permission.READ_SMS,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.POST_NOTIFICATIONS
-        ))
-        .around(composeTestRule)
-
-    /**
-     * Tests the navigation from the Dashboard screen to the Settings screen.
-     */
-    @Test
-    fun testAppNavigation_fromDashboardToSettings() {
-        // 1. Wait for the Dashboard screen to appear. This is the most robust way
-        // to handle any initial app setup or race conditions.
-        val isHeading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
-        composeTestRule.waitUntil(timeoutMillis = 10000) {
-            composeTestRule.onAllNodesWithText("Dashboard").fetchSemanticsNodes().isNotEmpty()
-        }
-
-        // Now that the UI has settled, we can safely perform our assertions.
-        composeTestRule.onNode(
-            hasText("Dashboard") and isHeading
-        ).assertIsDisplayed()
-
-        // 2. Find and click the Settings icon button.
-        composeTestRule.onNodeWithContentDescription("Settings").performClick()
-
-        // 3. Verify that we have navigated to the Settings screen by waiting for
-        // the "GENERAL" text to appear (it's uppercased in the UI).
-        composeTestRule.waitUntil(timeoutMillis = 5000) {
-            composeTestRule.onAllNodesWithText("GENERAL").fetchSemanticsNodes().isNotEmpty()
-        }
-
-        // Assert that the "Settings" title is now displayed.
-        composeTestRule.onNode(
-            hasText("Settings") and isHeading
-        ).assertIsDisplayed()
-
-        // Confirm the "GENERAL" header is visible as a final check.
-        composeTestRule.onNodeWithText("GENERAL").assertIsDisplayed()
-    }
-}
--e 
-
-
-================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/ExampleInstrumentedTest.kt ==================
-package com.example.personalfinanceapp
-
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.ext.junit.runners.AndroidJUnit4
-
-import org.junit.Test
-import org.junit.runner.RunWith
-
-import org.junit.Assert.*
-
-/**
- * Instrumented test, which will execute on an Android device.
- *
- * See [testing documentation](http://d.android.com/tools/testing).
- */
-@RunWith(AndroidJUnit4::class)
-class ExampleInstrumentedTest {
-    @Test
-    fun useAppContext() {
-        // Context of the app under test.
-        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.example.personalfinanceapp", appContext.packageName)
-    }
-}-e 
-
-
-================== FILE: ./app/src/test/java/com/example/personalfinanceapp/ExampleUnitTest.kt ==================
-package com.example.personalfinanceapp
-
-import org.junit.Test
-
-import org.junit.Assert.*
-
-/**
- * Example local unit test, which will execute on the development machine (host).
- *
- * See [testing documentation](http://d.android.com/tools/testing).
- */
-class ExampleUnitTest {
-    @Test
-    fun addition_isCorrect() {
-        assertEquals(4, 2 + 2)
-    }
-}-e 
-
-
-================== FILE: ./app/src/test/java/com/example/personalfinanceapp/SmsParserTest.kt ==================
-package com.example.personalfinanceapp
-
-import org.junit.Assert.*
-import org.junit.Test
-
-/**
- * Unit tests for the SmsParser utility.
- * These tests run on the local JVM and do not require an Android device or emulator.
- */
-class SmsParserTest {
-
-    // A mock map of user-defined mappings, empty for these tests.
-    private val emptyMappings = emptyMap<String, String>()
-
-    @Test
-    fun `test parses debit message successfully`() {
-        val smsBody = "Your account with HDFC Bank has been debited for Rs. 750.50 at Amazon on 22-Jun-2025."
-        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
-
-        val result = SmsParser.parse(mockSms, emptyMappings)
-
-        assertNotNull("Parser should return a result for a debit message", result)
-        assertEquals(750.50, result?.amount)
-        assertEquals("expense", result?.transactionType)
-        assertEquals("Amazon", result?.merchantName)
-    }
-
-    @Test
-    fun `test parses credit message successfully`() {
-        val smsBody = "You have received a credit of INR 5,000.00 from Freelance Client."
-        val mockSms = SmsMessage(id = 2L, sender = "DM-SOMEBK", body = smsBody, date = System.currentTimeMillis())
-
-        val result = SmsParser.parse(mockSms, emptyMappings)
-
-        assertNotNull("Parser should return a result for a credit message", result)
-        assertEquals(5000.00, result?.amount)
-        assertEquals("income", result?.transactionType)
-        assertEquals("Freelance Client", result?.merchantName)
-    }
-
-    @Test
-    fun `test returns null for non-financial message`() {
-        val smsBody = "Hello, just checking in. Are we still on for dinner tomorrow evening?"
-        val mockSms = SmsMessage(id = 3L, sender = "+1234567890", body = smsBody, date = System.currentTimeMillis())
-
-        val result = SmsParser.parse(mockSms, emptyMappings)
-
-        assertNull("Parser should return null for a non-financial message", result)
-    }
-
-    @Test
-    fun `test parses HDFC debit message with complex merchant name`() {
-        val smsBody = "Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on 2025-06-22."
-        val mockSms = SmsMessage(id = 4L, sender = "JD-HDFCBK", body = smsBody, date = System.currentTimeMillis())
-
-        val result = SmsParser.parse(mockSms, emptyMappings)
-
-        assertNotNull(result)
-        assertEquals(388.19, result?.amount)
-        assertEquals("expense", result?.transactionType)
-        assertEquals("MC DONALDS", result?.merchantName) // Note: underscore is cleaned up
+        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
 -e 
@@ -421,11 +242,14 @@ package com.example.personalfinanceapp
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.text.SimpleDateFormat
+import java.util.*
 
 object DataExportService {
 
@@ -446,31 +270,20 @@ object DataExportService {
 
                 json.encodeToString(backupData)
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("DataExportService", "Error exporting to JSON", e)
                 null
             }
         }
     }
 
-    /**
-     * NEW: Wipes the entire database and restores it from a JSON backup.
-     * @param context The application context.
-     * @param uri The URI of the JSON file selected by the user.
-     * @return True if successful, false otherwise.
-     */
     suspend fun importDataFromJson(context: Context, uri: Uri): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                // Step 1: Read the JSON content from the file URI
                 val jsonString = context.contentResolver.openInputStream(uri)?.bufferedReader().use { it?.readText() }
-                if (jsonString == null) {
-                    return@withContext false
-                }
+                if (jsonString == null) return@withContext false
 
-                // Step 2: Parse the JSON into our backup data class
                 val backupData = json.decodeFromString<AppDataBackup>(jsonString)
 
-                // Step 3: Get database instance and DAOs
                 val db = AppDatabase.getInstance(context)
                 val transactionDao = db.transactionDao()
                 val accountDao = db.accountDao()
@@ -478,26 +291,137 @@ object DataExportService {
                 val budgetDao = db.budgetDao()
                 val merchantMappingDao = db.merchantMappingDao()
 
-                // Step 4: WIPE ALL EXISTING DATA
                 transactionDao.deleteAll()
                 accountDao.deleteAll()
                 categoryDao.deleteAll()
                 budgetDao.deleteAll()
                 merchantMappingDao.deleteAll()
 
-                // Step 5: Insert all the data from the backup
                 accountDao.insertAll(backupData.accounts)
                 categoryDao.insertAll(backupData.categories)
                 budgetDao.insertAll(backupData.budgets)
                 merchantMappingDao.insertAll(backupData.merchantMappings)
                 transactionDao.insertAll(backupData.transactions)
 
-                true // Return success
+                true
             } catch (e: Exception) {
-                e.printStackTrace()
-                false // Return failure
+                Log.e("DataExportService", "Error importing from JSON", e)
+                false
             }
         }
+    }
+
+    suspend fun exportToCsvString(context: Context): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val db = AppDatabase.getInstance(context)
+                val transactions = db.transactionDao().getAllTransactions().first()
+                val csvBuilder = StringBuilder()
+
+                csvBuilder.append("Date,Description,Amount,Type,Category,Account,Notes\n")
+
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+                transactions.forEach { details ->
+                    val date = dateFormat.format(Date(details.transaction.date))
+                    val description = escapeCsvField(details.transaction.description)
+                    val amount = details.transaction.amount.toString()
+                    val type = details.transaction.transactionType
+                    val category = escapeCsvField(details.categoryName ?: "N/A")
+                    val account = escapeCsvField(details.accountName ?: "N/A")
+                    val notes = escapeCsvField(details.transaction.notes ?: "")
+
+                    csvBuilder.append("$date,$description,$amount,$type,$category,$account,$notes\n")
+                }
+                csvBuilder.toString()
+            } catch (e: Exception) {
+                Log.e("DataExportService", "Error exporting to CSV", e)
+                null
+            }
+        }
+    }
+
+    suspend fun importFromCsv(context: Context, uri: Uri): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val db = AppDatabase.getInstance(context)
+                val accountDao = db.accountDao()
+                val categoryDao = db.categoryDao()
+                val transactionDao = db.transactionDao()
+
+                val newTransactions = mutableListOf<Transaction>()
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
+                    // Use .iterator() to avoid issues with concurrent modification
+                    val lineIterator = lines.iterator()
+                    // Skip header row
+                    if (lineIterator.hasNext()) {
+                        lineIterator.next()
+                    }
+
+                    while(lineIterator.hasNext()) {
+                        val line = lineIterator.next()
+                        val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex())
+                            .map { it.trim().removeSurrounding("\"") }
+
+                        if (tokens.size >= 6) {
+                            val date = dateFormat.parse(tokens[0])?.time ?: System.currentTimeMillis()
+                            val description = tokens[1]
+                            val amount = tokens[2].toDoubleOrNull() ?: 0.0
+                            val type = tokens[3]
+                            val categoryName = tokens[4]
+                            val accountName = tokens[5]
+                            val notes = if (tokens.size > 6) tokens[6] else null
+
+                            var category: Category? = categoryDao.findByName(categoryName)
+                            if (category == null && categoryName.isNotBlank()) {
+                                categoryDao.insert(Category(name = categoryName))
+                                category = categoryDao.findByName(categoryName) // Query again to get the object with the ID
+                            }
+
+                            var account: Account? = accountDao.findByName(accountName)
+                            if (account == null && accountName.isNotBlank()) {
+                                accountDao.insert(Account(name = accountName, type = "Imported"))
+                                account = accountDao.findByName(accountName) // Query again to get the object with the ID
+                            }
+
+                            // Ensure account and category were successfully found or created before adding transaction
+                            if (account != null && category != null) {
+                                newTransactions.add(
+                                    Transaction(
+                                        description = description,
+                                        amount = amount,
+                                        date = date,
+                                        transactionType = type,
+                                        accountId = account.id,
+                                        categoryId = category.id,
+                                        notes = notes
+                                    )
+                                )
+                            } else {
+                                Log.w("DataExportService", "Skipping row due to missing account/category: $line")
+                            }
+                        }
+                    }
+                }
+
+                if (newTransactions.isNotEmpty()) {
+                    transactionDao.insertAll(newTransactions)
+                }
+                true
+            } catch (e: Exception) {
+                Log.e("DataExportService", "Error importing from CSV", e)
+                false
+            }
+        }
+    }
+
+    private fun escapeCsvField(field: String): String {
+        if (field.contains(",") || field.contains("\"") || field.contains("\n")) {
+            return "\"${field.replace("\"", "\"\"")}\""
+        }
+        return field
     }
 }
 -e 
@@ -596,7 +520,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
-    // --- UPDATED: Now accepts sourceSmsId ---
     fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -605,8 +528,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         notes: String?,
         date: Long,
         transactionType: String,
-        sourceSmsId: Long? // New parameter
+        sourceSmsId: Long?
     ): Boolean {
+        // CORRECTED: Clear any previous errors before starting a new validation.
+        _validationError.value = null
+
         if (description.isBlank()) {
             _validationError.value = "Description cannot be empty."
             return false
@@ -625,22 +551,23 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             accountId = accountId,
             notes = notes,
             transactionType = transactionType,
-            sourceSmsId = sourceSmsId // Pass the ID to the constructor
+            sourceSmsId = sourceSmsId
         )
         viewModelScope.launch {
             transactionRepository.insert(newTransaction)
         }
-        _validationError.value = null
         return true
     }
 
-    // --- UPDATED: Validation logic simplified ---
     fun updateTransaction(transaction: Transaction): Boolean {
+        // CORRECTED: Clear any previous errors before starting a new validation.
+        _validationError.value = null
+
         if (transaction.description.isBlank()) {
             _validationError.value = "Description cannot be empty."
             return false
         }
-        if (transaction.amount <= 0.0) { // Amount must be positive
+        if (transaction.amount <= 0.0) {
             _validationError.value = "Amount must be a valid, positive number."
             return false
         }
@@ -648,7 +575,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             transactionRepository.update(transaction)
         }
-        _validationError.value = null // Clear error on success
         return true
     }
 
@@ -679,6 +605,109 @@ data class TransactionDetails(
     val accountName: String?,
     val categoryName: String?
 )
+-e 
+
+
+================== FILE: ./app/src/main/java/CsvValidationReport.kt ==================
+package com.example.personalfinanceapp
+
+/**
+ * An enum to represent the validation status of a single row from the CSV.
+ */
+enum class CsvRowStatus {
+    VALID,
+    INVALID_COLUMN_COUNT,
+    INVALID_DATE,
+    INVALID_AMOUNT,
+    ACCOUNT_NOT_FOUND,
+    CATEGORY_NOT_FOUND,
+    NEEDS_ACCOUNT_CREATION,
+    NEEDS_CATEGORY_CREATION,
+    NEEDS_BOTH_CREATION
+}
+
+/**
+ * A data class representing a single, reviewable row from the imported CSV file.
+ * It holds the original data and its current validation status.
+ */
+data class ReviewableRow(
+    val lineNumber: Int,
+    var rowData: List<String>,
+    var status: CsvRowStatus,
+    var statusMessage: String
+)
+
+/**
+ * A data class to hold the full results of a CSV validation process.
+ */
+data class CsvValidationReport(
+    val reviewableRows: List<ReviewableRow> = emptyList(),
+    val totalRowCount: Int = 0
+)
+-e 
+
+
+================== FILE: ./app/src/main/java/WeeklySummaryWorker.kt ==================
+package com.example.personalfinanceapp
+
+import android.content.Context
+import android.util.Log
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import java.util.Calendar
+
+/**
+ * A background worker that calculates the user's financial summary for the past 7 days
+ * and displays it as a system notification.
+ */
+class WeeklySummaryWorker(
+    private val context: Context,
+    workerParams: WorkerParameters
+) : CoroutineWorker(context, workerParams) {
+
+    override suspend fun doWork(): Result {
+        return withContext(Dispatchers.IO) {
+            try {
+                Log.d("WeeklySummaryWorker", "Worker starting...")
+                val db = AppDatabase.getInstance(context)
+                val transactionDao = db.transactionDao()
+
+                // 1. Calculate the start and end timestamps for the last 7 days.
+                val calendar = Calendar.getInstance()
+                val endDate = calendar.timeInMillis
+                calendar.add(Calendar.DAY_OF_YEAR, -7)
+                val startDate = calendar.timeInMillis
+
+                // 2. Fetch transactions for the last week using the existing DAO method.
+                val transactions = transactionDao.getTransactionDetailsForRange(startDate, endDate).first()
+                Log.d("WeeklySummaryWorker", "Found ${transactions.size} transactions in the last 7 days.")
+
+                // 3. Calculate total income and expenses.
+                var totalIncome = 0.0
+                var totalExpenses = 0.0
+                transactions.forEach { details ->
+                    if (details.transaction.transactionType == "income") {
+                        totalIncome += details.transaction.amount
+                    } else {
+                        totalExpenses += details.transaction.amount
+                    }
+                }
+
+                // 4. Send the summary notification via the helper.
+                NotificationHelper.showWeeklySummaryNotification(context, totalIncome, totalExpenses)
+
+                Log.d("WeeklySummaryWorker", "Worker finished successfully.")
+                Result.success()
+            } catch (e: Exception) {
+                Log.e("WeeklySummaryWorker", "Worker failed", e)
+                Result.retry() // Retry the job if it fails
+            }
+        }
+    }
+}
 -e 
 
 
@@ -1149,12 +1178,13 @@ import java.util.concurrent.TimeUnit
 
 object ReminderManager {
 
-    private const val REMINDER_WORK_TAG = "daily_review_reminder_work"
+    private const val REVIEW_REMINDER_WORK_TAG = "daily_review_reminder_work"
+    // --- ADDED: A unique tag for our new weekly worker ---
+    private const val WEEKLY_SUMMARY_WORK_TAG = "weekly_summary_work"
 
     fun scheduleDailyReminder(context: Context) {
         val constraints = Constraints.Builder()
-            .setRequiresDeviceIdle(true) // More battery friendly
-            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiresDeviceIdle(true)
             .build()
 
         val reminderRequest = PeriodicWorkRequestBuilder<ReviewReminderWorker>(1, TimeUnit.DAYS)
@@ -1162,14 +1192,30 @@ object ReminderManager {
             .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            REMINDER_WORK_TAG,
-            ExistingPeriodicWorkPolicy.KEEP, // Keep the existing work if it's already scheduled
+            REVIEW_REMINDER_WORK_TAG,
+            ExistingPeriodicWorkPolicy.KEEP,
             reminderRequest
         )
     }
 
     fun cancelDailyReminder(context: Context) {
-        WorkManager.getInstance(context).cancelUniqueWork(REMINDER_WORK_TAG)
+        WorkManager.getInstance(context).cancelUniqueWork(REVIEW_REMINDER_WORK_TAG)
+    }
+
+    // --- ADDED: Functions to schedule and cancel the weekly summary job ---
+    fun scheduleWeeklySummary(context: Context) {
+        val reminderRequest = PeriodicWorkRequestBuilder<WeeklySummaryWorker>(7, TimeUnit.DAYS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            WEEKLY_SUMMARY_WORK_TAG,
+            ExistingPeriodicWorkPolicy.KEEP,
+            reminderRequest
+        )
+    }
+
+    fun cancelWeeklySummary(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(WEEKLY_SUMMARY_WORK_TAG)
     }
 }
 -e 
@@ -1744,6 +1790,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
         private const val KEY_WEEKLY_SUMMARY_ENABLED = "weekly_summary_enabled"
         private const val KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED = "unknown_transaction_popup_enabled"
+        private const val KEY_DAILY_REMINDER_ENABLED = "daily_reminder_enabled"
     }
 
     /**
@@ -1779,6 +1826,21 @@ class SettingsRepository(context: Context) {
 
     fun saveAppLockEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, isEnabled).apply()
+    }
+    fun saveDailyReminderEnabled(isEnabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DAILY_REMINDER_ENABLED, isEnabled).apply()
+    }
+    fun getDailyReminderEnabled(): Flow<Boolean> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == KEY_DAILY_REMINDER_ENABLED) {
+                    trySend(prefs.getBoolean(key, false)) // Default to false
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getBoolean(KEY_DAILY_REMINDER_ENABLED, false))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
     }
 
     // --- NEW: Flow to read the app lock preference ---
@@ -1960,9 +2022,10 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 package com.example.personalfinanceapp
 
 import android.app.Application
-import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.Telephony
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -1970,30 +2033,36 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.*
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
-    // Correctly initialize repositories based on your project structure
     private val settingsRepository = SettingsRepository(application)
-    private val transactionRepository = TransactionRepository(AppDatabase.getInstance(application).transactionDao())
-    private val merchantMappingRepository = MerchantMappingRepository(AppDatabase.getInstance(application).merchantMappingDao())
-
-    // Using a direct value instead of a repository for SMS since it's a one-off read
+    private val db = AppDatabase.getInstance(application)
+    private val transactionRepository = TransactionRepository(db.transactionDao())
+    private val merchantMappingRepository = MerchantMappingRepository(db.merchantMappingDao())
     private val context = application
+    private val accountRepository = AccountRepository(db.accountDao())
+    private val categoryRepository = CategoryRepository(db.categoryDao())
 
-    // CORRECTED: Call the right method from your SettingsRepository
+    private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
+    val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
+
     val overallBudget: StateFlow<Float> = settingsRepository.getOverallBudgetForCurrentMonth().stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = 0f
-    )
+        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = 0f)
 
-    // CORRECTED: Call the new method from your SettingsRepository
     val dailyReminderEnabled: StateFlow<Boolean> = settingsRepository.getDailyReminderEnabled().stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = false
-    )
+        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = false)
+
+    val weeklySummaryEnabled: StateFlow<Boolean> = settingsRepository.getWeeklySummaryEnabled().stateIn(
+        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = true)
+
+    val appLockEnabled: StateFlow<Boolean> = settingsRepository.getAppLockEnabled().stateIn(
+        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = false)
+
+    val unknownTransactionPopupEnabled: StateFlow<Boolean> = settingsRepository.getUnknownTransactionPopupEnabled().stateIn(
+        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = true)
 
     private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
     val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
@@ -2004,26 +2073,218 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _smsMessages = MutableStateFlow<List<SmsMessage>>(emptyList())
     val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
 
-    // CORRECTED: Use the correct save method name
     fun saveOverallBudget(budget: String) {
         val budgetFloat = budget.toFloatOrNull() ?: 0f
         settingsRepository.saveOverallBudgetForCurrentMonth(budgetFloat)
     }
 
-    // CORRECTED: This now correctly calls the repository and manager
     fun setDailyReminder(enabled: Boolean) {
         settingsRepository.saveDailyReminderEnabled(enabled)
-        if (enabled) {
-            ReminderManager.scheduleDailyReminder(context)
-        } else {
-            ReminderManager.cancelDailyReminder(context)
+        if (enabled) ReminderManager.scheduleDailyReminder(context) else ReminderManager.cancelDailyReminder(context)
+    }
+
+    fun setWeeklySummaryEnabled(enabled: Boolean) {
+        settingsRepository.saveWeeklySummaryEnabled(enabled)
+        if (enabled) ReminderManager.scheduleWeeklySummary(context) else ReminderManager.cancelWeeklySummary(context)
+    }
+
+    fun setAppLockEnabled(enabled: Boolean) {
+        settingsRepository.saveAppLockEnabled(enabled)
+    }
+
+    fun setUnknownTransactionPopupEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.saveUnknownTransactionPopupEnabled(enabled)
         }
     }
 
-    fun rescanAllSmsMessages() {
-        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            return
+    fun validateCsvFile(uri: Uri) {
+        viewModelScope.launch {
+            _csvValidationReport.value = null
+            withContext(Dispatchers.IO) {
+                try {
+                    val report = generateValidationReport(uri)
+                    _csvValidationReport.value = report
+                } catch (e: Exception) {
+                    Log.e("SettingsViewModel", "CSV validation failed", e)
+                }
+            }
         }
+    }
+
+    private suspend fun generateValidationReport(uri: Uri, initialData: List<ReviewableRow>? = null): CsvValidationReport {
+        val accountsMap = db.accountDao().getAllAccounts().first().associateBy { it.name }
+        val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
+
+
+        if (initialData != null) {
+            val revalidatedRows = initialData.map {
+                createReviewableRow(it.lineNumber, it.rowData, accountsMap, categoriesMap)
+            }
+            return CsvValidationReport(revalidatedRows, revalidatedRows.size)
+        }
+
+        val reviewableRows = mutableListOf<ReviewableRow>()
+        var lineNumber = 1
+
+        getApplication<Application>().contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
+            lines.drop(1).forEach { line ->
+                lineNumber++
+                val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
+                reviewableRows.add(createReviewableRow(lineNumber, tokens, accountsMap, categoriesMap))
+            }
+        }
+        return CsvValidationReport(reviewableRows, lineNumber - 1)
+    }
+
+    private fun createReviewableRow(lineNumber: Int, tokens: List<String>, accounts: Map<String, Account>, categories: Map<String, Category>): ReviewableRow {
+        if (tokens.size < 6) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count.")
+
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+        try { dateFormat.parse(tokens[0]) } catch (e: Exception) { return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_DATE, "Invalid date format.") }
+
+        val amount = tokens[2].toDoubleOrNull()
+        if (amount == null || amount <= 0) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_AMOUNT, "Invalid amount.")
+
+        val categoryName = tokens[4]
+        val accountName = tokens[5]
+
+        val categoryExists = categories.containsKey(categoryName)
+        val accountExists = accounts.containsKey(accountName)
+
+        val status = when {
+            !accountExists && !categoryExists -> CsvRowStatus.NEEDS_BOTH_CREATION
+            !accountExists -> CsvRowStatus.NEEDS_ACCOUNT_CREATION
+            !categoryExists -> CsvRowStatus.NEEDS_CATEGORY_CREATION
+            else -> CsvRowStatus.VALID
+        }
+        val message = when (status) {
+            CsvRowStatus.VALID -> "Ready to import."
+            CsvRowStatus.NEEDS_BOTH_CREATION -> "New Account & Category will be created."
+            CsvRowStatus.NEEDS_ACCOUNT_CREATION -> "New Account '$accountName' will be created."
+            CsvRowStatus.NEEDS_CATEGORY_CREATION -> "New Category '$categoryName' will be created."
+            else -> "This row has errors and will be skipped."
+        }
+        return ReviewableRow(lineNumber, tokens, status, message)
+    }
+
+    fun removeRowFromReport(rowToRemove: ReviewableRow) {
+        _csvValidationReport.value?.let { currentReport ->
+            val updatedRows = currentReport.reviewableRows.filter { it.lineNumber != rowToRemove.lineNumber }
+            _csvValidationReport.value = currentReport.copy(reviewableRows = updatedRows)
+        }
+    }
+
+    // --- NEW: Function to update and re-validate a single row ---
+    fun updateAndRevalidateRow(lineNumber: Int, correctedData: List<String>) {
+        viewModelScope.launch {
+            _csvValidationReport.value?.let { currentReport ->
+                val currentRows = currentReport.reviewableRows.toMutableList()
+                val indexToUpdate = currentRows.indexOfFirst { it.lineNumber == lineNumber }
+
+                if (indexToUpdate != -1) {
+                    val revalidatedRow = withContext(Dispatchers.IO) {
+                        val accountsMap = db.accountDao().getAllAccounts().first().associateBy { it.name }
+                        val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
+                        createReviewableRow(lineNumber, correctedData, accountsMap, categoriesMap)
+                    }
+                    currentRows[indexToUpdate] = revalidatedRow
+                    _csvValidationReport.value = currentReport.copy(reviewableRows = currentRows)
+                }
+            }
+        }
+    }
+
+    // --- CORRECTED: Final import logic now correctly handles creating new entities ---
+    fun commitCsvImport(rowsToImport: List<ReviewableRow>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.d("CsvImportDebug", "ViewModel: commitCsvImport called with ${rowsToImport.size} rows.")
+
+            // Fetch current accounts and categories ONCE to avoid repeated DB calls in the loop.
+            val allAccounts = accountRepository.allAccounts.first()
+            val allCategories = categoryRepository.allCategories.first()
+            val accountMap = allAccounts.associateBy { it.name.lowercase() }.toMutableMap()
+            val categoryMap = allCategories.associateBy { it.name.lowercase() }.toMutableMap()
+
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+            for (row in rowsToImport) {
+                try {
+                    val columns = row.rowData
+                    val date = dateFormat.parse(columns[0]) ?: Date()
+                    val description = columns[1]
+                    val amount = columns[2].toDouble()
+                    val type = columns[3].lowercase(Locale.getDefault())
+                    val categoryName = columns[4]
+                    val accountName = columns[5]
+                    val notes = columns.getOrNull(6)
+
+                    // Get or create Category
+                    var category = categoryMap[categoryName.lowercase()]
+                    if (category == null) {
+                        val newCategory = Category(name = categoryName)
+                        categoryRepository.insert(newCategory)
+                        // Re-fetch to get the one with the auto-generated ID
+                        val updatedCategories = categoryRepository.allCategories.first()
+                        category = updatedCategories.find { it.name.equals(categoryName, ignoreCase = true) }
+                        if(category != null) {
+                            categoryMap[categoryName.lowercase()] = category
+                            Log.d("CsvImportDebug", "ViewModel: Created and found new category '$categoryName' with ID ${category.id}")
+                        } else {
+                            Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new category '$categoryName'")
+                            continue // Skip this transaction
+                        }
+                    }
+
+                    // Get or create Account
+                    var account = accountMap[accountName.lowercase()]
+                    if (account == null) {
+                        val newAccount = Account(name = accountName, type = "Imported")
+                        accountRepository.insert(newAccount)
+                        // Re-fetch to get the one with the auto-generated ID
+                        val updatedAccounts = accountRepository.allAccounts.first()
+                        account = updatedAccounts.find { it.name.equals(accountName, ignoreCase = true) }
+                        if (account != null) {
+                            accountMap[accountName.lowercase()] = account
+                            Log.d("CsvImportDebug", "ViewModel: Created and found new account '$accountName' with ID ${account.id}")
+                        } else {
+                            Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new account '$accountName'")
+                            continue // Skip this transaction
+                        }
+                    }
+
+                    if (account == null || category == null) {
+                        Log.e("CsvImportDebug", "ViewModel: Could not find or create account/category for row ${row.lineNumber}. Skipping.")
+                        continue
+                    }
+
+                    val transaction = Transaction(
+                        date = date.time,
+                        amount = amount,
+                        description = description,
+                        notes = notes,
+                        transactionType = type,
+                        accountId = account.id,
+                        categoryId = category.id
+                    )
+                    // Insert transactions one by one since insertAll is not available
+                    transactionRepository.insert(transaction)
+                    Log.d("CsvImportDebug", "ViewModel: Inserted transaction for row ${row.lineNumber}: '${transaction.description}'")
+
+                } catch (e: Exception) {
+                    Log.e("CsvImportDebug", "ViewModel: Failed to parse or insert row ${row.lineNumber}. Data: ${row.rowData}", e)
+                }
+            }
+            Log.d("CsvImportDebug", "ViewModel: Finished commitCsvImport.")
+        }
+    }
+
+    fun clearCsvValidationReport() {
+        _csvValidationReport.value = null
+    }
+
+    fun rescanAllSmsMessages() {
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) { return }
 
         viewModelScope.launch {
             _isScanning.value = true
@@ -2033,23 +2294,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val existingSmsIds = withContext(Dispatchers.IO) {
                 transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
             }
-
             val rawMessages = withContext(Dispatchers.IO) {
-                val messageList = mutableListOf<SmsMessage>()
-                val projection = arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE)
-                val cursor = context.contentResolver.query(
-                    Telephony.Sms.Inbox.CONTENT_URI, projection, null, null, null
-                )
-                cursor?.use { c ->
-                    val idIndex = c.getColumnIndexOrThrow(Telephony.Sms._ID)
-                    val addressIndex = c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
-                    val bodyIndex = c.getColumnIndexOrThrow(Telephony.Sms.BODY)
-                    val dateIndex = c.getColumnIndexOrThrow(Telephony.Sms.DATE)
-                    while (c.moveToNext()) {
-                        messageList.add(SmsMessage(id = c.getLong(idIndex), sender = c.getString(addressIndex), body = c.getString(bodyIndex), date = c.getLong(dateIndex)))
-                    }
-                }
-                messageList
+                val smsRepository = SmsRepository(context)
+                smsRepository.fetchAllSms()
             }
             _smsMessages.value = rawMessages
 
@@ -2057,9 +2304,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
             }
 
-            _potentialTransactions.value = parsedList.filter { potential ->
-                !existingSmsIds.contains(potential.sourceSmsId)
-            }
+            _potentialTransactions.value = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
             _isScanning.value = false
         }
     }
@@ -2371,6 +2616,9 @@ interface CategoryDao {
     @Query("SELECT * FROM categories WHERE id = :categoryId")
     suspend fun getCategoryById(categoryId: Int): Category?
 
+    @Query("SELECT * FROM accounts WHERE name = :name LIMIT 1")
+    suspend fun findByName(name: String): Category?
+
     // --- NEW: For data seeding ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(categories: List<Category>)
@@ -2379,7 +2627,7 @@ interface CategoryDao {
     @Query("DELETE FROM categories")
     suspend fun deleteAll()
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(category: Category)
 
     @Update
@@ -2458,6 +2706,9 @@ interface AccountDao {
     @Query("SELECT * FROM accounts ORDER BY name ASC")
     fun getAllAccounts(): Flow<List<Account>>
 
+    @Query("SELECT * FROM accounts WHERE name = :name LIMIT 1")
+    suspend fun findByName(name: String): Account?
+
     @Query("SELECT * FROM accounts WHERE id = :accountId")
     fun getAccountById(accountId: Int): Flow<Account?>
 
@@ -2467,7 +2718,7 @@ interface AccountDao {
     @Query("DELETE FROM accounts")
     suspend fun deleteAll()
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(account: Account)
 
     @Update
@@ -2513,15 +2764,16 @@ class MainApplication : Application() {
     companion object {
         const val TRANSACTION_CHANNEL_ID = "transaction_channel"
         const val REMINDER_CHANNEL_ID = "reminder_channel"
+        // --- ADDED: A new channel for summary notifications ---
+        const val SUMMARY_CHANNEL_ID = "summary_channel"
     }
 
     override fun onCreate() {
         super.onCreate()
-        // Create all necessary notification channels on app startup
         createTransactionNotificationChannel()
         createReminderNotificationChannel()
-        // The worker is now scheduled via the Settings screen, so we no longer
-        // need to call it directly from here.
+        // --- ADDED: Create the new channel on app startup ---
+        createSummaryNotificationChannel()
     }
 
     private fun createTransactionNotificationChannel() {
@@ -2544,6 +2796,21 @@ class MainApplication : Application() {
             val descriptionText = "Daily reminders to approve pending transactions"
             val importance = NotificationManager.IMPORTANCE_DEFAULT
             val channel = NotificationChannel(REMINDER_CHANNEL_ID, name, importance).apply {
+                description = descriptionText
+            }
+            val notificationManager: NotificationManager =
+                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    // --- ADDED: Function to create the new weekly summary channel ---
+    private fun createSummaryNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Weekly Summaries"
+            val descriptionText = "A weekly summary of your financial activity."
+            val importance = NotificationManager.IMPORTANCE_DEFAULT
+            val channel = NotificationChannel(SUMMARY_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
             }
             val notificationManager: NotificationManager =
@@ -2718,12 +2985,16 @@ class SmsReceiver : BroadcastReceiver() {
 ================== FILE: ./app/src/main/java/NotificationHelper.kt ==================
 package com.example.personalfinanceapp
 
+import android.Manifest
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
+import java.net.URLEncoder
 
 object NotificationHelper {
 
@@ -2733,31 +3004,30 @@ object NotificationHelper {
         context: Context,
         potentialTransaction: PotentialTransaction
     ) {
-        // Create the deep link URI with the transaction details as query parameters
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val encodedMerchant = URLEncoder.encode(potentialTransaction.merchantName ?: "Unknown", "UTF-8")
         val approveUri = (
                 "$DEEP_LINK_URI/approve?amount=${potentialTransaction.amount}" +
                         "&type=${potentialTransaction.transactionType}" +
-                        "&merchant=${potentialTransaction.merchantName ?: "Unknown"}" +
+                        "&merchant=$encodedMerchant" +
                         "&smsId=${potentialTransaction.sourceSmsId}" +
                         "&smsSender=${potentialTransaction.smsSender}"
                 ).toUri()
 
-        // Create an explicit intent for the deep link
         val intent = Intent(Intent.ACTION_VIEW, approveUri).apply {
             `package` = context.packageName
         }
 
-        // Create the PendingIntent
         val pendingIntent = PendingIntent.getActivity(
             context,
-            potentialTransaction.sourceSmsId.toInt(), // Use SMS ID for a unique request code
+            potentialTransaction.sourceSmsId.toInt(),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // --- CORRECTED: Replaced custom drawable with a built-in Android system icon ---
-        // You can later create your own icon and place it in res/drawable,
-        // then change this back to R.drawable.your_icon_name
         val notificationIcon = android.R.drawable.ic_dialog_info
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
@@ -2774,6 +3044,39 @@ object NotificationHelper {
         with(NotificationManagerCompat.from(context)) {
             notify(potentialTransaction.sourceSmsId.toInt(), builder.build())
         }
+    }
+
+    /**
+     * NEW: Creates and displays a notification for the weekly summary.
+     */
+    fun showWeeklySummaryNotification(
+        context: Context,
+        totalIncome: Double,
+        totalExpenses: Double
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+
+        val pendingIntent = PendingIntent.getActivity(context, 101, intent, PendingIntent.FLAG_IMMUTABLE)
+
+        val summaryText = "Income: ₹${"%.2f".format(totalIncome)} | Expenses: ₹${"%.2f".format(totalExpenses)}"
+
+        val notification = NotificationCompat.Builder(context, MainApplication.SUMMARY_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
+            .setContentTitle("Your Weekly Financial Summary")
+            .setContentText(summaryText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(summaryText))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        NotificationManagerCompat.from(context).notify(3, notification)
     }
 }
 -e 
@@ -3813,10 +4116,11 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
 
+    // CORRECTED: The viewModel.clearError() call has been removed to prevent a race condition.
+    // The Snackbar will now remain visible until dismissed by the user or another action.
     LaunchedEffect(validationError) {
         validationError?.let {
             snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
         }
     }
 
@@ -4119,6 +4423,7 @@ package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -4140,7 +4445,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.personalfinanceapp.DataExportService
-import com.example.personalfinanceapp.SettingsRepository
 import com.example.personalfinanceapp.SettingsViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -4150,22 +4454,17 @@ import java.util.*
 @Composable
 fun SettingsScreen(
     navController: NavController,
-    viewModel: SettingsViewModel = viewModel()
+    viewModel: SettingsViewModel
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settingsRepository = remember { SettingsRepository(context) }
     val isScanning by viewModel.isScanning.collectAsState()
 
-    // State for all settings
-    val isAppLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = false)
-    val isWeeklySummaryEnabled by settingsRepository.getWeeklySummaryEnabled().collectAsState(initial = true)
-    val isUnknownTransactionPopupEnabled by settingsRepository.getUnknownTransactionPopupEnabled().collectAsState(initial = true)
-    // --- ADDED: State for the new reminder toggle ---
+    val isAppLockEnabled by viewModel.appLockEnabled.collectAsState()
+    val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReminderEnabled by viewModel.dailyReminderEnabled.collectAsState()
+    val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
 
-
-    // Permission Handlers
     var hasSmsPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
@@ -4214,6 +4513,33 @@ fun SettingsScreen(
         }
     )
 
+    var showImportJsonDialog by remember { mutableStateOf(false) }
+    var showImportCsvDialog by remember { mutableStateOf(false) }
+
+    // --- ADDED: Launcher for saving the CSV file ---
+    val csvFileSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    val csvString = DataExportService.exportToCsvString(context)
+                    if (csvString != null) {
+                        try {
+                            context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                                outputStream.write(csvString.toByteArray())
+                            }
+                            Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error saving CSV file.", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "Error exporting CSV data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri ->
@@ -4221,6 +4547,32 @@ fun SettingsScreen(
                 scope.launch {
                     val success = DataExportService.importDataFromJson(context, it)
                     if (success) {
+                        Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+
+    val csvImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                Log.d("SettingsScreen", "CSV file selected: $it. Starting validation.")
+                viewModel.validateCsvFile(it)
+                navController.navigate("csv_validation_screen")
+            }
+        }
+    )
+
+    val jsonImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    if (DataExportService.importDataFromJson(context, it)) {
                         Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
                     } else {
                         Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
@@ -4274,21 +4626,18 @@ fun SettingsScreen(
                     subtitle = "Use biometrics or screen lock to secure the app.",
                     icon = Icons.Default.Lock,
                     checked = isAppLockEnabled,
-                    onCheckedChange = { settingsRepository.saveAppLockEnabled(it) }
+                    onCheckedChange = { viewModel.setAppLockEnabled(it) }
                 )
             }
 
             item { SettingSectionHeader("Notifications") }
-            // --- ADDED: Daily Reminder Toggle Switch ---
             item {
                 SettingsToggleItem(
                     title = "Daily Review Reminder",
-                    subtitle = "Get a notification if you have transactions waiting for your approval.",
+                    subtitle = "Get a notification if you have transactions waiting for approval.",
                     icon = Icons.Default.NotificationsActive,
                     checked = isDailyReminderEnabled,
-                    onCheckedChange = { enabled ->
-                        viewModel.setDailyReminder(enabled, context)
-                    }
+                    onCheckedChange = { viewModel.setDailyReminder(it) }
                 )
             }
             item {
@@ -4297,7 +4646,7 @@ fun SettingsScreen(
                     subtitle = "Receive a summary of your finances every week.",
                     icon = Icons.Default.CalendarToday,
                     checked = isWeeklySummaryEnabled,
-                    onCheckedChange = { settingsRepository.saveWeeklySummaryEnabled(it) }
+                    onCheckedChange = { viewModel.setWeeklySummaryEnabled(it) }
                 )
             }
             item {
@@ -4306,7 +4655,7 @@ fun SettingsScreen(
                     subtitle = "Show notification for SMS from new merchants.",
                     icon = Icons.Default.Notifications,
                     checked = isUnknownTransactionPopupEnabled,
-                    onCheckedChange = { settingsRepository.saveUnknownTransactionPopupEnabled(it) }
+                    onCheckedChange = { viewModel.setUnknownTransactionPopupEnabled(it) }
                 )
             }
 
@@ -4355,13 +4704,35 @@ fun SettingsScreen(
                         }
                     )
                     SettingsActionItem(
-                        text = "Export Data",
-                        icon = Icons.Default.UploadFile,
+                        text = "Export Data as JSON",
+                        icon = Icons.Default.DataObject,
                         onClick = {
                             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                             val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
                             fileSaverLauncher.launch(fileName)
                         }
+                    )
+                    // --- ADDED: The new "Export as CSV" button ---
+                    SettingsActionItem(
+                        text = "Export Transactions as CSV",
+                        icon = Icons.Default.GridOn,
+                        onClick = {
+                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                            val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
+                            csvFileSaverLauncher.launch(fileName)
+                        }
+                    )
+
+                    SettingsActionItem(
+                        text = "Import from JSON",
+                        icon = Icons.Default.Download,
+                        onClick = { showImportJsonDialog = true }
+                    )
+                    // --- ADDED: CSV Import Button ---
+                    SettingsActionItem(
+                        text = "Import from CSV",
+                        icon = Icons.Default.PostAdd,
+                        onClick = { showImportCsvDialog = true }
                     )
                     SettingsActionItem(
                         text = "Import Data",
@@ -4387,6 +4758,23 @@ fun SettingsScreen(
         }
     }
 
+    if (showImportCsvDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportCsvDialog = false },
+            title = { Text("Import from CSV?") },
+            text = { Text("This will add transactions from the CSV file. If transactions already exist, this may create duplicates. Are you sure you want to continue?") },
+            confirmButton = {
+                Button(onClick = {
+                    showImportCsvDialog = false
+                    csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values"))
+                }) { Text("Continue") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     if (showImportConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showImportConfirmDialog = false },
@@ -4405,10 +4793,29 @@ fun SettingsScreen(
             }
         )
     }
+
+    if (showImportJsonDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportJsonDialog = false },
+            title = { Text("Import from JSON?") },
+            text = { Text("This will DELETE all current data and replace it. This cannot be undone.") },
+            confirmButton = {
+                Button(onClick = {
+                    showImportJsonDialog = false
+                    jsonImportLauncher.launch(arrayOf("application/json"))
+                }) { Text("Wipe and Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportJsonDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 }
 
+
+
 @Composable
-private fun SettingSectionHeader(title: String) {
+fun SettingSectionHeader(title: String) {
     Text(
         text = title.uppercase(),
         style = MaterialTheme.typography.labelSmall,
@@ -4492,6 +4899,93 @@ fun TransactionListScreen(navController: NavController, viewModel: TransactionVi
         TransactionList(transactions = transactions, navController = navController)
     }
 }-e 
+
+
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/EditImportedTransactionScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.google.gson.Gson
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditImportedTransactionScreen(
+    navController: NavController,
+    lineNumber: Int,
+    initialData: List<String>
+) {
+    var date by remember { mutableStateOf(initialData.getOrElse(0) { "" }) }
+    var description by remember { mutableStateOf(initialData.getOrElse(1) { "" }) }
+    var amount by remember { mutableStateOf(initialData.getOrElse(2) { "" }) }
+    var type by remember { mutableStateOf(initialData.getOrElse(3) { "" }) }
+    var categoryName by remember { mutableStateOf(initialData.getOrElse(4) { "" }) }
+    var accountName by remember { mutableStateOf(initialData.getOrElse(5) { "" }) }
+    var notes by remember { mutableStateOf(initialData.getOrElse(6) { "" }) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Edit CSV Row (Line $lineNumber)") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = {
+                        val correctedData = listOf(date, description, amount, type, categoryName, accountName, notes)
+                        val gson = Gson()
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set("corrected_row", gson.toJson(correctedData))
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set("corrected_row_line", lineNumber)
+                        navController.popBackStack()
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Update Row")
+                }
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Date (yyyy-MM-dd HH:mm:ss)") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
+            item { OutlinedTextField(value = type, onValueChange = { type = it }, label = { Text("Type (income/expense)") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = categoryName, onValueChange = { categoryName = it }, label = { Text("Category") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = accountName, onValueChange = { accountName = it }, label = { Text("Account") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth()) }
+        }
+    }
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AccountDetailScreen.kt ==================
@@ -4613,6 +5107,7 @@ fun AccountDetailScreen(
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/DashboardScreen.kt ==================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
+import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -4640,12 +5135,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.example.personalfinanceapp.BottomNavItem
 import com.example.personalfinanceapp.BudgetViewModel
 import com.example.personalfinanceapp.DashboardViewModel
+import com.example.personalfinanceapp.DashboardViewModelFactory
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetWatchCard
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.NetWorthCard
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.OverallBudgetCard
@@ -4656,7 +5154,8 @@ import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.componen
 @Composable
 fun DashboardScreen(
     navController: NavController,
-    viewModel: DashboardViewModel,
+    // CORRECTED: Use the factory to create the ViewModel
+    viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
     budgetViewModel: BudgetViewModel
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
@@ -5104,6 +5603,170 @@ fun DateTextField(
 }-e 
 
 
+================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/CsvValidationScreen.kt ==================
+package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+
+import android.widget.Toast
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.personalfinanceapp.*
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.launch
+import java.net.URLEncoder
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CsvValidationScreen(
+    navController: NavController,
+    viewModel: SettingsViewModel
+) {
+    val report by viewModel.csvValidationReport.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // --- CORRECTED: Logic to handle data coming back from the Edit screen ---
+    val backStackEntry = navController.currentBackStackEntry
+    val updatedRowJsonState = backStackEntry?.savedStateHandle?.getLiveData<String>("corrected_row")?.observeAsState()
+
+    LaunchedEffect(updatedRowJsonState?.value) {
+        val json = updatedRowJsonState?.value
+        val line = backStackEntry?.savedStateHandle?.get<Int>("corrected_row_line")
+        if (json != null && line != null) {
+            val gson = Gson()
+            val correctedData: List<String> = gson.fromJson(json, object : TypeToken<List<String>>() {}.type)
+
+            // Call the ViewModel to handle the update and re-validation
+            viewModel.updateAndRevalidateRow(line, correctedData)
+
+            // Clear the result to prevent it from being processed again
+            backStackEntry.savedStateHandle.remove<String>("corrected_row")
+            backStackEntry.savedStateHandle.remove<Int>("corrected_row_line")
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("CSV Import Preview") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                }
+            )
+        },
+        bottomBar = {
+            val importableRowCount = report?.reviewableRows?.count { it.status == CsvRowStatus.VALID || it.status == CsvRowStatus.NEEDS_ACCOUNT_CREATION || it.status == CsvRowStatus.NEEDS_CATEGORY_CREATION || it.status == CsvRowStatus.NEEDS_BOTH_CREATION } ?: 0
+            if (report != null) {
+                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedButton(onClick = {
+                        viewModel.clearCsvValidationReport()
+                        navController.popBackStack()
+                    }, modifier = Modifier.weight(1f)) { Text("Cancel") }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val rowsToImport = report?.reviewableRows?.filter { it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT }
+                                if (rowsToImport != null) {
+                                    viewModel.commitCsvImport(rowsToImport)
+                                    Toast.makeText(context, "$importableRowCount transactions imported!", Toast.LENGTH_LONG).show()
+                                    navController.navigate("dashboard") { popUpTo(0) }
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = importableRowCount > 0
+                    ) { Text("Import $importableRowCount Rows") }
+                }
+            }
+        }
+    ) { innerPadding ->
+        val currentReport = report
+        if (currentReport == null) {
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        } else {
+            LazyColumn(
+                modifier = Modifier.padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Text("Validation Complete", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("Tap a row to edit it, or use the trash icon to ignore it.")
+                }
+
+                items(currentReport.reviewableRows, key = { it.lineNumber }) { row ->
+                    EditableRowItem(
+                        row = row,
+                        onEditClick = {
+                            val gson = Gson()
+                            val rowDataJson = gson.toJson(row.rowData)
+                            val encodedJson = URLEncoder.encode(rowDataJson, "UTF-8")
+                            navController.navigate("edit_transaction/-1?isFromCsv=true&lineNumber=${row.lineNumber}&rowDataJson=$encodedJson")
+                        },
+                        onDeleteClick = {
+                            viewModel.removeRowFromReport(row)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EditableRowItem(row: ReviewableRow, onEditClick: () -> Unit, onDeleteClick: () -> Unit) {
+    val backgroundColor = when (row.status) {
+        CsvRowStatus.VALID -> MaterialTheme.colorScheme.surfaceVariant
+        CsvRowStatus.NEEDS_ACCOUNT_CREATION, CsvRowStatus.NEEDS_CATEGORY_CREATION, CsvRowStatus.NEEDS_BOTH_CREATION -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.errorContainer
+    }
+    val icon = when (row.status) {
+        CsvRowStatus.VALID -> Icons.Default.CheckCircle
+        CsvRowStatus.NEEDS_ACCOUNT_CREATION, CsvRowStatus.NEEDS_CATEGORY_CREATION, CsvRowStatus.NEEDS_BOTH_CREATION -> Icons.Default.AddCircle
+        else -> Icons.Default.Warning
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(imageVector = icon, contentDescription = "Status", modifier = Modifier.padding(end = 12.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onEditClick)
+                    .padding(vertical = 16.dp)
+            ) {
+                Text("Line ${row.lineNumber}: ${row.rowData.getOrNull(1) ?: "N/A"}", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(row.statusMessage, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = onDeleteClick) {
+                Icon(Icons.Default.Delete, contentDescription = "Ignore this row")
+            }
+            IconButton(onClick = onEditClick) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit Row")
+            }
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AddAccountScreen.kt ==================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
@@ -5246,13 +5909,24 @@ import com.example.personalfinanceapp.Account
 import com.example.personalfinanceapp.Category
 import com.example.personalfinanceapp.TransactionViewModel
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.TimePickerDialog
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditTransactionScreen(navController: NavController, viewModel: TransactionViewModel, transactionId: Int) {
+fun EditTransactionScreen(
+    navController: NavController,
+    viewModel: TransactionViewModel,
+    transactionId: Int,
+    // --- ADDED: New parameters to handle CSV editing ---
+    isFromCsvImport: Boolean = false,
+    csvLineNumber: Int = -1,
+    initialCsvData: String? = null
+) {
     val transaction by viewModel.getTransactionById(transactionId).collectAsState(initial = null)
 
     var description by remember { mutableStateOf("") }
@@ -5278,6 +5952,37 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
 
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
+    val transactionFromDb by viewModel.getTransactionById(transactionId).collectAsState(initial = null)
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+    LaunchedEffect(transactionFromDb, initialCsvData, accounts, categories) {
+        if (isFromCsvImport && initialCsvData != null) {
+            val gson = Gson()
+            val listType = object : TypeToken<List<String>>() {}.type
+            val tokens: List<String> = gson.fromJson(initialCsvData, listType)
+
+            try {
+                selectedDateTime.time = dateFormat.parse(tokens[0]) ?: Date()
+                description = tokens[1]
+                amount = tokens[2]
+                transactionType = tokens[3].lowercase()
+                notes = tokens.getOrElse(6) { "" }
+                selectedCategory = categories.find { it.name.equals(tokens[4], ignoreCase = true) }
+                selectedAccount = accounts.find { it.name.equals(tokens[5], ignoreCase = true) }
+            } catch (e: Exception) { /* Handle parsing error if needed */ }
+
+        } else if (transactionFromDb != null) {
+            transactionFromDb?.let { txn ->
+                description = txn.description
+                amount = txn.amount.toString()
+                notes = txn.notes ?: ""
+                selectedDateTime.timeInMillis = txn.date
+                selectedAccount = accounts.find { it.id == txn.accountId }
+                selectedCategory = categories.find { it.id == txn.categoryId }
+                transactionType = txn.transactionType
+            }
+        }
+    }
 
     LaunchedEffect(validationError) {
         validationError?.let {
@@ -5286,34 +5991,17 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
         }
     }
 
-    LaunchedEffect(transaction, accounts, categories) {
-        transaction?.let { txn ->
-            description = txn.description
-            amount = txn.amount.toString()
-            notes = txn.notes ?: ""
-            selectedDateTime.timeInMillis = txn.date
-            selectedAccount = accounts.find { it.id == txn.accountId }
-            selectedCategory = categories.find { it.id == txn.categoryId }
-            transactionType = txn.transactionType
-        }
-    }
-
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Edit Transaction") },
-                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(
-                    Icons.Filled.ArrowBack, "Back") } },
-                actions = {
-                    IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Transaction")
-                    }
-                }
+                title = { Text(if (isFromCsvImport) "Edit CSV Row" else "Edit Transaction") },
+                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.Default.ArrowBack, "Back") } },
+                actions = { if (!isFromCsvImport) { IconButton(onClick = { showDeleteDialog = true }) { Icon(Icons.Default.Delete, "Delete") } } }
             )
         }
     ) { innerPadding ->
-        transaction?.let { currentTransaction ->
+        val canShowForm = (!isFromCsvImport && transactionFromDb != null) || isFromCsvImport
+        if (canShowForm) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -5327,41 +6015,93 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                         transactionTypes.forEachIndexed { index, title ->
                             Tab(
                                 selected = (if (transactionType == "expense") 0 else 1) == index,
-                                onClick = { transactionType = if (index == 0) "expense" else "income" },
+                                onClick = {
+                                    transactionType = if (index == 0) "expense" else "income"
+                                },
                                 text = { Text(title) }
                             )
                         }
                     }
                 }
 
-                item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
-                item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
-                item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+                item {
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it },
+                        label = { Text("Amount") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("Notes (Optional)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
-                            Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
+                        Button(
+                            onClick = { showDatePicker = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DateRange,
+                                contentDescription = "Select Date"
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
+                            Text(
+                                text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(
+                                    selectedDateTime.time
+                                )
+                            )
                         }
-                        Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
-                            Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
+                        Button(
+                            onClick = { showTimePicker = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AccessTime,
+                                contentDescription = "Select Time"
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
+                            Text(
+                                text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(
+                                    selectedDateTime.time
+                                )
+                            )
                         }
                     }
                 }
 
                 item {
-                    ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                    ExposedDropdownMenuBox(
+                        expanded = isAccountDropdownExpanded,
+                        onExpandedChange = {
+                            isAccountDropdownExpanded = !isAccountDropdownExpanded
+                        }) {
                         OutlinedTextField(
                             value = selectedAccount?.name ?: "Select Account",
                             onValueChange = {}, readOnly = true, label = { Text("Account") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor()
                         )
-                        ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
+                        ExposedDropdownMenu(
+                            expanded = isAccountDropdownExpanded,
+                            onDismissRequest = { isAccountDropdownExpanded = false }) {
                             accounts.forEach { account ->
                                 DropdownMenuItem(text = { Text(account.name) }, onClick = {
                                     selectedAccount = account
@@ -5371,16 +6111,23 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                         }
                     }
                 }
-
                 item {
-                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                    ExposedDropdownMenuBox(
+                        expanded = isCategoryDropdownExpanded,
+                        onExpandedChange = {
+                            isCategoryDropdownExpanded = !isCategoryDropdownExpanded
+                        }) {
                         OutlinedTextField(
                             value = selectedCategory?.name ?: "Select Category",
                             onValueChange = {}, readOnly = true, label = { Text("Category") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor()
                         )
-                        ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                        ExposedDropdownMenu(
+                            expanded = isCategoryDropdownExpanded,
+                            onDismissRequest = { isCategoryDropdownExpanded = false }) {
                             categories.forEach { category ->
                                 DropdownMenuItem(text = { Text(category.name) }, onClick = {
                                     selectedCategory = category
@@ -5390,28 +6137,52 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
                         }
                     }
                 }
-
                 item {
                     Button(
                         onClick = {
-                            val updatedAmount = amount.toDoubleOrNull() ?: 0.0
-                            val updatedTransaction = currentTransaction.copy(
-                                description = description,
-                                amount = updatedAmount,
-                                accountId = selectedAccount?.id ?: currentTransaction.accountId,
-                                categoryId = selectedCategory?.id,
-                                notes = notes.takeIf { it.isNotBlank() },
-                                date = selectedDateTime.timeInMillis,
-                                transactionType = transactionType
-                            )
-                            val success = viewModel.updateTransaction(updatedTransaction)
-                            if (success) {
+                            if (isFromCsvImport) {
+                                val correctedData = listOf(
+                                    dateFormat.format(selectedDateTime.time),
+                                    description,
+                                    amount,
+                                    transactionType,
+                                    selectedCategory?.name ?: "",
+                                    selectedAccount?.name ?: "",
+                                    notes
+                                )
+                                val gson = Gson()
+                                navController.previousBackStackEntry?.savedStateHandle?.set(
+                                    "corrected_row",
+                                    gson.toJson(correctedData)
+                                )
+                                navController.previousBackStackEntry?.savedStateHandle?.set(
+                                    "corrected_row_line",
+                                    csvLineNumber
+                                )
                                 navController.popBackStack()
+                            } else {
+                                val updatedAmount = amount.toDoubleOrNull() ?: 0.0
+                                val currentTransaction = transactionFromDb
+                                if (currentTransaction != null && selectedAccount != null) {
+                                    val updatedTransaction = currentTransaction.copy(
+                                        description = description,
+                                        amount = updatedAmount,
+                                        accountId = selectedAccount!!.id,
+                                        categoryId = selectedCategory?.id,
+                                        notes = notes.takeIf { it.isNotBlank() },
+                                        date = selectedDateTime.timeInMillis,
+                                        transactionType = transactionType
+                                    )
+                                    if (viewModel.updateTransaction(updatedTransaction)) {
+                                        navController.popBackStack()
+                                    }
+                                }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedAccount != null && selectedCategory != null
                     ) {
-                        Text("Update Transaction")
+                        Text(if (isFromCsvImport) "Update Row" else "Update Transaction")
                     }
                 }
             }
@@ -5453,23 +6224,22 @@ fun EditTransactionScreen(navController: NavController, viewModel: TransactionVi
     }
 
     if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Confirm Deletion") },
-            text = { Text("Are you sure you want to permanently delete this transaction?") },
-            confirmButton = {
-                Button(onClick = {
-                    transaction?.let {
-                        viewModel.deleteTransaction(it)
+        val transactionToDelete = transactionFromDb
+        if (transactionToDelete != null) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = { Text("Confirm Deletion") },
+                text = { Text("Are you sure you want to permanently delete this transaction?") },
+                confirmButton = {
+                    Button(onClick = {
+                        viewModel.deleteTransaction(transactionToDelete)
                         showDeleteDialog = false
                         navController.popBackStack()
-                    }
-                }) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
-            }
-        )
+                    }) { Text("Delete") }
+                },
+                dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
+            )
+        }
     }
 }-e 
 
@@ -6349,19 +7119,29 @@ package com.example.personalfinanceapp.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+// Default Material colors (can be removed if not used)
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)
 val Pink80 = Color(0xFFEFB8C8)
 
 val Purple40 = Color(0xFF6650a4)
 val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)-e 
+val Pink40 = Color(0xFF7D5260)
+
+// --- ADDED: Custom colors for our new theme ---
+val FinanceGreen = Color(0xFF006A60) // A deep, professional green for primary elements
+val FinanceGreenLight = Color(0xFF50D9C8) // A lighter version for dark theme primary
+val GoldAccent = Color(0xFF815600)    // A rich gold/amber for secondary elements
+val GoldAccentLight = Color(0xFFFFBA3F)  // A lighter version for dark theme secondary
+val Charcoal = Color(0xFF333333)       // A dark gray for text and tertiary elements
+val OffWhite = Color(0xFFF8F9FA)       // A very light gray for backgrounds
+val DarkSurface = Color(0xFF1E1E1E)   // A slightly lighter-than-black for dark theme surfaces
+-e 
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/theme/Theme.kt ==================
 package com.example.personalfinanceapp.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -6370,35 +7150,41 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
+// --- UPDATED: Dark theme color scheme using our new custom colors ---
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = FinanceGreenLight,
+    secondary = GoldAccentLight,
+    tertiary = Charcoal,
+    background = Color(0xFF121212),
+    surface = DarkSurface,
+    onPrimary = Color.Black,
+    onSecondary = Color.Black,
+    onBackground = Color.White,
+    onSurface = Color.White,
+    onError = Color.Red
 )
 
+// --- UPDATED: Light theme color scheme using our new custom colors ---
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    primary = FinanceGreen,
+    secondary = GoldAccent,
+    tertiary = Charcoal,
+    background = OffWhite,
+    surface = Color.White,
     onPrimary = Color.White,
     onSecondary = Color.White,
-    onTertiary = Color.White,
     onBackground = Color(0xFF1C1B1F),
     onSurface = Color(0xFF1C1B1F),
-    */
+    error = Color(0xFFB00020)
 )
 
 @Composable
 fun PersonalFinanceAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = true, // Set to false to always use your custom theme
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -6406,7 +7192,6 @@ fun PersonalFinanceAppTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
@@ -6416,7 +7201,8 @@ fun PersonalFinanceAppTheme(
         typography = Typography,
         content = content
     )
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/theme/Type.kt ==================
@@ -6460,6 +7246,7 @@ val Typography = Typography(
 package com.example.personalfinanceapp
 
 import android.Manifest
+import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
@@ -6491,12 +7278,11 @@ import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.*
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import java.net.URLDecoder
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.util.concurrent.Executor
 
-// --- Navigation Destinations ---
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
     object Dashboard : BottomNavItem("dashboard", Icons.Filled.Home, "Dashboard")
     object Transactions : BottomNavItem("transaction_list", Icons.Filled.Receipt, "History")
@@ -6528,7 +7314,6 @@ fun FinanceAppWithLockScreen(isInitiallyLocked: Boolean) {
     var isLocked by remember { mutableStateOf(isInitiallyLocked) }
     val appLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = isInitiallyLocked)
 
-    // --- PERMISSION ONBOARDING LOGIC ---
     val permissionsToRequest = arrayOf(
         Manifest.permission.READ_SMS,
         Manifest.permission.RECEIVE_SMS,
@@ -6543,7 +7328,6 @@ fun FinanceAppWithLockScreen(isInitiallyLocked: Boolean) {
         }
     }
 
-    // Check for permissions on the first launch
     LaunchedEffect(key1 = true) {
         val areAllPermissionsGranted = permissionsToRequest.all {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
@@ -6552,7 +7336,6 @@ fun FinanceAppWithLockScreen(isInitiallyLocked: Boolean) {
             permissionLauncher.launch(permissionsToRequest)
         }
     }
-    // --- END PERMISSION LOGIC ---
 
     LaunchedEffect(appLockEnabled) {
         if (!appLockEnabled) {
@@ -6631,6 +7414,11 @@ fun FinanceApp() {
         BottomNavItem.Settings
     )
 
+    // --- CORRECTED: ViewModel is now created once and shared between settings-related screens ---
+    val settingsViewModel: SettingsViewModel = viewModel()
+    val transactionViewModel: TransactionViewModel = viewModel()
+
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -6658,19 +7446,24 @@ fun FinanceApp() {
             startDestination = BottomNavItem.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(BottomNavItem.Dashboard.route) { DashboardScreen(navController, viewModel(), viewModel()) }
+            composable(BottomNavItem.Dashboard.route) {
+                val context = LocalContext.current.applicationContext as Application
+                val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(context))
+                val budgetViewModel: BudgetViewModel = viewModel()
+                DashboardScreen(navController, dashboardViewModel, budgetViewModel)
+            }
             composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, viewModel()) }
             composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-            composable(BottomNavItem.Settings.route) { SettingsScreen(navController, viewModel()) }
-            composable("search_screen") { SearchScreen(navController) }
+            // Pass the shared ViewModel instance to both screens
+            composable(BottomNavItem.Settings.route) { SettingsScreen(navController, settingsViewModel) }
+            composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
 
-            // --- UPDATED: Added deep link to the review screen ---
+            composable("search_screen") { SearchScreen(navController) }
             composable(
                 route = "review_sms_screen",
                 deepLinks = listOf(navDeepLink { uriPattern = "app://personalfinanceapp.example.com/review_sms" })
-            ) { ReviewSmsScreen(navController, viewModel()) }
-
-            composable("sms_debug_screen") { SmsDebugScreen(navController, viewModel()) }
+            ) { ReviewSmsScreen(navController, settingsViewModel) }
+            composable("sms_debug_screen") { SmsDebugScreen(navController, settingsViewModel) }
             composable(
                 route = "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}",
                 arguments = listOf(
@@ -6693,9 +7486,26 @@ fun FinanceApp() {
                 )
             }
             composable("add_transaction") { AddTransactionScreen(navController, viewModel()) }
-            composable("edit_transaction/{transactionId}", arguments = listOf(navArgument("transactionId") { type = NavType.IntType })) { backStackEntry ->
-                val transactionId = backStackEntry.arguments?.getInt("transactionId")
-                if (transactionId != null) { EditTransactionScreen(navController, viewModel(), transactionId) }
+            composable("edit_transaction/{transactionId}?isFromCsv={isFromCsv}&lineNumber={lineNumber}&rowDataJson={rowDataJson}",
+                arguments = listOf(
+                    navArgument("transactionId") { type = NavType.IntType; defaultValue = -1 },
+                    navArgument("isFromCsv") { type = NavType.BoolType; defaultValue = false },
+                    navArgument("lineNumber") { type = NavType.IntType; defaultValue = -1 },
+                    navArgument("rowDataJson") { type = NavType.StringType; nullable = true }
+                )
+            ) { backStackEntry ->
+                val arguments = requireNotNull(backStackEntry.arguments)
+                val transactionId = arguments.getInt("transactionId")
+                val isFromCsv = arguments.getBoolean("isFromCsv")
+
+                EditTransactionScreen(
+                    navController = navController,
+                    viewModel = transactionViewModel, // Pass the shared viewModel
+                    transactionId = transactionId,
+                    isFromCsvImport = isFromCsv,
+                    csvLineNumber = arguments.getInt("lineNumber"),
+                    initialCsvData = arguments.getString("rowDataJson")?.let { URLDecoder.decode(it, "UTF-8") }
+                )
             }
             composable("account_list") { AccountListScreen(navController, viewModel()) }
             composable("add_account") { AddAccountScreen(navController, viewModel()) }
@@ -6708,6 +7518,26 @@ fun FinanceApp() {
                 if (accountId != null) { AccountDetailScreen(navController, viewModel(), accountId) }
             }
             composable("budget_screen") { BudgetScreen(navController, viewModel()) }
+            composable(
+                "edit_imported_transaction/{lineNumber}/{rowDataJson}",
+                arguments = listOf(
+                    navArgument("lineNumber") { type = NavType.IntType },
+                    navArgument("rowDataJson") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val lineNumber = backStackEntry.arguments?.getInt("lineNumber") ?: 0
+                val rowDataJson = backStackEntry.arguments?.getString("rowDataJson") ?: "[]"
+
+                val gson = Gson()
+                val listType = object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
+                val initialData: List<String> = gson.fromJson(rowDataJson, listType)
+
+                EditImportedTransactionScreen(
+                    navController = navController,
+                    lineNumber = lineNumber,
+                    initialData = initialData
+                )
+            }
             composable("recurring_transactions") { RecurringTransactionScreen(navController) }
             composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
             composable("add_budget") { AddBudgetScreen(navController, viewModel()) }
@@ -6789,8 +7619,7 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
 package com.example.personalfinanceapp
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -6799,12 +7628,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.util.Calendar
 
-class DashboardViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val transactionRepository: TransactionRepository
-    private val accountRepository: AccountRepository
-    private val budgetDao: BudgetDao
+/**
+ * ViewModel for the Dashboard screen.
+ * This class is now testable because its dependencies are provided via the constructor.
+ */
+class DashboardViewModel(
+    private val transactionRepository: TransactionRepository,
+    private val accountRepository: AccountRepository,
+    private val budgetDao: BudgetDao,
     private val settingsRepository: SettingsRepository
+) : ViewModel() {
 
     val netWorth: StateFlow<Double>
     val monthlyIncome: StateFlow<Double>
@@ -6813,16 +7646,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val budgetStatus: StateFlow<List<BudgetWithSpending>>
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
-    // --- NEW: StateFlow for the "Safe to Spend" metric ---
     val safeToSpendPerDay: StateFlow<Float>
 
     init {
-        val db = AppDatabase.getInstance(application)
-        transactionRepository = TransactionRepository(db.transactionDao())
-        accountRepository = AccountRepository(db.accountDao())
-        budgetDao = db.budgetDao()
-        settingsRepository = SettingsRepository(application)
-
         val calendar = Calendar.getInstance()
         val monthStart = calendar.apply {
             set(Calendar.DAY_OF_MONTH, 1)
@@ -6862,8 +7688,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             budget - expenses.toFloat()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-        // --- NEW: "Safe to Spend" Calculation Logic ---
-        safeToSpendPerDay = combine(amountRemaining) { (remaining) ->
+        safeToSpendPerDay = amountRemaining.map { remaining ->
             val today = Calendar.getInstance()
             val lastDayOfMonth = today.getActualMaximum(Calendar.DAY_OF_MONTH)
             val remainingDays = (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1)

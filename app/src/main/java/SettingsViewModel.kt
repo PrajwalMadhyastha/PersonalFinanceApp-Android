@@ -22,6 +22,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val transactionRepository = TransactionRepository(db.transactionDao())
     private val merchantMappingRepository = MerchantMappingRepository(db.merchantMappingDao())
     private val context = application
+    private val accountRepository = AccountRepository(db.accountDao())
+    private val categoryRepository = CategoryRepository(db.categoryDao())
 
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
@@ -89,13 +91,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private suspend fun generateValidationReport(uri: Uri): CsvValidationReport {
+    private suspend fun generateValidationReport(uri: Uri, initialData: List<ReviewableRow>? = null): CsvValidationReport {
         val accountsMap = db.accountDao().getAllAccounts().first().associateBy { it.name }
         val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
+
+
+        if (initialData != null) {
+            val revalidatedRows = initialData.map {
+                createReviewableRow(it.lineNumber, it.rowData, accountsMap, categoriesMap)
+            }
+            return CsvValidationReport(revalidatedRows, revalidatedRows.size)
+        }
+
         val reviewableRows = mutableListOf<ReviewableRow>()
         var lineNumber = 1
 
-        context.contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
+        getApplication<Application>().contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
             lines.drop(1).forEach { line ->
                 lineNumber++
                 val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
@@ -109,8 +120,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (tokens.size < 6) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count.")
 
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-        val date = try { dateFormat.parse(tokens[0]) } catch (e: Exception) { null }
-        if (date == null) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_DATE, "Invalid date format.")
+        try { dateFormat.parse(tokens[0]) } catch (e: Exception) { return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_DATE, "Invalid date format.") }
 
         val amount = tokens[2].toDoubleOrNull()
         if (amount == null || amount <= 0) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_AMOUNT, "Invalid amount.")
@@ -128,46 +138,123 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             else -> CsvRowStatus.VALID
         }
         val message = when (status) {
+            CsvRowStatus.VALID -> "Ready to import."
             CsvRowStatus.NEEDS_BOTH_CREATION -> "New Account & Category will be created."
             CsvRowStatus.NEEDS_ACCOUNT_CREATION -> "New Account '$accountName' will be created."
             CsvRowStatus.NEEDS_CATEGORY_CREATION -> "New Category '$categoryName' will be created."
-            else -> "Ready to import."
+            else -> "This row has errors and will be skipped."
         }
         return ReviewableRow(lineNumber, tokens, status, message)
     }
 
-    fun commitCsvImport(rows: List<ReviewableRow>) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val db = AppDatabase.getInstance(context)
-            val transactionsToInsert = mutableListOf<Transaction>()
+    fun removeRowFromReport(rowToRemove: ReviewableRow) {
+        _csvValidationReport.value?.let { currentReport ->
+            val updatedRows = currentReport.reviewableRows.filter { it.lineNumber != rowToRemove.lineNumber }
+            _csvValidationReport.value = currentReport.copy(reviewableRows = updatedRows)
+        }
+    }
 
-            rows.forEach { row ->
-                val tokens = row.rowData
-                var account = db.accountDao().findByName(tokens[5])
-                if (account == null) {
-                    db.accountDao().insert(Account(name = tokens[5], type = "Imported"))
-                    account = db.accountDao().findByName(tokens[5])
-                }
-                var category = db.categoryDao().findByName(tokens[4])
-                if (category == null) {
-                    db.categoryDao().insert(Category(name = tokens[4]))
-                    category = db.categoryDao().findByName(tokens[4])
-                }
+    // --- NEW: Function to update and re-validate a single row ---
+    fun updateAndRevalidateRow(lineNumber: Int, correctedData: List<String>) {
+        viewModelScope.launch {
+            _csvValidationReport.value?.let { currentReport ->
+                val currentRows = currentReport.reviewableRows.toMutableList()
+                val indexToUpdate = currentRows.indexOfFirst { it.lineNumber == lineNumber }
 
-                if (account != null && category != null) {
-                    val date = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).parse(tokens[0])?.time ?: 0L
-                    transactionsToInsert.add(Transaction(
-                        description = tokens[1],
-                        amount = tokens[2].toDouble(),
-                        date = date,
-                        transactionType = tokens[3],
-                        accountId = account.id,
-                        categoryId = category.id,
-                        notes = tokens.getOrNull(6)
-                    ))
+                if (indexToUpdate != -1) {
+                    val revalidatedRow = withContext(Dispatchers.IO) {
+                        val accountsMap = db.accountDao().getAllAccounts().first().associateBy { it.name }
+                        val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
+                        createReviewableRow(lineNumber, correctedData, accountsMap, categoriesMap)
+                    }
+                    currentRows[indexToUpdate] = revalidatedRow
+                    _csvValidationReport.value = currentReport.copy(reviewableRows = currentRows)
                 }
             }
-            db.transactionDao().insertAll(transactionsToInsert)
+        }
+    }
+
+    // --- CORRECTED: Final import logic now correctly handles creating new entities ---
+    fun commitCsvImport(rowsToImport: List<ReviewableRow>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.d("CsvImportDebug", "ViewModel: commitCsvImport called with ${rowsToImport.size} rows.")
+
+            // Fetch current accounts and categories ONCE to avoid repeated DB calls in the loop.
+            val allAccounts = accountRepository.allAccounts.first()
+            val allCategories = categoryRepository.allCategories.first()
+            val accountMap = allAccounts.associateBy { it.name.lowercase() }.toMutableMap()
+            val categoryMap = allCategories.associateBy { it.name.lowercase() }.toMutableMap()
+
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+            for (row in rowsToImport) {
+                try {
+                    val columns = row.rowData
+                    val date = dateFormat.parse(columns[0]) ?: Date()
+                    val description = columns[1]
+                    val amount = columns[2].toDouble()
+                    val type = columns[3].lowercase(Locale.getDefault())
+                    val categoryName = columns[4]
+                    val accountName = columns[5]
+                    val notes = columns.getOrNull(6)
+
+                    // Get or create Category
+                    var category = categoryMap[categoryName.lowercase()]
+                    if (category == null) {
+                        val newCategory = Category(name = categoryName)
+                        categoryRepository.insert(newCategory)
+                        // Re-fetch to get the one with the auto-generated ID
+                        val updatedCategories = categoryRepository.allCategories.first()
+                        category = updatedCategories.find { it.name.equals(categoryName, ignoreCase = true) }
+                        if(category != null) {
+                            categoryMap[categoryName.lowercase()] = category
+                            Log.d("CsvImportDebug", "ViewModel: Created and found new category '$categoryName' with ID ${category.id}")
+                        } else {
+                            Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new category '$categoryName'")
+                            continue // Skip this transaction
+                        }
+                    }
+
+                    // Get or create Account
+                    var account = accountMap[accountName.lowercase()]
+                    if (account == null) {
+                        val newAccount = Account(name = accountName, type = "Imported")
+                        accountRepository.insert(newAccount)
+                        // Re-fetch to get the one with the auto-generated ID
+                        val updatedAccounts = accountRepository.allAccounts.first()
+                        account = updatedAccounts.find { it.name.equals(accountName, ignoreCase = true) }
+                        if (account != null) {
+                            accountMap[accountName.lowercase()] = account
+                            Log.d("CsvImportDebug", "ViewModel: Created and found new account '$accountName' with ID ${account.id}")
+                        } else {
+                            Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new account '$accountName'")
+                            continue // Skip this transaction
+                        }
+                    }
+
+                    if (account == null || category == null) {
+                        Log.e("CsvImportDebug", "ViewModel: Could not find or create account/category for row ${row.lineNumber}. Skipping.")
+                        continue
+                    }
+
+                    val transaction = Transaction(
+                        date = date.time,
+                        amount = amount,
+                        description = description,
+                        notes = notes,
+                        transactionType = type,
+                        accountId = account.id,
+                        categoryId = category.id
+                    )
+                    // Insert transactions one by one since insertAll is not available
+                    transactionRepository.insert(transaction)
+                    Log.d("CsvImportDebug", "ViewModel: Inserted transaction for row ${row.lineNumber}: '${transaction.description}'")
+
+                } catch (e: Exception) {
+                    Log.e("CsvImportDebug", "ViewModel: Failed to parse or insert row ${row.lineNumber}. Data: ${row.rowData}", e)
+                }
+            }
+            Log.d("CsvImportDebug", "ViewModel: Finished commitCsvImport.")
         }
     }
 
