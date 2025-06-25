@@ -34,6 +34,8 @@ import androidx.navigation.navDeepLink
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.*
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
 import java.net.URLDecoder
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.util.concurrent.Executor
 
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
@@ -253,6 +255,26 @@ fun FinanceApp() {
                 if (accountId != null) { AccountDetailScreen(navController, viewModel(), accountId) }
             }
             composable("budget_screen") { BudgetScreen(navController, viewModel()) }
+            composable(
+                "edit_imported_transaction/{lineNumber}/{rowDataJson}",
+                arguments = listOf(
+                    navArgument("lineNumber") { type = NavType.IntType },
+                    navArgument("rowDataJson") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val lineNumber = backStackEntry.arguments?.getInt("lineNumber") ?: 0
+                val rowDataJson = backStackEntry.arguments?.getString("rowDataJson") ?: "[]"
+
+                val gson = Gson()
+                val listType = object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
+                val initialData: List<String> = gson.fromJson(rowDataJson, listType)
+
+                EditImportedTransactionScreen(
+                    navController = navController,
+                    lineNumber = lineNumber,
+                    initialData = initialData
+                )
+            }
             composable("recurring_transactions") { RecurringTransactionScreen(navController) }
             composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
             composable("add_budget") { AddBudgetScreen(navController, viewModel()) }

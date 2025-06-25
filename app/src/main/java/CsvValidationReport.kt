@@ -1,40 +1,33 @@
 package com.example.personalfinanceapp
 
 /**
+ * An enum to represent the validation status of a single row from the CSV.
+ */
+enum class CsvRowStatus {
+    VALID, // The row is perfect and can be imported immediately.
+    NEEDS_ACCOUNT_CREATION,
+    NEEDS_CATEGORY_CREATION,
+    NEEDS_BOTH_CREATION,
+    INVALID_COLUMN_COUNT,
+    INVALID_DATE,
+    INVALID_AMOUNT
+}
+
+/**
+ * A data class representing a single, reviewable row from the imported CSV file.
+ * It holds the original data and its current validation status.
+ */
+data class ReviewableRow(
+    val lineNumber: Int,
+    var rowData: List<String>,
+    var status: CsvRowStatus,
+    var statusMessage: String
+)
+
+/**
  * A data class to hold the full results of a CSV validation process.
  */
 data class CsvValidationReport(
-    val validRows: List<ValidatedRow> = emptyList(),
-    val invalidRows: List<InvalidRow> = emptyList(),
-    // --- ADDED: A new list for rows that require creating new entities ---
-    val rowsWithNewEntities: List<RowForCreation> = emptyList(),
+    val reviewableRows: List<ReviewableRow> = emptyList(),
     val totalRowCount: Int = 0
-)
-
-/**
- * Represents a single row from the CSV that is perfect and ready for import.
- */
-data class ValidatedRow(
-    val lineNumber: Int,
-    val transaction: Transaction,
-    val categoryName: String,
-    val accountName: String
-)
-
-/**
- * Represents a single row from the CSV that has malformed data.
- */
-data class InvalidRow(
-    val lineNumber: Int,
-    val rowData: String,
-    val errorMessage: String
-)
-
-/**
- * Represents a row that is valid but requires creating a new Account or Category.
- */
-data class RowForCreation(
-    val lineNumber: Int,
-    val rawData: List<String>,
-    val message: String
 )

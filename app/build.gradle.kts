@@ -4,14 +4,14 @@ val lifecycle_version = "2.8.2"
 val activity_compose_version = "1.9.0"
 val core_ktx_version = "1.13.1"
 val navigation_version = "2.7.7"
-// --- REVISED: Unified and updated test library versions ---
 val androidx_test_version = "1.6.1"
 val test_ext_junit_version = "1.2.1"
 val espresso_version = "3.6.1"
-val tracing_version = "1.2.0" // Added for tracing fix
+val tracing_version = "1.2.0"
 val work_version = "2.9.0"
 val robolectric_version = "4.13"
 val coroutines_test_version = "1.8.1"
+val gson_version = "2.10.1"
 
 
 plugins {
@@ -91,10 +91,13 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    // --- CORRECTED: Ensure the runtime-livedata dependency is present ---
+    implementation("androidx.compose.runtime:runtime-livedata")
 
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
     implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("com.google.firebase:firebase-crashlytics-buildtools:3.0.4")
     ksp("androidx.room:room-compiler:$room_version")
 
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycle_version")
@@ -104,11 +107,19 @@ dependencies {
 
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
+    implementation("com.google.code.gson:gson:$gson_version")
+
+    implementation("androidx.tracing:tracing-ktx:$tracing_version")
+
     // Local unit tests
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.test:core-ktx:$androidx_test_version")
+    testImplementation("androidx.test.ext:junit:$test_ext_junit_version")
+    testImplementation("org.robolectric:robolectric:$robolectric_version")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines_test_version")
+    testImplementation("androidx.arch.core:core-testing:2.2.0")
 
-    // --- REVISED: Instrumented UI tests ---
-    // THE FIX: Explicitly add tracing-ktx to resolve the NoSuchMethodError
+    // Instrumented UI tests
     androidTestImplementation("androidx.tracing:tracing-ktx:$tracing_version")
     androidTestImplementation("androidx.test:runner:$androidx_test_version")
     androidTestImplementation("androidx.test:core-ktx:$androidx_test_version")
@@ -117,13 +128,6 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:$espresso_version")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-
-    // --- ADDED: Dependencies for local unit testing ---
-    testImplementation("androidx.test:core-ktx:$androidx_test_version")
-    testImplementation("androidx.test.ext:junit:$test_ext_junit_version")
-    testImplementation("org.robolectric:robolectric:$robolectric_version")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines_test_version")
-    testImplementation("androidx.arch.core:core-testing:2.2.0")
 
     // Debug dependencies
     debugImplementation("androidx.compose.ui:ui-tooling")

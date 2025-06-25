@@ -18,11 +18,11 @@ import java.util.*
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsRepository = SettingsRepository(application)
-    private val transactionRepository = TransactionRepository(AppDatabase.getInstance(application).transactionDao())
-    private val merchantMappingRepository = MerchantMappingRepository(AppDatabase.getInstance(application).merchantMappingDao())
+    private val db = AppDatabase.getInstance(application)
+    private val transactionRepository = TransactionRepository(db.transactionDao())
+    private val merchantMappingRepository = MerchantMappingRepository(db.merchantMappingDao())
     private val context = application
 
-    // --- ADDED: StateFlow to hold the results of the CSV validation ---
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
 
@@ -57,20 +57,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setDailyReminder(enabled: Boolean) {
         settingsRepository.saveDailyReminderEnabled(enabled)
-        if (enabled) {
-            ReminderManager.scheduleDailyReminder(context)
-        } else {
-            ReminderManager.cancelDailyReminder(context)
-        }
+        if (enabled) ReminderManager.scheduleDailyReminder(context) else ReminderManager.cancelDailyReminder(context)
     }
 
     fun setWeeklySummaryEnabled(enabled: Boolean) {
         settingsRepository.saveWeeklySummaryEnabled(enabled)
-        if (enabled) {
-            ReminderManager.scheduleWeeklySummary(context)
-        } else {
-            ReminderManager.cancelWeeklySummary(context)
-        }
+        if (enabled) ReminderManager.scheduleWeeklySummary(context) else ReminderManager.cancelWeeklySummary(context)
     }
 
     fun setAppLockEnabled(enabled: Boolean) {
@@ -78,69 +70,104 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setUnknownTransactionPopupEnabled(enabled: Boolean) {
-        settingsRepository.saveUnknownTransactionPopupEnabled(enabled)
+        viewModelScope.launch {
+            settingsRepository.saveUnknownTransactionPopupEnabled(enabled)
+        }
     }
 
-    /**
-     * NEW: Validates a CSV file without importing it.
-     * It checks for correct column count, valid data formats, and existing
-     * accounts/categories, then updates the validation report StateFlow.
-     */
     fun validateCsvFile(uri: Uri) {
         viewModelScope.launch {
-            _csvValidationReport.value = null // Reset report
+            _csvValidationReport.value = null
             withContext(Dispatchers.IO) {
                 try {
-                    val db = AppDatabase.getInstance(context)
-                    val accountDao = db.accountDao()
-                    val categoryDao = db.categoryDao()
-
-                    val validRows = mutableListOf<ValidatedRow>()
-                    val invalidRows = mutableListOf<InvalidRow>()
-                    val rowsWithNewEntities = mutableListOf<RowForCreation>()
-                    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-                    var lineNumber = 1
-
-                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
-                        lines.drop(1).forEach { line ->
-                            lineNumber++
-                            val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
-
-                            // Basic validation for column count, date, and amount
-                            if (tokens.size < 6) { invalidRows.add(InvalidRow(lineNumber, line, "Invalid column count.")); return@forEach }
-                            val date = try { dateFormat.parse(tokens[0]) } catch (e: Exception) { null }
-                            if (date == null) { invalidRows.add(InvalidRow(lineNumber, line, "Invalid date format.")); return@forEach }
-                            val amount = tokens[2].toDoubleOrNull()
-                            if (amount == null || amount <= 0) { invalidRows.add(InvalidRow(lineNumber, line, "Invalid amount.")); return@forEach }
-
-                            val categoryName = tokens[4]
-                            val accountName = tokens[5]
-
-                            val category = if (categoryName.isNotBlank()) categoryDao.findByName(categoryName) else null
-                            val account = if (accountName.isNotBlank()) accountDao.findByName(accountName) else null
-
-                            if (account != null && category != null) {
-                                // Case 1: Everything exists.
-                                validRows.add(ValidatedRow(
-                                    lineNumber = lineNumber,
-                                    transaction = Transaction(description = tokens[1], amount = amount, date = date.time, transactionType = tokens[3], accountId = account.id, categoryId = category.id, notes = tokens.getOrNull(6)),
-                                    categoryName = categoryName,
-                                    accountName = accountName
-                                ))
-                            } else {
-                                // Case 2: Data is valid, but an entity is missing.
-                                var message = "This row is valid."
-                                if (category == null && categoryName.isNotBlank()) message += " A new category '$categoryName' will be created."
-                                if (account == null && accountName.isNotBlank()) message += " A new account '$accountName' will be created."
-                                rowsWithNewEntities.add(RowForCreation(lineNumber, tokens, message))
-                            }
-                        }
-                    }
-                    _csvValidationReport.value = CsvValidationReport(validRows, invalidRows, rowsWithNewEntities, lineNumber - 1)
+                    val report = generateValidationReport(uri)
+                    _csvValidationReport.value = report
                 } catch (e: Exception) {
-                    _csvValidationReport.value = CsvValidationReport(invalidRows = listOf(InvalidRow(0, "", "Error reading file: ${e.message}")))
+                    Log.e("SettingsViewModel", "CSV validation failed", e)
                 }
             }
+        }
+    }
+
+    private suspend fun generateValidationReport(uri: Uri): CsvValidationReport {
+        val accountsMap = db.accountDao().getAllAccounts().first().associateBy { it.name }
+        val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
+        val reviewableRows = mutableListOf<ReviewableRow>()
+        var lineNumber = 1
+
+        context.contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
+            lines.drop(1).forEach { line ->
+                lineNumber++
+                val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
+                reviewableRows.add(createReviewableRow(lineNumber, tokens, accountsMap, categoriesMap))
+            }
+        }
+        return CsvValidationReport(reviewableRows, lineNumber - 1)
+    }
+
+    private fun createReviewableRow(lineNumber: Int, tokens: List<String>, accounts: Map<String, Account>, categories: Map<String, Category>): ReviewableRow {
+        if (tokens.size < 6) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count.")
+
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+        val date = try { dateFormat.parse(tokens[0]) } catch (e: Exception) { null }
+        if (date == null) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_DATE, "Invalid date format.")
+
+        val amount = tokens[2].toDoubleOrNull()
+        if (amount == null || amount <= 0) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_AMOUNT, "Invalid amount.")
+
+        val categoryName = tokens[4]
+        val accountName = tokens[5]
+
+        val categoryExists = categories.containsKey(categoryName)
+        val accountExists = accounts.containsKey(accountName)
+
+        val status = when {
+            !accountExists && !categoryExists -> CsvRowStatus.NEEDS_BOTH_CREATION
+            !accountExists -> CsvRowStatus.NEEDS_ACCOUNT_CREATION
+            !categoryExists -> CsvRowStatus.NEEDS_CATEGORY_CREATION
+            else -> CsvRowStatus.VALID
+        }
+        val message = when (status) {
+            CsvRowStatus.NEEDS_BOTH_CREATION -> "New Account & Category will be created."
+            CsvRowStatus.NEEDS_ACCOUNT_CREATION -> "New Account '$accountName' will be created."
+            CsvRowStatus.NEEDS_CATEGORY_CREATION -> "New Category '$categoryName' will be created."
+            else -> "Ready to import."
+        }
+        return ReviewableRow(lineNumber, tokens, status, message)
+    }
+
+    fun commitCsvImport(rows: List<ReviewableRow>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val db = AppDatabase.getInstance(context)
+            val transactionsToInsert = mutableListOf<Transaction>()
+
+            rows.forEach { row ->
+                val tokens = row.rowData
+                var account = db.accountDao().findByName(tokens[5])
+                if (account == null) {
+                    db.accountDao().insert(Account(name = tokens[5], type = "Imported"))
+                    account = db.accountDao().findByName(tokens[5])
+                }
+                var category = db.categoryDao().findByName(tokens[4])
+                if (category == null) {
+                    db.categoryDao().insert(Category(name = tokens[4]))
+                    category = db.categoryDao().findByName(tokens[4])
+                }
+
+                if (account != null && category != null) {
+                    val date = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).parse(tokens[0])?.time ?: 0L
+                    transactionsToInsert.add(Transaction(
+                        description = tokens[1],
+                        amount = tokens[2].toDouble(),
+                        date = date,
+                        transactionType = tokens[3],
+                        accountId = account.id,
+                        categoryId = category.id,
+                        notes = tokens.getOrNull(6)
+                    ))
+                }
+            }
+            db.transactionDao().insertAll(transactionsToInsert)
         }
     }
 
