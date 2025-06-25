@@ -171,6 +171,7 @@ fun FinanceApp() {
 
     // --- CORRECTED: ViewModel is now created once and shared between settings-related screens ---
     val settingsViewModel: SettingsViewModel = viewModel()
+    val transactionViewModel: TransactionViewModel = viewModel()
 
 
     Scaffold(
@@ -240,9 +241,26 @@ fun FinanceApp() {
                 )
             }
             composable("add_transaction") { AddTransactionScreen(navController, viewModel()) }
-            composable("edit_transaction/{transactionId}", arguments = listOf(navArgument("transactionId") { type = NavType.IntType })) { backStackEntry ->
-                val transactionId = backStackEntry.arguments?.getInt("transactionId")
-                if (transactionId != null) { EditTransactionScreen(navController, viewModel(), transactionId) }
+            composable("edit_transaction/{transactionId}?isFromCsv={isFromCsv}&lineNumber={lineNumber}&rowDataJson={rowDataJson}",
+                arguments = listOf(
+                    navArgument("transactionId") { type = NavType.IntType; defaultValue = -1 },
+                    navArgument("isFromCsv") { type = NavType.BoolType; defaultValue = false },
+                    navArgument("lineNumber") { type = NavType.IntType; defaultValue = -1 },
+                    navArgument("rowDataJson") { type = NavType.StringType; nullable = true }
+                )
+            ) { backStackEntry ->
+                val arguments = requireNotNull(backStackEntry.arguments)
+                val transactionId = arguments.getInt("transactionId")
+                val isFromCsv = arguments.getBoolean("isFromCsv")
+
+                EditTransactionScreen(
+                    navController = navController,
+                    viewModel = transactionViewModel, // Pass the shared viewModel
+                    transactionId = transactionId,
+                    isFromCsvImport = isFromCsv,
+                    csvLineNumber = arguments.getInt("lineNumber"),
+                    initialCsvData = arguments.getString("rowDataJson")?.let { URLDecoder.decode(it, "UTF-8") }
+                )
             }
             composable("account_list") { AccountListScreen(navController, viewModel()) }
             composable("add_account") { AddAccountScreen(navController, viewModel()) }

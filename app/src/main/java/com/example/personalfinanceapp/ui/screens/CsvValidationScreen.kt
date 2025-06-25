@@ -134,11 +134,14 @@ fun CsvValidationScreen(
                 items(reviewableRows) { row ->
                     EditableRowItem(
                         row = row,
-                        onClick = {
+                        onEditClick = {
                             val gson = Gson()
                             val rowDataJson = gson.toJson(row.rowData)
                             val encodedJson = URLEncoder.encode(rowDataJson, "UTF-8")
-                            navController.navigate("edit_imported_transaction/${row.lineNumber}/$encodedJson")
+                            navController.navigate("edit_transaction/-1?isFromCsv=true&lineNumber=${row.lineNumber}&rowDataJson=$encodedJson")
+                        },
+                        onDeleteClick = {
+                            reviewableRows.remove(row)
                         }
                     )
                 }
@@ -148,7 +151,11 @@ fun CsvValidationScreen(
 }
 
 @Composable
-fun EditableRowItem(row: ReviewableRow, onClick: () -> Unit) {
+fun EditableRowItem(
+    row: ReviewableRow,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
     val backgroundColor = when (row.status) {
         CsvRowStatus.VALID -> MaterialTheme.colorScheme.surfaceVariant
         CsvRowStatus.NEEDS_ACCOUNT_CREATION, CsvRowStatus.NEEDS_CATEGORY_CREATION, CsvRowStatus.NEEDS_BOTH_CREATION -> MaterialTheme.colorScheme.tertiaryContainer
@@ -160,18 +167,42 @@ fun EditableRowItem(row: ReviewableRow, onClick: () -> Unit) {
         else -> Icons.Default.Warning
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor)
-    ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(imageVector = icon, contentDescription = "Status", modifier = Modifier.padding(end = 12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Line ${row.lineNumber}: ${row.rowData.getOrNull(1) ?: "N/A"}", fontWeight = FontWeight.Bold)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = "Status",
+                modifier = Modifier.padding(end = 12.dp)
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onEditClick)
+                    .padding(vertical = 16.dp)
+            ) {
+                Text(
+                    "Line ${row.lineNumber}: ${row.rowData.getOrNull(1) ?: "N/A"}",
+                    fontWeight = FontWeight.Bold
+                )
                 Spacer(Modifier.height(4.dp))
-                Text(row.statusMessage, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    row.statusMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-            Icon(Icons.Default.Edit, contentDescription = "Edit Row")
+            // --- ADDED: Delete button for each row ---
+            IconButton(onClick = onDeleteClick) {
+                Icon(Icons.Default.Delete, contentDescription = "Ignore this row")
+            }
+            IconButton(onClick = onEditClick) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit Row")
+            }
         }
+
     }
 }
