@@ -88,6 +88,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      */
     fun validateCsvFile(uri: Uri) {
         viewModelScope.launch {
+            _csvValidationReport.value = null // Reset report
             withContext(Dispatchers.IO) {
                 try {
                     val db = AppDatabase.getInstance(context)
@@ -96,6 +97,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                     val validRows = mutableListOf<ValidatedRow>()
                     val invalidRows = mutableListOf<InvalidRow>()
+                    val rowsWithNewEntities = mutableListOf<RowForCreation>()
                     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                     var lineNumber = 1
 
@@ -104,49 +106,39 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             lineNumber++
                             val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
 
-                            if (tokens.size < 6) {
-                                invalidRows.add(InvalidRow(lineNumber, line, "Invalid column count. Expected at least 6, found ${tokens.size}."))
-                                return@forEach
-                            }
-
-                            val date = dateFormat.parse(tokens[0])
-                            if (date == null) {
-                                invalidRows.add(InvalidRow(lineNumber, line, "Invalid date format. Expected 'yyyy-MM-dd HH:mm:ss'."))
-                                return@forEach
-                            }
-
+                            // Basic validation for column count, date, and amount
+                            if (tokens.size < 6) { invalidRows.add(InvalidRow(lineNumber, line, "Invalid column count.")); return@forEach }
+                            val date = try { dateFormat.parse(tokens[0]) } catch (e: Exception) { null }
+                            if (date == null) { invalidRows.add(InvalidRow(lineNumber, line, "Invalid date format.")); return@forEach }
                             val amount = tokens[2].toDoubleOrNull()
-                            if (amount == null || amount <= 0) {
-                                invalidRows.add(InvalidRow(lineNumber, line, "Amount must be a valid, positive number."))
-                                return@forEach
-                            }
+                            if (amount == null || amount <= 0) { invalidRows.add(InvalidRow(lineNumber, line, "Invalid amount.")); return@forEach }
 
                             val categoryName = tokens[4]
-                            val category = categoryDao.findByName(categoryName)
-                            if (category == null) {
-                                invalidRows.add(InvalidRow(lineNumber, line, "Category '$categoryName' not found."))
-                                return@forEach
-                            }
-
                             val accountName = tokens[5]
-                            val account = accountDao.findByName(accountName)
-                            if (account == null) {
-                                invalidRows.add(InvalidRow(lineNumber, line, "Account '$accountName' not found."))
-                                return@forEach
-                            }
 
-                            validRows.add(ValidatedRow(
-                                lineNumber = lineNumber,
-                                transaction = Transaction(description = tokens[1], amount = amount, date = date.time, transactionType = tokens[3], accountId = account.id, categoryId = category.id, notes = tokens.getOrNull(6)),
-                                categoryName = categoryName,
-                                accountName = accountName
-                            ))
+                            val category = if (categoryName.isNotBlank()) categoryDao.findByName(categoryName) else null
+                            val account = if (accountName.isNotBlank()) accountDao.findByName(accountName) else null
+
+                            if (account != null && category != null) {
+                                // Case 1: Everything exists.
+                                validRows.add(ValidatedRow(
+                                    lineNumber = lineNumber,
+                                    transaction = Transaction(description = tokens[1], amount = amount, date = date.time, transactionType = tokens[3], accountId = account.id, categoryId = category.id, notes = tokens.getOrNull(6)),
+                                    categoryName = categoryName,
+                                    accountName = accountName
+                                ))
+                            } else {
+                                // Case 2: Data is valid, but an entity is missing.
+                                var message = "This row is valid."
+                                if (category == null && categoryName.isNotBlank()) message += " A new category '$categoryName' will be created."
+                                if (account == null && accountName.isNotBlank()) message += " A new account '$accountName' will be created."
+                                rowsWithNewEntities.add(RowForCreation(lineNumber, tokens, message))
+                            }
                         }
                     }
-                    _csvValidationReport.value = CsvValidationReport(validRows, invalidRows, validRows.size + invalidRows.size)
+                    _csvValidationReport.value = CsvValidationReport(validRows, invalidRows, rowsWithNewEntities, lineNumber - 1)
                 } catch (e: Exception) {
-                    Log.e("SettingsViewModel", "CSV validation failed", e)
-                    _csvValidationReport.value = CsvValidationReport(invalidRows = listOf(InvalidRow(0, "", "An error occurred during validation: ${e.message}")))
+                    _csvValidationReport.value = CsvValidationReport(invalidRows = listOf(InvalidRow(0, "", "Error reading file: ${e.message}")))
                 }
             }
         }

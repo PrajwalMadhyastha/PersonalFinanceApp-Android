@@ -33,12 +33,9 @@ import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.*
 import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import java.net.URLDecoder
 import java.util.concurrent.Executor
 
-// --- Navigation Destinations ---
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
     object Dashboard : BottomNavItem("dashboard", Icons.Filled.Home, "Dashboard")
     object Transactions : BottomNavItem("transaction_list", Icons.Filled.Receipt, "History")
@@ -70,7 +67,6 @@ fun FinanceAppWithLockScreen(isInitiallyLocked: Boolean) {
     var isLocked by remember { mutableStateOf(isInitiallyLocked) }
     val appLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = isInitiallyLocked)
 
-    // --- PERMISSION ONBOARDING LOGIC ---
     val permissionsToRequest = arrayOf(
         Manifest.permission.READ_SMS,
         Manifest.permission.RECEIVE_SMS,
@@ -85,7 +81,6 @@ fun FinanceAppWithLockScreen(isInitiallyLocked: Boolean) {
         }
     }
 
-    // Check for permissions on the first launch
     LaunchedEffect(key1 = true) {
         val areAllPermissionsGranted = permissionsToRequest.all {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
@@ -94,7 +89,6 @@ fun FinanceAppWithLockScreen(isInitiallyLocked: Boolean) {
             permissionLauncher.launch(permissionsToRequest)
         }
     }
-    // --- END PERMISSION LOGIC ---
 
     LaunchedEffect(appLockEnabled) {
         if (!appLockEnabled) {
@@ -173,6 +167,10 @@ fun FinanceApp() {
         BottomNavItem.Settings
     )
 
+    // --- CORRECTED: ViewModel is now created once and shared between settings-related screens ---
+    val settingsViewModel: SettingsViewModel = viewModel()
+
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -208,16 +206,16 @@ fun FinanceApp() {
             }
             composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, viewModel()) }
             composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-            composable(BottomNavItem.Settings.route) { SettingsScreen(navController, viewModel()) }
-            composable("search_screen") { SearchScreen(navController) }
+            // Pass the shared ViewModel instance to both screens
+            composable(BottomNavItem.Settings.route) { SettingsScreen(navController, settingsViewModel) }
+            composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
 
-            // --- UPDATED: Added deep link to the review screen ---
+            composable("search_screen") { SearchScreen(navController) }
             composable(
                 route = "review_sms_screen",
                 deepLinks = listOf(navDeepLink { uriPattern = "app://personalfinanceapp.example.com/review_sms" })
-            ) { ReviewSmsScreen(navController, viewModel()) }
-
-            composable("sms_debug_screen") { SmsDebugScreen(navController, viewModel()) }
+            ) { ReviewSmsScreen(navController, settingsViewModel) }
+            composable("sms_debug_screen") { SmsDebugScreen(navController, settingsViewModel) }
             composable(
                 route = "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}",
                 arguments = listOf(

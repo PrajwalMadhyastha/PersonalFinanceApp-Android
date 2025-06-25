@@ -2,6 +2,7 @@ package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,7 +33,7 @@ import java.util.*
 @Composable
 fun SettingsScreen(
     navController: NavController,
-    viewModel: SettingsViewModel = viewModel()
+    viewModel: SettingsViewModel
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -138,13 +139,9 @@ fun SettingsScreen(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri ->
             uri?.let {
-                scope.launch {
-                    if(DataExportService.importFromCsv(context, it)) {
-                        Toast.makeText(context, "CSV data imported successfully!", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(context, "Failed to import CSV data.", Toast.LENGTH_LONG).show()
-                    }
-                }
+                Log.d("SettingsScreen", "CSV file selected: $it. Starting validation.")
+                viewModel.validateCsvFile(it)
+                navController.navigate("csv_validation_screen")
             }
         }
     )
@@ -397,7 +394,7 @@ fun SettingsScreen(
 
 
 @Composable
-private fun SettingSectionHeader(title: String) {
+fun SettingSectionHeader(title: String) {
     Text(
         text = title.uppercase(),
         style = MaterialTheme.typography.labelSmall,

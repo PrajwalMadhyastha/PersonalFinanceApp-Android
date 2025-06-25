@@ -36,7 +36,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
-    // --- UPDATED: Now accepts sourceSmsId ---
     fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -45,8 +44,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         notes: String?,
         date: Long,
         transactionType: String,
-        sourceSmsId: Long? // New parameter
+        sourceSmsId: Long?
     ): Boolean {
+        // CORRECTED: Clear any previous errors before starting a new validation.
+        _validationError.value = null
+
         if (description.isBlank()) {
             _validationError.value = "Description cannot be empty."
             return false
@@ -65,22 +67,23 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             accountId = accountId,
             notes = notes,
             transactionType = transactionType,
-            sourceSmsId = sourceSmsId // Pass the ID to the constructor
+            sourceSmsId = sourceSmsId
         )
         viewModelScope.launch {
             transactionRepository.insert(newTransaction)
         }
-        _validationError.value = null
         return true
     }
 
-    // --- UPDATED: Validation logic simplified ---
     fun updateTransaction(transaction: Transaction): Boolean {
+        // CORRECTED: Clear any previous errors before starting a new validation.
+        _validationError.value = null
+
         if (transaction.description.isBlank()) {
             _validationError.value = "Description cannot be empty."
             return false
         }
-        if (transaction.amount <= 0.0) { // Amount must be positive
+        if (transaction.amount <= 0.0) {
             _validationError.value = "Amount must be a valid, positive number."
             return false
         }
@@ -88,7 +91,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             transactionRepository.update(transaction)
         }
-        _validationError.value = null // Clear error on success
         return true
     }
 
