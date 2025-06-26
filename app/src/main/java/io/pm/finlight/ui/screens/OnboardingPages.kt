@@ -273,7 +273,7 @@ fun NotificationPermissionPage(onFinish: () -> Unit) {
         Text("Stay Updated", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
         Text(
-            "Get notified about new transactions and receive weekly summaries by enabling notifications.",
+            "Get notified about new transactions and receive daily, weekly and monthly summaries by enabling notifications.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center
         )
