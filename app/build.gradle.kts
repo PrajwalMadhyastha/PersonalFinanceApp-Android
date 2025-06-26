@@ -23,11 +23,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.personalfinanceapp"
+    namespace = "io.pm.finlight"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.personalfinanceapp"
+        applicationId = "io.pm.finlight"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

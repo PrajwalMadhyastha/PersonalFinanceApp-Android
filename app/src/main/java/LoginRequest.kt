@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 data class LoginRequest(
     val email: String,

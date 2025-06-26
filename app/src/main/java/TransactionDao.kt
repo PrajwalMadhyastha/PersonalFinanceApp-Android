@@ -1,9 +1,9 @@
 // =================================================================================
-// FILE: /app/src/main/java/com/example/personalfinanceapp/TransactionDao.kt
+// FILE: /app/src/main/java/com/pm/finlight/TransactionDao.kt
 // PURPOSE: Data Access Object for Transactions.
 // NOTE: The `getAllTransactions` query has been corrected to fetch all records.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow

@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 /**
  * An enum to represent the validation status of a single row from the CSV.

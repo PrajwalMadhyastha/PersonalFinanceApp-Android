@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

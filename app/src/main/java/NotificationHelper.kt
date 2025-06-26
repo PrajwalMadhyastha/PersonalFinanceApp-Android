@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.Manifest
 import android.app.PendingIntent
@@ -12,7 +12,7 @@ import androidx.core.net.toUri
 import java.net.URLEncoder
 
 object NotificationHelper {
-    private const val DEEP_LINK_URI = "app://personalfinanceapp.example.com"
+    private const val DEEP_LINK_URI = "app://finlight.pm.com"
 
     fun showTransactionNotification(
         context: Context,

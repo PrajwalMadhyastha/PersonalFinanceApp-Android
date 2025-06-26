@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.Manifest
 import android.content.BroadcastReceiver

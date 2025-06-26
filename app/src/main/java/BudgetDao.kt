@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow

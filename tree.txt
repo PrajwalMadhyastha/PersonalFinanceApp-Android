@@ -3043,7 +3043,7 @@
 │   │   │   └── tests
 │   │   │       └── testDebugUnitTest
 │   │   │           ├── classes
-│   │   │           │   └── com.example.personalfinanceapp.DashboardViewModelTest.html
+│   │   │           │   └── io.pm.finlight.DashboardViewModelTest.html
 │   │   │           ├── css
 │   │   │           │   ├── base-style.css
 │   │   │           │   └── style.css
@@ -3051,10 +3051,10 @@
 │   │   │           ├── js
 │   │   │           │   └── report.js
 │   │   │           └── packages
-│   │   │               └── com.example.personalfinanceapp.html
+│   │   │               └── io.pm.finlight.html
 │   │   ├── test-results
 │   │   │   └── testDebugUnitTest
-│   │   │       ├── TEST-com.example.personalfinanceapp.DashboardViewModelTest.xml
+│   │   │       ├── TEST-io.pm.finlight.DashboardViewModelTest.xml
 │   │   │       └── binary
 │   │   │           ├── output.bin
 │   │   │           ├── output.bin.idx
@@ -3840,7 +3840,7 @@
 │   ├── build.gradle.kts
 │   ├── proguard-rules.pro
 │   ├── schemas
-│   │   └── com.example.personalfinanceapp.AppDatabase
+│   │   └── io.pm.finlight.AppDatabase
 │   │       ├── 1.json
 │   │       ├── 2.json
 │   │       ├── 3.json

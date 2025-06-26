@@ -28,11 +28,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.personalfinanceapp"
+    namespace = "io.pm.finlight"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.personalfinanceapp"
+        applicationId = "io.pm.finlight"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
@@ -207,7 +207,7 @@ dependencies {
 
 ---------- Main Source Files ----------
 ================== FILE: ./app/src/main/java/DashboardViewModelFactory.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.ViewModel
@@ -239,7 +239,7 @@ class DashboardViewModelFactory(private val application: Application) : ViewMode
 
 
 ================== FILE: ./app/src/main/java/DataExportService.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.content.Context
 import android.net.Uri
@@ -441,7 +441,7 @@ object DataExportService {
 
 
 ================== FILE: ./app/src/main/java/AccountRepository.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
 
@@ -471,7 +471,7 @@ class AccountRepository(private val accountDao: AccountDao) {
 
 
 ================== FILE: ./app/src/main/java/BudgetRepository.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
 
@@ -517,7 +517,7 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 // PURPOSE: Handles business logic for the transaction list and add/edit screens.
 // NOTE: Added extensive logging to debug data flow.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import android.util.Log
@@ -637,7 +637,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
 
 ================== FILE: ./app/src/main/java/TransactionDetails.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Embedded
 
@@ -656,7 +656,7 @@ data class TransactionDetails(
 
 
 ================== FILE: ./app/src/main/java/CsvValidationReport.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 /**
  * An enum to represent the validation status of a single row from the CSV.
@@ -695,7 +695,7 @@ data class CsvValidationReport(
 
 
 ================== FILE: ./app/src/main/java/WeeklySummaryWorker.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.content.Context
 import android.util.Log
@@ -758,7 +758,7 @@ class WeeklySummaryWorker(
 
 
 ================== FILE: ./app/src/main/java/SearchViewModel.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -855,7 +855,7 @@ class SearchViewModel(
 
 
 ================== FILE: ./app/src/main/java/RecurringTransactionDao.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Dao
 import androidx.room.Delete
@@ -886,7 +886,7 @@ interface RecurringTransactionDao {
 
 
 ================== FILE: ./app/src/main/java/MerchantMapping.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -903,7 +903,7 @@ data class MerchantMapping(
 
 
 ================== FILE: ./app/src/main/java/AccountWithBalance.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Embedded
 
@@ -920,7 +920,7 @@ data class AccountWithBalance(
 
 
 ================== FILE: ./app/src/main/java/Account.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -940,7 +940,7 @@ data class Account(
 
 
 ================== FILE: ./app/src/main/java/SmsMessage.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 /**
  * A simple data class to hold the relevant information from an SMS message.
@@ -955,7 +955,7 @@ data class SmsMessage(
 
 
 ================== FILE: ./app/src/main/java/MonthlyTrend.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 data class MonthlyTrend(
     val monthYear: String, // Format: "YYYY-MM"
@@ -966,7 +966,7 @@ data class MonthlyTrend(
 
 
 ================== FILE: ./app/src/main/java/RecurringTransaction.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -1011,7 +1011,7 @@ data class RecurringTransaction(
 
 
 ================== FILE: ./app/src/main/java/CategoryViewModel.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -1079,7 +1079,7 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
 
 
 ================== FILE: ./app/src/main/java/CategorySpending.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 /**
  * A simple data class to hold the results of a GROUP BY query,
@@ -1093,7 +1093,7 @@ data class CategorySpending(
 
 
 ================== FILE: ./app/src/main/java/Category.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
@@ -1117,7 +1117,7 @@ data class Category(
 
 
 ================== FILE: ./app/src/main/java/ReminderManager.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.content.Context
 import androidx.work.*
@@ -1170,7 +1170,7 @@ object ReminderManager {
 
 
 ================== FILE: ./app/src/main/java/RecurringTransactionRepository.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
 
@@ -1187,7 +1187,7 @@ class RecurringTransactionRepository(private val recurringTransactionDao: Recurr
 
 
 ================== FILE: ./app/src/main/java/MonthlySummary.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 /**
  * A data class to hold the results of a GROUP BY query for monthly summaries.
@@ -1201,7 +1201,7 @@ data class MonthlySummary(
 
 
 ================== FILE: ./app/src/main/java/CategoryRepository.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
 
@@ -1239,7 +1239,7 @@ class CategoryRepository(private val categoryDao: CategoryDao) {
 
 
 ================== FILE: ./app/src/main/java/MerchantMappingDao.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Dao
 import androidx.room.Insert
@@ -1270,7 +1270,7 @@ interface MerchantMappingDao {
 
 
 ================== FILE: ./app/src/main/java/MerchantMappingRepository.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
 
@@ -1301,7 +1301,7 @@ class MerchantMappingRepository(private val merchantMappingDao: MerchantMappingD
 
 
 ================== FILE: ./app/src/main/java/LoginRequest.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 data class LoginRequest(
     val email: String,
@@ -1311,7 +1311,7 @@ data class LoginRequest(
 
 
 ================== FILE: ./app/src/main/java/SmsRepository.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.content.Context
 import android.provider.Telephony
@@ -1389,7 +1389,7 @@ class SmsRepository(private val context: Context) {
 // PURPOSE: Handles all business logic for the Budgets screens.
 // NOTE: Corrected to properly expose the `allCategories` flow.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -1496,7 +1496,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 
 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.content.Context
 import androidx.room.Database
@@ -1761,7 +1761,7 @@ abstract class AppDatabase : RoomDatabase() {
 
 
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 object SmsParser {
     private val AMOUNT_REGEX = "(?:rs|inr|rs\\.?)\\s*([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
@@ -1835,7 +1835,7 @@ object SmsParser {
 
 
 ================== FILE: ./app/src/main/java/AppDataBackup.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import kotlinx.serialization.Serializable
 
@@ -1855,7 +1855,7 @@ data class AppDataBackup(
 
 
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -2044,7 +2044,7 @@ class SettingsRepository(context: Context) {
 
 
 ================== FILE: ./app/src/main/java/SearchViewModelFactory.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.ViewModel
@@ -2068,7 +2068,7 @@ class SearchViewModelFactory(private val application: Application) : ViewModelPr
 
 
 ================== FILE: ./app/src/main/java/ReportsViewModel.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -2157,7 +2157,7 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
 
 ================== FILE: ./app/src/main/java/SettingsViewModel.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.Manifest
 import android.app.Application
@@ -2527,7 +2527,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
 
 ================== FILE: ./app/src/main/java/AccountViewModel.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -2596,7 +2596,7 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
 
 
 ================== FILE: ./app/src/main/java/PotentialTransaction.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 /**
  * A data class to hold the structured information extracted from an SMS message.
@@ -2624,7 +2624,7 @@ data class PotentialTransaction(
 // PURPOSE: Data Access Object for Transactions.
 // NOTE: The `getAllTransactions` query has been corrected to fetch all records.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
@@ -2793,7 +2793,7 @@ interface TransactionDao {
 
 
 ================== FILE: ./app/src/main/java/RecurringTransactionViewModel.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -2837,7 +2837,7 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
 
 
 ================== FILE: ./app/src/main/java/CategoryDao.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Dao
 import androidx.room.Delete
@@ -2881,7 +2881,7 @@ interface CategoryDao {
 
 
 ================== FILE: ./app/src/main/java/BudgetDao.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
@@ -2929,7 +2929,7 @@ interface BudgetDao {
 
 
 ================== FILE: ./app/src/main/java/DailyReportWorker.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.content.Context
 import android.util.Log
@@ -2994,7 +2994,7 @@ class DailyReportWorker(
 
 
 ================== FILE: ./app/src/main/java/AccountDao.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Dao
 import androidx.room.Delete
@@ -3052,7 +3052,7 @@ interface AccountDao {
 
 
 ================== FILE: ./app/src/main/java/LoginResponse.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 data class LoginResponse(
     val message: String,
@@ -3062,7 +3062,7 @@ data class LoginResponse(
 
 
 ================== FILE: ./app/src/main/java/BudgetWithSpending.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Embedded
 
@@ -3075,7 +3075,7 @@ data class BudgetWithSpending(
 
 
 ================== FILE: ./app/src/main/java/MainApplication.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import android.app.NotificationChannel
@@ -3146,7 +3146,7 @@ class MainApplication : Application() {
 
 
 ================== FILE: ./app/src/main/java/Budget.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -3166,7 +3166,7 @@ data class Budget(
 
 
 ================== FILE: ./app/src/main/java/Transaction.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -3214,7 +3214,7 @@ data class Transaction(
 
 
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.Manifest
 import android.content.BroadcastReceiver
@@ -3306,7 +3306,7 @@ class SmsReceiver : BroadcastReceiver() {
 
 
 ================== FILE: ./app/src/main/java/NotificationHelper.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.Manifest
 import android.app.PendingIntent
@@ -3451,7 +3451,7 @@ object NotificationHelper {
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AddRecurringTransactionScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -3483,10 +3483,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.Account
-import com.example.personalfinanceapp.Category
-import com.example.personalfinanceapp.RecurringTransactionViewModel
-import com.example.personalfinanceapp.TransactionViewModel
+import io.pm.finlight.Account
+import io.pm.finlight.Category
+import io.pm.finlight.RecurringTransactionViewModel
+import io.pm.finlight.TransactionViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -3641,7 +3641,7 @@ fun AddRecurringTransactionScreen(navController: NavController) {
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/CategoryListScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -3684,10 +3684,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.Category
-import com.example.personalfinanceapp.CategoryViewModel
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.DeleteCategoryDialog
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.EditCategoryDialog
+import io.pm.finlight.Category
+import io.pm.finlight.CategoryViewModel
+import io.pm.finlight.ui.components.DeleteCategoryDialog
+import io.pm.finlight.ui.components.EditCategoryDialog
 
 @Composable
 fun CategoryListScreen(
@@ -3902,7 +3902,7 @@ fun EditCategoryScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AddEditBudgetScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -3912,9 +3912,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.Budget
-import com.example.personalfinanceapp.BudgetViewModel
-import com.example.personalfinanceapp.Category
+import io.pm.finlight.Budget
+import io.pm.finlight.BudgetViewModel
+import io.pm.finlight.Category
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -4038,7 +4038,7 @@ fun AddEditBudgetScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/SmsWorkflowScreens.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -4058,7 +4058,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.*
+import io.pm.finlight.*
 import java.net.URLEncoder
 
 @Composable
@@ -4350,7 +4350,7 @@ fun SmsDebugScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/EditAccountScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -4376,7 +4376,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.AccountViewModel
+import io.pm.finlight.AccountViewModel
 
 @Composable
 fun EditAccountScreen(
@@ -4469,7 +4469,7 @@ fun EditAccountScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AddTransactionScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -4515,10 +4515,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.Account
-import com.example.personalfinanceapp.Category
-import com.example.personalfinanceapp.TransactionViewModel
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.TimePickerDialog
+import io.pm.finlight.Account
+import io.pm.finlight.Category
+import io.pm.finlight.TransactionViewModel
+import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -4734,7 +4734,7 @@ fun AddTransactionScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AccountListScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
@@ -4750,7 +4750,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.AccountViewModel
+import io.pm.finlight.AccountViewModel
 
 @Composable
 fun AccountListScreen(
@@ -4778,7 +4778,7 @@ fun AccountListScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/BudgetScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -4798,8 +4798,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.Budget
-import com.example.personalfinanceapp.BudgetViewModel
+import io.pm.finlight.Budget
+import io.pm.finlight.BudgetViewModel
 
 @Composable
 fun BudgetScreen(
@@ -4949,7 +4949,7 @@ fun SimpleBudgetItem(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/SettingsScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -4971,8 +4971,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.DataExportService
-import com.example.personalfinanceapp.SettingsViewModel
+import io.pm.finlight.DataExportService
+import io.pm.finlight.SettingsViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -5423,14 +5423,14 @@ private fun SettingsActionItem(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/TransactionListScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.TransactionViewModel
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.TransactionList
+import io.pm.finlight.TransactionViewModel
+import io.pm.finlight.ui.components.TransactionList
 
 @Composable
 fun TransactionListScreen(
@@ -5447,7 +5447,7 @@ fun TransactionListScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/EditImportedTransactionScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -5569,7 +5569,7 @@ fun EditImportedTransactionScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AccountDetailScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -5596,8 +5596,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.AccountViewModel
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.AccountTransactionItem
+import io.pm.finlight.AccountViewModel
+import io.pm.finlight.ui.components.AccountTransactionItem
 
 @Composable
 fun AccountDetailScreen(
@@ -5665,7 +5665,7 @@ fun AccountDetailScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/DashboardScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
@@ -5690,15 +5690,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.BudgetViewModel
-import com.example.personalfinanceapp.DashboardViewModel
-import com.example.personalfinanceapp.DashboardViewModelFactory
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.AccountSummaryCard
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetWatchCard
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.NetWorthCard
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.OverallBudgetCard
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.RecentActivityCard
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.StatCard
+import io.pm.finlight.BudgetViewModel
+import io.pm.finlight.DashboardViewModel
+import io.pm.finlight.DashboardViewModelFactory
+import io.pm.finlight.ui.components.AccountSummaryCard
+import io.pm.finlight.ui.components.BudgetWatchCard
+import io.pm.finlight.ui.components.NetWorthCard
+import io.pm.finlight.ui.components.OverallBudgetCard
+import io.pm.finlight.ui.components.RecentActivityCard
+import io.pm.finlight.ui.components.StatCard
 
 @Composable
 fun DashboardScreen(
@@ -5769,7 +5769,7 @@ fun DashboardScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/RecurringTransactionScreens.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -5781,7 +5781,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.*
+import io.pm.finlight.*
 import java.util.*
 
 @Composable
@@ -5817,7 +5817,7 @@ fun RecurringTransactionScreen(navController: NavController) {
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/SearchScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import android.app.Application
 import androidx.compose.foundation.clickable
@@ -5835,8 +5835,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.*
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.TransactionItem
+import io.pm.finlight.*
+import io.pm.finlight.ui.components.TransactionItem
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -6086,7 +6086,7 @@ fun DateTextField(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/CsvValidationScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
@@ -6105,7 +6105,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.*
+import io.pm.finlight.*
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.launch
@@ -6231,7 +6231,7 @@ fun EditableRowItem(row: ReviewableRow, onEditClick: () -> Unit, onDeleteClick: 
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/AddAccountScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -6253,7 +6253,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.AccountViewModel
+import io.pm.finlight.AccountViewModel
 
 @Composable
 fun AddAccountScreen(
@@ -6309,7 +6309,7 @@ fun AddAccountScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/EditTransactionScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -6356,10 +6356,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.Account
-import com.example.personalfinanceapp.Category
-import com.example.personalfinanceapp.TransactionViewModel
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.TimePickerDialog
+import io.pm.finlight.Account
+import io.pm.finlight.Category
+import io.pm.finlight.TransactionViewModel
+import io.pm.finlight.ui.components.TimePickerDialog
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
@@ -6657,7 +6657,7 @@ fun EditTransactionScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/OnboardingScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -6677,7 +6677,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.personalfinanceapp.R
+import io.pm.finlight.R
 
 @Composable
 fun OnboardingScreen(onGetStarted: () -> Unit) {
@@ -6717,7 +6717,7 @@ fun OnboardingScreen(onGetStarted: () -> Unit) {
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/ProfileScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -6746,7 +6746,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.R
+import io.pm.finlight.R
 
 @Composable
 fun ProfileScreen(navController: NavController) {
@@ -6798,7 +6798,7 @@ fun ProfileScreen(navController: NavController) {
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/screens/ReportsScreen.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
+package io.pm.finlight.ui.screens
 
 import android.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
@@ -6827,9 +6827,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.ReportsViewModel
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.ChartLegend
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.GroupedBarChart
+import io.pm.finlight.ReportsViewModel
+import io.pm.finlight.ui.components.ChartLegend
+import io.pm.finlight.ui.components.GroupedBarChart
 import com.github.mikephil.charting.charts.PieChart
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -6910,7 +6910,7 @@ fun ReportsScreen(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/components/UtilityComponents.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
+package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -7065,7 +7065,7 @@ fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
 // PURPOSE: UI components for the Dashboard screen.
 // NOTE: Added the new `AccountSummaryCard` composable.
 // =================================================================================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
+package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -7121,12 +7121,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import com.example.personalfinanceapp.AccountWithBalance
-import com.example.personalfinanceapp.BottomNavItem
-import com.example.personalfinanceapp.Budget
-import com.example.personalfinanceapp.BudgetViewModel
-import com.example.personalfinanceapp.BudgetWithSpending
-import com.example.personalfinanceapp.TransactionDetails
+import io.pm.finlight.AccountWithBalance
+import io.pm.finlight.BottomNavItem
+import io.pm.finlight.Budget
+import io.pm.finlight.BudgetViewModel
+import io.pm.finlight.BudgetWithSpending
+import io.pm.finlight.TransactionDetails
 import kotlinx.coroutines.flow.map
 import kotlin.math.sin
 
@@ -7538,7 +7538,7 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/components/TransactionItem.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
+package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7568,7 +7568,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.TransactionDetails
+import io.pm.finlight.TransactionDetails
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -7694,7 +7694,7 @@ fun TransactionList(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/components/CategoryDialogs.kt ==================
-package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
+package io.pm.finlight.ui.components
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -7708,7 +7708,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.example.personalfinanceapp.Category
+import io.pm.finlight.Category
 
 @Composable
 fun EditCategoryDialog(
@@ -7777,7 +7777,7 @@ fun DeleteCategoryDialog(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/theme/Color.kt ==================
-package com.example.personalfinanceapp.ui.theme
+package io.pm.finlight.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
@@ -7802,7 +7802,7 @@ val DarkSurface = Color(0xFF1E1E1E) // A slightly lighter-than-black for dark th
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/theme/Theme.kt ==================
-package com.example.personalfinanceapp.ui.theme
+package io.pm.finlight.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -7871,7 +7871,7 @@ fun PersonalFinanceAppTheme(
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/ui/theme/Type.kt ==================
-package com.example.personalfinanceapp.ui.theme
+package io.pm.finlight.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
@@ -7911,7 +7911,7 @@ val Typography =
 
 
 ================== FILE: ./app/src/main/java/com/example/personalfinanceapp/MainActivity.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.Manifest
 import android.app.Application
@@ -7946,8 +7946,8 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens.*
-import com.example.personalfinanceapp.ui.theme.PersonalFinanceAppTheme
+import io.pm.finlight.ui.screens.*
+import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
 import java.net.URLDecoder
 import com.google.gson.Gson
 import java.util.concurrent.Executor
@@ -8304,7 +8304,7 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
 // PURPOSE: Centralizes data operations between ViewModels and the Database DAOs.
 // NOTE: Added logging to trace database interactions.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
@@ -8397,7 +8397,7 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 // PURPOSE: Handles logic for the Dashboard.
 // NOTE: Added the `accountsSummary` StateFlow.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8530,7 +8530,7 @@ class DashboardViewModel(
 
 ---------- Instrumented Test Files (UI Tests) ----------
 ================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/AppNavigationTest.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.Manifest
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -8608,14 +8608,14 @@ class AppNavigationTest {
 
 
 ================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/TransactionFlowTest.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 class TransactionFlowTest
 -e 
 
 
 ================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/ExampleInstrumentedTest.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -8634,14 +8634,14 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.example.personalfinanceapp", appContext.packageName)
+        assertEquals("io.pm.finlight", appContext.packageName)
     }
 }
 -e 
 
 
 ================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/DisableAppLockRule.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.content.Context
 import androidx.test.platform.app.InstrumentationRegistry
@@ -8677,7 +8677,7 @@ class DisableAppLockRule : TestRule {
 
 
 ================== FILE: ./app/src/androidTest/java/com/example/personalfinanceapp/AppWorkflowTests.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.Manifest
 import androidx.compose.ui.test.*
@@ -8780,7 +8780,7 @@ class AppWorkflowTests {
 
 ---------- Unit Test Files ----------
 ================== FILE: ./app/src/test/java/com/example/personalfinanceapp/DashboardViewModelTest.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import android.os.Build
@@ -8898,7 +8898,7 @@ class DashboardViewModelTest {
 
 
 ================== FILE: ./app/src/test/java/com/example/personalfinanceapp/ExampleUnitTest.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import org.junit.Assert.*
 import org.junit.Test
@@ -8918,7 +8918,7 @@ class ExampleUnitTest {
 
 
 ================== FILE: ./app/src/test/java/com/example/personalfinanceapp/SmsParserTest.kt ==================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import org.junit.Assert.*
 import org.junit.Test

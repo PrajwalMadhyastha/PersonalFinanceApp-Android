@@ -1,9 +1,9 @@
 // =================================================================================
-// FILE: /app/src/main/java/com/example/personalfinanceapp/BudgetViewModel.kt
+// FILE: /app/src/main/java/com/pm/finlight/BudgetViewModel.kt
 // PURPOSE: Handles all business logic for the Budgets screens.
 // NOTE: Corrected to properly expose the `allCategories` flow.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel

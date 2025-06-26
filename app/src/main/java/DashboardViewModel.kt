@@ -1,9 +1,9 @@
 // =================================================================================
-// FILE: /app/src/main/java/com/example/personalfinanceapp/DashboardViewModel.kt
+// FILE: /app/src/main/java/com/pm/finlight/DashboardViewModel.kt
 // PURPOSE: Handles logic for the Dashboard.
 // NOTE: Added the `accountsSummary` StateFlow.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

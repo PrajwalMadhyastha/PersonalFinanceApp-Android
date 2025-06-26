@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 /**
  * A simple data class to hold the results of a GROUP BY query,

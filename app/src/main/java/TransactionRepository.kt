@@ -1,9 +1,9 @@
 // =================================================================================
-// FILE: /app/src/main/java/com/example/personalfinanceapp/TransactionRepository.kt
+// FILE: /app/src/main/java/com/pm/finlight/TransactionRepository.kt
 // PURPOSE: Centralizes data operations between ViewModels and the Database DAOs.
 // NOTE: Added logging to trace database interactions.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.util.Log
 import kotlinx.coroutines.flow.Flow

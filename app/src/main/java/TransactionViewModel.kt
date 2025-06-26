@@ -1,9 +1,9 @@
 // =================================================================================
-// FILE: /app/src/main/java/com/example/personalfinanceapp/TransactionViewModel.kt
+// FILE: /app/src/main/java/com/pm/finlight/TransactionViewModel.kt
 // PURPOSE: Handles business logic for the transaction list and add/edit screens.
 // NOTE: Added extensive logging to debug data flow.
 // =================================================================================
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import android.util.Log

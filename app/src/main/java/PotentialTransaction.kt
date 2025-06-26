@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 /**
  * A data class to hold the structured information extracted from an SMS message.

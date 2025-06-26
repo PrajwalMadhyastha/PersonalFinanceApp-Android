@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import androidx.room.Dao
 import androidx.room.Insert

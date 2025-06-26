@@ -1,4 +1,4 @@
-package com.example.personalfinanceapp
+package io.pm.finlight
 
 import android.app.Application
 import android.app.NotificationChannel
