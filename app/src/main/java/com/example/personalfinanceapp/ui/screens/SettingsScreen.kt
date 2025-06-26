@@ -425,7 +425,7 @@ fun SettingSectionHeader(title: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 16.dp, end = 16.dp),
     )
-    Divider()
+    HorizontalDivider()
 }
 
 @Composable

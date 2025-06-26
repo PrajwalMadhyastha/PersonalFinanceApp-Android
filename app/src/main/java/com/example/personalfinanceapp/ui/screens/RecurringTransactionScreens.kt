@@ -46,7 +46,7 @@ fun RecurringTransactionScreen(navController: NavController) {
                         )
                     },
                 )
-                Divider()
+                HorizontalDivider()
             }
         }
     }

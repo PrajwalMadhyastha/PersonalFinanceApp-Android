@@ -112,7 +112,7 @@ fun SearchScreen(navController: NavController) {
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(top = 16.dp),
                     )
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 }
                 items(searchResults) { transactionDetails ->
                     TransactionItem(

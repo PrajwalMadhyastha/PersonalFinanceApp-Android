@@ -10,13 +10,15 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CategoryDao {
+
     @Query("SELECT * FROM categories ORDER BY name ASC")
     fun getAllCategories(): Flow<List<Category>>
 
     @Query("SELECT * FROM categories WHERE id = :categoryId")
     suspend fun getCategoryById(categoryId: Int): Category?
 
-    @Query("SELECT * FROM accounts WHERE name = :name LIMIT 1")
+    // --- BUG FIX: Query the correct table ('categories') ---
+    @Query("SELECT * FROM categories WHERE name = :name LIMIT 1")
     suspend fun findByName(name: String): Category?
 
     // --- NEW: For data seeding ---

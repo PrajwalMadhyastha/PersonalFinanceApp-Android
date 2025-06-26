@@ -87,7 +87,7 @@ fun BudgetScreen(
                         Icon(Icons.Default.Add, contentDescription = "Add Category Budget")
                     }
                 }
-                Divider(modifier = Modifier.padding(top = 8.dp))
+                HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
             }
 
             if (categoryBudgets.isEmpty()) {
@@ -163,5 +163,5 @@ fun SimpleBudgetItem(
             Icon(Icons.Default.Delete, contentDescription = "Delete Budget", tint = MaterialTheme.colorScheme.error)
         }
     }
-    Divider()
+    HorizontalDivider()
 }

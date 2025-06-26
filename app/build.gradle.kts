@@ -1,17 +1,17 @@
 // It's good practice to define versions in one place.
-val room_version = "2.6.1"
-val lifecycle_version = "2.8.2"
-val activity_compose_version = "1.9.0"
-val core_ktx_version = "1.13.1"
-val navigation_version = "2.7.7"
-val androidx_test_version = "1.6.1"
-val test_ext_junit_version = "1.2.1"
-val espresso_version = "3.6.1"
-val tracing_version = "1.2.0"
-val work_version = "2.9.0"
-val robolectric_version = "4.13"
-val coroutines_test_version = "1.8.1"
-val gson_version = "2.10.1"
+val roomVersion = "2.6.1"
+val lifecycleVersion = "2.8.2"
+val activityComposeVersion = "1.9.0"
+val coreKtxVersion = "1.13.1"
+val navigationVersion = "2.7.7"
+val androidxTestVersion = "1.6.1"
+val testExtJunitVersion = "1.2.1"
+val espressoVersion = "3.6.1"
+val tracingVersion = "1.2.0"
+val workVersion = "2.9.0"
+val robolectricVersion = "4.13"
+val coroutinesTestVersion = "1.8.1"
+val gsonVersion = "2.10.1"
 
 plugins {
     id("com.android.application")
@@ -74,16 +74,16 @@ android {
 
 configurations.all {
     resolutionStrategy {
-        force("androidx.core:core-ktx:$core_ktx_version")
-        force("androidx.core:core:$core_ktx_version")
-        force("androidx.tracing:tracing-ktx:$tracing_version")
+        force("androidx.core:core-ktx:$coreKtxVersion")
+        force("androidx.core:core:$coreKtxVersion")
+        force("androidx.tracing:tracing-ktx:$tracingVersion")
     }
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:$core_ktx_version")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycle_version")
-    implementation("androidx.activity:activity-compose:$activity_compose_version")
+    implementation("androidx.core:core-ktx:$coreKtxVersion")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
+    implementation("androidx.activity:activity-compose:$activityComposeVersion")
 
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
@@ -91,41 +91,40 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    // --- CORRECTED: Ensure the runtime-livedata dependency is present ---
     implementation("androidx.compose.runtime:runtime-livedata")
 
-    implementation("androidx.room:room-runtime:$room_version")
-    implementation("androidx.room:room-ktx:$room_version")
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("com.google.firebase:firebase-crashlytics-buildtools:3.0.4")
-    ksp("androidx.room:room-compiler:$room_version")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycle_version")
-    implementation("androidx.navigation:navigation-compose:$navigation_version")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleVersion")
+    implementation("androidx.navigation:navigation-compose:$navigationVersion")
 
     implementation("com.google.android.material:material:1.12.0")
 
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
-    implementation("com.google.code.gson:gson:$gson_version")
+    implementation("com.google.code.gson:gson:$gsonVersion")
 
-    implementation("androidx.tracing:tracing-ktx:$tracing_version")
+    implementation("androidx.tracing:tracing-ktx:$tracingVersion")
 
     // Local unit tests
     testImplementation("junit:junit:4.13.2")
-    testImplementation("androidx.test:core-ktx:$androidx_test_version")
-    testImplementation("androidx.test.ext:junit:$test_ext_junit_version")
-    testImplementation("org.robolectric:robolectric:$robolectric_version")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines_test_version")
+    testImplementation("androidx.test:core-ktx:$androidxTestVersion")
+    testImplementation("androidx.test.ext:junit:$testExtJunitVersion")
+    testImplementation("org.robolectric:robolectric:$robolectricVersion")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutinesTestVersion")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
 
     // Instrumented UI tests
-    androidTestImplementation("androidx.tracing:tracing-ktx:$tracing_version")
-    androidTestImplementation("androidx.test:runner:$androidx_test_version")
-    androidTestImplementation("androidx.test:core-ktx:$androidx_test_version")
-    androidTestImplementation("androidx.test.ext:junit-ktx:$test_ext_junit_version")
-    androidTestImplementation("androidx.test:rules:$androidx_test_version")
-    androidTestImplementation("androidx.test.espresso:espresso-core:$espresso_version")
+    androidTestImplementation("androidx.tracing:tracing-ktx:$tracingVersion")
+    androidTestImplementation("androidx.test:runner:$androidxTestVersion")
+    androidTestImplementation("androidx.test:core-ktx:$androidxTestVersion")
+    androidTestImplementation("androidx.test.ext:junit-ktx:$testExtJunitVersion")
+    androidTestImplementation("androidx.test:rules:$androidxTestVersion")
+    androidTestImplementation("androidx.test.espresso:espresso-core:$espressoVersion")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 
@@ -135,5 +134,5 @@ dependencies {
 
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    implementation("androidx.work:work-runtime-ktx:$work_version")
+    implementation("androidx.work:work-runtime-ktx:$workVersion")
 }
