@@ -87,8 +87,8 @@ fun DashboardScreen(
             }
         }
         item { NetWorthCard(netWorth) }
-        item { AccountSummaryCard(accounts = accountsSummary, navController = navController) }
         item { RecentActivityCard(recentTransactions, navController) }
+        item { AccountSummaryCard(accounts = accountsSummary, navController = navController) }
         item {
             BudgetWatchCard(
                 budgetStatus = budgetStatus,

@@ -26,7 +26,7 @@ import java.net.URLEncoder
 @Composable
 fun CsvValidationScreen(
     navController: NavController,
-    viewModel: SettingsViewModel,
+    viewModel: SettingsViewModel
 ) {
     val report by viewModel.csvValidationReport.collectAsState()
     val context = LocalContext.current
@@ -55,7 +55,7 @@ fun CsvValidationScreen(
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
                     Text("Validation Complete", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -69,20 +69,15 @@ fun CsvValidationScreen(
                             val gson = Gson()
                             val rowDataJson = gson.toJson(row.rowData)
                             val encodedJson = URLEncoder.encode(rowDataJson, "UTF-8")
-                            navController.navigate(
-                                "edit_transaction/-1?isFromCsv=true&lineNumber=${row.lineNumber}&rowDataJson=$encodedJson",
-                            )
+                            navController.navigate("edit_transaction/-1?isFromCsv=true&lineNumber=${row.lineNumber}&rowDataJson=$encodedJson")
                         },
                         onDeleteClick = {
                             viewModel.removeRowFromReport(row)
-                        },
+                        }
                     )
                 }
             }
-            val importableRowCount =
-                report?.reviewableRows?.count {
-                    it.status == CsvRowStatus.VALID || it.status == CsvRowStatus.NEEDS_ACCOUNT_CREATION || it.status == CsvRowStatus.NEEDS_CATEGORY_CREATION || it.status == CsvRowStatus.NEEDS_BOTH_CREATION
-                } ?: 0
+            val importableRowCount = report?.reviewableRows?.count { it.status == CsvRowStatus.VALID || it.status == CsvRowStatus.NEEDS_ACCOUNT_CREATION || it.status == CsvRowStatus.NEEDS_CATEGORY_CREATION || it.status == CsvRowStatus.NEEDS_BOTH_CREATION } ?: 0
             Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedButton(onClick = {
                     viewModel.clearCsvValidationReport()
@@ -92,11 +87,9 @@ fun CsvValidationScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            val rowsToImport =
-                                report?.reviewableRows?.filter {
-                                    it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT
-                                }
-                            if (rowsToImport != null) {
+                            val rowsToImport = report?.reviewableRows?.filter { it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT }
+                            // --- BUG FIX: The null check is redundant because .filter always returns a list ---
+                            if (!rowsToImport.isNullOrEmpty()) {
                                 viewModel.commitCsvImport(rowsToImport)
                                 Toast.makeText(context, "$importableRowCount transactions imported!", Toast.LENGTH_LONG).show()
                                 navController.navigate("dashboard") { popUpTo(0) }
@@ -104,7 +97,7 @@ fun CsvValidationScreen(
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    enabled = importableRowCount > 0,
+                    enabled = importableRowCount > 0
                 ) { Text("Import $importableRowCount Rows") }
             }
         }
@@ -112,33 +105,26 @@ fun CsvValidationScreen(
 }
 
 @Composable
-fun EditableRowItem(
-    row: ReviewableRow,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-) {
-    val backgroundColor =
-        when (row.status) {
-            CsvRowStatus.VALID -> MaterialTheme.colorScheme.surfaceVariant
-            CsvRowStatus.NEEDS_ACCOUNT_CREATION, CsvRowStatus.NEEDS_CATEGORY_CREATION, CsvRowStatus.NEEDS_BOTH_CREATION -> MaterialTheme.colorScheme.tertiaryContainer
-            else -> MaterialTheme.colorScheme.errorContainer
-        }
-    val icon =
-        when (row.status) {
-            CsvRowStatus.VALID -> Icons.Default.CheckCircle
-            CsvRowStatus.NEEDS_ACCOUNT_CREATION, CsvRowStatus.NEEDS_CATEGORY_CREATION, CsvRowStatus.NEEDS_BOTH_CREATION -> Icons.Default.AddCircle
-            else -> Icons.Default.Warning
-        }
+fun EditableRowItem(row: ReviewableRow, onEditClick: () -> Unit, onDeleteClick: () -> Unit) {
+    val backgroundColor = when (row.status) {
+        CsvRowStatus.VALID -> MaterialTheme.colorScheme.surfaceVariant
+        CsvRowStatus.NEEDS_ACCOUNT_CREATION, CsvRowStatus.NEEDS_CATEGORY_CREATION, CsvRowStatus.NEEDS_BOTH_CREATION -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.errorContainer
+    }
+    val icon = when (row.status) {
+        CsvRowStatus.VALID -> Icons.Default.CheckCircle
+        CsvRowStatus.NEEDS_ACCOUNT_CREATION, CsvRowStatus.NEEDS_CATEGORY_CREATION, CsvRowStatus.NEEDS_BOTH_CREATION -> Icons.Default.AddCircle
+        else -> Icons.Default.Warning
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(imageVector = icon, contentDescription = "Status", modifier = Modifier.padding(end = 12.dp))
             Column(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .clickable(onClick = onEditClick)
-                        .padding(vertical = 16.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onEditClick)
+                    .padding(vertical = 16.dp)
             ) {
                 Text("Line ${row.lineNumber}: ${row.rowData.getOrNull(1) ?: "N/A"}", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))

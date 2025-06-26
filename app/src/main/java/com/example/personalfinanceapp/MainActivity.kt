@@ -38,12 +38,9 @@ import java.util.concurrent.Executor
 
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
     object Dashboard : BottomNavItem("dashboard", Icons.Filled.Home, "Dashboard")
-
     object Transactions : BottomNavItem("transaction_list", Icons.Filled.Receipt, "Transactions")
-
     object Reports : BottomNavItem("reports_screen", Icons.Filled.Assessment, "Reports")
-
-    object Settings : BottomNavItem("settings_screen", Icons.Filled.Settings, "Settings")
+    object Profile : BottomNavItem("profile", Icons.Filled.Person, "Profile")
 }
 
 // A map to define screen titles, making the TopAppBar logic cleaner.
@@ -52,7 +49,8 @@ val screenTitles =
         BottomNavItem.Dashboard.route to "Dashboard",
         BottomNavItem.Transactions.route to "All Transactions",
         BottomNavItem.Reports.route to "Reports",
-        BottomNavItem.Settings.route to "Settings",
+        BottomNavItem.Profile.route to "Profile",
+        "settings_screen" to "App Settings",
         "add_transaction" to "Add Transaction",
         "edit_transaction/{transactionId}" to "Edit Transaction",
         "account_list" to "Your Accounts",
@@ -203,7 +201,7 @@ fun MainAppScreen() {
             BottomNavItem.Dashboard,
             BottomNavItem.Transactions,
             BottomNavItem.Reports,
-            BottomNavItem.Settings,
+            BottomNavItem.Profile
         )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -321,13 +319,8 @@ fun AppNavHost(
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        // Pass the shared ViewModel instance to both screens
-        composable(BottomNavItem.Settings.route) {
-            SettingsScreen(
-                navController,
-                settingsViewModel,
-            )
-        }
+        composable(BottomNavItem.Profile.route) { ProfileScreen(navController) }
+        composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
         composable("csv_validation_screen") {
             CsvValidationScreen(
                 navController,
@@ -378,12 +371,6 @@ fun AppNavHost(
         }
         composable("add_transaction") { AddTransactionScreen(navController, viewModel()) }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        composable(BottomNavItem.Settings.route) {
-            SettingsScreen(
-                navController,
-                settingsViewModel,
-            )
-        }
         composable(
             "edit_transaction/{transactionId}?isFromCsv={isFromCsv}&lineNumber={lineNumber}&rowDataJson={rowDataJson}",
             arguments =
