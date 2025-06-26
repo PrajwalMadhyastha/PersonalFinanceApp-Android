@@ -45,12 +45,15 @@ object NotificationHelper {
 
         val notificationIcon = android.R.drawable.ic_dialog_info
 
+        // --- BUG FIX: Dynamically set the notification text based on transaction type ---
+        val typeText = potentialTransaction.transactionType.replaceFirstChar { it.uppercase() }
+        val bigText = "$typeText of ₹${"%.2f".format(potentialTransaction.amount)} from ${potentialTransaction.merchantName ?: "Unknown Sender"} detected. Tap to add this to your transaction history."
+
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
             .setSmallIcon(notificationIcon)
             .setContentTitle("New Transaction Found")
             .setContentText("Tap to review and categorize a transaction from ${potentialTransaction.merchantName ?: "Unknown Sender"}.")
-            .setStyle(NotificationCompat.BigTextStyle()
-                .bigText("Expense of ₹${"%.2f".format(potentialTransaction.amount)} from ${potentialTransaction.merchantName ?: "Unknown Sender"} detected. Tap to add this to your transaction history."))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)

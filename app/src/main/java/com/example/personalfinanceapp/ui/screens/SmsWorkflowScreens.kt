@@ -160,6 +160,10 @@ fun ApproveTransactionScreen(
 ) {
     var description by remember { mutableStateOf(merchant) }
     var notes by remember { mutableStateOf("") }
+    // --- NEW: State for the user-selectable transaction type ---
+    var selectedTransactionType by remember(transactionType) { mutableStateOf(transactionType) }
+    val transactionTypes = listOf("Expense", "Income")
+
 
     val accounts by transactionViewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
@@ -188,6 +192,19 @@ fun ApproveTransactionScreen(
         ) {
             item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description / Merchant") }, modifier = Modifier.fillMaxWidth()) }
             item { OutlinedTextField(value = amount.toString(), onValueChange = {}, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth()) }
+
+            // --- NEW: TabRow for selecting transaction type ---
+            item {
+                TabRow(selectedTabIndex = if (selectedTransactionType == "expense") 0 else 1) {
+                    transactionTypes.forEachIndexed { index, title ->
+                        Tab(
+                            selected = (if (selectedTransactionType == "expense") 0 else 1) == index,
+                            onClick = { selectedTransactionType = if (index == 0) "expense" else "income" },
+                            text = { Text(title) }
+                        )
+                    }
+                }
+            }
 
             item {
                 ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
@@ -248,7 +265,8 @@ fun ApproveTransactionScreen(
                                 accountId = selectedAccount!!.id,
                                 notes = notes.takeIf { it.isNotBlank() },
                                 date = System.currentTimeMillis(),
-                                transactionType = transactionType,
+                                // --- UPDATED: Pass the user-confirmed type ---
+                                transactionType = selectedTransactionType,
                                 sourceSmsId = smsId
                             )
                             if (success) {
