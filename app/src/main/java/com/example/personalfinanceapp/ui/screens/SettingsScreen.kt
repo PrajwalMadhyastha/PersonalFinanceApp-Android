@@ -48,7 +48,7 @@ fun SettingsScreen(
     var hasSmsPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED,
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED,
         )
     }
     var hasNotificationPermission by remember {
@@ -173,6 +173,7 @@ fun SettingsScreen(
             DatePicker(state = datePickerState)
         }
     }
+
     if (showSmsRationaleDialog) {
         AlertDialog(
             onDismissRequest = { showSmsRationaleDialog = false },
@@ -202,6 +203,7 @@ fun SettingsScreen(
             },
         )
     }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 9.dp),
@@ -210,6 +212,7 @@ fun SettingsScreen(
         item {
             SettingsActionItem(
                 text = "Manage Budgets",
+                subtitle = "Set and edit your overall and category-specific monthly budgets.",
                 icon = Icons.Default.Savings,
                 onClick = { navController.navigate("budget_screen") },
             )
@@ -217,6 +220,7 @@ fun SettingsScreen(
         item {
             SettingsActionItem(
                 text = "Manage Categories",
+                subtitle = "Add, edit, or remove transaction categories.",
                 icon = Icons.Default.Category,
                 onClick = { navController.navigate("category_list") },
             )
@@ -233,7 +237,7 @@ fun SettingsScreen(
             )
         }
 
-        item { SettingSectionHeader("Notifications") }
+        item { SettingSectionHeader("Notifications & Automation") }
         item {
             SettingsToggleItem(
                 title = "Enable Daily Summary Notification",
@@ -308,13 +312,13 @@ fun SettingsScreen(
         }
         item {
             SettingsActionItem(
-                text = "Scan Entire SMS Inbox",
-                subtitle = "Slower, may find very old transactions",
+                text = "Review Scanned SMS Transactions",
+                subtitle = "Approve or dismiss transactions found in your inbox.",
                 icon = Icons.Default.Refresh,
                 onClick = {
                     if (hasSmsPermission) {
-                        Toast.makeText(context, "Starting full scan...", Toast.LENGTH_SHORT).show()
-                        viewModel.rescanSms(null) // Pass null for a full scan
+                        Toast.makeText(context, "Scanning for new transactions...", Toast.LENGTH_SHORT).show()
+                        viewModel.rescanSms(smsScanStartDate)
                         navController.navigate("review_sms_screen")
                     } else {
                         showSmsRationaleDialog = true
@@ -326,6 +330,7 @@ fun SettingsScreen(
         item {
             SettingsActionItem(
                 text = "Export Data as JSON",
+                subtitle = "Create a full backup of all your app data.",
                 icon = Icons.Default.DataObject,
                 onClick = {
                     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -338,6 +343,7 @@ fun SettingsScreen(
         item {
             SettingsActionItem(
                 text = "Export Transactions as CSV",
+                subtitle = "Save all transactions in a spreadsheet-compatible format.",
                 icon = Icons.Default.GridOn,
                 onClick = {
                     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -350,6 +356,7 @@ fun SettingsScreen(
         item {
             SettingsActionItem(
                 text = "Import from JSON",
+                subtitle = "Restore your app data from a full backup file.",
                 icon = Icons.Default.Download,
                 onClick = { showImportJsonDialog = true },
             )
@@ -357,6 +364,7 @@ fun SettingsScreen(
         item {
             SettingsActionItem(
                 text = "Import from CSV",
+                subtitle = "Add new transactions from a CSV file.",
                 icon = Icons.Default.PostAdd,
                 onClick = { showImportCsvDialog = true },
             )
@@ -458,12 +466,21 @@ private fun SettingsActionItem(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text)
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text, style = MaterialTheme.typography.bodyLarge)
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
