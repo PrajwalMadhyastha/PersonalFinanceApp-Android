@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 // It's good practice to define versions in one place.
 val roomVersion = "2.6.1"
 val lifecycleVersion = "2.8.2"
@@ -13,6 +16,14 @@ val robolectricVersion = "4.13"
 val coroutinesTestVersion = "1.8.1"
 val gsonVersion = "2.10.1"
 
+// Read properties from local.properties
+val keystorePropertiesFile = rootProject.file("local.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -25,6 +36,15 @@ plugins {
 android {
     namespace = "io.pm.finlight"
     compileSdk = 35
+
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["key.alias"] as String?
+            keyPassword = keystoreProperties["key.password"] as String?
+            storeFile = keystoreProperties["keystore.path"]?.let { rootProject.file(it) }
+            storePassword = keystoreProperties["keystore.password"] as String?
+        }
+    }
 
     defaultConfig {
         applicationId = "io.pm.finlight"
@@ -48,6 +68,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Tell the release build type to use your new signing configuration
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -90,7 +112,6 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    // --- BUG FIX: Add the core material icons library back ---
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.runtime:runtime-livedata")
 
