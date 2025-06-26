@@ -307,34 +307,33 @@ fun SettingsScreen(
             // --- NEW: UI for selecting the scan start date ---
             item {
                 SettingsActionItem(
-                    text = "Start Scanning From",
-                    subtitle = dateFormatter.format(Date(smsScanStartDate)),
-                    icon = Icons.Default.DateRange,
-                    onClick = { showDatePickerDialog = true }
+                    text = "Scan From Specific Date...",
+                    subtitle = "Current default start date: ${dateFormatter.format(Date(smsScanStartDate))}",
+                    icon = Icons.Default.EventRepeat,
+                    onClick = {
+                        if (hasSmsPermission) {
+                            showDatePickerDialog = true
+                        } else {
+                            showSmsRationaleDialog = true
+                        }
+                    }
                 )
             }
             item {
-                    SettingsActionItem(
-                        text = "Rescan SMS Inbox",
-                        icon = Icons.Default.Refresh,
-                        onClick = {
-                            if (hasSmsPermission) {
-                                Toast.makeText(
-                                    context,
-                                    "Scanning all messages...",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                                viewModel.rescanAllSmsMessages()
-                                navController.navigate("review_sms_screen")
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Please grant SMS permission first.",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                SettingsActionItem(
+                    text = "Scan Entire SMS Inbox",
+                    subtitle = "Slower, may find very old transactions",
+                    icon = Icons.Default.Refresh,
+                    onClick = {
+                        if (hasSmsPermission) {
+                            Toast.makeText(context, "Starting full scan...", Toast.LENGTH_SHORT).show()
+                            viewModel.rescanSms(null) // Pass null for a full scan
+                            navController.navigate("review_sms_screen")
+                        } else {
+                            showSmsRationaleDialog = true
                         }
-                    )
+                    }
+                )
             }
                 item { SettingSectionHeader("Data Management") }
                 item {

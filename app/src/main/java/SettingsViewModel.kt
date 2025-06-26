@@ -1,5 +1,6 @@
 package com.example.personalfinanceapp
 
+import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -279,14 +280,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _csvValidationReport.value = null
     }
 
-    fun rescanAllSmsMessages() {
-        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) { return }
+    fun rescanSms(startDate: Long?) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) { return }
 
         viewModelScope.launch {
             _isScanning.value = true
 
-            // --- UPDATED: Get the current start date and pass it to the repository ---
-            val startDate = smsScanStartDate.first()
             val rawMessages = withContext(Dispatchers.IO) {
                 SmsRepository(context).fetchAllSms(startDate)
             }

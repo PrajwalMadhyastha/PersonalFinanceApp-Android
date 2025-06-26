@@ -1,13 +1,15 @@
+// =================================================================================
+// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/screens/SmsWorkflowScreens.kt
+// NOTE: Corrected all calls to use the new `rescanSms` function.
+// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -16,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -30,10 +31,12 @@ import java.net.URLEncoder
 @Composable
 fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel = viewModel()) {
     val potentialTransactions by viewModel.potentialTransactions.collectAsState()
+    val smsScanStartDate by viewModel.smsScanStartDate.collectAsState()
 
-    // Load transactions when the screen is first displayed
+    // Load transactions when the screen is first displayed.
     LaunchedEffect(Unit) {
-        viewModel.rescanAllSmsMessages()
+        // CORRECTED: Call the new function, using the default saved start date.
+        viewModel.rescanSms(smsScanStartDate)
     }
 
     Scaffold(
@@ -55,7 +58,7 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel =
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("No new transactions to review.", style = MaterialTheme.typography.titleMedium)
-                    Text("Go back to Settings and tap 'Rescan' to find transactions.", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Text("Go back to Settings and tap 'Scan' to find transactions.", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                 }
             }
         } else {
@@ -76,7 +79,6 @@ fun ReviewSmsScreen(navController: NavController, viewModel: SettingsViewModel =
                         transaction = pt,
                         onDismiss = { viewModel.dismissPotentialTransaction(it) },
                         onApprove = { transaction ->
-                            // --- CORRECTED: Build a detailed route with arguments ---
                             val merchant = URLEncoder.encode(transaction.merchantName ?: "Unknown", "UTF-8")
                             val route = "approve_transaction_screen/${transaction.amount}/${transaction.transactionType}/${merchant}/${transaction.sourceSmsId}/${transaction.smsSender}"
                             navController.navigate(route)
@@ -150,7 +152,6 @@ fun ApproveTransactionScreen(
     navController: NavController,
     transactionViewModel: TransactionViewModel = viewModel(),
     settingsViewModel: SettingsViewModel = viewModel(),
-    // --- CORRECTED: Receive data as parameters, not from ViewModel state ---
     amount: Float,
     transactionType: String,
     merchant: String,
@@ -241,10 +242,9 @@ fun ApproveTransactionScreen(
                             notes = notes.takeIf { it.isNotBlank() },
                             date = System.currentTimeMillis(),
                             transactionType = transactionType,
-                            sourceSmsId = smsId // Use the passed-in ID
+                            sourceSmsId = smsId
                         )
                         if (success) {
-                            // No need to dismiss here, the list will be re-filtered on next scan
                             navController.popBackStack()
                         }
                     },
@@ -256,16 +256,18 @@ fun ApproveTransactionScreen(
     }
 }
 
+// NOTE: This screen is not part of the main user flow but can be useful for debugging.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel = viewModel()) {
-    val smsMessages by viewModel.smsMessages.collectAsState()
+    val smsMessages by viewModel.potentialTransactions.collectAsState() // Observe potential transactions instead of raw SMS
     val context = LocalContext.current
     val hasSmsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 
     LaunchedEffect(hasSmsPermission) {
         if (hasSmsPermission) {
-            viewModel.rescanAllSmsMessages()
+            // CORRECTED: Call the new function. Pass `null` for a full scan in the debug screen.
+            viewModel.rescanSms(null)
         }
     }
 
@@ -285,7 +287,8 @@ fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel = 
             Button(
                 onClick = {
                     if (hasSmsPermission) {
-                        viewModel.rescanAllSmsMessages()
+                        // CORRECTED: Call the new function for a full scan.
+                        viewModel.rescanSms(null)
                     } else {
                         Toast.makeText(context, "Grant SMS permission in settings first.", Toast.LENGTH_LONG).show()
                     }
@@ -310,8 +313,8 @@ fun SmsDebugScreen(navController: NavController, viewModel: SettingsViewModel = 
                     items(smsMessages) { sms ->
                         Card {
                             Column(Modifier.padding(8.dp)) {
-                                Text(sms.sender, fontWeight = FontWeight.Bold)
-                                Text(sms.body, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                Text(sms.smsSender, fontWeight = FontWeight.Bold)
+                                Text(sms.originalMessage, maxLines = 3, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
