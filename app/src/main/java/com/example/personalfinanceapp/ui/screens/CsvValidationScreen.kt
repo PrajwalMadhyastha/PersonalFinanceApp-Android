@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,7 +23,6 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CsvValidationScreen(
     navController: NavController,
@@ -34,7 +32,6 @@ fun CsvValidationScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // --- CORRECTED: Logic to handle data coming back from the Edit screen ---
     val backStackEntry = navController.currentBackStackEntry
     val updatedRowJsonState = backStackEntry?.savedStateHandle?.getLiveData<String>("corrected_row")?.observeAsState()
 
@@ -44,58 +41,19 @@ fun CsvValidationScreen(
         if (json != null && line != null) {
             val gson = Gson()
             val correctedData: List<String> = gson.fromJson(json, object : TypeToken<List<String>>() {}.type)
-
-            // Call the ViewModel to handle the update and re-validation
             viewModel.updateAndRevalidateRow(line, correctedData)
-
-            // Clear the result to prevent it from being processed again
             backStackEntry.savedStateHandle.remove<String>("corrected_row")
             backStackEntry.savedStateHandle.remove<Int>("corrected_row_line")
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("CSV Import Preview") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-                }
-            )
-        },
-        bottomBar = {
-            val importableRowCount = report?.reviewableRows?.count { it.status == CsvRowStatus.VALID || it.status == CsvRowStatus.NEEDS_ACCOUNT_CREATION || it.status == CsvRowStatus.NEEDS_CATEGORY_CREATION || it.status == CsvRowStatus.NEEDS_BOTH_CREATION } ?: 0
-            if (report != null) {
-                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    OutlinedButton(onClick = {
-                        viewModel.clearCsvValidationReport()
-                        navController.popBackStack()
-                    }, modifier = Modifier.weight(1f)) { Text("Cancel") }
-
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val rowsToImport = report?.reviewableRows?.filter { it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT }
-                                if (rowsToImport != null) {
-                                    viewModel.commitCsvImport(rowsToImport)
-                                    Toast.makeText(context, "$importableRowCount transactions imported!", Toast.LENGTH_LONG).show()
-                                    navController.navigate("dashboard") { popUpTo(0) }
-                                }
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        enabled = importableRowCount > 0
-                    ) { Text("Import $importableRowCount Rows") }
-                }
-            }
-        }
-    ) { innerPadding ->
-        val currentReport = report
-        if (currentReport == null) {
-            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        } else {
+    val currentReport = report
+    if (currentReport == null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    } else {
+        Column(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
-                modifier = Modifier.padding(innerPadding),
+                modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -118,6 +76,28 @@ fun CsvValidationScreen(
                         }
                     )
                 }
+            }
+            val importableRowCount = report?.reviewableRows?.count { it.status == CsvRowStatus.VALID || it.status == CsvRowStatus.NEEDS_ACCOUNT_CREATION || it.status == CsvRowStatus.NEEDS_CATEGORY_CREATION || it.status == CsvRowStatus.NEEDS_BOTH_CREATION } ?: 0
+            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedButton(onClick = {
+                    viewModel.clearCsvValidationReport()
+                    navController.popBackStack()
+                }, modifier = Modifier.weight(1f)) { Text("Cancel") }
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val rowsToImport = report?.reviewableRows?.filter { it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT }
+                            if (rowsToImport != null) {
+                                viewModel.commitCsvImport(rowsToImport)
+                                Toast.makeText(context, "$importableRowCount transactions imported!", Toast.LENGTH_LONG).show()
+                                navController.navigate("dashboard") { popUpTo(0) }
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = importableRowCount > 0
+                ) { Text("Import $importableRowCount Rows") }
             }
         }
     }

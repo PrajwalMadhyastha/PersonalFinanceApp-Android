@@ -45,7 +45,6 @@ import com.example.personalfinanceapp.CategoryViewModel
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.DeleteCategoryDialog
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.EditCategoryDialog
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryListScreen(navController: NavController, viewModel: CategoryViewModel) {
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
@@ -63,79 +62,65 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Manage Categories") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = newCategoryName,
-                    onValueChange = { newCategoryName = it },
-                    label = { Text("New Category Name") },
-                    modifier = Modifier.weight(1f)
-                )
-                Button(
-                    onClick = {
-                        if (newCategoryName.isNotBlank()) {
-                            viewModel.addCategory(newCategoryName)
-                            newCategoryName = ""
-                        }
-                    },
-                    enabled = newCategoryName.isNotBlank()
-                ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            Divider()
-
-            LazyColumn {
-                items(categories) { category ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = category.name, modifier = Modifier.weight(1f))
-                        IconButton(onClick = {
-                            selectedCategory = category
-                            showEditDialog = true
-                        }) {
-                            Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Category")
-                        }
-                        IconButton(onClick = {
-                            selectedCategory = category
-                            showDeleteDialog = true
-                        }) {
-                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Category", tint = MaterialTheme.colorScheme.error)
-                        }
+            OutlinedTextField(
+                value = newCategoryName,
+                onValueChange = { newCategoryName = it },
+                label = { Text("New Category Name") },
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    if (newCategoryName.isNotBlank()) {
+                        viewModel.addCategory(newCategoryName)
+                        newCategoryName = ""
                     }
-                    Divider()
+                },
+                enabled = newCategoryName.isNotBlank()
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Divider()
+
+        LazyColumn {
+            items(categories) { category ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = category.name, modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+                        selectedCategory = category
+                        showEditDialog = true
+                    }) {
+                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Category")
+                    }
+                    IconButton(onClick = {
+                        selectedCategory = category
+                        showDeleteDialog = true
+                    }) {
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Category", tint = MaterialTheme.colorScheme.error)
+                    }
                 }
+                Divider()
             }
         }
     }
+
 
     if (showEditDialog) {
         selectedCategory?.let {

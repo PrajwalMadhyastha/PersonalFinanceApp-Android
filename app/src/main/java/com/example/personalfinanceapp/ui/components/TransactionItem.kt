@@ -28,7 +28,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.personalfinanceapp.Transaction
 import com.example.personalfinanceapp.TransactionDetails
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -71,7 +70,6 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
                 )
             }
 
-            // --- UPDATES: Use brighter colors, angled icons, and new layout ---
             val isIncome = transactionDetails.transaction.transactionType == "income"
             val amountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
             val icon = if (isIncome) Icons.Default.SouthWest else Icons.Default.NorthEast
@@ -96,7 +94,7 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
 }
 
 @Composable
-fun AccountTransactionItem(transaction: Transaction) {
+fun AccountTransactionItem(transactionDetails: TransactionDetails) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -104,20 +102,18 @@ fun AccountTransactionItem(transaction: Transaction) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = transaction.description, style = MaterialTheme.typography.bodyLarge)
+            Text(text = transactionDetails.transaction.description, style = MaterialTheme.typography.bodyLarge)
             Text(
-                text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transaction.date)),
+                text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-
-        // --- UPDATE: Use brighter colors for consistency ---
-        val isIncome = transaction.transactionType == "income"
+        val isIncome = transactionDetails.transaction.transactionType == "income"
         val amountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
 
         Text(
-            text = "₹${"%.2f".format(transaction.amount)}",
+            text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
             style = MaterialTheme.typography.bodyLarge,
             color = amountColor
         )
@@ -128,7 +124,6 @@ fun AccountTransactionItem(transaction: Transaction) {
 fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
-    // CORRECTED: Added contentPadding parameter to be passed from the Scaffold.
     contentPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     if (transactions.isEmpty()) {
@@ -140,9 +135,8 @@ fun TransactionList(
         }
     } else {
         LazyColumn(
-            // CORRECTED: Applied the padding from the Scaffold here.
             modifier = Modifier.fillMaxSize().padding(contentPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp) // Keep some internal padding
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
         ) {
             items(transactions) { details ->
                 TransactionItem(transactionDetails = details, onClick = {

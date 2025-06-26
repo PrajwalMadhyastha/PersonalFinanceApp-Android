@@ -1,7 +1,3 @@
-// =================================================================================
-// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/screens/SettingsScreen.kt
-// NOTE: Cleaned up redundant Data Import logic for clarity.
-// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import android.Manifest
@@ -13,7 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -138,9 +133,6 @@ fun SettingsScreen(
         }
     )
 
-    // REMOVED: Redundant file picker launcher.
-    // val filePickerLauncher = remember...
-
     val jsonImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri ->
@@ -156,226 +148,211 @@ fun SettingsScreen(
         }
     )
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        if (showDatePickerDialog) {
-            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
-            DatePickerDialog(
-                onDismissRequest = { showDatePickerDialog = false },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            datePickerState.selectedDateMillis?.let {
-                                viewModel.saveSmsScanStartDate(it)
-                            }
-                            showDatePickerDialog = false
+    if (showDatePickerDialog) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
+        DatePickerDialog(
+            onDismissRequest = { showDatePickerDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            viewModel.saveSmsScanStartDate(it)
                         }
-                    ) { Text("OK") }
-                },
-                dismissButton = { TextButton(onClick = { showDatePickerDialog = false }) { Text("Cancel") } }
-            ) {
-                DatePicker(state = datePickerState)
-            }
-        }
-        if (showSmsRationaleDialog) {
-            AlertDialog(
-                onDismissRequest = { showSmsRationaleDialog = false },
-                title = { Text("Permission Required") },
-                text = { Text("To automatically capture transactions, this app needs permission to read and receive SMS messages. Your data is processed only on your device and is never shared.") },
-                confirmButton = {
-                    Button(onClick = {
-                        showSmsRationaleDialog = false
-                        permissionLauncher.launch(
-                            arrayOf(
-                                Manifest.permission.READ_SMS,
-                                Manifest.permission.RECEIVE_SMS
-                            )
-                        )
-                    }) {
-                        Text("Continue")
+                        showDatePickerDialog = false
                     }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showSmsRationaleDialog = false }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(vertical = 9.dp),
+                ) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePickerDialog = false }) { Text("Cancel") } }
         ) {
-            item { SettingSectionHeader("App Management") }
-            item {
-                SettingsActionItem(
-                    text = "Manage Budgets",
-                    icon = Icons.Default.Savings,
-                    onClick = { navController.navigate("budget_screen") }
-                )
-            }
-            item {
-                SettingsActionItem(
-                    text = "Manage Categories",
-                    icon = Icons.Default.Category,
-                    onClick = { navController.navigate("category_list") }
-                )
-            }
-
-            item { SettingSectionHeader("Security") }
-            item {
-                SettingsToggleItem(
-                    title = "Enable App Lock",
-                    subtitle = "Use biometrics or screen lock to secure the app.",
-                    icon = Icons.Default.Lock,
-                    checked = isAppLockEnabled,
-                    onCheckedChange = { viewModel.setAppLockEnabled(it) }
-                )
-            }
-
-            item { SettingSectionHeader("Notifications") }
-            item {
-                SettingsToggleItem(
-                    title = "Enable Daily Summary Notification",
-                    subtitle = "Get a report of yesterday's spending each day.",
-                    icon = Icons.Default.NotificationsActive,
-                    checked = isDailyReportEnabled,
-                    onCheckedChange = { viewModel.setDailyReportEnabled(it) }
-                )
-            }
-            item {
-                SettingsToggleItem(
-                    title = "Weekly Summary Notification",
-                    subtitle = "Receive a summary of your finances every week.",
-                    icon = Icons.Default.CalendarToday,
-                    checked = isWeeklySummaryEnabled,
-                    onCheckedChange = { viewModel.setWeeklySummaryEnabled(it) }
-                )
-            }
-            item {
-                SettingsToggleItem(
-                    title = "Popup for Unknown Transactions",
-                    subtitle = "Show notification for SMS from new merchants.",
-                    icon = Icons.Default.Notifications,
-                    checked = isUnknownTransactionPopupEnabled,
-                    onCheckedChange = { viewModel.setUnknownTransactionPopupEnabled(it) }
-                )
-            }
-
-            item { SettingSectionHeader("Permissions") }
-            item {
-                SettingsToggleItem(
-                    title = "SMS Access",
-                    subtitle = "Allow reading and receiving SMS for auto-detection.",
-                    icon = Icons.AutoMirrored.Filled.Message,
-                    checked = hasSmsPermission,
-                    onCheckedChange = { isChecked ->
-                        if (isChecked && !hasSmsPermission) {
-                            showSmsRationaleDialog = true
-                        }
-                    },
-                    enabled = !hasSmsPermission
-                )
-            }
-            item {
-                SettingsToggleItem(
-                    title = "Enable Notifications",
-                    subtitle = "Show alerts for new transactions and reminders.",
-                    icon = Icons.Default.Notifications,
-                    checked = hasNotificationPermission,
-                    onCheckedChange = {
-                        if(!hasNotificationPermission) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                    }
-                )
-            }
-
-            item { SettingSectionHeader("SMS Scanning") }
-            // --- NEW: UI for selecting the scan start date ---
-            item {
-                SettingsActionItem(
-                    text = "Scan From Specific Date...",
-                    subtitle = "Current default start date: ${dateFormatter.format(Date(smsScanStartDate))}",
-                    icon = Icons.Default.EventRepeat,
-                    onClick = {
-                        if (hasSmsPermission) {
-                            showDatePickerDialog = true
-                        } else {
-                            showSmsRationaleDialog = true
-                        }
-                    }
-                )
-            }
-            item {
-                SettingsActionItem(
-                    text = "Scan Entire SMS Inbox",
-                    subtitle = "Slower, may find very old transactions",
-                    icon = Icons.Default.Refresh,
-                    onClick = {
-                        if (hasSmsPermission) {
-                            Toast.makeText(context, "Starting full scan...", Toast.LENGTH_SHORT).show()
-                            viewModel.rescanSms(null) // Pass null for a full scan
-                            navController.navigate("review_sms_screen")
-                        } else {
-                            showSmsRationaleDialog = true
-                        }
-                    }
-                )
-            }
-            item { SettingSectionHeader("Data Management") }
-            item {
-                SettingsActionItem(
-                    text = "Export Data as JSON",
-                    icon = Icons.Default.DataObject,
-                    onClick = {
-                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                        val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
-                        jsonFileSaverLauncher.launch(fileName)
-                    }
-                )
-            }
-
-            item {
-                SettingsActionItem(
-                    text = "Export Transactions as CSV",
-                    icon = Icons.Default.GridOn,
-                    onClick = {
-                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                        val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
-                        csvFileSaverLauncher.launch(fileName)
-                    }
-                )
-            }
-
-            item {
-                SettingsActionItem(
-                    text = "Import from JSON",
-                    icon = Icons.Default.Download,
-                    onClick = { showImportJsonDialog = true }
-                )
-            }
-            item {
-                SettingsActionItem(
-                    text = "Import from CSV",
-                    icon = Icons.Default.PostAdd,
-                    onClick = { showImportCsvDialog = true }
-                )
-            }
+            DatePicker(state = datePickerState)
         }
     }
+    if (showSmsRationaleDialog) {
+        AlertDialog(
+            onDismissRequest = { showSmsRationaleDialog = false },
+            title = { Text("Permission Required") },
+            text = { Text("To automatically capture transactions, this app needs permission to read and receive SMS messages. Your data is processed only on your device and is never shared.") },
+            confirmButton = {
+                Button(onClick = {
+                    showSmsRationaleDialog = false
+                    permissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.READ_SMS,
+                            Manifest.permission.RECEIVE_SMS
+                        )
+                    )
+                }) {
+                    Text("Continue")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSmsRationaleDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 9.dp),
+    ) {
+        item { SettingSectionHeader("App Management") }
+        item {
+            SettingsActionItem(
+                text = "Manage Budgets",
+                icon = Icons.Default.Savings,
+                onClick = { navController.navigate("budget_screen") }
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Manage Categories",
+                icon = Icons.Default.Category,
+                onClick = { navController.navigate("category_list") }
+            )
+        }
+
+        item { SettingSectionHeader("Security") }
+        item {
+            SettingsToggleItem(
+                title = "Enable App Lock",
+                subtitle = "Use biometrics or screen lock to secure the app.",
+                icon = Icons.Default.Lock,
+                checked = isAppLockEnabled,
+                onCheckedChange = { viewModel.setAppLockEnabled(it) }
+            )
+        }
+
+        item { SettingSectionHeader("Notifications") }
+        item {
+            SettingsToggleItem(
+                title = "Enable Daily Summary Notification",
+                subtitle = "Get a report of yesterday's spending each day.",
+                icon = Icons.Default.NotificationsActive,
+                checked = isDailyReportEnabled,
+                onCheckedChange = { viewModel.setDailyReportEnabled(it) }
+            )
+        }
+        item {
+            SettingsToggleItem(
+                title = "Weekly Summary Notification",
+                subtitle = "Receive a summary of your finances every week.",
+                icon = Icons.Default.CalendarToday,
+                checked = isWeeklySummaryEnabled,
+                onCheckedChange = { viewModel.setWeeklySummaryEnabled(it) }
+            )
+        }
+        item {
+            SettingsToggleItem(
+                title = "Popup for Unknown Transactions",
+                subtitle = "Show notification for SMS from new merchants.",
+                icon = Icons.Default.Notifications,
+                checked = isUnknownTransactionPopupEnabled,
+                onCheckedChange = { viewModel.setUnknownTransactionPopupEnabled(it) }
+            )
+        }
+
+        item { SettingSectionHeader("Permissions") }
+        item {
+            SettingsToggleItem(
+                title = "SMS Access",
+                subtitle = "Allow reading and receiving SMS for auto-detection.",
+                icon = Icons.AutoMirrored.Filled.Message,
+                checked = hasSmsPermission,
+                onCheckedChange = { isChecked ->
+                    if (isChecked && !hasSmsPermission) {
+                        showSmsRationaleDialog = true
+                    }
+                },
+                enabled = !hasSmsPermission
+            )
+        }
+        item {
+            SettingsToggleItem(
+                title = "Enable Notifications",
+                subtitle = "Show alerts for new transactions and reminders.",
+                icon = Icons.Default.Notifications,
+                checked = hasNotificationPermission,
+                onCheckedChange = {
+                    if(!hasNotificationPermission) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+            )
+        }
+
+        item { SettingSectionHeader("SMS Scanning") }
+        item {
+            SettingsActionItem(
+                text = "Scan From Specific Date...",
+                subtitle = "Current default start date: ${dateFormatter.format(Date(smsScanStartDate))}",
+                icon = Icons.Default.EventRepeat,
+                onClick = {
+                    if (hasSmsPermission) {
+                        showDatePickerDialog = true
+                    } else {
+                        showSmsRationaleDialog = true
+                    }
+                }
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Scan Entire SMS Inbox",
+                subtitle = "Slower, may find very old transactions",
+                icon = Icons.Default.Refresh,
+                onClick = {
+                    if (hasSmsPermission) {
+                        Toast.makeText(context, "Starting full scan...", Toast.LENGTH_SHORT).show()
+                        viewModel.rescanSms(null) // Pass null for a full scan
+                        navController.navigate("review_sms_screen")
+                    } else {
+                        showSmsRationaleDialog = true
+                    }
+                }
+            )
+        }
+        item { SettingSectionHeader("Data Management") }
+        item {
+            SettingsActionItem(
+                text = "Export Data as JSON",
+                icon = Icons.Default.DataObject,
+                onClick = {
+                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                    val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
+                    jsonFileSaverLauncher.launch(fileName)
+                }
+            )
+        }
+
+        item {
+            SettingsActionItem(
+                text = "Export Transactions as CSV",
+                icon = Icons.Default.GridOn,
+                onClick = {
+                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                    val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
+                    csvFileSaverLauncher.launch(fileName)
+                }
+            )
+        }
+
+        item {
+            SettingsActionItem(
+                text = "Import from JSON",
+                icon = Icons.Default.Download,
+                onClick = { showImportJsonDialog = true }
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Import from CSV",
+                icon = Icons.Default.PostAdd,
+                onClick = { showImportCsvDialog = true }
+            )
+        }
+    }
+
     if (isScanning) {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -407,9 +384,6 @@ fun SettingsScreen(
             }
         )
     }
-
-    // REMOVED: Redundant dialog for the generic "Import Data"
-    // if (showImportConfirmDialog) { ... }
 
     if (showImportJsonDialog) {
         AlertDialog(

@@ -1,6 +1,7 @@
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,7 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
@@ -22,10 +22,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
@@ -33,7 +31,6 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -81,28 +78,16 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
 
-    // CORRECTED: The viewModel.clearError() call has been removed to prevent a race condition.
-    // The Snackbar will now remain visible until dismissed by the user or another action.
     LaunchedEffect(validationError) {
         validationError?.let {
             snackbarHostState.showSnackbar(it)
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Add New Transaction") },
-                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(
-                    Icons.Filled.ArrowBack, "Back") } }
-            )
-        }
-    ) { innerPadding ->
+    // A Box to host the Snackbar, as Scaffold is removed
+    Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -118,7 +103,6 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                     }
                 }
             }
-
             item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
             item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
             item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
@@ -137,7 +121,6 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                     }
                 }
             }
-
             item {
                 ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
                     OutlinedTextField(
@@ -156,7 +139,6 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                     }
                 }
             }
-
             item {
                 ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
                     OutlinedTextField(
@@ -175,7 +157,6 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                     }
                 }
             }
-
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -208,6 +189,7 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 }
             }
         }
+        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 
     if (showDatePicker) {
@@ -232,8 +214,7 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
     }
 
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(
-            Calendar.MINUTE))
+        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(Calendar.MINUTE))
         TimePickerDialog(
             onDismissRequest = { showTimePicker = false },
             onConfirm = {

@@ -1,8 +1,3 @@
-// =================================================================================
-// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/screens/DashboardScreen.kt
-// PURPOSE: The main dashboard UI.
-// NOTE: Added the `AccountSummaryCard` to the LazyColumn.
-// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import android.app.Application
@@ -16,19 +11,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PieChart
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,8 +24,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import com.example.personalfinanceapp.BottomNavItem
 import com.example.personalfinanceapp.BudgetViewModel
 import com.example.personalfinanceapp.DashboardViewModel
 import com.example.personalfinanceapp.DashboardViewModelFactory
@@ -49,7 +34,6 @@ import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.componen
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.RecentActivityCard
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.StatCard
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     navController: NavController,
@@ -63,90 +47,55 @@ fun DashboardScreen(
     val safeToSpend by viewModel.safeToSpendPerDay.collectAsState()
     val budgetStatus by viewModel.budgetStatus.collectAsState()
     val recentTransactions by viewModel.recentTransactions.collectAsState()
-
-    // --- NEW: Collect the accounts summary state ---
     val accountsSummary by viewModel.accountsSummary.collectAsState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Dashboard") },
-                actions = {
-                    IconButton(onClick = { navController.navigate("search_screen") }) {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = "Search")
-                    }
-                    IconButton(onClick = { navController.navigate(BottomNavItem.Settings.route) }) {
-                        Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                }
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            OverallBudgetCard(
+                totalBudget = overallBudget,
+                amountSpent = monthlyExpenses.toFloat(),
+                navController = navController
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { navController.navigate("add_transaction") }) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Transaction")
+        }
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatCard(label = "Monthly Income", amount = monthlyIncome.toFloat(), modifier = Modifier.weight(1f))
+                StatCard(label = "Total Budget", amount = overallBudget, modifier = Modifier.weight(1f))
+                StatCard(label = "Safe to Spend", amount = safeToSpend, modifier = Modifier.weight(1f), isPerDay = true)
             }
         }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier.padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                OverallBudgetCard(
-                    totalBudget = overallBudget,
-                    amountSpent = monthlyExpenses.toFloat(),
-                    navController = navController
-                )
-            }
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard(label = "Monthly Income", amount = monthlyIncome.toFloat(), modifier = Modifier.weight(1f))
-                    StatCard(label = "Total Budget", amount = overallBudget, modifier = Modifier.weight(1f))
-                    StatCard(label = "Safe to Spend", amount = safeToSpend, modifier = Modifier.weight(1f), isPerDay = true)
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                FilledTonalButton(
+                    onClick = { navController.navigate("reports_screen") },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("View Trends")
+                }
+                FilledTonalButton(
+                    onClick = { navController.navigate("reports_screen") },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("View Categories")
                 }
             }
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    FilledTonalButton(
-                        onClick = { navController.navigate(BottomNavItem.Reports.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }},
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("View Trends")
-                    }
-                    FilledTonalButton(
-                        onClick = { navController.navigate(BottomNavItem.Reports.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }},
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("View Categories")
-                    }
-                }
-            }
-            item { NetWorthCard(netWorth) }
-
-            // --- NEW: Add the AccountSummaryCard to the UI ---
-            item { AccountSummaryCard(accounts = accountsSummary, navController = navController) }
-
-            item { RecentActivityCard(recentTransactions, navController) }
-            item {
-                BudgetWatchCard(
-                    budgetStatus = budgetStatus,
-                    viewModel = budgetViewModel,
-                    navController = navController
-                )
-            }
+        }
+        item { NetWorthCard(netWorth) }
+        item { AccountSummaryCard(accounts = accountsSummary, navController = navController) }
+        item { RecentActivityCard(recentTransactions, navController) }
+        item {
+            BudgetWatchCard(
+                budgetStatus = budgetStatus,
+                viewModel = budgetViewModel,
+                navController = navController
+            )
         }
     }
 }

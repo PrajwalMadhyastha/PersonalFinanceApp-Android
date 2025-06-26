@@ -1,8 +1,3 @@
-// =================================================================================
-// FILE: /app/src/main/java/com/example/personalfinanceapp/ui/screens/BudgetScreen.kt
-// PURPOSE: A unified screen for managing all budget types.
-// NOTE: Category budgets are now editable and deletable from this screen.
-// =================================================================================
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import android.widget.Toast
@@ -12,7 +7,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
@@ -27,10 +21,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.personalfinanceapp.Budget
 import com.example.personalfinanceapp.BudgetViewModel
-import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.BudgetItem
-import kotlinx.coroutines.flow.map
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = viewModel()) {
     val categoryBudgets by viewModel.budgetsForCurrentMonth.collectAsState(initial = emptyList())
@@ -46,25 +37,8 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
     var budgetToDelete by remember { mutableStateOf<Budget?>(null) }
 
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Budgets for $monthYear") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { navController.navigate("add_budget") }) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Category Budget")
-            }
-        }
-    ) { innerPadding ->
+    Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
-            modifier = Modifier.padding(innerPadding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -90,7 +64,6 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
                             onClick = {
                                 viewModel.saveOverallBudget(overallBudgetInput)
                                 Toast.makeText(context, "Overall Budget Saved!", Toast.LENGTH_SHORT).show()
-                                // --- BUG FIX: Navigate back to the dashboard after saving ---
                                 navController.popBackStack()
                             },
                             modifier = Modifier.align(Alignment.End)
@@ -108,7 +81,6 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("Category Budgets", style = MaterialTheme.typography.titleLarge)
-                    // CORRECTED: Moved the Add button here as an icon button
                     IconButton(onClick = { navController.navigate("add_budget") }) {
                         Icon(Icons.Default.Add, contentDescription = "Add Category Budget")
                     }
@@ -140,6 +112,7 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
         }
     }
 
+
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -161,9 +134,6 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
     }
 }
 
-/**
- * An item specifically for the BudgetScreen that includes Edit and Delete actions.
- */
 @Composable
 fun SimpleBudgetItem(
     budget: Budget,

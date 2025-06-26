@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.*
@@ -39,135 +38,114 @@ fun SearchScreen(
 
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Search Transactions") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+    Column(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            item {
+                OutlinedTextField(
+                    value = searchUiState.keyword,
+                    onValueChange = { viewModel.onKeywordChange(it) },
+                    label = { Text("Keyword (description, notes)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            item {
+                SearchableDropdown(
+                    label = "Account",
+                    options = searchUiState.accounts,
+                    selectedOption = searchUiState.selectedAccount,
+                    onOptionSelected = { viewModel.onAccountChange(it) },
+                    getDisplayName = { it.name }
+                )
+            }
+
+            item {
+                SearchableDropdown(
+                    label = "Category",
+                    options = searchUiState.categories,
+                    selectedOption = searchUiState.selectedCategory,
+                    onOptionSelected = { viewModel.onCategoryChange(it) },
+                    getDisplayName = { it.name }
+                )
+            }
+
+            item {
+                SearchableDropdown(
+                    label = "Transaction Type",
+                    options = listOf("All", "Income", "Expense"),
+                    selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
+                    onOptionSelected = { viewModel.onTypeChange(it) },
+                    getDisplayName = { it }
+                )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    DateTextField(
+                        label = "Start Date",
+                        date = searchUiState.startDate,
+                        formatter = dateFormatter,
+                        onClick = { showStartDatePicker = true },
+                        onClear = { viewModel.onDateChange(start = null) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    DateTextField(
+                        label = "End Date",
+                        date = searchUiState.endDate,
+                        formatter = dateFormatter,
+                        onClick = { showEndDatePicker = true },
+                        onClear = { viewModel.onDateChange(end = null) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            if (searchResults.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Results (${searchResults.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                }
+                items(searchResults) { transactionDetails ->
+                    TransactionItem(
+                        transactionDetails = transactionDetails,
+                        onClick = { navController.navigate("edit_transaction/${transactionDetails.transaction.id}") }
+                    )
+                }
+            } else if(searchUiState.hasSearched) {
+                item {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
+                        Text("No transactions match your criteria.")
                     }
                 }
-            )
+            }
         }
-    ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding)) {
-            // Filter Form
-            LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedButton(
+                onClick = { viewModel.clearFilters() },
                 modifier = Modifier.weight(1f)
-            ) {
-                // Keyword Search
-                item {
-                    OutlinedTextField(
-                        value = searchUiState.keyword,
-                        onValueChange = { viewModel.onKeywordChange(it) },
-                        label = { Text("Keyword (description, notes)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+            ) { Text("Clear") }
 
-                // Account Dropdown
-                item {
-                    SearchableDropdown(
-                        label = "Account",
-                        options = searchUiState.accounts,
-                        selectedOption = searchUiState.selectedAccount,
-                        onOptionSelected = { viewModel.onAccountChange(it) },
-                        getDisplayName = { it.name }
-                    )
-                }
-
-                // Category Dropdown
-                item {
-                    SearchableDropdown(
-                        label = "Category",
-                        options = searchUiState.categories,
-                        selectedOption = searchUiState.selectedCategory,
-                        onOptionSelected = { viewModel.onCategoryChange(it) },
-                        getDisplayName = { it.name }
-                    )
-                }
-
-                // Transaction Type Dropdown
-                item {
-                    SearchableDropdown(
-                        label = "Transaction Type",
-                        options = listOf("All", "Income", "Expense"),
-                        selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
-                        onOptionSelected = { viewModel.onTypeChange(it) },
-                        getDisplayName = { it }
-                    )
-                }
-
-                // Date Range Pickers
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        DateTextField(
-                            label = "Start Date",
-                            date = searchUiState.startDate,
-                            formatter = dateFormatter,
-                            onClick = { showStartDatePicker = true },
-                            onClear = { viewModel.onDateChange(start = null) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        DateTextField(
-                            label = "End Date",
-                            date = searchUiState.endDate,
-                            formatter = dateFormatter,
-                            onClick = { showEndDatePicker = true },
-                            onClear = { viewModel.onDateChange(end = null) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                // Search Results
-                if (searchResults.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Results (${searchResults.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(top = 16.dp)
-                        )
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
-                    }
-                    items(searchResults) { transactionDetails ->
-                        TransactionItem(
-                            transactionDetails = transactionDetails,
-                            onClick = { navController.navigate("edit_transaction/${transactionDetails.transaction.id}") }
-                        )
-                    }
-                } else if(searchUiState.hasSearched) {
-                    item {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
-                            Text("No transactions match your criteria.")
-                        }
-                    }
-                }
-            }
-
-            // Buttons
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { viewModel.clearFilters() },
-                    modifier = Modifier.weight(1f)
-                ) { Text("Clear") }
-
-                Button(
-                    onClick = { viewModel.executeSearch() },
-                    modifier = Modifier.weight(1f)
-                ) { Text("Apply Filters") }
-            }
+            Button(
+                onClick = { viewModel.executeSearch() },
+                modifier = Modifier.weight(1f)
+            ) { Text("Apply Filters") }
         }
     }
 
