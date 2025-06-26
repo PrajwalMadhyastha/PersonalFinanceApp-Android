@@ -11,22 +11,22 @@ import kotlinx.serialization.Serializable
     tableName = "recurring_transactions",
     indices = [
         Index(value = ["accountId"]),
-        Index(value = ["categoryId"])
+        Index(value = ["categoryId"]),
     ],
     foreignKeys = [
         ForeignKey(
             entity = Account::class,
             parentColumns = ["id"],
             childColumns = ["accountId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.CASCADE,
         ),
         ForeignKey(
             entity = Category::class,
             parentColumns = ["id"],
             childColumns = ["categoryId"],
-            onDelete = ForeignKey.SET_NULL
-        )
-    ]
+            onDelete = ForeignKey.SET_NULL,
+        ),
+    ],
 )
 data class RecurringTransaction(
     @PrimaryKey(autoGenerate = true)
@@ -37,5 +37,5 @@ data class RecurringTransaction(
     val recurrenceInterval: String, // e.g., "Monthly", "Weekly", "Yearly"
     val startDate: Long, // Timestamp for the first occurrence
     val accountId: Int,
-    val categoryId: Int?
+    val categoryId: Int?,
 )

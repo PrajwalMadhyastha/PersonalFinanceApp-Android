@@ -11,22 +11,22 @@ import kotlinx.serialization.Serializable
     tableName = "transactions",
     indices = [
         Index(value = ["categoryId"]),
-        Index(value = ["accountId"])
+        Index(value = ["accountId"]),
     ],
     foreignKeys = [
         ForeignKey(
             entity = Category::class,
             parentColumns = ["id"],
             childColumns = ["categoryId"],
-            onDelete = ForeignKey.SET_NULL
+            onDelete = ForeignKey.SET_NULL,
         ),
         ForeignKey(
             entity = Account::class,
             parentColumns = ["id"],
             childColumns = ["accountId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ]
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
 )
 data class Transaction(
     @PrimaryKey(autoGenerate = true)
@@ -38,8 +38,7 @@ data class Transaction(
     val date: Long,
     val accountId: Int,
     val notes: String?,
-
     // --- NEW: Added to distinguish between income and expense ---
     val transactionType: String = "expense", // Default to 'expense'
-    val sourceSmsId: Long? = null
+    val sourceSmsId: Long? = null,
 )

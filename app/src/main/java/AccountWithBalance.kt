@@ -9,5 +9,5 @@ import androidx.room.Embedded
 data class AccountWithBalance(
     @Embedded
     val account: Account,
-    val balance: Double
+    val balance: Double,
 )

@@ -31,39 +31,41 @@ import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.componen
 fun AccountDetailScreen(
     navController: NavController,
     viewModel: AccountViewModel,
-    accountId: Int
+    accountId: Int,
 ) {
     val account by viewModel.getAccountById(accountId).collectAsState(initial = null)
     val balance by viewModel.getAccountBalance(accountId).collectAsState(initial = 0.0)
     val transactions by viewModel.getTransactionsForAccount(accountId).collectAsState(initial = emptyList())
 
     Column(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxSize()
+        modifier =
+            Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxSize(),
     ) {
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            elevation = CardDefaults.cardElevation(4.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+            elevation = CardDefaults.cardElevation(4.dp),
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.Center,
             ) {
                 Text(
                     text = "Current Balance",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.Gray
+                    color = Color.Gray,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "₹${"%.2f".format(balance)}",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    color = if (balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 )
             }
         }
@@ -71,7 +73,7 @@ fun AccountDetailScreen(
         Text(
             text = "Recent Transactions",
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.padding(bottom = 8.dp),
         )
         if (transactions.isEmpty()) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {

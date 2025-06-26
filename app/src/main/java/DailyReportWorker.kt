@@ -15,9 +15,8 @@ import java.util.Calendar
  */
 class DailyReportWorker(
     private val context: Context,
-    workerParams: WorkerParameters
+    workerParams: WorkerParameters,
 ) : CoroutineWorker(context, workerParams) {
-
     override suspend fun doWork(): Result {
         return withContext(Dispatchers.IO) {
             try {
@@ -43,9 +42,10 @@ class DailyReportWorker(
                 Log.d("DailyReportWorker", "Found ${transactions.size} transactions for yesterday.")
 
                 // 3. Calculate total expenses.
-                val totalExpenses = transactions
-                    .filter { it.transaction.transactionType == "expense" }
-                    .sumOf { it.transaction.amount }
+                val totalExpenses =
+                    transactions
+                        .filter { it.transaction.transactionType == "expense" }
+                        .sumOf { it.transaction.amount }
 
                 // 4. Send the summary notification via the helper.
                 NotificationHelper.showDailyReportNotification(context, totalExpenses)

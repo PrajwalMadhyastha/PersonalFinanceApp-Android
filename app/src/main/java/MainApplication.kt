@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.os.Build
 
 class MainApplication : Application() {
-
     companion object {
         const val TRANSACTION_CHANNEL_ID = "transaction_channel"
         const val DAILY_REPORT_CHANNEL_ID = "daily_report_channel"
@@ -25,9 +24,10 @@ class MainApplication : Application() {
             val name = "Transactions"
             val descriptionText = "Notifications for newly detected transactions"
             val importance = NotificationManager.IMPORTANCE_DEFAULT
-            val channel = NotificationChannel(TRANSACTION_CHANNEL_ID, name, importance).apply {
-                description = descriptionText
-            }
+            val channel =
+                NotificationChannel(TRANSACTION_CHANNEL_ID, name, importance).apply {
+                    description = descriptionText
+                }
             val notificationManager: NotificationManager =
                 getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
@@ -39,9 +39,10 @@ class MainApplication : Application() {
             val name = "Daily Reports"
             val descriptionText = "Daily summary of your spending."
             val importance = NotificationManager.IMPORTANCE_DEFAULT
-            val channel = NotificationChannel(DAILY_REPORT_CHANNEL_ID, name, importance).apply {
-                description = descriptionText
-            }
+            val channel =
+                NotificationChannel(DAILY_REPORT_CHANNEL_ID, name, importance).apply {
+                    description = descriptionText
+                }
             val notificationManager: NotificationManager =
                 getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
@@ -54,9 +55,10 @@ class MainApplication : Application() {
             val name = "Weekly Summaries"
             val descriptionText = "A weekly summary of your financial activity."
             val importance = NotificationManager.IMPORTANCE_DEFAULT
-            val channel = NotificationChannel(SUMMARY_CHANNEL_ID, name, importance).apply {
-                description = descriptionText
-            }
+            val channel =
+                NotificationChannel(SUMMARY_CHANNEL_ID, name, importance).apply {
+                    description = descriptionText
+                }
             val notificationManager: NotificationManager =
                 getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)

@@ -15,5 +15,5 @@ data class PotentialTransaction(
     val amount: Double,
     val transactionType: String,
     val merchantName: String?,
-    val originalMessage: String
+    val originalMessage: String,
 )

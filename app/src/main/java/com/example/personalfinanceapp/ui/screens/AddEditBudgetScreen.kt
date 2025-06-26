@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -18,7 +17,7 @@ import com.example.personalfinanceapp.Category
 fun AddEditBudgetScreen(
     navController: NavController,
     viewModel: BudgetViewModel,
-    budgetId: Int?
+    budgetId: Int?,
 ) {
     val isEditMode = budgetId != null
     val buttonText = if (isEditMode) "Update Budget" else "Save Budget"
@@ -45,16 +44,17 @@ fun AddEditBudgetScreen(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         val isDropdownEnabled = !isEditMode && availableCategories.isNotEmpty()
 
         ExposedDropdownMenuBox(
             expanded = isCategoryDropdownExpanded && isDropdownEnabled,
-            onExpandedChange = { if (isDropdownEnabled) isCategoryDropdownExpanded = !isCategoryDropdownExpanded }
+            onExpandedChange = { if (isDropdownEnabled) isCategoryDropdownExpanded = !isCategoryDropdownExpanded },
         ) {
             OutlinedTextField(
                 value = selectedCategory?.name ?: "Select Category",
@@ -62,14 +62,15 @@ fun AddEditBudgetScreen(
                 readOnly = true,
                 label = { Text("Category") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded && isDropdownEnabled) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(),
-                enabled = isDropdownEnabled
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                enabled = isDropdownEnabled,
             )
             ExposedDropdownMenu(
                 expanded = isCategoryDropdownExpanded && isDropdownEnabled,
-                onDismissRequest = { isCategoryDropdownExpanded = false }
+                onDismissRequest = { isCategoryDropdownExpanded = false },
             ) {
                 availableCategories.forEach { category ->
                     DropdownMenuItem(
@@ -77,7 +78,7 @@ fun AddEditBudgetScreen(
                         onClick = {
                             selectedCategory = category
                             isCategoryDropdownExpanded = false
-                        }
+                        },
                     )
                 }
             }
@@ -87,7 +88,7 @@ fun AddEditBudgetScreen(
             Text(
                 text = "All categories already have a budget for this month. You can edit existing budgets from the previous screen.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -97,12 +98,12 @@ fun AddEditBudgetScreen(
             label = { Text("Budget Amount") },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            leadingIcon = { Text("₹") }
+            leadingIcon = { Text("₹") },
         )
         Spacer(modifier = Modifier.height(16.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                 Text("Cancel")
@@ -122,7 +123,7 @@ fun AddEditBudgetScreen(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = selectedCategory != null && amount.isNotBlank()
+                enabled = selectedCategory != null && amount.isNotBlank(),
             ) {
                 Text(buttonText)
             }

@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
 class RecurringTransactionViewModel(application: Application) : AndroidViewModel(application) {
-
     private val repository: RecurringTransactionRepository
     val allRecurringTransactions: Flow<List<RecurringTransaction>>
 
@@ -24,17 +23,18 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
         recurrenceInterval: String,
         startDate: Long,
         accountId: Int,
-        categoryId: Int?
+        categoryId: Int?,
     ) = viewModelScope.launch {
-        val newRule = RecurringTransaction(
-            description = description,
-            amount = amount,
-            transactionType = transactionType,
-            recurrenceInterval = recurrenceInterval,
-            startDate = startDate,
-            accountId = accountId,
-            categoryId = categoryId
-        )
+        val newRule =
+            RecurringTransaction(
+                description = description,
+                amount = amount,
+                transactionType = transactionType,
+                recurrenceInterval = recurrenceInterval,
+                startDate = startDate,
+                accountId = accountId,
+                categoryId = categoryId,
+            )
         repository.insert(newRule)
     }
 }

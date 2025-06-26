@@ -20,7 +20,7 @@ class DashboardViewModelFactory(private val application: Application) : ViewMode
                 transactionRepository = transactionRepository,
                 accountRepository = accountRepository,
                 budgetDao = db.budgetDao(),
-                settingsRepository = settingsRepository
+                settingsRepository = settingsRepository,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")

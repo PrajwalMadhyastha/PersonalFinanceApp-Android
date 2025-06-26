@@ -10,12 +10,11 @@ import kotlinx.serialization.Serializable
 @Entity(
     tableName = "categories",
     // Ensure that no two categories can have the same name.
-    indices = [Index(value = ["name"], unique = true)]
+    indices = [Index(value = ["name"], unique = true)],
 )
 data class Category(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-
     @ColumnInfo(name = "name")
-    val name: String
+    val name: String,
 )

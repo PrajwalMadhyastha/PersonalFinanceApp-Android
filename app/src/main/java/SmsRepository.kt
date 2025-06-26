@@ -9,7 +9,6 @@ import android.util.Log
  * This abstracts the logic of querying the Android ContentResolver away from ViewModels or Workers.
  */
 class SmsRepository(private val context: Context) {
-
     /**
      * Fetches all SMS messages from the device's inbox.
      * @return A list of SmsMessage objects.
@@ -17,12 +16,13 @@ class SmsRepository(private val context: Context) {
     fun fetchAllSms(startDate: Long?): List<SmsMessage> {
         val smsList = mutableListOf<SmsMessage>()
         // Define the columns we want to retrieve
-        val projection = arrayOf(
-            Telephony.Sms._ID,
-            Telephony.Sms.ADDRESS,
-            Telephony.Sms.BODY,
-            Telephony.Sms.DATE
-        )
+        val projection =
+            arrayOf(
+                Telephony.Sms._ID,
+                Telephony.Sms.ADDRESS,
+                Telephony.Sms.BODY,
+                Telephony.Sms.DATE,
+            )
         val selection: String?
         val selectionArgs: Array<String>?
 
@@ -37,13 +37,14 @@ class SmsRepository(private val context: Context) {
         }
 
         // Query the SMS inbox, sorting by date in descending order
-        val cursor = context.contentResolver.query(
-            Telephony.Sms.Inbox.CONTENT_URI,
-            projection,
-            null,
-            null,
-            "date DESC"
-        )
+        val cursor =
+            context.contentResolver.query(
+                Telephony.Sms.Inbox.CONTENT_URI,
+                projection,
+                null,
+                null,
+                "date DESC",
+            )
 
         cursor?.use {
             // Get column indices once for efficiency
@@ -58,8 +59,8 @@ class SmsRepository(private val context: Context) {
                         id = it.getLong(idIndex),
                         sender = it.getString(addressIndex) ?: "Unknown",
                         body = it.getString(bodyIndex) ?: "",
-                        date = it.getLong(dateIndex)
-                    )
+                        date = it.getLong(dateIndex),
+                    ),
                 )
             }
         }

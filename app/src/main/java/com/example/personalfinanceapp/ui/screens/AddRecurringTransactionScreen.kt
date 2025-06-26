@@ -60,42 +60,93 @@ fun AddRecurringTransactionScreen(navController: NavController) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
-        item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
+        item {
+            OutlinedTextField(value = description, onValueChange = {
+                description = it
+            }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+        }
+        item {
+            OutlinedTextField(value = amount, onValueChange = {
+                amount = it
+            }, label = {
+                Text(
+                    "Amount",
+                )
+            }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        }
 
         item {
             Row {
-                FilterChip(selected = transactionType == "expense", onClick = { transactionType = "expense" }, label = { Text("Expense") }, modifier = Modifier.weight(1f))
+                FilterChip(selected = transactionType == "expense", onClick = {
+                    transactionType = "expense"
+                }, label = { Text("Expense") }, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(8.dp))
-                FilterChip(selected = transactionType == "income", onClick = { transactionType = "income" }, label = { Text("Income") }, modifier = Modifier.weight(1f))
+                FilterChip(selected = transactionType == "income", onClick = {
+                    transactionType = "income"
+                }, label = { Text("Income") }, modifier = Modifier.weight(1f))
             }
         }
 
         item {
             ExposedDropdownMenuBox(expanded = intervalExpanded, onExpandedChange = { intervalExpanded = !intervalExpanded }) {
-                OutlinedTextField(value = selectedInterval, onValueChange = {}, readOnly = true, label = { Text("Repeats") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = intervalExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                OutlinedTextField(value = selectedInterval, onValueChange = {
+                }, readOnly = true, label = {
+                    Text("Repeats")
+                }, trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = intervalExpanded)
+                }, modifier = Modifier.fillMaxWidth().menuAnchor())
                 ExposedDropdownMenu(expanded = intervalExpanded, onDismissRequest = { intervalExpanded = false }) {
-                    recurrenceIntervals.forEach { interval -> DropdownMenuItem(text = { Text(interval) }, onClick = { selectedInterval = interval; intervalExpanded = false }) }
+                    recurrenceIntervals.forEach {
+                            interval ->
+                        DropdownMenuItem(text = { Text(interval) }, onClick = {
+                            selectedInterval = interval
+                            intervalExpanded = false
+                        })
+                    }
                 }
             }
         }
 
         item {
             ExposedDropdownMenuBox(expanded = accountExpanded, onExpandedChange = { accountExpanded = !accountExpanded }) {
-                OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {}, readOnly = true, label = { Text("Account") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {
+                }, readOnly = true, label = {
+                    Text("Account")
+                }, trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(
+                        expanded = accountExpanded,
+                    )
+                }, modifier = Modifier.fillMaxWidth().menuAnchor())
                 ExposedDropdownMenu(expanded = accountExpanded, onDismissRequest = { accountExpanded = false }) {
-                    accounts.forEach { account -> DropdownMenuItem(text = { Text(account.name) }, onClick = { selectedAccount = account; accountExpanded = false }) }
+                    accounts.forEach {
+                            account ->
+                        DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                            selectedAccount = account
+                            accountExpanded = false
+                        })
+                    }
                 }
             }
         }
 
         item {
             ExposedDropdownMenuBox(expanded = categoryExpanded, onExpandedChange = { categoryExpanded = !categoryExpanded }) {
-                OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {}, readOnly = true, label = { Text("Category") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {
+                }, readOnly = true, label = {
+                    Text("Category")
+                }, trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded)
+                }, modifier = Modifier.fillMaxWidth().menuAnchor())
                 ExposedDropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
-                    categories.forEach { category -> DropdownMenuItem(text = { Text(category.name) }, onClick = { selectedCategory = category; categoryExpanded = false }) }
+                    categories.forEach {
+                            category ->
+                        DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                            selectedCategory = category
+                            categoryExpanded = false
+                        })
+                    }
                 }
             }
         }
@@ -103,7 +154,7 @@ fun AddRecurringTransactionScreen(navController: NavController) {
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                     Text("Cancel")
@@ -113,13 +164,19 @@ fun AddRecurringTransactionScreen(navController: NavController) {
                         val amountDouble = amount.toDoubleOrNull()
                         if (amountDouble != null && selectedAccount != null) {
                             recurringViewModel.addRecurringTransaction(
-                                description, amountDouble, transactionType, selectedInterval, System.currentTimeMillis(), selectedAccount!!.id, selectedCategory?.id
+                                description,
+                                amountDouble,
+                                transactionType,
+                                selectedInterval,
+                                System.currentTimeMillis(),
+                                selectedAccount!!.id,
+                                selectedCategory?.id,
                             )
                             navController.popBackStack()
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    enabled = description.isNotBlank() && amount.isNotBlank() && selectedAccount != null
+                    enabled = description.isNotBlank() && amount.isNotBlank() && selectedAccount != null,
                 ) {
                     Text("Save Rule")
                 }

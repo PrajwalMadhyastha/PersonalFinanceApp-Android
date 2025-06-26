@@ -30,7 +30,7 @@ import com.example.personalfinanceapp.AccountViewModel
 fun EditAccountScreen(
     navController: NavController,
     viewModel: AccountViewModel,
-    accountId: Int
+    accountId: Int,
 ) {
     val account by viewModel.getAccountById(accountId).collectAsState(initial = null)
     var accountName by remember { mutableStateOf("") }
@@ -46,41 +46,43 @@ fun EditAccountScreen(
 
     account?.let { currentAccount ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedTextField(
                 value = accountName,
                 onValueChange = { accountName = it },
                 label = { Text("Account Name") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = accountType,
                 onValueChange = { accountType = it },
                 label = { Text("Account Type") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
             Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                     Text("Cancel")
                 }
                 Button(
                     onClick = {
-                        val updatedAccount = currentAccount.copy(
-                            name = accountName,
-                            type = accountType
-                        )
+                        val updatedAccount =
+                            currentAccount.copy(
+                                name = accountName,
+                                type = accountType,
+                            )
                         viewModel.updateAccount(updatedAccount)
                         navController.popBackStack()
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Text("Update Account")
                 }
@@ -88,7 +90,6 @@ fun EditAccountScreen(
             // The delete button can be moved here or kept in a TopAppBar action in MainActivity
         }
     }
-
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -103,12 +104,12 @@ fun EditAccountScreen(
                             showDeleteDialog = false
                             navController.popBackStack()
                         }
-                    }
+                    },
                 ) { Text("Delete") }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
-            }
+            },
         )
     }
 }

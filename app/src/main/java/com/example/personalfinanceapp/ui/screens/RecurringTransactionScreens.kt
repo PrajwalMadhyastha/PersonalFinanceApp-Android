@@ -24,7 +24,7 @@ fun RecurringTransactionScreen(navController: NavController) {
         }
     } else {
         LazyColumn(
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier.padding(horizontal = 16.dp),
         ) {
             items(recurringTransactions) { rule ->
                 ListItem(
@@ -32,10 +32,19 @@ fun RecurringTransactionScreen(navController: NavController) {
                     supportingContent = { Text("₹${rule.amount} every ${rule.recurrenceInterval.lowercase(Locale.getDefault())}") },
                     trailingContent = {
                         Text(
-                            text = rule.transactionType.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() },
-                            color = if (rule.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            text =
+                                rule.transactionType.replaceFirstChar {
+                                    if (it.isLowerCase()) {
+                                        it.titlecase(
+                                            Locale.getDefault(),
+                                        )
+                                    } else {
+                                        it.toString()
+                                    }
+                                },
+                            color = if (rule.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                         )
-                    }
+                    },
                 )
                 Divider()
             }

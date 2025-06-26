@@ -11,10 +11,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AccountDao {
-
     // --- UPDATED: This query now calculates the balance for each account ---
     @Transaction
-    @Query("""
+    @Query(
+        """
         SELECT
             A.*,
             (SELECT IFNULL(SUM(CASE WHEN T.transactionType = 'income' THEN T.amount ELSE -T.amount END), 0.0)
@@ -24,7 +24,8 @@ interface AccountDao {
             accounts AS A
         ORDER BY
             A.name ASC
-    """)
+    """,
+    )
     fun getAccountsWithBalance(): Flow<List<AccountWithBalance>>
 
     @Query("SELECT * FROM accounts ORDER BY name ASC")

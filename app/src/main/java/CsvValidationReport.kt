@@ -12,7 +12,7 @@ enum class CsvRowStatus {
     CATEGORY_NOT_FOUND,
     NEEDS_ACCOUNT_CREATION,
     NEEDS_CATEGORY_CREATION,
-    NEEDS_BOTH_CREATION
+    NEEDS_BOTH_CREATION,
 }
 
 /**
@@ -23,7 +23,7 @@ data class ReviewableRow(
     val lineNumber: Int,
     var rowData: List<String>,
     var status: CsvRowStatus,
-    var statusMessage: String
+    var statusMessage: String,
 )
 
 /**
@@ -31,5 +31,5 @@ data class ReviewableRow(
  */
 data class CsvValidationReport(
     val reviewableRows: List<ReviewableRow> = emptyList(),
-    val totalRowCount: Int = 0
+    val totalRowCount: Int = 0,
 )

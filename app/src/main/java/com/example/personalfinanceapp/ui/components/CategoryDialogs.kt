@@ -18,7 +18,7 @@ import com.example.personalfinanceapp.Category
 fun EditCategoryDialog(
     category: Category,
     onDismiss: () -> Unit,
-    onConfirm: (Category) -> Unit
+    onConfirm: (Category) -> Unit,
 ) {
     var updatedName by remember { mutableStateOf(category.name) }
 
@@ -29,7 +29,7 @@ fun EditCategoryDialog(
             OutlinedTextField(
                 value = updatedName,
                 onValueChange = { updatedName = it },
-                label = { Text("Category Name") }
+                label = { Text("Category Name") },
             )
         },
         confirmButton = {
@@ -39,7 +39,7 @@ fun EditCategoryDialog(
                         onConfirm(category.copy(name = updatedName))
                     }
                 },
-                enabled = updatedName.isNotBlank()
+                enabled = updatedName.isNotBlank(),
             ) {
                 Text("Update")
             }
@@ -48,7 +48,7 @@ fun EditCategoryDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
-        }
+        },
     )
 }
 
@@ -56,7 +56,7 @@ fun EditCategoryDialog(
 fun DeleteCategoryDialog(
     category: Category,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -65,7 +65,7 @@ fun DeleteCategoryDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
             ) {
                 Text("Delete")
             }
@@ -74,6 +74,6 @@ fun DeleteCategoryDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
-        }
+        },
     )
 }

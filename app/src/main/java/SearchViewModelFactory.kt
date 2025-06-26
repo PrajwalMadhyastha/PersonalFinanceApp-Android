@@ -12,7 +12,7 @@ class SearchViewModelFactory(private val application: Application) : ViewModelPr
             return SearchViewModel(
                 transactionDao = database.transactionDao(),
                 accountDao = database.accountDao(),
-                categoryDao = database.categoryDao()
+                categoryDao = database.categoryDao(),
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")

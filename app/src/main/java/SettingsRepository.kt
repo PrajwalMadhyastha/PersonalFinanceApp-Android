@@ -14,7 +14,6 @@ import java.util.Calendar
  * @param context The application context, required to access SharedPreferences.
  */
 class SettingsRepository(context: Context) {
-
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
@@ -32,7 +31,10 @@ class SettingsRepository(context: Context) {
      * Generates a unique key for the overall budget for a specific month and year.
      * Example: "overall_budget_2024_06" for June 2024.
      */
-    private fun getBudgetKey(year: Int, month: Int): String {
+    private fun getBudgetKey(
+        year: Int,
+        month: Int,
+    ): String {
         // Using String.format to ensure month is zero-padded (e.g., 01, 02, ... 12)
         return String.format("%s%d_%02d", KEY_BUDGET_PREFIX, year, month)
     }
@@ -59,11 +61,12 @@ class SettingsRepository(context: Context) {
     // --- NEW: Flow to read the scan start date preference ---
     fun getSmsScanStartDate(): Flow<Long> {
         return callbackFlow {
-            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
-                if (changedKey == KEY_SMS_SCAN_START_DATE) {
-                    trySend(sharedPreferences.getLong(KEY_SMS_SCAN_START_DATE, 0L))
+            val listener =
+                SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                    if (changedKey == KEY_SMS_SCAN_START_DATE) {
+                        trySend(sharedPreferences.getLong(KEY_SMS_SCAN_START_DATE, 0L))
+                    }
                 }
-            }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             // Default to 30 days ago if no setting is saved
             val thirtyDaysAgo = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -30) }.timeInMillis
@@ -82,16 +85,19 @@ class SettingsRepository(context: Context) {
     fun saveAppLockEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, isEnabled).apply()
     }
+
     fun saveDailyReportEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_DAILY_REPORT_ENABLED, isEnabled).apply()
     }
+
     fun getDailyReportEnabled(): Flow<Boolean> {
         return callbackFlow {
-            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == KEY_DAILY_REPORT_ENABLED) {
-                    trySend(prefs.getBoolean(key, false)) // Default to false
+            val listener =
+                SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                    if (key == KEY_DAILY_REPORT_ENABLED) {
+                        trySend(prefs.getBoolean(key, false)) // Default to false
+                    }
                 }
-            }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_DAILY_REPORT_ENABLED, false))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
@@ -101,16 +107,18 @@ class SettingsRepository(context: Context) {
     // --- NEW: Flow to read the app lock preference ---
     fun getAppLockEnabled(): Flow<Boolean> {
         return callbackFlow {
-            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
-                if (changedKey == KEY_APP_LOCK_ENABLED) {
-                    trySend(sharedPreferences.getBoolean(KEY_APP_LOCK_ENABLED, false))
+            val listener =
+                SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                    if (changedKey == KEY_APP_LOCK_ENABLED) {
+                        trySend(sharedPreferences.getBoolean(KEY_APP_LOCK_ENABLED, false))
+                    }
                 }
-            }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_APP_LOCK_ENABLED, false))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
+
     fun isAppLockEnabledBlocking(): Boolean {
         return prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
     }
@@ -125,12 +133,13 @@ class SettingsRepository(context: Context) {
         // into a modern Flow, so the UI can react to changes.
         return callbackFlow {
             // 1. Create a listener to watch for changes in SharedPreferences.
-            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
-                if (changedKey == key) {
-                    // If our specific budget key changed, emit the new value.
-                    trySend(sharedPreferences.getFloat(key, 0f))
+            val listener =
+                SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                    if (changedKey == key) {
+                        // If our specific budget key changed, emit the new value.
+                        trySend(sharedPreferences.getFloat(key, 0f))
+                    }
                 }
-            }
 
             // 2. Register the listener.
             prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -144,14 +153,19 @@ class SettingsRepository(context: Context) {
             }
         }
     }
+
     fun saveWeeklySummaryEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_WEEKLY_SUMMARY_ENABLED, isEnabled).apply()
     }
+
     fun getWeeklySummaryEnabled(): Flow<Boolean> {
         return callbackFlow {
-            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == KEY_WEEKLY_SUMMARY_ENABLED) { trySend(prefs.getBoolean(key, true)) } // Default to true
-            }
+            val listener =
+                SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                    if (key == KEY_WEEKLY_SUMMARY_ENABLED) {
+                        trySend(prefs.getBoolean(key, true))
+                    } // Default to true
+                }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_WEEKLY_SUMMARY_ENABLED, true))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
@@ -162,11 +176,15 @@ class SettingsRepository(context: Context) {
     fun saveUnknownTransactionPopupEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled).apply()
     }
+
     fun getUnknownTransactionPopupEnabled(): Flow<Boolean> {
         return callbackFlow {
-            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED) { trySend(prefs.getBoolean(key, true)) } // Default to true
-            }
+            val listener =
+                SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                    if (key == KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED) {
+                        trySend(prefs.getBoolean(key, true))
+                    } // Default to true
+                }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }

@@ -1,7 +1,6 @@
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,11 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,11 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.example.personalfinanceapp.PotentialTransaction
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
@@ -61,7 +52,7 @@ fun TimePickerDialog(
             TextButton(onClick = onDismissRequest) {
                 Text("Cancel")
             }
-        }
+        },
     )
 }
 
@@ -79,13 +70,14 @@ fun ChartLegend(pieData: PieData?) {
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(vertical = 4.dp)
+                modifier = Modifier.padding(vertical = 4.dp),
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .clip(CircleShape)
-                        .background(Color(color)) // Convert the Android integer color to a Compose Color
+                    modifier =
+                        Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(Color(color)), // Convert the Android integer color to a Compose Color
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 // The 'label' property of PieEntry holds the category name.
@@ -146,8 +138,9 @@ fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
             // 7. Refresh the chart to apply all changes
             chart.invalidate()
         },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(250.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(250.dp),
     )
 }

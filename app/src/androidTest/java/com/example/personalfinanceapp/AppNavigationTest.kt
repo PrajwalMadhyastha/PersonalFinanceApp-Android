@@ -1,28 +1,21 @@
 package com.example.personalfinanceapp
 
 import android.Manifest
-import android.content.Context
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
-import org.junit.rules.TestRule
-import org.junit.runner.Description
 import org.junit.runner.RunWith
-import org.junit.runners.model.Statement
-
 
 /**
  * Instrumented UI test for the main app navigation.
  */
 @RunWith(AndroidJUnit4::class)
 class AppNavigationTest {
-
     private val composeTestRule = createAndroidComposeRule<MainActivity>()
 
     /**
@@ -32,14 +25,17 @@ class AppNavigationTest {
      * 3. The composeTestRule finally launches the activity into a clean, predictable state.
      */
     @get:Rule
-    val ruleChain: RuleChain = RuleChain
-        .outerRule(DisableAppLockRule())
-        .around(GrantPermissionRule.grant(
-            Manifest.permission.READ_SMS,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.POST_NOTIFICATIONS
-        ))
-        .around(composeTestRule)
+    val ruleChain: RuleChain =
+        RuleChain
+            .outerRule(DisableAppLockRule())
+            .around(
+                GrantPermissionRule.grant(
+                    Manifest.permission.READ_SMS,
+                    Manifest.permission.RECEIVE_SMS,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ),
+            )
+            .around(composeTestRule)
 
     /**
      * Tests the navigation from the Dashboard screen to the Settings screen.
@@ -55,7 +51,7 @@ class AppNavigationTest {
 
         // Now that the UI has settled, we can safely perform our assertions.
         composeTestRule.onNode(
-            hasText("Dashboard") and isHeading
+            hasText("Dashboard") and isHeading,
         ).assertIsDisplayed()
 
         // 2. Find and click the Settings icon button.
@@ -69,7 +65,7 @@ class AppNavigationTest {
 
         // Assert that the "Settings" title is now displayed.
         composeTestRule.onNode(
-            hasText("Settings") and isHeading
+            hasText("Settings") and isHeading,
         ).assertIsDisplayed()
 
         // Confirm the "GENERAL" header is visible as a final check.

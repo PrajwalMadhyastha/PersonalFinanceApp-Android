@@ -10,12 +10,12 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
-
     /**
      * CORRECTED: This query now fetches ALL transaction details without a LIMIT,
      * ensuring the full history is loaded.
      */
-    @Query("""
+    @Query(
+        """
         SELECT
             T.*,
             A.name as accountName,
@@ -28,10 +28,12 @@ interface TransactionDao {
             categories AS C ON T.categoryId = C.id
         ORDER BY
             T.date DESC
-    """)
+    """,
+    )
     fun getAllTransactions(): Flow<List<TransactionDetails>>
 
-    @Query("""
+    @Query(
+        """
         SELECT
             T.*,
             A.name as accountName,
@@ -45,10 +47,15 @@ interface TransactionDao {
         WHERE T.date BETWEEN :startDate AND :endDate
         ORDER BY
             T.date DESC
-    """)
-    fun getTransactionDetailsForRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
+    """,
+    )
+    fun getTransactionDetailsForRange(
+        startDate: Long,
+        endDate: Long,
+    ): Flow<List<TransactionDetails>>
 
-    @Query("""
+    @Query(
+        """
         SELECT T.*,
                A.name as accountName,
                C.name as categoryName
@@ -57,14 +64,18 @@ interface TransactionDao {
         LEFT JOIN categories AS C ON T.categoryId = C.id
         WHERE T.accountId = :accountId
         ORDER BY T.date DESC
-    """)
+    """,
+    )
     fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>>
 
     @Query("SELECT * FROM transactions")
     fun getAllTransactionsSimple(): Flow<List<Transaction>>
 
     @Query("SELECT * FROM transactions WHERE date BETWEEN :startDate AND :endDate ORDER BY date DESC")
-    fun getAllTransactionsForRange(startDate: Long, endDate: Long): Flow<List<Transaction>>
+    fun getAllTransactionsForRange(
+        startDate: Long,
+        endDate: Long,
+    ): Flow<List<Transaction>>
 
     @Query("SELECT * FROM transactions WHERE id = :id")
     fun getTransactionById(id: Int): Flow<Transaction?>
@@ -72,24 +83,36 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE accountId = :accountId ORDER BY date DESC")
     fun getTransactionsForAccount(accountId: Int): Flow<List<Transaction>>
 
-    @Query("""
+    @Query(
+        """
         SELECT SUM(T.amount) FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate AND T.transactionType = 'expense'
-    """)
-    fun getSpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<Double?>
+    """,
+    )
+    fun getSpendingForCategory(
+        categoryName: String,
+        startDate: Long,
+        endDate: Long,
+    ): Flow<Double?>
 
-    @Query("""
+    @Query(
+        """
         SELECT C.name as categoryName, SUM(T.amount) as totalAmount
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
         GROUP BY C.name
         ORDER BY totalAmount ASC
-    """)
-    fun getSpendingByCategoryForMonth(startDate: Long, endDate: Long): Flow<List<CategorySpending>>
+    """,
+    )
+    fun getSpendingByCategoryForMonth(
+        startDate: Long,
+        endDate: Long,
+    ): Flow<List<CategorySpending>>
 
-    @Query("""
+    @Query(
+        """
         SELECT
             strftime('%Y-%m', date / 1000, 'unixepoch') as monthYear,
             SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
@@ -98,10 +121,12 @@ interface TransactionDao {
         WHERE date >= :startDate
         GROUP BY monthYear
         ORDER BY monthYear ASC
-    """)
+    """,
+    )
     fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>>
 
-    @Query("""
+    @Query(
+        """
         SELECT t.*, a.name as accountName, c.name as categoryName
         FROM transactions t
         LEFT JOIN accounts a ON t.accountId = a.id
@@ -114,14 +139,15 @@ interface TransactionDao {
             (:startDate IS NULL OR t.date >= :startDate) AND
             (:endDate IS NULL OR t.date <= :endDate)
         ORDER BY t.date DESC
-    """)
+    """,
+    )
     suspend fun searchTransactions(
         keyword: String,
         accountId: Int?,
         categoryId: Int?,
         transactionType: String?,
         startDate: Long?,
-        endDate: Long?
+        endDate: Long?,
     ): List<TransactionDetails>
 
     @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")

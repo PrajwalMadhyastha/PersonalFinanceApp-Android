@@ -8,10 +8,13 @@ import com.example.personalfinanceapp.TransactionViewModel
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.TransactionList
 
 @Composable
-fun TransactionListScreen(navController: NavController, viewModel: TransactionViewModel) {
+fun TransactionListScreen(
+    navController: NavController,
+    viewModel: TransactionViewModel,
+) {
     val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
     TransactionList(
         transactions = transactions,
-        navController = navController
+        navController = navController,
     )
 }

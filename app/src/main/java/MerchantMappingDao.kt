@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MerchantMappingDao {
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(mapping: MerchantMapping)
 

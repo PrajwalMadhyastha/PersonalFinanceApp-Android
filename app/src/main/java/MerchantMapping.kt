@@ -9,5 +9,5 @@ import kotlinx.serialization.Serializable
 data class MerchantMapping(
     @PrimaryKey
     val smsSender: String, // e.g., "AM-HDFCBK"
-    val merchantName: String // e.g., "McDonald's"
+    val merchantName: String, // e.g., "McDonald's"
 )

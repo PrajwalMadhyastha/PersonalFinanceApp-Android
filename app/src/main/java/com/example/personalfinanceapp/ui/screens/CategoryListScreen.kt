@@ -46,7 +46,10 @@ import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.componen
 import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.components.EditCategoryDialog
 
 @Composable
-fun CategoryListScreen(navController: NavController, viewModel: CategoryViewModel) {
+fun CategoryListScreen(
+    navController: NavController,
+    viewModel: CategoryViewModel,
+) {
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
     var newCategoryName by remember { mutableStateOf("") }
 
@@ -63,20 +66,21 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(16.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedTextField(
                 value = newCategoryName,
                 onValueChange = { newCategoryName = it },
                 label = { Text("New Category Name") },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             )
             Button(
                 onClick = {
@@ -85,7 +89,7 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
                         newCategoryName = ""
                     }
                 },
-                enabled = newCategoryName.isNotBlank()
+                enabled = newCategoryName.isNotBlank(),
             ) {
                 Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
             }
@@ -97,10 +101,11 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
         LazyColumn {
             items(categories) { category ->
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(text = category.name, modifier = Modifier.weight(1f))
                     IconButton(onClick = {
@@ -113,14 +118,17 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
                         selectedCategory = category
                         showDeleteDialog = true
                     }) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Category", tint = MaterialTheme.colorScheme.error)
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Category",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
                 Divider()
             }
         }
     }
-
 
     if (showEditDialog) {
         selectedCategory?.let {
@@ -130,7 +138,7 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
                 onConfirm = { updatedCategory ->
                     viewModel.updateCategory(updatedCategory)
                     showEditDialog = false
-                }
+                },
             )
         }
     }
@@ -143,7 +151,7 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
                 onConfirm = {
                     viewModel.deleteCategory(it)
                     showDeleteDialog = false
-                }
+                },
             )
         }
     }
@@ -154,7 +162,7 @@ fun CategoryListScreen(navController: NavController, viewModel: CategoryViewMode
 fun EditCategoryScreen(
     navController: NavController,
     viewModel: CategoryViewModel,
-    categoryId: Int
+    categoryId: Int,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var categoryName by remember { mutableStateOf("") }
@@ -191,22 +199,23 @@ fun EditCategoryScreen(
                     }) {
                         Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Category")
                     }
-                }
+                },
             )
-        }
+        },
     ) { innerPadding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             OutlinedTextField(
                 value = categoryName,
                 onValueChange = { categoryName = it },
                 label = { Text("Category Name") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
             Button(
                 onClick = {
@@ -216,7 +225,7 @@ fun EditCategoryScreen(
                     }
                 },
                 modifier = Modifier.align(Alignment.End),
-                enabled = categoryName.isNotBlank()
+                enabled = categoryName.isNotBlank(),
             ) {
                 Text("Update Category")
             }
@@ -236,12 +245,12 @@ fun EditCategoryScreen(
                         }
                         showDeleteDialog = false
                         navController.popBackStack()
-                    }
+                    },
                 ) { Text("Delete") }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
-            }
+            },
         )
     }
 }

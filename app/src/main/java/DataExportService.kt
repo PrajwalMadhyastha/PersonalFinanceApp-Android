@@ -12,21 +12,26 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 object DataExportService {
-
-    private val json = Json { prettyPrint = true; isLenient = true; ignoreUnknownKeys = true }
+    private val json =
+        Json {
+            prettyPrint = true
+            isLenient = true
+            ignoreUnknownKeys = true
+        }
 
     suspend fun exportToJsonString(context: Context): String? {
         return withContext(Dispatchers.IO) {
             try {
                 val db = AppDatabase.getInstance(context)
 
-                val backupData = AppDataBackup(
-                    transactions = db.transactionDao().getAllTransactionsSimple().first(),
-                    accounts = db.accountDao().getAllAccounts().first(),
-                    categories = db.categoryDao().getAllCategories().first(),
-                    budgets = db.budgetDao().getAllBudgets().first(),
-                    merchantMappings = db.merchantMappingDao().getAllMappings().first()
-                )
+                val backupData =
+                    AppDataBackup(
+                        transactions = db.transactionDao().getAllTransactionsSimple().first(),
+                        accounts = db.accountDao().getAllAccounts().first(),
+                        categories = db.categoryDao().getAllCategories().first(),
+                        budgets = db.budgetDao().getAllBudgets().first(),
+                        merchantMappings = db.merchantMappingDao().getAllMappings().first(),
+                    )
 
                 json.encodeToString(backupData)
             } catch (e: Exception) {
@@ -36,7 +41,10 @@ object DataExportService {
         }
     }
 
-    suspend fun importDataFromJson(context: Context, uri: Uri): Boolean {
+    suspend fun importDataFromJson(
+        context: Context,
+        uri: Uri,
+    ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 val jsonString = context.contentResolver.openInputStream(uri)?.bufferedReader().use { it?.readText() }
@@ -101,7 +109,10 @@ object DataExportService {
         }
     }
 
-    suspend fun importFromCsv(context: Context, uri: Uri): Boolean {
+    suspend fun importFromCsv(
+        context: Context,
+        uri: Uri,
+    ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 val db = AppDatabase.getInstance(context)
@@ -120,10 +131,11 @@ object DataExportService {
                         lineIterator.next()
                     }
 
-                    while(lineIterator.hasNext()) {
+                    while (lineIterator.hasNext()) {
                         val line = lineIterator.next()
-                        val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex())
-                            .map { it.trim().removeSurrounding("\"") }
+                        val tokens =
+                            line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex())
+                                .map { it.trim().removeSurrounding("\"") }
 
                         if (tokens.size >= 6) {
                             val date = dateFormat.parse(tokens[0])?.time ?: System.currentTimeMillis()
@@ -156,8 +168,8 @@ object DataExportService {
                                         transactionType = type,
                                         accountId = account.id,
                                         categoryId = category.id,
-                                        notes = notes
-                                    )
+                                        notes = notes,
+                                    ),
                                 )
                             } else {
                                 Log.w("DataExportService", "Skipping row due to missing account/category: $line")

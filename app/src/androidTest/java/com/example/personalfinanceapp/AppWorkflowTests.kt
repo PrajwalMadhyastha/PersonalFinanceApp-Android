@@ -3,12 +3,12 @@ package com.example.personalfinanceapp
 import android.Manifest
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.UUID
 
 /**
@@ -16,20 +16,20 @@ import java.util.UUID
  */
 @RunWith(AndroidJUnit4::class)
 class AppWorkflowTests {
-
     private val composeTestRule = createAndroidComposeRule<MainActivity>()
 
     @get:Rule
-    val ruleChain: RuleChain = RuleChain
-        .outerRule(DisableAppLockRule())
-        .around(
-            GrantPermissionRule.grant(
-                Manifest.permission.READ_SMS,
-                Manifest.permission.RECEIVE_SMS,
-                Manifest.permission.POST_NOTIFICATIONS
+    val ruleChain: RuleChain =
+        RuleChain
+            .outerRule(DisableAppLockRule())
+            .around(
+                GrantPermissionRule.grant(
+                    Manifest.permission.READ_SMS,
+                    Manifest.permission.RECEIVE_SMS,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ),
             )
-        )
-        .around(composeTestRule)
+            .around(composeTestRule)
 
     /**
      * Tests the "happy path" workflow of adding a new transaction and verifying

@@ -7,6 +7,5 @@ data class SmsMessage(
     val id: Long,
     val sender: String,
     val body: String,
-    val date: Long
+    val date: Long,
 )
-

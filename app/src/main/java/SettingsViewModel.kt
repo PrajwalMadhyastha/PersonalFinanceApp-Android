@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.provider.Telephony
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -17,7 +16,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
-
     private val settingsRepository = SettingsRepository(application)
     private val db = AppDatabase.getInstance(application)
     private val transactionRepository = TransactionRepository(db.transactionDao())
@@ -30,20 +28,40 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
 
-    val overallBudget: StateFlow<Float> = settingsRepository.getOverallBudgetForCurrentMonth().stateIn(
-        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = 0f)
+    val overallBudget: StateFlow<Float> =
+        settingsRepository.getOverallBudgetForCurrentMonth().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 0f,
+        )
 
-    val dailyReportEnabled: StateFlow<Boolean> = settingsRepository.getDailyReportEnabled().stateIn(
-        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = false)
+    val dailyReportEnabled: StateFlow<Boolean> =
+        settingsRepository.getDailyReportEnabled().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false,
+        )
 
-    val weeklySummaryEnabled: StateFlow<Boolean> = settingsRepository.getWeeklySummaryEnabled().stateIn(
-        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = true)
+    val weeklySummaryEnabled: StateFlow<Boolean> =
+        settingsRepository.getWeeklySummaryEnabled().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = true,
+        )
 
-    val appLockEnabled: StateFlow<Boolean> = settingsRepository.getAppLockEnabled().stateIn(
-        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = false)
+    val appLockEnabled: StateFlow<Boolean> =
+        settingsRepository.getAppLockEnabled().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false,
+        )
 
-    val unknownTransactionPopupEnabled: StateFlow<Boolean> = settingsRepository.getUnknownTransactionPopupEnabled().stateIn(
-        scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = true)
+    val unknownTransactionPopupEnabled: StateFlow<Boolean> =
+        settingsRepository.getUnknownTransactionPopupEnabled().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = true,
+        )
 
     private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
     val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
@@ -56,12 +74,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     init {
         // --- NEW: Initialize the smsScanStartDate StateFlow ---
-        smsScanStartDate = settingsRepository.getSmsScanStartDate()
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = 0L
-            )
+        smsScanStartDate =
+            settingsRepository.getSmsScanStartDate()
+                .stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5000),
+                    initialValue = 0L,
+                )
     }
 
     fun saveSmsScanStartDate(date: Long) {
@@ -109,15 +128,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private suspend fun generateValidationReport(uri: Uri, initialData: List<ReviewableRow>? = null): CsvValidationReport {
+    private suspend fun generateValidationReport(
+        uri: Uri,
+        initialData: List<ReviewableRow>? = null,
+    ): CsvValidationReport {
         val accountsMap = db.accountDao().getAllAccounts().first().associateBy { it.name }
         val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
 
-
         if (initialData != null) {
-            val revalidatedRows = initialData.map {
-                createReviewableRow(it.lineNumber, it.rowData, accountsMap, categoriesMap)
-            }
+            val revalidatedRows =
+                initialData.map {
+                    createReviewableRow(it.lineNumber, it.rowData, accountsMap, categoriesMap)
+                }
             return CsvValidationReport(revalidatedRows, revalidatedRows.size)
         }
 
@@ -134,11 +156,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         return CsvValidationReport(reviewableRows, lineNumber - 1)
     }
 
-    private fun createReviewableRow(lineNumber: Int, tokens: List<String>, accounts: Map<String, Account>, categories: Map<String, Category>): ReviewableRow {
+    private fun createReviewableRow(
+        lineNumber: Int,
+        tokens: List<String>,
+        accounts: Map<String, Account>,
+        categories: Map<String, Category>,
+    ): ReviewableRow {
         if (tokens.size < 6) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count.")
 
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-        try { dateFormat.parse(tokens[0]) } catch (e: Exception) { return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_DATE, "Invalid date format.") }
+        try {
+            dateFormat.parse(tokens[0])
+        } catch (
+            e: Exception,
+        ) {
+            return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_DATE, "Invalid date format.")
+        }
 
         val amount = tokens[2].toDoubleOrNull()
         if (amount == null || amount <= 0) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_AMOUNT, "Invalid amount.")
@@ -149,19 +182,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val categoryExists = categories.containsKey(categoryName)
         val accountExists = accounts.containsKey(accountName)
 
-        val status = when {
-            !accountExists && !categoryExists -> CsvRowStatus.NEEDS_BOTH_CREATION
-            !accountExists -> CsvRowStatus.NEEDS_ACCOUNT_CREATION
-            !categoryExists -> CsvRowStatus.NEEDS_CATEGORY_CREATION
-            else -> CsvRowStatus.VALID
-        }
-        val message = when (status) {
-            CsvRowStatus.VALID -> "Ready to import."
-            CsvRowStatus.NEEDS_BOTH_CREATION -> "New Account & Category will be created."
-            CsvRowStatus.NEEDS_ACCOUNT_CREATION -> "New Account '$accountName' will be created."
-            CsvRowStatus.NEEDS_CATEGORY_CREATION -> "New Category '$categoryName' will be created."
-            else -> "This row has errors and will be skipped."
-        }
+        val status =
+            when {
+                !accountExists && !categoryExists -> CsvRowStatus.NEEDS_BOTH_CREATION
+                !accountExists -> CsvRowStatus.NEEDS_ACCOUNT_CREATION
+                !categoryExists -> CsvRowStatus.NEEDS_CATEGORY_CREATION
+                else -> CsvRowStatus.VALID
+            }
+        val message =
+            when (status) {
+                CsvRowStatus.VALID -> "Ready to import."
+                CsvRowStatus.NEEDS_BOTH_CREATION -> "New Account & Category will be created."
+                CsvRowStatus.NEEDS_ACCOUNT_CREATION -> "New Account '$accountName' will be created."
+                CsvRowStatus.NEEDS_CATEGORY_CREATION -> "New Category '$categoryName' will be created."
+                else -> "This row has errors and will be skipped."
+            }
         return ReviewableRow(lineNumber, tokens, status, message)
     }
 
@@ -173,18 +208,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     // --- NEW: Function to update and re-validate a single row ---
-    fun updateAndRevalidateRow(lineNumber: Int, correctedData: List<String>) {
+    fun updateAndRevalidateRow(
+        lineNumber: Int,
+        correctedData: List<String>,
+    ) {
         viewModelScope.launch {
             _csvValidationReport.value?.let { currentReport ->
                 val currentRows = currentReport.reviewableRows.toMutableList()
                 val indexToUpdate = currentRows.indexOfFirst { it.lineNumber == lineNumber }
 
                 if (indexToUpdate != -1) {
-                    val revalidatedRow = withContext(Dispatchers.IO) {
-                        val accountsMap = db.accountDao().getAllAccounts().first().associateBy { it.name }
-                        val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
-                        createReviewableRow(lineNumber, correctedData, accountsMap, categoriesMap)
-                    }
+                    val revalidatedRow =
+                        withContext(Dispatchers.IO) {
+                            val accountsMap = db.accountDao().getAllAccounts().first().associateBy { it.name }
+                            val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
+                            createReviewableRow(lineNumber, correctedData, accountsMap, categoriesMap)
+                        }
                     currentRows[indexToUpdate] = revalidatedRow
                     _csvValidationReport.value = currentReport.copy(reviewableRows = currentRows)
                 }
@@ -224,7 +263,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         // Re-fetch to get the one with the auto-generated ID
                         val updatedCategories = categoryRepository.allCategories.first()
                         category = updatedCategories.find { it.name.equals(categoryName, ignoreCase = true) }
-                        if(category != null) {
+                        if (category != null) {
                             categoryMap[categoryName.lowercase()] = category
                             Log.d("CsvImportDebug", "ViewModel: Created and found new category '$categoryName' with ID ${category.id}")
                         } else {
@@ -255,19 +294,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         continue
                     }
 
-                    val transaction = Transaction(
-                        date = date.time,
-                        amount = amount,
-                        description = description,
-                        notes = notes,
-                        transactionType = type,
-                        accountId = account.id,
-                        categoryId = category.id
-                    )
+                    val transaction =
+                        Transaction(
+                            date = date.time,
+                            amount = amount,
+                            description = description,
+                            notes = notes,
+                            transactionType = type,
+                            accountId = account.id,
+                            categoryId = category.id,
+                        )
                     // Insert transactions one by one since insertAll is not available
                     transactionRepository.insert(transaction)
                     Log.d("CsvImportDebug", "ViewModel: Inserted transaction for row ${row.lineNumber}: '${transaction.description}'")
-
                 } catch (e: Exception) {
                     Log.e("CsvImportDebug", "ViewModel: Failed to parse or insert row ${row.lineNumber}. Data: ${row.rowData}", e)
                 }
@@ -281,25 +320,31 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun rescanSms(startDate: Long?) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) { return }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
 
         viewModelScope.launch {
             _isScanning.value = true
 
-            val rawMessages = withContext(Dispatchers.IO) {
-                SmsRepository(context).fetchAllSms(startDate)
-            }
+            val rawMessages =
+                withContext(Dispatchers.IO) {
+                    SmsRepository(context).fetchAllSms(startDate)
+                }
 
-            val existingMappings = withContext(Dispatchers.IO) {
-                merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
-            }
-            val existingSmsIds = withContext(Dispatchers.IO) {
-                transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
-            }
+            val existingMappings =
+                withContext(Dispatchers.IO) {
+                    merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
+                }
+            val existingSmsIds =
+                withContext(Dispatchers.IO) {
+                    transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
+                }
 
-            val parsedList = withContext(Dispatchers.Default) {
-                rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
-            }
+            val parsedList =
+                withContext(Dispatchers.Default) {
+                    rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
+                }
 
             _potentialTransactions.value = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
             _isScanning.value = false
@@ -310,7 +355,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
     }
 
-    fun saveMerchantMapping(sender: String, merchantName: String) {
+    fun saveMerchantMapping(
+        sender: String,
+        merchantName: String,
+    ) {
         viewModelScope.launch {
             merchantMappingRepository.insert(MerchantMapping(smsSender = sender, merchantName = merchantName))
         }

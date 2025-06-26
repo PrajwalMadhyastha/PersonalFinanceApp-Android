@@ -11,5 +11,5 @@ data class TransactionDetails(
     @Embedded
     val transaction: Transaction,
     val accountName: String?,
-    val categoryName: String?
+    val categoryName: String?,
 )

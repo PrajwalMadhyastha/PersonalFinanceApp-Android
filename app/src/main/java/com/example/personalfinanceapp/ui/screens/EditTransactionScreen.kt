@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -65,7 +64,7 @@ fun EditTransactionScreen(
     transactionId: Int,
     isFromCsvImport: Boolean = false,
     csvLineNumber: Int = -1,
-    initialCsvData: String? = null
+    initialCsvData: String? = null,
 ) {
     val transaction by viewModel.getTransactionById(transactionId).collectAsState(initial = null)
 
@@ -108,8 +107,9 @@ fun EditTransactionScreen(
                 notes = tokens.getOrElse(6) { "" }
                 selectedCategory = categories.find { it.name.equals(tokens[4], ignoreCase = true) }
                 selectedAccount = accounts.find { it.name.equals(tokens[5], ignoreCase = true) }
-            } catch (e: Exception) { /* Handle parsing error */ }
-
+            } catch (e: Exception) {
+                // Handle parsing error
+            }
         } else if (transactionFromDb != null) {
             transactionFromDb?.let { txn ->
                 description = txn.description
@@ -137,7 +137,7 @@ fun EditTransactionScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 item {
                     TabRow(selectedTabIndex = if (transactionType == "expense") 0 else 1) {
@@ -147,14 +147,33 @@ fun EditTransactionScreen(
                                 onClick = {
                                     transactionType = if (index == 0) "expense" else "income"
                                 },
-                                text = { Text(title) }
+                                text = { Text(title) },
                             )
                         }
                     }
                 }
-                item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
-                item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
-                item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+                item {
+                    OutlinedTextField(value = description, onValueChange = {
+                        description = it
+                    }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+                }
+                item {
+                    OutlinedTextField(value = amount, onValueChange = {
+                        amount = it
+                    }, label = {
+                        Text(
+                            "Amount",
+                        )
+                    }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                }
+                item {
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("Notes (Optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
@@ -170,21 +189,47 @@ fun EditTransactionScreen(
                     }
                 }
                 item {
-                    ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
-                        OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {}, readOnly = true, label = { Text("Account") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                        ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
+                    ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = {
+                        isAccountDropdownExpanded = !isAccountDropdownExpanded
+                    }) {
+                        OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {
+                        }, readOnly = true, label = {
+                            Text("Account")
+                        }, trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded)
+                        }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                        ExposedDropdownMenu(
+                            expanded = isAccountDropdownExpanded,
+                            onDismissRequest = { isAccountDropdownExpanded = false },
+                        ) {
                             accounts.forEach { account ->
-                                DropdownMenuItem(text = { Text(account.name) }, onClick = { selectedAccount = account; isAccountDropdownExpanded = false })
+                                DropdownMenuItem(text = { Text(account.name) }, onClick = {
+                                    selectedAccount = account
+                                    isAccountDropdownExpanded = false
+                                })
                             }
                         }
                     }
                 }
                 item {
-                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
-                        OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {}, readOnly = true, label = { Text("Category") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                        ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
+                        isCategoryDropdownExpanded = !isCategoryDropdownExpanded
+                    }) {
+                        OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {
+                        }, readOnly = true, label = {
+                            Text("Category")
+                        }, trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded)
+                        }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                        ExposedDropdownMenu(
+                            expanded = isCategoryDropdownExpanded,
+                            onDismissRequest = { isCategoryDropdownExpanded = false },
+                        ) {
                             categories.forEach { category ->
-                                DropdownMenuItem(text = { Text(category.name) }, onClick = { selectedCategory = category; isCategoryDropdownExpanded = false })
+                                DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                    selectedCategory = category
+                                    isCategoryDropdownExpanded = false
+                                })
                             }
                         }
                     }
@@ -197,7 +242,16 @@ fun EditTransactionScreen(
                         Button(
                             onClick = {
                                 if (isFromCsvImport) {
-                                    val correctedData = listOf(dateFormat.format(selectedDateTime.time), description, amount, transactionType, selectedCategory?.name ?: "", selectedAccount?.name ?: "", notes)
+                                    val correctedData =
+                                        listOf(
+                                            dateFormat.format(selectedDateTime.time),
+                                            description,
+                                            amount,
+                                            transactionType,
+                                            selectedCategory?.name ?: "",
+                                            selectedAccount?.name ?: "",
+                                            notes,
+                                        )
                                     val gson = Gson()
                                     navController.previousBackStackEntry?.savedStateHandle?.set("corrected_row", gson.toJson(correctedData))
                                     navController.previousBackStackEntry?.savedStateHandle?.set("corrected_row_line", csvLineNumber)
@@ -206,7 +260,19 @@ fun EditTransactionScreen(
                                     val updatedAmount = amount.toDoubleOrNull() ?: 0.0
                                     val currentTransaction = transactionFromDb
                                     if (currentTransaction != null && selectedAccount != null) {
-                                        val updatedTransaction = currentTransaction.copy(description = description, amount = updatedAmount, accountId = selectedAccount!!.id, categoryId = selectedCategory?.id, notes = notes.takeIf { it.isNotBlank() }, date = selectedDateTime.timeInMillis, transactionType = transactionType)
+                                        val updatedTransaction =
+                                            currentTransaction.copy(
+                                                description = description,
+                                                amount = updatedAmount,
+                                                accountId = selectedAccount!!.id,
+                                                categoryId = selectedCategory?.id,
+                                                notes =
+                                                    notes.takeIf {
+                                                        it.isNotBlank()
+                                                    },
+                                                date = selectedDateTime.timeInMillis,
+                                                transactionType = transactionType,
+                                            )
                                         if (viewModel.updateTransaction(updatedTransaction)) {
                                             navController.popBackStack()
                                         }
@@ -214,7 +280,7 @@ fun EditTransactionScreen(
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            enabled = selectedAccount != null && selectedCategory != null
+                            enabled = selectedAccount != null && selectedCategory != null,
                         ) {
                             Text(if (isFromCsvImport) "Update Row" else "Update Transaction")
                         }
@@ -227,19 +293,29 @@ fun EditTransactionScreen(
 
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
-        DatePickerDialog(onDismissRequest = { showDatePicker = false }, confirmButton = { TextButton(onClick = {
-            datePickerState.selectedDateMillis?.let {
-                val newCalendar = Calendar.getInstance().apply { timeInMillis = it }
-                selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
-                selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
-                selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
-            }
-            showDatePicker = false
-        }) { Text("OK") } }, dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }) { DatePicker(state = datePickerState) }
+        DatePickerDialog(onDismissRequest = { showDatePicker = false }, confirmButton = {
+            TextButton(onClick = {
+                datePickerState.selectedDateMillis?.let {
+                    val newCalendar = Calendar.getInstance().apply { timeInMillis = it }
+                    selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
+                    selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
+                    selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
+                }
+                showDatePicker = false
+            }) { Text("OK") }
+        }, dismissButton = {
+            TextButton(
+                onClick = { showDatePicker = false },
+            ) { Text("Cancel") }
+        }) { DatePicker(state = datePickerState) }
     }
 
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(Calendar.MINUTE))
+        val timePickerState =
+            rememberTimePickerState(
+                initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
+                initialMinute = selectedDateTime.get(Calendar.MINUTE),
+            )
         TimePickerDialog(onDismissRequest = { showTimePicker = false }, onConfirm = {
             selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
             selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
@@ -250,11 +326,19 @@ fun EditTransactionScreen(
     if (showDeleteDialog) {
         val transactionToDelete = transactionFromDb
         if (transactionToDelete != null) {
-            AlertDialog(onDismissRequest = { showDeleteDialog = false }, title = { Text("Confirm Deletion") }, text = { Text("Are you sure you want to permanently delete this transaction?") }, confirmButton = { Button(onClick = {
-                viewModel.deleteTransaction(transactionToDelete)
+            AlertDialog(onDismissRequest = {
                 showDeleteDialog = false
-                navController.popBackStack()
-            }) { Text("Delete") } }, dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } })
+            }, title = {
+                Text(
+                    "Confirm Deletion",
+                )
+            }, text = { Text("Are you sure you want to permanently delete this transaction?") }, confirmButton = {
+                Button(onClick = {
+                    viewModel.deleteTransaction(transactionToDelete)
+                    showDeleteDialog = false
+                    navController.popBackStack()
+                }) { Text("Delete") }
+            }, dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } })
         }
     }
 }

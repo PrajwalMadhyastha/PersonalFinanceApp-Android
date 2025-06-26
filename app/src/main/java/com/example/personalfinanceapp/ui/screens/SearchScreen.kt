@@ -23,9 +23,7 @@ import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(
-    navController: NavController,
-) {
+fun SearchScreen(navController: NavController) {
     val context = LocalContext.current
     val factory = SearchViewModelFactory(context.applicationContext as Application)
     val viewModel: SearchViewModel = viewModel(factory = factory)
@@ -42,14 +40,14 @@ fun SearchScreen(
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         ) {
             item {
                 OutlinedTextField(
                     value = searchUiState.keyword,
                     onValueChange = { viewModel.onKeywordChange(it) },
                     label = { Text("Keyword (description, notes)") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
@@ -59,7 +57,7 @@ fun SearchScreen(
                     options = searchUiState.accounts,
                     selectedOption = searchUiState.selectedAccount,
                     onOptionSelected = { viewModel.onAccountChange(it) },
-                    getDisplayName = { it.name }
+                    getDisplayName = { it.name },
                 )
             }
 
@@ -69,7 +67,7 @@ fun SearchScreen(
                     options = searchUiState.categories,
                     selectedOption = searchUiState.selectedCategory,
                     onOptionSelected = { viewModel.onCategoryChange(it) },
-                    getDisplayName = { it.name }
+                    getDisplayName = { it.name },
                 )
             }
 
@@ -79,14 +77,14 @@ fun SearchScreen(
                     options = listOf("All", "Income", "Expense"),
                     selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
                     onOptionSelected = { viewModel.onTypeChange(it) },
-                    getDisplayName = { it }
+                    getDisplayName = { it },
                 )
             }
 
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     DateTextField(
                         label = "Start Date",
@@ -94,7 +92,7 @@ fun SearchScreen(
                         formatter = dateFormatter,
                         onClick = { showStartDatePicker = true },
                         onClear = { viewModel.onDateChange(start = null) },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                     DateTextField(
                         label = "End Date",
@@ -102,7 +100,7 @@ fun SearchScreen(
                         formatter = dateFormatter,
                         onClick = { showEndDatePicker = true },
                         onClear = { viewModel.onDateChange(end = null) },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -112,17 +110,17 @@ fun SearchScreen(
                     Text(
                         text = "Results (${searchResults.size})",
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = 16.dp)
+                        modifier = Modifier.padding(top = 16.dp),
                     )
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
                 }
                 items(searchResults) { transactionDetails ->
                     TransactionItem(
                         transactionDetails = transactionDetails,
-                        onClick = { navController.navigate("edit_transaction/${transactionDetails.transaction.id}") }
+                        onClick = { navController.navigate("edit_transaction/${transactionDetails.transaction.id}") },
                     )
                 }
-            } else if(searchUiState.hasSearched) {
+            } else if (searchUiState.hasSearched) {
                 item {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
                         Text("No transactions match your criteria.")
@@ -132,19 +130,20 @@ fun SearchScreen(
         }
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             OutlinedButton(
                 onClick = { viewModel.clearFilters() },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) { Text("Clear") }
 
             Button(
                 onClick = { viewModel.executeSearch() },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) { Text("Apply Filters") }
         }
     }
@@ -161,7 +160,7 @@ fun SearchScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") }
-            }
+            },
         ) {
             DatePicker(state = datePickerState)
         }
@@ -179,7 +178,7 @@ fun SearchScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") }
-            }
+            },
         ) {
             DatePicker(state = datePickerState)
         }
@@ -193,13 +192,13 @@ fun <T> SearchableDropdown(
     options: List<T>,
     selectedOption: T?,
     onOptionSelected: (T?) -> Unit,
-    getDisplayName: (T) -> String
+    getDisplayName: (T) -> String,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(
         expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
+        onExpandedChange = { expanded = !expanded },
     ) {
         OutlinedTextField(
             value = selectedOption?.let { getDisplayName(it) } ?: "All",
@@ -216,13 +215,14 @@ fun <T> SearchableDropdown(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                 }
             },
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth()
+            modifier =
+                Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
         )
         ExposedDropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false }
+            onDismissRequest = { expanded = false },
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
@@ -230,7 +230,7 @@ fun <T> SearchableDropdown(
                     onClick = {
                         onOptionSelected(option)
                         expanded = false
-                    }
+                    },
                 )
             }
         }
@@ -244,7 +244,7 @@ fun DateTextField(
     formatter: SimpleDateFormat,
     onClick: () -> Unit,
     onClear: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     OutlinedTextField(
         value = date?.let { formatter.format(Date(it)) } ?: "",
@@ -260,6 +260,6 @@ fun DateTextField(
             } else {
                 Icon(Icons.Default.DateRange, "Select Date")
             }
-        }
+        },
     )
 }

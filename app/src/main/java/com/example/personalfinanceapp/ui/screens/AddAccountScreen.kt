@@ -23,32 +23,36 @@ import androidx.navigation.NavController
 import com.example.personalfinanceapp.AccountViewModel
 
 @Composable
-fun AddAccountScreen(navController: NavController, viewModel: AccountViewModel) {
+fun AddAccountScreen(
+    navController: NavController,
+    viewModel: AccountViewModel,
+) {
     var accountName by remember { mutableStateOf("") }
     var accountType by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         OutlinedTextField(
             value = accountName,
             onValueChange = { accountName = it },
             label = { Text("Account Name (e.g., Savings, Credit Card)") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
             value = accountType,
             onValueChange = { accountType = it },
             label = { Text("Account Type (e.g., Bank, Wallet)") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
         Spacer(modifier = Modifier.height(16.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                 Text("Cancel")
@@ -61,7 +65,7 @@ fun AddAccountScreen(navController: NavController, viewModel: AccountViewModel) 
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = accountName.isNotBlank() && accountType.isNotBlank()
+                enabled = accountName.isNotBlank() && accountType.isNotBlank(),
             ) {
                 Text("Save Account")
             }

@@ -15,9 +15,8 @@ import java.util.Calendar
  */
 class WeeklySummaryWorker(
     private val context: Context,
-    workerParams: WorkerParameters
+    workerParams: WorkerParameters,
 ) : CoroutineWorker(context, workerParams) {
-
     override suspend fun doWork(): Result {
         return withContext(Dispatchers.IO) {
             try {

@@ -12,5 +12,5 @@ data class AppDataBackup(
     val accounts: List<Account>,
     val categories: List<Category>,
     val budgets: List<Budget>,
-    val merchantMappings: List<MerchantMapping>
+    val merchantMappings: List<MerchantMapping>,
 )

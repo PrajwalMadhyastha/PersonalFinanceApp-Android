@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class AccountViewModel(application: Application) : AndroidViewModel(application) {
-
     private val repository: AccountRepository
     private val transactionRepository: TransactionRepository
 
@@ -44,18 +43,23 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // --- CORRECTED: The Account object no longer has a 'balance' parameter in its constructor ---
-    fun addAccount(name: String, type: String) = viewModelScope.launch {
+    fun addAccount(
+        name: String,
+        type: String,
+    ) = viewModelScope.launch {
         if (name.isNotBlank() && type.isNotBlank()) {
             // Create the Account object without a balance.
             repository.insert(Account(name = name, type = type))
         }
     }
 
-    fun updateAccount(account: Account) = viewModelScope.launch {
-        repository.update(account)
-    }
+    fun updateAccount(account: Account) =
+        viewModelScope.launch {
+            repository.update(account)
+        }
 
-    fun deleteAccount(account: Account) = viewModelScope.launch {
-        repository.delete(account)
-    }
+    fun deleteAccount(account: Account) =
+        viewModelScope.launch {
+            repository.delete(account)
+        }
 }

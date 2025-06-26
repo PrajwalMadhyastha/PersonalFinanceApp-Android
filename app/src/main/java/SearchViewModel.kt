@@ -14,15 +14,14 @@ data class SearchUiState(
     val endDate: Long? = null,
     val accounts: List<Account> = emptyList(),
     val categories: List<Category> = emptyList(),
-    val hasSearched: Boolean = false
+    val hasSearched: Boolean = false,
 )
 
 class SearchViewModel(
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
-    private val categoryDao: CategoryDao
+    private val categoryDao: CategoryDao,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
@@ -60,29 +59,34 @@ class SearchViewModel(
         _uiState.update { it.copy(transactionType = type ?: "All") }
     }
 
-    fun onDateChange(start: Long? = _uiState.value.startDate, end: Long? = _uiState.value.endDate) {
+    fun onDateChange(
+        start: Long? = _uiState.value.startDate,
+        end: Long? = _uiState.value.endDate,
+    ) {
         _uiState.update { it.copy(startDate = start, endDate = end) }
     }
 
     fun clearFilters() {
-        _uiState.value = SearchUiState(
-            accounts = _uiState.value.accounts,
-            categories = _uiState.value.categories
-        )
+        _uiState.value =
+            SearchUiState(
+                accounts = _uiState.value.accounts,
+                categories = _uiState.value.categories,
+            )
         _searchResults.value = emptyList()
     }
 
     fun executeSearch() {
         viewModelScope.launch {
             val state = _uiState.value
-            _searchResults.value = transactionDao.searchTransactions(
-                keyword = state.keyword,
-                accountId = state.selectedAccount?.id,
-                categoryId = state.selectedCategory?.id,
-                transactionType = if (state.transactionType.equals("All", ignoreCase = true)) null else state.transactionType.lowercase(),
-                startDate = state.startDate,
-                endDate = state.endDate
-            )
+            _searchResults.value =
+                transactionDao.searchTransactions(
+                    keyword = state.keyword,
+                    accountId = state.selectedAccount?.id,
+                    categoryId = state.selectedCategory?.id,
+                    transactionType = if (state.transactionType.equals("All", ignoreCase = true)) null else state.transactionType.lowercase(),
+                    startDate = state.startDate,
+                    endDate = state.endDate,
+                )
             _uiState.update { it.copy(hasSearched = true) }
         }
     }

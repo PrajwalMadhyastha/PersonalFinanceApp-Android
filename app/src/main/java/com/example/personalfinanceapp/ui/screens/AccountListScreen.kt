@@ -1,7 +1,6 @@
 package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -18,7 +17,10 @@ import androidx.navigation.NavController
 import com.example.personalfinanceapp.AccountViewModel
 
 @Composable
-fun AccountListScreen(navController: NavController, viewModel: AccountViewModel) {
+fun AccountListScreen(
+    navController: NavController,
+    viewModel: AccountViewModel,
+) {
     val accounts by viewModel.accountsWithBalance.collectAsState(initial = emptyList())
 
     LazyColumn {
@@ -31,7 +33,7 @@ fun AccountListScreen(navController: NavController, viewModel: AccountViewModel)
                         Icon(Icons.Filled.Edit, contentDescription = "Edit Account")
                     }
                 },
-                modifier = Modifier.clickable { navController.navigate("account_detail/${account.account.id}") }
+                modifier = Modifier.clickable { navController.navigate("account_detail/${account.account.id}") },
             )
         }
     }

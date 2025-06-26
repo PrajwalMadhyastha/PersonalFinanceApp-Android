@@ -34,17 +34,20 @@ import com.github.mikephil.charting.charts.PieChart
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = viewModel()) {
+fun ReportsScreen(
+    navController: NavController,
+    viewModel: ReportsViewModel = viewModel(),
+) {
     val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
     val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Reports") }) }
+        topBar = { TopAppBar(title = { Text("Reports") }) },
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // --- Pie Chart Card (Unchanged) ---
             item {
@@ -60,12 +63,21 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = vi
                             AndroidView(
                                 factory = { context ->
                                     PieChart(context).apply {
-                                        description.isEnabled = false; isDrawHoleEnabled = true; setHoleColor(
-                                        Color.TRANSPARENT); setEntryLabelColor(Color.BLACK); setEntryLabelTextSize(12f); legend.isEnabled = false
+                                        description.isEnabled = false
+                                        isDrawHoleEnabled = true
+                                        setHoleColor(
+                                            Color.TRANSPARENT,
+                                        )
+                                        setEntryLabelColor(Color.BLACK)
+                                        setEntryLabelTextSize(12f)
+                                        legend.isEnabled = false
                                     }
                                 },
-                                update = { chart -> chart.data = pieData; chart.invalidate() },
-                                modifier = Modifier.fillMaxWidth().height(300.dp)
+                                update = { chart ->
+                                    chart.data = pieData
+                                    chart.invalidate()
+                                },
+                                modifier = Modifier.fillMaxWidth().height(300.dp),
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             ChartLegend(pieData)

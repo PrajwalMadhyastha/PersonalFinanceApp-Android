@@ -35,38 +35,41 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit) {
+fun TransactionItem(
+    transactionDetails: TransactionDetails,
+    onClick: () -> Unit,
+) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        onClick = onClick
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+        onClick = onClick,
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = transactionDetails.transaction.description,
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
                 if (!transactionDetails.transaction.notes.isNullOrBlank()) {
                     Text(
                         text = transactionDetails.transaction.notes!!,
                         style = MaterialTheme.typography.bodyMedium,
                         fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Text(
                     text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
+                    color = MaterialTheme.colorScheme.secondary,
                 )
                 Text(
                     text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -79,14 +82,14 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
                     text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = amountColor
+                    color = amountColor,
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Icon(
                     imageVector = icon,
                     contentDescription = transactionDetails.transaction.transactionType,
                     tint = amountColor,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -96,17 +99,18 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
 @Composable
 fun AccountTransactionItem(transactionDetails: TransactionDetails) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = transactionDetails.transaction.description, style = MaterialTheme.typography.bodyLarge)
             Text(
                 text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         val isIncome = transactionDetails.transaction.transactionType == "income"
@@ -115,7 +119,7 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
         Text(
             text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
             style = MaterialTheme.typography.bodyLarge,
-            color = amountColor
+            color = amountColor,
         )
     }
 }
@@ -124,19 +128,19 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
 fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
-    contentPadding: PaddingValues = PaddingValues(0.dp)
+    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     if (transactions.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize().padding(contentPadding),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Text("No transactions yet. Add one!")
         }
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(contentPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         ) {
             items(transactions) { details ->
                 TransactionItem(transactionDetails = details, onClick = {

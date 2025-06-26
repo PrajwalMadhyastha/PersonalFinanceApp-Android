@@ -6,5 +6,5 @@ package com.example.personalfinanceapp
  */
 data class CategorySpending(
     val categoryName: String,
-    val totalAmount: Double
+    val totalAmount: Double,
 )

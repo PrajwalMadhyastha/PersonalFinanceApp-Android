@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface RecurringTransactionDao {
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(recurringTransaction: RecurringTransaction)
 

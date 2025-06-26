@@ -3,7 +3,6 @@ package com.example.personalfinanceapp
 import kotlinx.coroutines.flow.Flow
 
 class AccountRepository(private val accountDao: AccountDao) {
-
     // Expose the new query result to the ViewModel
     val accountsWithBalance: Flow<List<AccountWithBalance>> = accountDao.getAccountsWithBalance()
 

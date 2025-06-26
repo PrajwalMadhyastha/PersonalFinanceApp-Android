@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -55,7 +54,10 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddTransactionScreen(navController: NavController, viewModel: TransactionViewModel) {
+fun AddTransactionScreen(
+    navController: NavController,
+    viewModel: TransactionViewModel,
+) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
@@ -90,7 +92,7 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             item {
                 TabRow(selectedTabIndex = if (transactionType == "expense") 0 else 1) {
@@ -98,14 +100,33 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                         Tab(
                             selected = (if (transactionType == "expense") 0 else 1) == index,
                             onClick = { transactionType = if (index == 0) "expense" else "income" },
-                            text = { Text(title) }
+                            text = { Text(title) },
                         )
                     }
                 }
             }
-            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
-            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
+            item {
+                OutlinedTextField(value = description, onValueChange = {
+                    description = it
+                }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                OutlinedTextField(value = amount, onValueChange = {
+                    amount = it
+                }, label = {
+                    Text(
+                        "Amount",
+                    )
+                }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            }
+            item {
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes (Optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -122,12 +143,16 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 }
             }
             item {
-                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = {
+                    isAccountDropdownExpanded = !isAccountDropdownExpanded
+                }) {
                     OutlinedTextField(
                         value = selectedAccount?.name ?: "Select Account",
-                        onValueChange = {}, readOnly = true, label = { Text("Account") },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Account") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
                     )
                     ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
                         accounts.forEach { account ->
@@ -140,12 +165,16 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                 }
             }
             item {
-                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
+                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
+                    isCategoryDropdownExpanded = !isCategoryDropdownExpanded
+                }) {
                     OutlinedTextField(
                         value = selectedCategory?.name ?: "Select Category",
-                        onValueChange = {}, readOnly = true, label = { Text("Category") },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Category") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
                     )
                     ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
                         categories.forEach { category ->
@@ -160,29 +189,30 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                         Text("Cancel")
                     }
                     Button(
                         onClick = {
-                            val success = viewModel.addTransaction(
-                                description = description,
-                                categoryId = selectedCategory?.id,
-                                amountStr = amount,
-                                accountId = selectedAccount!!.id,
-                                notes = notes.takeIf { it.isNotBlank() },
-                                date = selectedDateTime.timeInMillis,
-                                transactionType = transactionType,
-                                sourceSmsId = null
-                            )
+                            val success =
+                                viewModel.addTransaction(
+                                    description = description,
+                                    categoryId = selectedCategory?.id,
+                                    amountStr = amount,
+                                    accountId = selectedAccount!!.id,
+                                    notes = notes.takeIf { it.isNotBlank() },
+                                    date = selectedDateTime.timeInMillis,
+                                    transactionType = transactionType,
+                                    sourceSmsId = null,
+                                )
                             if (success) {
                                 navController.popBackStack()
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank()
+                        enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank(),
                     ) {
                         Text("Save Transaction")
                     }
@@ -206,22 +236,26 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
                             selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
                         }
                         showDatePicker = false
-                    }
+                    },
                 ) { Text("OK") }
             },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } },
         ) { DatePicker(state = datePickerState) }
     }
 
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(Calendar.MINUTE))
+        val timePickerState =
+            rememberTimePickerState(
+                initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
+                initialMinute = selectedDateTime.get(Calendar.MINUTE),
+            )
         TimePickerDialog(
             onDismissRequest = { showTimePicker = false },
             onConfirm = {
                 selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
                 selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
                 showTimePicker = false
-            }
+            },
         ) { TimePicker(state = timePickerState) }
     }
 }

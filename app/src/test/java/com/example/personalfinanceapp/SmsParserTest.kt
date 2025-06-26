@@ -8,7 +8,6 @@ import org.junit.Test
  * These tests run on the local JVM and do not require an Android device or emulator.
  */
 class SmsParserTest {
-
     // A mock map of user-defined mappings, empty for these tests.
     private val emptyMappings = emptyMap<String, String>()
 

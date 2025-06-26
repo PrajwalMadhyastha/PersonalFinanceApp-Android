@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.Flow
  * Repository that abstracts access to the category data source.
  */
 class CategoryRepository(private val categoryDao: CategoryDao) {
-
     /**
      * Retrieves all categories from the category table, ordered by name.
      */

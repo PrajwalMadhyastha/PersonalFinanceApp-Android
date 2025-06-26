@@ -6,5 +6,5 @@ package com.example.personalfinanceapp
 data class MonthlySummary(
     val year: Int,
     val month: Int,
-    val totalAmount: Double
+    val totalAmount: Double,
 )

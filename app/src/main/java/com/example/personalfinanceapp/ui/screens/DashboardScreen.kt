@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,7 +37,7 @@ import com.example.personalfinanceapp.com.example.personalfinanceapp.ui.componen
 fun DashboardScreen(
     navController: NavController,
     viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
-    budgetViewModel: BudgetViewModel
+    budgetViewModel: BudgetViewModel,
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
@@ -51,13 +50,13 @@ fun DashboardScreen(
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             OverallBudgetCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
-                navController = navController
+                navController = navController,
             )
         }
         item {
@@ -71,7 +70,7 @@ fun DashboardScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 FilledTonalButton(
                     onClick = { navController.navigate("reports_screen") },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
@@ -79,7 +78,7 @@ fun DashboardScreen(
                 }
                 FilledTonalButton(
                     onClick = { navController.navigate("reports_screen") },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
@@ -94,7 +93,7 @@ fun DashboardScreen(
             BudgetWatchCard(
                 budgetStatus = budgetStatus,
                 viewModel = budgetViewModel,
-                navController = navController
+                navController = navController,
             )
         }
     }

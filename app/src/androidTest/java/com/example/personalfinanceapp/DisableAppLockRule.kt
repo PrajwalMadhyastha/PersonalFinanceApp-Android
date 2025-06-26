@@ -12,7 +12,10 @@ import org.junit.runners.model.Statement
  * ensuring the lock screen does not interfere with UI tests.
  */
 class DisableAppLockRule : TestRule {
-    override fun apply(base: Statement, description: Description): Statement {
+    override fun apply(
+        base: Statement,
+        description: Description,
+    ): Statement {
         return object : Statement() {
             override fun evaluate() {
                 try {

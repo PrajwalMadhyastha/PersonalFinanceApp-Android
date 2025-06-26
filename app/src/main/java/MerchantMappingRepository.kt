@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.Flow
  * Repository that abstracts access to the MerchantMapping data source.
  */
 class MerchantMappingRepository(private val merchantMappingDao: MerchantMappingDao) {
-
     /**
      * Retrieves all user-defined merchant mappings from the database.
      */

@@ -18,7 +18,7 @@ import com.google.gson.Gson
 fun EditImportedTransactionScreen(
     navController: NavController,
     lineNumber: Int,
-    initialData: List<String>
+    initialData: List<String>,
 ) {
     var date by remember { mutableStateOf(initialData.getOrElse(0) { "" }) }
     var description by remember { mutableStateOf(initialData.getOrElse(1) { "" }) }
@@ -36,13 +36,13 @@ fun EditImportedTransactionScreen(
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
             )
         },
         bottomBar = {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                     Text("Cancel")
@@ -59,25 +59,60 @@ fun EditImportedTransactionScreen(
                             ?.set("corrected_row_line", lineNumber)
                         navController.popBackStack()
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Text("Update Row")
                 }
             }
-        }
+        },
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.padding(innerPadding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Date (yyyy-MM-dd HH:mm:ss)") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
-            item { OutlinedTextField(value = type, onValueChange = { type = it }, label = { Text("Type (income/expense)") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = categoryName, onValueChange = { categoryName = it }, label = { Text("Category") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = accountName, onValueChange = { accountName = it }, label = { Text("Account") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth()) }
+            item {
+                OutlinedTextField(value = date, onValueChange = {
+                    date = it
+                }, label = { Text("Date (yyyy-MM-dd HH:mm:ss)") }, modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                OutlinedTextField(value = description, onValueChange = {
+                    description = it
+                }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                OutlinedTextField(value = amount, onValueChange = {
+                    amount = it
+                }, label = {
+                    Text(
+                        "Amount",
+                    )
+                }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            }
+            item {
+                OutlinedTextField(value = type, onValueChange = {
+                    type = it
+                }, label = { Text("Type (income/expense)") }, modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                OutlinedTextField(value = categoryName, onValueChange = {
+                    categoryName = it
+                }, label = { Text("Category") }, modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                OutlinedTextField(value = accountName, onValueChange = {
+                    accountName = it
+                }, label = { Text("Account") }, modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }

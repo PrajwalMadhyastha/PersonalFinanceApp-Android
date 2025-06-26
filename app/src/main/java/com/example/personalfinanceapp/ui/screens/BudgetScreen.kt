@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -23,7 +22,10 @@ import com.example.personalfinanceapp.Budget
 import com.example.personalfinanceapp.BudgetViewModel
 
 @Composable
-fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = viewModel()) {
+fun BudgetScreen(
+    navController: NavController,
+    viewModel: BudgetViewModel = viewModel(),
+) {
     val categoryBudgets by viewModel.budgetsForCurrentMonth.collectAsState(initial = emptyList())
     val overallBudget by viewModel.overallBudget.collectAsState()
     val monthYear = viewModel.getCurrentMonthYearString()
@@ -36,18 +38,18 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
     var showDeleteDialog by remember { mutableStateOf(false) }
     var budgetToDelete by remember { mutableStateOf<Budget?>(null) }
 
-
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
                 Card(elevation = CardDefaults.cardElevation(2.dp)) {
                     Column(
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth()
+                        modifier =
+                            Modifier
+                                .padding(16.dp)
+                                .fillMaxWidth(),
                     ) {
                         Text("Overall Monthly Budget", style = MaterialTheme.typography.titleLarge)
                         Spacer(modifier = Modifier.height(8.dp))
@@ -57,7 +59,7 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
                             label = { Text("Total Budget Amount") },
                             modifier = Modifier.fillMaxWidth(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            leadingIcon = { Text("₹") }
+                            leadingIcon = { Text("₹") },
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
@@ -66,7 +68,7 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
                                 Toast.makeText(context, "Overall Budget Saved!", Toast.LENGTH_SHORT).show()
                                 navController.popBackStack()
                             },
-                            modifier = Modifier.align(Alignment.End)
+                            modifier = Modifier.align(Alignment.End),
                         ) {
                             Text("Save Overall Budget")
                         }
@@ -78,7 +80,7 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text("Category Budgets", style = MaterialTheme.typography.titleLarge)
                     IconButton(onClick = { navController.navigate("add_budget") }) {
@@ -92,7 +94,7 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
                 item {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text("No category budgets set. Tap the '+' button to add one.")
                     }
@@ -105,13 +107,12 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
                         onDelete = {
                             budgetToDelete = budget
                             showDeleteDialog = true
-                        }
+                        },
                     )
                 }
             }
         }
     }
-
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -124,12 +125,12 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
                         budgetToDelete?.let { viewModel.deleteBudget(it) }
                         showDeleteDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 ) { Text("Delete") }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
-            }
+            },
         )
     }
 }
@@ -138,20 +139,21 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
 fun SimpleBudgetItem(
     budget: Budget,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(budget.categoryName, style = MaterialTheme.typography.bodyLarge)
             Text(
                 text = "Budget: ₹${"%.0f".format(budget.amount)}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         IconButton(onClick = onEdit) {

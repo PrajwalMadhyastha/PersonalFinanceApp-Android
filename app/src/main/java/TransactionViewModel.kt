@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
-
     private val transactionRepository: TransactionRepository
     private val accountRepository: AccountRepository
     private val categoryRepository: CategoryRepository
@@ -32,16 +31,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         accountRepository = AccountRepository(db.accountDao())
         categoryRepository = CategoryRepository(db.categoryDao())
 
-        allTransactions = transactionRepository.allTransactions
-            .onEach { transactions ->
-                // DEBUG LOG: See what the ViewModel is receiving from the repository
-                Log.d("TransactionFlowDebug", "ViewModel Received Update. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}")
-            }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
-            )
+        allTransactions =
+            transactionRepository.allTransactions
+                .onEach { transactions ->
+                    // DEBUG LOG: See what the ViewModel is receiving from the repository
+                    Log.d("TransactionFlowDebug", "ViewModel Received Update. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}")
+                }
+                .stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5000),
+                    initialValue = emptyList(),
+                )
 
         allAccounts = accountRepository.allAccounts
         allCategories = categoryRepository.allCategories
@@ -59,7 +59,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         notes: String?,
         date: Long,
         transactionType: String,
-        sourceSmsId: Long?
+        sourceSmsId: Long?,
     ): Boolean {
         _validationError.value = null
 
@@ -73,16 +73,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             return false
         }
 
-        val newTransaction = Transaction(
-            description = description,
-            categoryId = categoryId,
-            amount = amount,
-            date = date,
-            accountId = accountId,
-            notes = notes,
-            transactionType = transactionType,
-            sourceSmsId = sourceSmsId
-        )
+        val newTransaction =
+            Transaction(
+                description = description,
+                categoryId = categoryId,
+                amount = amount,
+                date = date,
+                accountId = accountId,
+                notes = notes,
+                transactionType = transactionType,
+                sourceSmsId = sourceSmsId,
+            )
         viewModelScope.launch {
             // DEBUG LOG: See when a transaction is being added
             Log.d("TransactionFlowDebug", "ViewModel: Attempting to add transaction '${newTransaction.description}'")
@@ -109,9 +110,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return true
     }
 
-    fun deleteTransaction(transaction: Transaction) = viewModelScope.launch {
-        transactionRepository.delete(transaction)
-    }
+    fun deleteTransaction(transaction: Transaction) =
+        viewModelScope.launch {
+            transactionRepository.delete(transaction)
+        }
 
     fun clearError() {
         _validationError.value = null

@@ -14,14 +14,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class SmsReceiver : BroadcastReceiver() {
-
     private val TAG = "SmsReceiver"
 
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         Log.d(TAG, "onReceive triggered for action: ${intent.action}")
 
         if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
-
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
@@ -35,13 +36,14 @@ class SmsReceiver : BroadcastReceiver() {
                     // --- CORRECTED: Use the same de-duplication logic as the manual scan ---
                     // 1. Get existing mappings and already imported SMS IDs from the database
                     val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
-                    val existingSmsIds = transactionRepository.allTransactions.first()
-                        .mapNotNull { transactionDetail ->
-                            transactionDetail.transaction.notes?.let { notes ->
-                                val match = "sms_id:(\\d+)".toRegex().find(notes)
-                                match?.groups?.get(1)?.value?.toLongOrNull()
-                            }
-                        }.toSet()
+                    val existingSmsIds =
+                        transactionRepository.allTransactions.first()
+                            .mapNotNull { transactionDetail ->
+                                transactionDetail.transaction.notes?.let { notes ->
+                                    val match = "sms_id:(\\d+)".toRegex().find(notes)
+                                    match?.groups?.get(1)?.value?.toLongOrNull()
+                                }
+                            }.toSet()
 
                     // 2. Process each incoming message
                     for (sms in messages) {
@@ -74,10 +76,9 @@ class SmsReceiver : BroadcastReceiver() {
                             Log.d(TAG, "SMS with ID: $smsId appears to be a duplicate. Skipping.")
                         }
                     }
-                } catch(e: Exception) {
+                } catch (e: Exception) {
                     Log.e(TAG, "Error processing SMS", e)
-                }
-                finally {
+                } finally {
                     pendingResult.finish()
                     Log.d(TAG, "Pending result finished.")
                 }
