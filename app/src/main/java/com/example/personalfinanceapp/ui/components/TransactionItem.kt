@@ -4,18 +4,26 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.NorthEast
+import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,6 +44,7 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
         onClick = onClick
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = transactionDetails.transaction.description,
@@ -61,12 +70,27 @@ fun TransactionItem(transactionDetails: TransactionDetails, onClick: () -> Unit)
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Text(
-                text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = if (transactionDetails.transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-            )
+
+            // --- UPDATES: Use brighter colors, angled icons, and new layout ---
+            val isIncome = transactionDetails.transaction.transactionType == "income"
+            val amountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
+            val icon = if (isIncome) Icons.Default.SouthWest else Icons.Default.NorthEast
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = amountColor
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = icon,
+                    contentDescription = transactionDetails.transaction.transactionType,
+                    tint = amountColor,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }
@@ -87,10 +111,15 @@ fun AccountTransactionItem(transaction: Transaction) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
+        // --- UPDATE: Use brighter colors for consistency ---
+        val isIncome = transaction.transactionType == "income"
+        val amountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
+
         Text(
             text = "₹${"%.2f".format(transaction.amount)}",
             style = MaterialTheme.typography.bodyLarge,
-            color = if (transaction.transactionType == "expense") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+            color = amountColor
         )
     }
 }
