@@ -1,56 +1,116 @@
+// FILE: app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt
+
 package io.pm.finlight.ui.screens
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import io.pm.finlight.R
+import io.pm.finlight.OnboardingViewModel
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun OnboardingScreen(onGetStarted: () -> Unit) {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Column(
+fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
+    // --- UPDATED: Page count is now 6 ---
+    val pagerState = rememberPagerState { 6 }
+    val scope = rememberCoroutineScope()
+
+    Scaffold(
+        bottomBar = {
+            OnboardingBottomBar(
+                pagerState = pagerState,
+                onNextClicked = {
+                    scope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    }
+                },
+                onFinishClicked = {
+                    viewModel.finishOnboarding()
+                    onOnboardingFinished()
+                }
+            )
+        }
+    ) { innerPadding ->
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                contentDescription = "App Icon",
-                modifier = Modifier.size(150.dp)
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = "Welcome to Your Finance Hub",
-                style = MaterialTheme.typography.headlineMedium,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Your PRIVACY is the PRIORITY. All of your financial data is stored securely and ONLY ON YOUR DEVICE. Take control of your finances with confidence.",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(48.dp))
-            Button(onClick = onGetStarted) {
-                Text("Get Started")
+                .padding(innerPadding)
+        ) { page ->
+            // --- UPDATED: New page order with split permissions ---
+            when (page) {
+                0 -> WelcomePage()
+                1 -> AccountSetupPage(viewModel)
+                2 -> CategorySetupPage(viewModel)
+                3 -> BudgetSetupPage(viewModel)
+                4 -> SmsPermissionPage()
+                5 -> NotificationPermissionPage(onFinish = {
+                    viewModel.finishOnboarding()
+                    onOnboardingFinished()
+                })
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun OnboardingBottomBar(
+    pagerState: PagerState,
+    onNextClicked: () -> Unit,
+    onFinishClicked: () -> Unit
+) {
+    Surface(shadowElevation = 8.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            PageIndicator(pageCount = pagerState.pageCount, currentPage = pagerState.currentPage)
+
+            if (pagerState.currentPage < pagerState.pageCount - 1) {
+                Button(onClick = onNextClicked) {
+                    Text("Next")
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Page")
+                }
+            } else {
+                Button(onClick = onFinishClicked) {
+                    Text("Finish Setup")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PageIndicator(pageCount: Int, currentPage: Int) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(pageCount) { iteration ->
+            val color = if (currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
         }
     }
 }

@@ -46,7 +46,6 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
 
         val settingsRepository = SettingsRepository(this)
-        val initialLockStatus = settingsRepository.isAppLockEnabledBlocking()
         val hasSeenOnboarding = settingsRepository.hasSeenOnboarding()
 
         setContent {
@@ -54,12 +53,17 @@ class MainActivity : AppCompatActivity() {
                 var showOnboarding by remember { mutableStateOf(!hasSeenOnboarding) }
 
                 if (showOnboarding) {
-                    OnboardingScreen(onGetStarted = {
-                        settingsRepository.setHasSeenOnboarding(true)
-                        showOnboarding = false
-                    })
+                    // --- UPDATED LOGIC TO LAUNCH NEW ONBOARDING FLOW ---
+                    val onboardingViewModel: OnboardingViewModel = viewModel(factory = OnboardingViewModelFactory(application))
+                    OnboardingScreen(
+                        viewModel = onboardingViewModel,
+                        onOnboardingFinished = {
+                            settingsRepository.setHasSeenOnboarding(true)
+                            showOnboarding = false
+                        }
+                    )
                 } else {
-                    FinanceAppWithLockScreen(isInitiallyLocked = initialLockStatus)
+                    FinanceAppWithLockScreen(isInitiallyLocked = settingsRepository.isAppLockEnabledBlocking())
                 }
             }
         }
