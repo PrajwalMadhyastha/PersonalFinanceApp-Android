@@ -39,7 +39,7 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
     val context = LocalContext.current
 
     var overallBudgetInput by remember(overallBudget) {
-        mutableStateOf(if (overallBudget > 0) "%.2f".format(overallBudget) else "")
+        mutableStateOf(if (overallBudget > 0) "%.0f".format(overallBudget) else "")
     }
 
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -90,6 +90,8 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = view
                             onClick = {
                                 viewModel.saveOverallBudget(overallBudgetInput)
                                 Toast.makeText(context, "Overall Budget Saved!", Toast.LENGTH_SHORT).show()
+                                // --- BUG FIX: Navigate back to the dashboard after saving ---
+                                navController.popBackStack()
                             },
                             modifier = Modifier.align(Alignment.End)
                         ) {
@@ -177,7 +179,7 @@ fun SimpleBudgetItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(budget.categoryName, style = MaterialTheme.typography.bodyLarge)
             Text(
-                text = "Budget: ₹${"%.2f".format(budget.amount)}",
+                text = "Budget: ₹${"%.0f".format(budget.amount)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

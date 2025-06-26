@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
@@ -110,11 +111,11 @@ fun StatCard(
 }
 
 @Composable
-fun OverallBudgetCard(totalBudget: Float, amountSpent: Float) {
-    if (totalBudget <= 0) {
-        return
-    }
-
+fun OverallBudgetCard(
+    totalBudget: Float,
+    amountSpent: Float,
+    navController: NavController
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(4.dp)
@@ -122,42 +123,73 @@ fun OverallBudgetCard(totalBudget: Float, amountSpent: Float) {
         Column(
             modifier = Modifier.padding(16.dp),
         ) {
-            Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
-            Spacer(modifier = Modifier.height(16.dp))
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceAround
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // The Liquid Tumbler visualization
-                LiquidTumbler(
-                    progress = (amountSpent / totalBudget),
-                    modifier = Modifier.size(120.dp)
-                )
+                Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
+                if (totalBudget > 0) {
+                    TextButton(onClick = { navController.navigate("budget_screen") }) {
+                        Text("Edit")
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
 
-                // The text summary
-                Column {
-                    Text("Spent", style = MaterialTheme.typography.labelLarge)
+            if (totalBudget <= 0) {
+                // --- NEW: State for when no budget is set ---
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(
-                        text = "₹${"%.2f".format(amountSpent)}",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
+                        "You haven't set a budget for this month yet.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Remaining", style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        text = "₹${"%.2f".format(totalBudget - amountSpent)}",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(onClick = { navController.navigate("budget_screen") }) {
+                        Text("Set Budget")
+                    }
+                }
+            } else {
+                // --- EXISTING: State for when a budget IS set ---
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceAround
+                ) {
+                    // The Liquid Tumbler visualization
+                    LiquidTumbler(
+                        progress = (amountSpent / totalBudget),
+                        modifier = Modifier.size(120.dp)
                     )
+
+                    // The text summary
+                    Column {
+                        Text("Spent", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            text = "₹${"%.2f".format(amountSpent)}",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Remaining", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            text = "₹${"%.2f".format(totalBudget - amountSpent)}",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }
     }
 }
+
 
 @Composable
 fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
@@ -354,13 +386,31 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
 }
 
 @Composable
-fun BudgetWatchCard(budgetStatus: List<BudgetWithSpending>, viewModel: BudgetViewModel) {
+fun BudgetWatchCard(
+    budgetStatus: List<BudgetWithSpending>,
+    viewModel: BudgetViewModel,
+    navController: NavController
+) {
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
+                // --- NEW: Shortcut to add a category budget ---
+                TextButton(onClick = { navController.navigate("add_budget") }) {
+                    Text("+ Add Category Budget")
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
             if (budgetStatus.isEmpty()) {
-                Text("No budgets set for this month.", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "No category-specific budgets set for this month.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
             } else {
                 budgetStatus.forEach { budgetWithSpendingItem ->
                     BudgetItem(budget = budgetWithSpendingItem.budget, viewModel = viewModel)
@@ -369,6 +419,7 @@ fun BudgetWatchCard(budgetStatus: List<BudgetWithSpending>, viewModel: BudgetVie
         }
     }
 }
+
 
 @Composable
 fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
@@ -388,41 +439,36 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
         else -> MaterialTheme.colorScheme.primary
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = budget.categoryName,
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = "₹${"%.2f".format(budget.amount)}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(8.dp),
-                color = progressColor
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = budget.categoryName,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    text = "Spent: ₹${"%.2f".format(actualSpending)}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = "Remaining: ₹${"%.2f".format(amountRemaining)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (amountRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                )
-            }
+            Text(
+                text = "₹${"%.0f".format(budget.amount)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth().height(8.dp),
+            color = progressColor
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                text = "Spent: ₹${"%.2f".format(actualSpending)}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "Remaining: ₹${"%.2f".format(amountRemaining)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (amountRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }

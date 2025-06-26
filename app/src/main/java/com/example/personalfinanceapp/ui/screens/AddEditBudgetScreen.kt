@@ -49,7 +49,7 @@ fun AddEditBudgetScreen(
     LaunchedEffect(budgetToEdit, allCategories) {
         if (isEditMode) {
             budgetToEdit?.let { budget ->
-                amount = "%.2f".format(budget.amount)
+                amount = "%.0f".format(budget.amount)
                 selectedCategory = allCategories.find { it.name == budget.categoryName }
             }
         }

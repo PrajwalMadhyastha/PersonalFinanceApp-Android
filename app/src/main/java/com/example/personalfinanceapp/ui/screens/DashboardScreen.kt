@@ -95,7 +95,8 @@ fun DashboardScreen(
             item {
                 OverallBudgetCard(
                     totalBudget = overallBudget,
-                    amountSpent = monthlyExpenses.toFloat()
+                    amountSpent = monthlyExpenses.toFloat(),
+                    navController = navController
                 )
             }
             item {
@@ -139,7 +140,13 @@ fun DashboardScreen(
             item { AccountSummaryCard(accounts = accountsSummary, navController = navController) }
 
             item { RecentActivityCard(recentTransactions, navController) }
-            item { BudgetWatchCard(budgetStatus, budgetViewModel) }
+            item {
+                BudgetWatchCard(
+                    budgetStatus = budgetStatus,
+                    viewModel = budgetViewModel,
+                    navController = navController
+                )
+            }
         }
     }
 }
