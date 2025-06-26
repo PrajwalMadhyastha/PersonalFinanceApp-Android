@@ -25,6 +25,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -282,51 +283,59 @@ fun EditTransactionScreen(
                     }
                 }
                 item {
-                    Button(
-                        onClick = {
-                            if (isFromCsvImport) {
-                                val correctedData = listOf(
-                                    dateFormat.format(selectedDateTime.time),
-                                    description,
-                                    amount,
-                                    transactionType,
-                                    selectedCategory?.name ?: "",
-                                    selectedAccount?.name ?: "",
-                                    notes
-                                )
-                                val gson = Gson()
-                                navController.previousBackStackEntry?.savedStateHandle?.set(
-                                    "corrected_row",
-                                    gson.toJson(correctedData)
-                                )
-                                navController.previousBackStackEntry?.savedStateHandle?.set(
-                                    "corrected_row_line",
-                                    csvLineNumber
-                                )
-                                navController.popBackStack()
-                            } else {
-                                val updatedAmount = amount.toDoubleOrNull() ?: 0.0
-                                val currentTransaction = transactionFromDb
-                                if (currentTransaction != null && selectedAccount != null) {
-                                    val updatedTransaction = currentTransaction.copy(
-                                        description = description,
-                                        amount = updatedAmount,
-                                        accountId = selectedAccount!!.id,
-                                        categoryId = selectedCategory?.id,
-                                        notes = notes.takeIf { it.isNotBlank() },
-                                        date = selectedDateTime.timeInMillis,
-                                        transactionType = transactionType
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                            Text("Cancel")
+                        }
+                        Button(
+                            onClick = {
+                                if (isFromCsvImport) {
+                                    val correctedData = listOf(
+                                        dateFormat.format(selectedDateTime.time),
+                                        description,
+                                        amount,
+                                        transactionType,
+                                        selectedCategory?.name ?: "",
+                                        selectedAccount?.name ?: "",
+                                        notes
                                     )
-                                    if (viewModel.updateTransaction(updatedTransaction)) {
-                                        navController.popBackStack()
+                                    val gson = Gson()
+                                    navController.previousBackStackEntry?.savedStateHandle?.set(
+                                        "corrected_row",
+                                        gson.toJson(correctedData)
+                                    )
+                                    navController.previousBackStackEntry?.savedStateHandle?.set(
+                                        "corrected_row_line",
+                                        csvLineNumber
+                                    )
+                                    navController.popBackStack()
+                                } else {
+                                    val updatedAmount = amount.toDoubleOrNull() ?: 0.0
+                                    val currentTransaction = transactionFromDb
+                                    if (currentTransaction != null && selectedAccount != null) {
+                                        val updatedTransaction = currentTransaction.copy(
+                                            description = description,
+                                            amount = updatedAmount,
+                                            accountId = selectedAccount!!.id,
+                                            categoryId = selectedCategory?.id,
+                                            notes = notes.takeIf { it.isNotBlank() },
+                                            date = selectedDateTime.timeInMillis,
+                                            transactionType = transactionType
+                                        )
+                                        if (viewModel.updateTransaction(updatedTransaction)) {
+                                            navController.popBackStack()
+                                        }
                                     }
                                 }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = selectedAccount != null && selectedCategory != null
-                    ) {
-                        Text(if (isFromCsvImport) "Update Row" else "Update Transaction")
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = selectedAccount != null && selectedCategory != null
+                        ) {
+                            Text(if (isFromCsvImport) "Update Row" else "Update Transaction")
+                        }
                     }
                 }
             }

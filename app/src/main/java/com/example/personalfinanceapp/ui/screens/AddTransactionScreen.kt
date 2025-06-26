@@ -23,6 +23,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -176,26 +177,34 @@ fun AddTransactionScreen(navController: NavController, viewModel: TransactionVie
             }
 
             item {
-                Button(
-                    onClick = {
-                        val success = viewModel.addTransaction(
-                            description = description,
-                            categoryId = selectedCategory?.id,
-                            amountStr = amount,
-                            accountId = selectedAccount!!.id,
-                            notes = notes.takeIf { it.isNotBlank() },
-                            date = selectedDateTime.timeInMillis,
-                            transactionType = transactionType,
-                            sourceSmsId = null
-                        )
-                        if (success) {
-                            navController.popBackStack()
-                        }
-                    },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank()
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("Save Transaction")
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            val success = viewModel.addTransaction(
+                                description = description,
+                                categoryId = selectedCategory?.id,
+                                amountStr = amount,
+                                accountId = selectedAccount!!.id,
+                                notes = notes.takeIf { it.isNotBlank() },
+                                date = selectedDateTime.timeInMillis,
+                                transactionType = transactionType,
+                                sourceSmsId = null
+                            )
+                            if (success) {
+                                navController.popBackStack()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank()
+                    ) {
+                        Text("Save Transaction")
+                    }
                 }
             }
         }

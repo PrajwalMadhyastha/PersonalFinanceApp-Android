@@ -19,6 +19,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -118,20 +119,28 @@ fun AddRecurringTransactionScreen(navController: NavController) {
             }
 
             item {
-                Button(
-                    onClick = {
-                        val amountDouble = amount.toDoubleOrNull()
-                        if (amountDouble != null && selectedAccount != null) {
-                            recurringViewModel.addRecurringTransaction(
-                                description, amountDouble, transactionType, selectedInterval, System.currentTimeMillis(), selectedAccount!!.id, selectedCategory?.id
-                            )
-                            navController.popBackStack()
-                        }
-                    },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = description.isNotBlank() && amount.isNotBlank() && selectedAccount != null
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("Save Rule")
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            val amountDouble = amount.toDoubleOrNull()
+                            if (amountDouble != null && selectedAccount != null) {
+                                recurringViewModel.addRecurringTransaction(
+                                    description, amountDouble, transactionType, selectedInterval, System.currentTimeMillis(), selectedAccount!!.id, selectedCategory?.id
+                                )
+                                navController.popBackStack()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = description.isNotBlank() && amount.isNotBlank() && selectedAccount != null
+                    ) {
+                        Text("Save Rule")
+                    }
                 }
             }
         }

@@ -127,24 +127,32 @@ fun AddEditBudgetScreen(
                 leadingIcon = { Text("₹") }
             )
             Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    val amountDouble = amount.toDoubleOrNull()
-                    if (selectedCategory != null && amountDouble != null && amountDouble > 0) {
-                        if (isEditMode) {
-                            budgetToEdit?.let { currentBudget ->
-                                viewModel.updateBudget(currentBudget.copy(amount = amountDouble))
-                            }
-                        } else {
-                            viewModel.addCategoryBudget(selectedCategory!!.name, amount)
-                        }
-                        navController.popBackStack()
-                    }
-                },
-                modifier = Modifier.align(Alignment.End),
-                enabled = selectedCategory != null && amount.isNotBlank()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(buttonText)
+                OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = {
+                        val amountDouble = amount.toDoubleOrNull()
+                        if (selectedCategory != null && amountDouble != null && amountDouble > 0) {
+                            if (isEditMode) {
+                                budgetToEdit?.let { currentBudget ->
+                                    viewModel.updateBudget(currentBudget.copy(amount = amountDouble))
+                                }
+                            } else {
+                                viewModel.addCategoryBudget(selectedCategory!!.name, amount)
+                            }
+                            navController.popBackStack()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = selectedCategory != null && amount.isNotBlank()
+                ) {
+                    Text(buttonText)
+                }
             }
         }
     }

@@ -230,27 +230,35 @@ fun ApproveTransactionScreen(
             item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
 
             item {
-                Button(
-                    onClick = {
-                        settingsViewModel.saveMerchantMapping(smsSender, description)
-
-                        val success = transactionViewModel.addTransaction(
-                            description = description,
-                            categoryId = selectedCategory?.id,
-                            amountStr = amount.toString(),
-                            accountId = selectedAccount!!.id,
-                            notes = notes.takeIf { it.isNotBlank() },
-                            date = System.currentTimeMillis(),
-                            transactionType = transactionType,
-                            sourceSmsId = smsId
-                        )
-                        if (success) {
-                            navController.popBackStack()
-                        }
-                    },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = selectedAccount != null && selectedCategory != null
-                ) { Text("Save Transaction") }
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            settingsViewModel.saveMerchantMapping(smsSender, description)
+
+                            val success = transactionViewModel.addTransaction(
+                                description = description,
+                                categoryId = selectedCategory?.id,
+                                amountStr = amount.toString(),
+                                accountId = selectedAccount!!.id,
+                                notes = notes.takeIf { it.isNotBlank() },
+                                date = System.currentTimeMillis(),
+                                transactionType = transactionType,
+                                sourceSmsId = smsId
+                            )
+                            if (success) {
+                                navController.popBackStack()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = selectedAccount != null && selectedCategory != null
+                    ) { Text("Save Transaction") }
+                }
             }
         }
     }

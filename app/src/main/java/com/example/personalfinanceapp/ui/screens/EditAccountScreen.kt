@@ -2,6 +2,7 @@ package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,6 +15,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -88,18 +90,26 @@ fun EditAccountScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        val updatedAccount = currentAccount.copy(
-                            name = accountName,
-                            type = accountType
-                        )
-                        viewModel.updateAccount(updatedAccount)
-                        navController.popBackStack()
-                    },
-                    modifier = Modifier.align(Alignment.End)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("Update Account")
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            val updatedAccount = currentAccount.copy(
+                                name = accountName,
+                                type = accountType
+                            )
+                            viewModel.updateAccount(updatedAccount)
+                            navController.popBackStack()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Update Account")
+                    }
                 }
             }
         }

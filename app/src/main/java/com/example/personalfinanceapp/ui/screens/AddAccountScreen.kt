@@ -2,6 +2,7 @@ package com.example.personalfinanceapp.com.example.personalfinanceapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +14,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -66,17 +68,25 @@ fun AddAccountScreen(navController: NavController, viewModel: AccountViewModel) 
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    if (accountName.isNotBlank() && accountType.isNotBlank()) {
-                        viewModel.addAccount(accountName, accountType)
-                        navController.popBackStack()
-                    }
-                },
-                modifier = Modifier.align(Alignment.End),
-                enabled = accountName.isNotBlank() && accountType.isNotBlank()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text("Save Account")
+                OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = {
+                        if (accountName.isNotBlank() && accountType.isNotBlank()) {
+                            viewModel.addAccount(accountName, accountType)
+                            navController.popBackStack()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = accountName.isNotBlank() && accountType.isNotBlank()
+                ) {
+                    Text("Save Account")
+                }
             }
         }
     }
