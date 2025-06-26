@@ -131,7 +131,7 @@ fun OverallBudgetCard(
                 Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
                 if (totalBudget > 0) {
                     TextButton(onClick = { navController.navigate("budget_screen") }) {
-                        Text("Edit")
+                        Text("Edit Monthly Budget")
                     }
                 }
             }

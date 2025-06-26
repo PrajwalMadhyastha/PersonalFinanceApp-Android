@@ -47,7 +47,7 @@ fun SettingsScreen(
 
     val isAppLockEnabled by viewModel.appLockEnabled.collectAsState()
     val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
-    val isDailyReminderEnabled by viewModel.dailyReminderEnabled.collectAsState()
+    val isDailyReportEnabled by viewModel.dailyReportEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
     var showSmsRationaleDialog by remember { mutableStateOf(false) }
     var hasSmsPermission by remember {
@@ -248,11 +248,11 @@ fun SettingsScreen(
             item { SettingSectionHeader("Notifications") }
             item {
                 SettingsToggleItem(
-                    title = "Daily Review Reminder",
-                    subtitle = "Get a notification if you have transactions waiting for approval.",
+                    title = "Enable Daily Summary Notification",
+                    subtitle = "Get a report of yesterday's spending each day.",
                     icon = Icons.Default.NotificationsActive,
-                    checked = isDailyReminderEnabled,
-                    onCheckedChange = { viewModel.setDailyReminder(it) }
+                    checked = isDailyReportEnabled,
+                    onCheckedChange = { viewModel.setDailyReportEnabled(it) }
                 )
             }
             item {
@@ -335,45 +335,45 @@ fun SettingsScreen(
                     }
                 )
             }
-                item { SettingSectionHeader("Data Management") }
-                item {
-                    SettingsActionItem(
-                        text = "Export Data as JSON",
-                        icon = Icons.Default.DataObject,
-                        onClick = {
-                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                            val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
-                            jsonFileSaverLauncher.launch(fileName)
-                        }
-                    )
-                }
+            item { SettingSectionHeader("Data Management") }
+            item {
+                SettingsActionItem(
+                    text = "Export Data as JSON",
+                    icon = Icons.Default.DataObject,
+                    onClick = {
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                        val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
+                        jsonFileSaverLauncher.launch(fileName)
+                    }
+                )
+            }
 
-                item {
-                    SettingsActionItem(
-                        text = "Export Transactions as CSV",
-                        icon = Icons.Default.GridOn,
-                        onClick = {
-                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                            val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
-                            csvFileSaverLauncher.launch(fileName)
-                        }
-                    )
-                }
+            item {
+                SettingsActionItem(
+                    text = "Export Transactions as CSV",
+                    icon = Icons.Default.GridOn,
+                    onClick = {
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                        val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
+                        csvFileSaverLauncher.launch(fileName)
+                    }
+                )
+            }
 
-                item {
-                    SettingsActionItem(
-                        text = "Import from JSON",
-                        icon = Icons.Default.Download,
-                        onClick = { showImportJsonDialog = true }
-                    )
-                }
-                item {
-                    SettingsActionItem(
-                        text = "Import from CSV",
-                        icon = Icons.Default.PostAdd,
-                        onClick = { showImportCsvDialog = true }
-                    )
-                }
+            item {
+                SettingsActionItem(
+                    text = "Import from JSON",
+                    icon = Icons.Default.Download,
+                    onClick = { showImportJsonDialog = true }
+                )
+            }
+            item {
+                SettingsActionItem(
+                    text = "Import from CSV",
+                    icon = Icons.Default.PostAdd,
+                    onClick = { showImportCsvDialog = true }
+                )
+            }
         }
     }
     if (isScanning) {

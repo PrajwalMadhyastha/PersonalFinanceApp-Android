@@ -61,6 +61,38 @@ object NotificationHelper {
         }
     }
 
+    fun showDailyReportNotification(
+        context: Context,
+        totalExpenses: Double
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+
+        val pendingIntent = PendingIntent.getActivity(context, 100, intent, PendingIntent.FLAG_IMMUTABLE)
+
+        val reportText = if (totalExpenses > 0) {
+            "You spent a total of ₹${"%.2f".format(totalExpenses)} yesterday."
+        } else {
+            "Great job! You had no expenses yesterday."
+        }
+
+        val notification = NotificationCompat.Builder(context, MainApplication.DAILY_REPORT_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Your Daily Report")
+            .setContentText(reportText)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        NotificationManagerCompat.from(context).notify(2, notification)
+    }
+
     /**
      * NEW: Creates and displays a notification for the weekly summary.
      */

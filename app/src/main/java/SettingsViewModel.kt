@@ -33,7 +33,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val overallBudget: StateFlow<Float> = settingsRepository.getOverallBudgetForCurrentMonth().stateIn(
         scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = 0f)
 
-    val dailyReminderEnabled: StateFlow<Boolean> = settingsRepository.getDailyReminderEnabled().stateIn(
+    val dailyReportEnabled: StateFlow<Boolean> = settingsRepository.getDailyReportEnabled().stateIn(
         scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = false)
 
     val weeklySummaryEnabled: StateFlow<Boolean> = settingsRepository.getWeeklySummaryEnabled().stateIn(
@@ -75,9 +75,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         settingsRepository.saveOverallBudgetForCurrentMonth(budgetFloat)
     }
 
-    fun setDailyReminder(enabled: Boolean) {
-        settingsRepository.saveDailyReminderEnabled(enabled)
-        if (enabled) ReminderManager.scheduleDailyReminder(context) else ReminderManager.cancelDailyReminder(context)
+    fun setDailyReportEnabled(enabled: Boolean) {
+        settingsRepository.saveDailyReportEnabled(enabled)
+        if (enabled) ReminderManager.scheduleDailyReport(context) else ReminderManager.cancelDailyReport(context)
     }
 
     fun setWeeklySummaryEnabled(enabled: Boolean) {

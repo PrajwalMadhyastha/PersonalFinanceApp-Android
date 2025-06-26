@@ -9,16 +9,14 @@ class MainApplication : Application() {
 
     companion object {
         const val TRANSACTION_CHANNEL_ID = "transaction_channel"
-        const val REMINDER_CHANNEL_ID = "reminder_channel"
-        // --- ADDED: A new channel for summary notifications ---
+        const val DAILY_REPORT_CHANNEL_ID = "daily_report_channel"
         const val SUMMARY_CHANNEL_ID = "summary_channel"
     }
 
     override fun onCreate() {
         super.onCreate()
         createTransactionNotificationChannel()
-        createReminderNotificationChannel()
-        // --- ADDED: Create the new channel on app startup ---
+        createDailyReportNotificationChannel()
         createSummaryNotificationChannel()
     }
 
@@ -36,12 +34,12 @@ class MainApplication : Application() {
         }
     }
 
-    private fun createReminderNotificationChannel() {
+    private fun createDailyReportNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "Review Reminders"
-            val descriptionText = "Daily reminders to approve pending transactions"
+            val name = "Daily Reports"
+            val descriptionText = "Daily summary of your spending."
             val importance = NotificationManager.IMPORTANCE_DEFAULT
-            val channel = NotificationChannel(REMINDER_CHANNEL_ID, name, importance).apply {
+            val channel = NotificationChannel(DAILY_REPORT_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
             }
             val notificationManager: NotificationManager =
