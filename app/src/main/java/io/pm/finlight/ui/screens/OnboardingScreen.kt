@@ -24,19 +24,21 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // --- UPDATED: Page count is now 6 ---
-    val pagerState = rememberPagerState { 6 }
+    // --- UPDATED: Page count is now 7 to include the final confirmation page ---
+    val pagerState = rememberPagerState { 7 }
     val scope = rememberCoroutineScope()
+
+    val onNextClicked: () -> Unit = {
+        scope.launch {
+            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+        }
+    }
 
     Scaffold(
         bottomBar = {
             OnboardingBottomBar(
                 pagerState = pagerState,
-                onNextClicked = {
-                    scope.launch {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                    }
-                },
+                onNextClicked = onNextClicked,
                 onFinishClicked = {
                     viewModel.finishOnboarding()
                     onOnboardingFinished()
@@ -50,17 +52,15 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
                 .fillMaxSize()
                 .padding(innerPadding)
         ) { page ->
-            // --- UPDATED: New page order with split permissions ---
+            // --- UPDATED: New page order with auto-advancing permissions and a final page ---
             when (page) {
                 0 -> WelcomePage()
                 1 -> AccountSetupPage(viewModel)
                 2 -> CategorySetupPage(viewModel)
                 3 -> BudgetSetupPage(viewModel)
-                4 -> SmsPermissionPage()
-                5 -> NotificationPermissionPage(onFinish = {
-                    viewModel.finishOnboarding()
-                    onOnboardingFinished()
-                })
+                4 -> SmsPermissionPage(onPermissionResult = onNextClicked)
+                5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
+                6 -> CompletionPage()
             }
         }
     }

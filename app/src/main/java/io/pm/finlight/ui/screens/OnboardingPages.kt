@@ -7,7 +7,6 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,8 +18,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -28,10 +27,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import io.pm.finlight.Account
 import io.pm.finlight.OnboardingViewModel
-import io.pm.finlight.R
-import io.pm.finlight.SelectableCategory
 
 @Composable
 fun WelcomePage() {
@@ -58,11 +54,12 @@ fun WelcomePage() {
         Text(
             buildAnnotatedString {
                 append("Your ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                // --- MODIFIED: Use a distinct bright green color for emphasis ---
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
                     append("PRIVACY")
                 }
                 append(" is our ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
                     append("PRIORITY")
                 }
                 append(". All your financial data is ")
@@ -204,8 +201,11 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
     }
 }
 
+/**
+ * A dedicated page for explaining and requesting SMS permissions that auto-advances.
+ */
 @Composable
-fun SmsPermissionPage() {
+fun SmsPermissionPage(onPermissionResult: () -> Unit) {
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -215,6 +215,8 @@ fun SmsPermissionPage() {
         } else {
             Toast.makeText(context, "SMS Scanning Enabled!", Toast.LENGTH_SHORT).show()
         }
+        // --- MODIFIED: Auto-advance to the next page after the user responds ---
+        onPermissionResult()
     }
 
     Column(
@@ -243,11 +245,10 @@ fun SmsPermissionPage() {
 }
 
 /**
- * The final page of onboarding, which explains notification benefits.
- * The "Finish" button is now handled by the shared OnboardingBottomBar.
+ * A dedicated page for notifications that auto-advances.
  */
 @Composable
-fun NotificationPermissionPage(onFinish: () -> Unit) {
+fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -257,6 +258,8 @@ fun NotificationPermissionPage(onFinish: () -> Unit) {
         } else {
             Toast.makeText(context, "You can enable notifications later in settings.", Toast.LENGTH_LONG).show()
         }
+        // --- MODIFIED: Auto-advance to the next page after the user responds ---
+        onPermissionResult()
     }
 
     Column(
@@ -277,7 +280,6 @@ fun NotificationPermissionPage(onFinish: () -> Unit) {
         )
         Spacer(Modifier.height(24.dp))
 
-        // Notification permission is only needed for Android 13 (TIRAMISU) and above.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Button(onClick = {
                 permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -285,9 +287,44 @@ fun NotificationPermissionPage(onFinish: () -> Unit) {
                 Text("Enable Notifications")
             }
             Spacer(Modifier.height(16.dp))
+        } else {
+            // If on an older Android version, just advance the page since no permission is needed.
+            LaunchedEffect(Unit) {
+                onPermissionResult()
+            }
         }
+    }
+}
 
-        // --- FIX: Removed the redundant "Finish Setup" TextButton ---
-        // The main OnboardingBottomBar will now handle the final action.
+/**
+ * NEW: A final confirmation page for the onboarding flow.
+ */
+@Composable
+fun CompletionPage() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = "Success Icon",
+            modifier = Modifier.size(100.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "You're All Set!",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Your accounts and preferences have been saved. You can now start tracking your finances.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
+        )
     }
 }
