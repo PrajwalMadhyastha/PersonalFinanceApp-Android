@@ -12,7 +12,8 @@ import androidx.core.net.toUri
 import java.net.URLEncoder
 
 object NotificationHelper {
-    private const val DEEP_LINK_URI = "app://finlight.pm.com"
+    // --- FIXED: The hostname now correctly matches the AndroidManifest.xml intent-filter ---
+    private const val DEEP_LINK_URI = "app://finlight.pm.io"
 
     fun showTransactionNotification(
         context: Context,
@@ -25,12 +26,12 @@ object NotificationHelper {
         val encodedMerchant = URLEncoder.encode(potentialTransaction.merchantName ?: "Unknown", "UTF-8")
         val approveUri =
             (
-                "$DEEP_LINK_URI/approve?amount=${potentialTransaction.amount}" +
-                    "&type=${potentialTransaction.transactionType}" +
-                    "&merchant=$encodedMerchant" +
-                    "&smsId=${potentialTransaction.sourceSmsId}" +
-                    "&smsSender=${potentialTransaction.smsSender}"
-            ).toUri()
+                    "$DEEP_LINK_URI/approve?amount=${potentialTransaction.amount}" +
+                            "&type=${potentialTransaction.transactionType}" +
+                            "&merchant=$encodedMerchant" +
+                            "&smsId=${potentialTransaction.sourceSmsId}" +
+                            "&smsSender=${potentialTransaction.smsSender}"
+                    ).toUri()
 
         val intent =
             Intent(Intent.ACTION_VIEW, approveUri).apply {
@@ -47,7 +48,6 @@ object NotificationHelper {
 
         val notificationIcon = android.R.drawable.ic_dialog_info
 
-        // --- BUG FIX: Dynamically set the notification text based on transaction type ---
         val typeText = potentialTransaction.transactionType.replaceFirstChar { it.uppercase() }
         val bigText = "$typeText of ₹${"%.2f".format(
             potentialTransaction.amount,
@@ -104,9 +104,6 @@ object NotificationHelper {
         NotificationManagerCompat.from(context).notify(2, notification)
     }
 
-    /**
-     * NEW: Creates and displays a notification for the weekly summary.
-     */
     fun showWeeklySummaryNotification(
         context: Context,
         totalIncome: Double,
