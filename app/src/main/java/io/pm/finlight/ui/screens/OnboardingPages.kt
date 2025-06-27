@@ -204,9 +204,6 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
     }
 }
 
-/**
- * NEW: A dedicated page for explaining and requesting SMS permissions.
- */
 @Composable
 fun SmsPermissionPage() {
     val context = LocalContext.current
@@ -246,7 +243,8 @@ fun SmsPermissionPage() {
 }
 
 /**
- * NEW: A dedicated page for notifications that contains the final finish button.
+ * The final page of onboarding, which explains notification benefits.
+ * The "Finish" button is now handled by the shared OnboardingBottomBar.
  */
 @Composable
 fun NotificationPermissionPage(onFinish: () -> Unit) {
@@ -289,8 +287,7 @@ fun NotificationPermissionPage(onFinish: () -> Unit) {
             Spacer(Modifier.height(16.dp))
         }
 
-        TextButton(onClick = onFinish) {
-            Text("Finish Setup")
-        }
+        // --- FIX: Removed the redundant "Finish Setup" TextButton ---
+        // The main OnboardingBottomBar will now handle the final action.
     }
 }
