@@ -13,8 +13,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
@@ -22,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
@@ -45,12 +48,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import io.pm.finlight.Account
 import io.pm.finlight.Category
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.TimePickerDialog
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -85,6 +88,7 @@ fun EditTransactionScreen(
 
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
+    // --- FIXED: Corrected typo from 'mutableStateof' to 'mutableStateOf' ---
     var showTimePicker by remember { mutableStateOf(false) }
     val selectedDateTime = remember { Calendar.getInstance() }
 
@@ -286,6 +290,19 @@ fun EditTransactionScreen(
                         }
                     }
                 }
+                if (!isFromCsvImport) {
+                    item {
+                        Button(
+                            onClick = { showDeleteDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete Icon")
+                            Spacer(Modifier.width(8.dp))
+                            Text("Delete Transaction")
+                        }
+                    }
+                }
             }
         }
         SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
@@ -333,11 +350,14 @@ fun EditTransactionScreen(
                     "Confirm Deletion",
                 )
             }, text = { Text("Are you sure you want to permanently delete this transaction?") }, confirmButton = {
-                Button(onClick = {
-                    viewModel.deleteTransaction(transactionToDelete)
-                    showDeleteDialog = false
-                    navController.popBackStack()
-                }) { Text("Delete") }
+                Button(
+                    onClick = {
+                        viewModel.deleteTransaction(transactionToDelete)
+                        showDeleteDialog = false
+                        navController.popBackStack()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
             }, dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } })
         }
     }

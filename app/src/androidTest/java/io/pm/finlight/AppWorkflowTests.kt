@@ -16,28 +16,6 @@ import org.junit.runner.RunWith
 import org.junit.runners.model.Statement
 import java.util.UUID
 
-/**
- * A custom JUnit Rule to disable the onboarding screen before a test runs.
- * This rule accesses the app's SharedPreferences and sets the flag to true,
- * ensuring the onboarding flow does not interfere with UI tests.
- */
-class DisableOnboardingRule : TestRule {
-    override fun apply(base: Statement, description: Description): Statement {
-        return object : Statement() {
-            override fun evaluate() {
-                try {
-                    val context = InstrumentationRegistry.getInstrumentation().targetContext
-                    val prefs = context.getSharedPreferences("finance_app_settings", Context.MODE_PRIVATE)
-                    prefs.edit().putBoolean("has_seen_onboarding", true).commit()
-                    base.evaluate()
-                } finally {
-                    // Cleanup is not needed as app state is reset for each test.
-                }
-            }
-        }
-    }
-}
-
 
 /**
  * Instrumented UI test for common user workflows in the application.
