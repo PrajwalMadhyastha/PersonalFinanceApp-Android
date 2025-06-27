@@ -1,7 +1,6 @@
 // =================================================================================
 // FILE: /app/src/main/java/com/pm/finlight/TransactionViewModel.kt
-// PURPOSE: Handles business logic for the transaction list and add/edit screens.
-// NOTE: Added extensive logging to debug data flow.
+// PURPOSE: Handles business logic for transactions, now including tag management.
 // =================================================================================
 package io.pm.finlight
 
@@ -16,27 +15,34 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val transactionRepository: TransactionRepository
     private val accountRepository: AccountRepository
     private val categoryRepository: CategoryRepository
+    // --- NEW: Add TagRepository dependency ---
+    private val tagRepository: TagRepository
 
     val allTransactions: StateFlow<List<TransactionDetails>>
 
     val allAccounts: Flow<List<Account>>
     val allCategories: Flow<List<Category>>
+    // --- NEW: Expose all available tags to the UI ---
+    val allTags: StateFlow<List<Tag>>
 
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError = _validationError.asStateFlow()
+
+    // --- NEW: State to hold the currently selected tags for a transaction ---
+    private val _selectedTags = MutableStateFlow<Set<Tag>>(emptySet())
+    val selectedTags = _selectedTags.asStateFlow()
+
 
     init {
         val db = AppDatabase.getInstance(application)
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
         categoryRepository = CategoryRepository(db.categoryDao())
+        // --- NEW: Initialize TagRepository ---
+        tagRepository = TagRepository(db.tagDao(), db.transactionDao())
 
         allTransactions =
             transactionRepository.allTransactions
-                .onEach { transactions ->
-                    // DEBUG LOG: See what the ViewModel is receiving from the repository
-                    Log.d("TransactionFlowDebug", "ViewModel Received Update. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}")
-                }
                 .stateIn(
                     scope = viewModelScope,
                     started = SharingStarted.WhileSubscribed(5000),
@@ -45,12 +51,44 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
         allAccounts = accountRepository.allAccounts
         allCategories = categoryRepository.allCategories
+
+        // --- NEW: Fetch all tags and expose as StateFlow ---
+        allTags = tagRepository.allTags.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
     }
+
+    // --- NEW: Methods to manage tag selection ---
+    fun onTagSelected(tag: Tag) {
+        _selectedTags.update { currentTags ->
+            if (tag in currentTags) {
+                currentTags - tag
+            } else {
+                currentTags + tag
+            }
+        }
+    }
+
+    fun loadTagsForTransaction(transactionId: Int) {
+        viewModelScope.launch {
+            transactionRepository.getTagsForTransaction(transactionId).collect { tags ->
+                _selectedTags.value = tags.toSet()
+            }
+        }
+    }
+
+    fun clearSelectedTags() {
+        _selectedTags.value = emptySet()
+    }
+
 
     fun getTransactionById(id: Int): Flow<Transaction?> {
         return transactionRepository.getTransactionById(id)
     }
 
+    // --- UPDATED: Now saves the transaction with its selected tags ---
     fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -85,13 +123,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 sourceSmsId = sourceSmsId,
             )
         viewModelScope.launch {
-            // DEBUG LOG: See when a transaction is being added
-            Log.d("TransactionFlowDebug", "ViewModel: Attempting to add transaction '${newTransaction.description}'")
-            transactionRepository.insert(newTransaction)
+            transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)
         }
         return true
     }
 
+    // --- UPDATED: Now updates the transaction with its selected tags ---
     fun updateTransaction(transaction: Transaction): Boolean {
         _validationError.value = null
 
@@ -105,7 +142,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch {
-            transactionRepository.update(transaction)
+            transactionRepository.updateTransactionWithTags(transaction, _selectedTags.value)
         }
         return true
     }

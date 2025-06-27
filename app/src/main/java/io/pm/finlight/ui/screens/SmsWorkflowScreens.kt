@@ -27,24 +27,29 @@ fun ReviewSmsScreen(
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val potentialTransactions by viewModel.potentialTransactions.collectAsState()
-    val smsScanStartDate by viewModel.smsScanStartDate.collectAsState()
 
-    LaunchedEffect(Unit) {
-        viewModel.rescanSms(smsScanStartDate)
+    // --- FIX: This effect will pop the back stack if the list becomes empty after it has been loaded. ---
+    val hasLoadedOnce = remember { mutableStateOf(false) }
+    LaunchedEffect(potentialTransactions) {
+        // If the list is not empty, we know it has loaded at least once.
+        if (potentialTransactions.isNotEmpty()) {
+            hasLoadedOnce.value = true
+        }
+        // If it has loaded before and is now empty (e.g., user dismissed the last item), go back.
+        if (hasLoadedOnce.value && potentialTransactions.isEmpty()) {
+            navController.popBackStack()
+        }
     }
 
+    // This handles the initial case where a scan finds 0 new transactions, so the user isn't navigated here and then immediately back.
     if (potentialTransactions.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("No new transactions to review.", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Go back to Settings and tap 'Scan' to find transactions.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                )
+                Text("Reviewing transactions...", style = MaterialTheme.typography.titleMedium)
+                CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
             }
         }
     } else {

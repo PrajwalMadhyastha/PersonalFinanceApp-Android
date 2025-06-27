@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: /app/src/main/java/com/pm/finlight/TransactionRepository.kt
-// PURPOSE: Centralizes data operations between ViewModels and the Database DAOs.
-// NOTE: Added logging to trace database interactions.
+// PURPOSE: Centralizes data operations.
+// NOTE: Now includes logic to handle saving transactions with their associated tags.
 // =================================================================================
 package io.pm.finlight
 
@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
 
 class TransactionRepository(private val transactionDao: TransactionDao) {
-    // DEBUG LOG: Added .onEach to see every new list emitted from the database flow.
     val allTransactions: Flow<List<TransactionDetails>> =
         transactionDao.getAllTransactions()
             .onEach { transactions ->
@@ -73,9 +72,38 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.countTransactionsForCategory(categoryId)
     }
 
-    // DEBUG LOG: Log every time a transaction is inserted.
+    // --- NEW: Expose DAO method for getting tags for a specific transaction ---
+    fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
+        return transactionDao.getTagsForTransaction(transactionId)
+    }
+
+    // --- NEW: A transactional method to insert a transaction and its tags ---
+    suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
+        val transactionId = transactionDao.insert(transaction).toInt()
+        if (tags.isNotEmpty()) {
+            val crossRefs = tags.map { tag ->
+                TransactionTagCrossRef(transactionId = transactionId, tagId = tag.id)
+            }
+            transactionDao.addTagsToTransaction(crossRefs)
+        }
+    }
+
+    // --- NEW: A transactional method to update a transaction and its tags ---
+    suspend fun updateTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
+        // First, update the core transaction object
+        transactionDao.update(transaction)
+        // Then, clear all existing tag associations for this transaction
+        transactionDao.clearTagsForTransaction(transaction.id)
+        // Finally, if there are any selected tags, insert the new associations
+        if (tags.isNotEmpty()) {
+            val crossRefs = tags.map { tag ->
+                TransactionTagCrossRef(transactionId = transaction.id, tagId = tag.id)
+            }
+            transactionDao.addTagsToTransaction(crossRefs)
+        }
+    }
+
     suspend fun insert(transaction: Transaction) {
-        Log.d("TransactionFlowDebug", "Repository: Inserting transaction '${transaction.description}'")
         transactionDao.insert(transaction)
     }
 

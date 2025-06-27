@@ -9,11 +9,19 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+
+// --- NEW: A sealed class to represent the result of the SMS scan ---
+sealed class ScanResult {
+    data class Success(val count: Int) : ScanResult()
+    object Error : ScanResult()
+}
+
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
@@ -24,6 +32,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val accountRepository = AccountRepository(db.accountDao())
     private val categoryRepository = CategoryRepository(db.categoryDao())
     val smsScanStartDate: StateFlow<Long>
+
+    // --- NEW: A channel to emit one-time events for the UI to consume ---
+    private val _scanEvent = Channel<ScanResult>()
+    val scanEvent = _scanEvent.receiveAsFlow()
 
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
@@ -73,7 +85,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
 
     init {
-        // --- NEW: Initialize the smsScanStartDate StateFlow ---
         smsScanStartDate =
             settingsRepository.getSmsScanStartDate()
                 .stateIn(
@@ -207,7 +218,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- NEW: Function to update and re-validate a single row ---
     fun updateAndRevalidateRow(
         lineNumber: Int,
         correctedData: List<String>,
@@ -231,12 +241,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- CORRECTED: Final import logic now correctly handles creating new entities ---
     fun commitCsvImport(rowsToImport: List<ReviewableRow>) {
         viewModelScope.launch(Dispatchers.IO) {
             Log.d("CsvImportDebug", "ViewModel: commitCsvImport called with ${rowsToImport.size} rows.")
 
-            // Fetch current accounts and categories ONCE to avoid repeated DB calls in the loop.
             val allAccounts = accountRepository.allAccounts.first()
             val allCategories = categoryRepository.allCategories.first()
             val accountMap = allAccounts.associateBy { it.name.lowercase() }.toMutableMap()
@@ -255,12 +263,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     val accountName = columns[5]
                     val notes = columns.getOrNull(6)
 
-                    // Get or create Category
                     var category = categoryMap[categoryName.lowercase()]
                     if (category == null) {
                         val newCategory = Category(name = categoryName)
                         categoryRepository.insert(newCategory)
-                        // Re-fetch to get the one with the auto-generated ID
                         val updatedCategories = categoryRepository.allCategories.first()
                         category = updatedCategories.find { it.name.equals(categoryName, ignoreCase = true) }
                         if (category != null) {
@@ -268,16 +274,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             Log.d("CsvImportDebug", "ViewModel: Created and found new category '$categoryName' with ID ${category.id}")
                         } else {
                             Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new category '$categoryName'")
-                            continue // Skip this transaction
+                            continue
                         }
                     }
 
-                    // Get or create Account
                     var account = accountMap[accountName.lowercase()]
                     if (account == null) {
                         val newAccount = Account(name = accountName, type = "Imported")
                         accountRepository.insert(newAccount)
-                        // Re-fetch to get the one with the auto-generated ID
                         val updatedAccounts = accountRepository.allAccounts.first()
                         account = updatedAccounts.find { it.name.equals(accountName, ignoreCase = true) }
                         if (account != null) {
@@ -285,7 +289,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             Log.d("CsvImportDebug", "ViewModel: Created and found new account '$accountName' with ID ${account.id}")
                         } else {
                             Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new account '$accountName'")
-                            continue // Skip this transaction
+                            continue
                         }
                     }
 
@@ -304,7 +308,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             accountId = account.id,
                             categoryId = category.id,
                         )
-                    // Insert transactions one by one since insertAll is not available
                     transactionRepository.insert(transaction)
                     Log.d("CsvImportDebug", "ViewModel: Inserted transaction for row ${row.lineNumber}: '${transaction.description}'")
                 } catch (e: Exception) {
@@ -319,6 +322,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _csvValidationReport.value = null
     }
 
+    // --- REFACTORED: This function now sends an event upon completion ---
     fun rescanSms(startDate: Long?) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             return
@@ -326,28 +330,33 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         viewModelScope.launch {
             _isScanning.value = true
-
-            val rawMessages =
-                withContext(Dispatchers.IO) {
+            try {
+                val rawMessages = withContext(Dispatchers.IO) {
                     SmsRepository(context).fetchAllSms(startDate)
                 }
 
-            val existingMappings =
-                withContext(Dispatchers.IO) {
+                val existingMappings = withContext(Dispatchers.IO) {
                     merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                 }
-            val existingSmsIds =
-                withContext(Dispatchers.IO) {
+                val existingSmsIds = withContext(Dispatchers.IO) {
                     transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
                 }
 
-            val parsedList =
-                withContext(Dispatchers.Default) {
+                val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
                 }
 
-            _potentialTransactions.value = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
-            _isScanning.value = false
+                val newPotentialTransactions = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
+                _potentialTransactions.value = newPotentialTransactions
+
+                // Send a success event with the count of new transactions found.
+                _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
+            } catch (e: Exception) {
+                Log.e("SettingsViewModel", "Error during SMS scan", e)
+                _scanEvent.send(ScanResult.Error)
+            } finally {
+                _isScanning.value = false
+            }
         }
     }
 

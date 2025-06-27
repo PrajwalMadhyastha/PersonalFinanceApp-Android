@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: /app/src/main/java/com/pm/finlight/TransactionDao.kt
 // PURPOSE: Data Access Object for Transactions.
-// NOTE: The `getAllTransactions` query has been corrected to fetch all records.
+// NOTE: Added methods for managing the many-to-many relationship with Tags.
 // =================================================================================
 package io.pm.finlight
 
@@ -10,10 +10,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
-    /**
-     * CORRECTED: This query now fetches ALL transaction details without a LIMIT,
-     * ensuring the full history is loaded.
-     */
     @Query(
         """
         SELECT
@@ -163,12 +159,24 @@ interface TransactionDao {
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()
 
+    // --- UPDATED: Insert now returns the ID of the new row ---
     @Insert
-    suspend fun insert(transaction: Transaction)
+    suspend fun insert(transaction: Transaction): Long
 
     @Update
     suspend fun update(transaction: Transaction)
 
     @Delete
     suspend fun delete(transaction: Transaction)
+
+    // --- NEW: Methods for managing tags ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun addTagsToTransaction(crossRefs: List<TransactionTagCrossRef>)
+
+    @Query("DELETE FROM transaction_tag_cross_ref WHERE transactionId = :transactionId")
+    suspend fun clearTagsForTransaction(transactionId: Int)
+
+    @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
+    fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
+
 }

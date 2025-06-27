@@ -6,6 +6,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import io.pm.finlight.DataExportService
+import io.pm.finlight.ScanResult
 import io.pm.finlight.SettingsViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -55,6 +57,20 @@ fun SettingsScreen(
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
         )
+    }
+
+    LaunchedEffect(key1 = viewModel.scanEvent) {
+        viewModel.scanEvent.collect { result ->
+            if (result is ScanResult.Success) {
+                if (result.count > 0) {
+                    navController.navigate("review_sms_screen")
+                } else {
+                    Toast.makeText(context, "No new transactions found.", Toast.LENGTH_SHORT).show()
+                }
+            } else if (result is ScanResult.Error) {
+                Toast.makeText(context, "An error occurred during scan.", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     val permissionLauncher =
@@ -209,7 +225,6 @@ fun SettingsScreen(
         contentPadding = PaddingValues(vertical = 9.dp),
     ) {
         item { SettingSectionHeader("App Management") }
-        // --- NEW: Added Manage Accounts option ---
         item {
             SettingsActionItem(
                 text = "Manage Accounts",
@@ -313,30 +328,63 @@ fun SettingsScreen(
         }
 
         item { SettingSectionHeader("SMS Scanning") }
+        // --- REFACTORED: "Scan from date" item with its own button ---
         item {
-            SettingsActionItem(
-                text = "Scan From Specific Date...",
-                subtitle = "Current default start date: ${dateFormatter.format(Date(smsScanStartDate))}",
-                icon = Icons.Default.EventRepeat,
-                onClick = {
-                    if (hasSmsPermission) {
-                        showDatePickerDialog = true
-                    } else {
-                        showSmsRationaleDialog = true
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            if (hasSmsPermission) {
+                                showDatePickerDialog = true
+                            } else {
+                                showSmsRationaleDialog = true
+                            }
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.EventRepeat, contentDescription = null, modifier = Modifier.padding(end = 16.dp))
+                    Column {
+                        Text("Scan From Date", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Current: ${dateFormatter.format(Date(smsScanStartDate))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                },
-            )
+                }
+                OutlinedButton(
+                    onClick = {
+                        if (hasSmsPermission) {
+                            if (!isScanning) {
+                                viewModel.rescanSms(smsScanStartDate)
+                            }
+                        } else {
+                            showSmsRationaleDialog = true
+                        }
+                    },
+                    enabled = !isScanning
+                ) {
+                    Text("Scan")
+                }
+            }
         }
+        // --- REFACTORED: "Scan full inbox" item with clearer text ---
         item {
             SettingsActionItem(
-                text = "Review Scanned SMS Transactions",
-                subtitle = "Approve or dismiss transactions found in your inbox.",
-                icon = Icons.Default.Refresh,
+                text = "Scan Full Inbox",
+                subtitle = "Scan all messages to find new transactions.",
+                icon = Icons.Default.ManageSearch,
                 onClick = {
                     if (hasSmsPermission) {
-                        Toast.makeText(context, "Scanning for new transactions...", Toast.LENGTH_SHORT).show()
-                        viewModel.rescanSms(smsScanStartDate)
-                        navController.navigate("review_sms_screen")
+                        if (!isScanning) {
+                            viewModel.rescanSms(null) // Pass null for a full scan
+                        }
                     } else {
                         showSmsRationaleDialog = true
                     }

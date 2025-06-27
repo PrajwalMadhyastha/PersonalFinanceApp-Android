@@ -2,11 +2,15 @@ package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,7 +24,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
@@ -33,6 +40,7 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -52,7 +60,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddTransactionScreen(
     navController: NavController,
@@ -81,13 +89,23 @@ fun AddTransactionScreen(
     val validationError by viewModel.validationError.collectAsState()
 
     val isExpense = transactionType == "expense"
-    // --- UPDATED: Validation logic simplified as category is only relevant for expenses ---
     val isSaveEnabled = (
             description.isNotBlank() &&
                     amount.isNotBlank() &&
                     selectedAccount != null &&
-                    (!isExpense || selectedCategory != null) // If it's an expense, category must be selected
+                    (!isExpense || selectedCategory != null)
             )
+
+    // --- NEW: Get all available and selected tags from ViewModel ---
+    val allTags by viewModel.allTags.collectAsState()
+    val selectedTags by viewModel.selectedTags.collectAsState()
+
+    // --- NEW: Clear selected tags when the screen is left ---
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearSelectedTags()
+        }
+    }
 
     LaunchedEffect(validationError) {
         validationError?.let {
@@ -127,9 +145,7 @@ fun AddTransactionScreen(
                 OutlinedTextField(value = amount, onValueChange = {
                     amount = it
                 }, label = {
-                    Text(
-                        "Amount",
-                    )
+                    Text("Amount")
                 }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             }
             item {
@@ -177,7 +193,6 @@ fun AddTransactionScreen(
                     }
                 }
             }
-            // --- MODIFIED: Category dropdown is now only shown for expenses ---
             if (isExpense) {
                 item {
                     ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
@@ -202,9 +217,31 @@ fun AddTransactionScreen(
                     }
                 }
             }
+
+            // --- NEW: UI for selecting tags ---
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                // --- FIXED: Use MaterialTheme 3 reference ---
+                Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
+                // --- FIXED: Use Modifier.height() extension function ---
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    allTags.forEach { tag ->
+                        FilterChip(
+                            selected = tag in selectedTags,
+                            onClick = { viewModel.onTagSelected(tag) },
+                            label = { Text(tag.name) }
+                        )
+                    }
+                }
+            }
+
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
