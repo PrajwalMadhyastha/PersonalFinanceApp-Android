@@ -352,6 +352,7 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             AddEditBudgetScreen(navController, budgetViewModel, backStackEntry.arguments?.getInt("budgetId"))
         }
         composable("category_list") { CategoryListScreen(navController, categoryViewModel) }
+        composable("tag_management") { TagManagementScreen() }
         composable("recurring_transactions") { RecurringTransactionScreen(navController) }
         composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
     }

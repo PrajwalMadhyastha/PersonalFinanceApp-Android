@@ -225,6 +225,14 @@ fun SettingsScreen(
                 onClick = { navController.navigate("category_list") },
             )
         }
+        item {
+            SettingsActionItem(
+                text = "Manage Tags",
+                subtitle = "Create and organize custom tags for transactions.",
+                icon = Icons.Default.NewLabel, // Or another suitable icon
+                onClick = { navController.navigate("tag_management") },
+            )
+        }
 
         item { SettingSectionHeader("Security") }
         item {

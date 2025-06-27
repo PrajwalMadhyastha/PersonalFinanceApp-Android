@@ -19,89 +19,108 @@ import java.util.Calendar
         Budget::class,
         MerchantMapping::class,
         RecurringTransaction::class,
+        Tag::class, // <-- NEW
+        TransactionTagCrossRef::class // <-- NEW
     ],
-    version = 5,
+    version = 6, // <-- CRITICAL: Version number is incremented to 6
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
-
     abstract fun accountDao(): AccountDao
-
     abstract fun categoryDao(): CategoryDao
-
     abstract fun budgetDao(): BudgetDao
-
     abstract fun merchantMappingDao(): MerchantMappingDao
-
     abstract fun recurringTransactionDao(): RecurringTransactionDao
+    abstract fun tagDao(): TagDao // <-- NEW DAO Interface
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        // --- Migration from 1 to 2: Add transactionType column ---
-        val MIGRATION_1_2 =
-            object : Migration(1, 2) {
-                override fun migrate(db: SupportSQLiteDatabase) {
-                    db.execSQL("ALTER TABLE transactions ADD COLUMN transactionType TEXT NOT NULL DEFAULT 'expense'")
-                    db.execSQL("UPDATE transactions SET transactionType = 'income' WHERE amount > 0")
-                    db.execSQL("UPDATE transactions SET amount = ABS(amount)")
-                }
+        // --- Migrations 1-5 remain the same ---
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN transactionType TEXT NOT NULL DEFAULT 'expense'")
+                db.execSQL("UPDATE transactions SET transactionType = 'income' WHERE amount > 0")
+                db.execSQL("UPDATE transactions SET amount = ABS(amount)")
             }
+        }
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `merchant_mappings` (
+                        `smsSender` TEXT NOT NULL, 
+                        `merchantName` TEXT NOT NULL, 
+                        PRIMARY KEY(`smsSender`)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN sourceSmsId INTEGER")
+            }
+        }
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `recurring_transactions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `description` TEXT NOT NULL, 
+                        `amount` REAL NOT NULL, 
+                        `transactionType` TEXT NOT NULL, 
+                        `recurrenceInterval` TEXT NOT NULL, 
+                        `startDate` INTEGER NOT NULL, 
+                        `accountId` INTEGER NOT NULL, 
+                        `categoryId` INTEGER, 
+                        FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, 
+                        FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_recurring_transactions_accountId` ON `recurring_transactions` (`accountId`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_recurring_transactions_categoryId` ON `recurring_transactions` (`categoryId`)",
+                )
+            }
+        }
 
-        // --- Migration from 2 to 3: Add merchant_mappings table ---
-        val MIGRATION_2_3 =
-            object : Migration(2, 3) {
-                override fun migrate(db: SupportSQLiteDatabase) {
-                    db.execSQL(
-                        """
-                        CREATE TABLE IF NOT EXISTS `merchant_mappings` (
-                            `smsSender` TEXT NOT NULL, 
-                            `merchantName` TEXT NOT NULL, 
-                            PRIMARY KEY(`smsSender`)
-                        )
-                        """.trimIndent(),
+        // --- CRITICAL: Migration from 5 to 6 to add Tags and the relationship table ---
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Create the new 'tags' table
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `tags` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `name` TEXT NOT NULL
                     )
-                }
-            }
+                    """.trimIndent()
+                )
+                // Add an index to ensure tag names are unique
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_name` ON `tags` (`name`)")
 
-        // --- Migration from 3 to 4: Add sourceSmsId column ---
-        val MIGRATION_3_4 =
-            object : Migration(3, 4) {
-                override fun migrate(db: SupportSQLiteDatabase) {
-                    db.execSQL("ALTER TABLE transactions ADD COLUMN sourceSmsId INTEGER")
-                }
+                // Create the new 'transaction_tag_cross_ref' table for the many-to-many relationship
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `transaction_tag_cross_ref` (
+                        `transactionId` INTEGER NOT NULL, 
+                        `tagId` INTEGER NOT NULL, 
+                        PRIMARY KEY(`transactionId`, `tagId`),
+                        FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE,
+                        FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
             }
+        }
 
-        // --- Migration from 4 to 5: Add recurring_transactions table ---
-        val MIGRATION_4_5 =
-            object : Migration(4, 5) {
-                override fun migrate(db: SupportSQLiteDatabase) {
-                    db.execSQL(
-                        """
-                        CREATE TABLE IF NOT EXISTS `recurring_transactions` (
-                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                            `description` TEXT NOT NULL, 
-                            `amount` REAL NOT NULL, 
-                            `transactionType` TEXT NOT NULL, 
-                            `recurrenceInterval` TEXT NOT NULL, 
-                            `startDate` INTEGER NOT NULL, 
-                            `accountId` INTEGER NOT NULL, 
-                            `categoryId` INTEGER, 
-                            FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, 
-                            FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
-                        )
-                        """.trimIndent(),
-                    )
-                    db.execSQL(
-                        "CREATE INDEX IF NOT EXISTS `index_recurring_transactions_accountId` ON `recurring_transactions` (`accountId`)",
-                    )
-                    db.execSQL(
-                        "CREATE INDEX IF NOT EXISTS `index_recurring_transactions_categoryId` ON `recurring_transactions` (`categoryId`)",
-                    )
-                }
-            }
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -111,7 +130,8 @@ abstract class AppDatabase : RoomDatabase() {
                         AppDatabase::class.java,
                         "finance_database",
                     )
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                        // --- CRITICAL: Added the new MIGRATION_5_6 ---
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance

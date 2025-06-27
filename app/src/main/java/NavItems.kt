@@ -33,5 +33,6 @@ val screenTitles = mapOf(
     "add_recurring_transaction" to "Add Recurring Rule",
     "search_screen" to "Search",
     "review_sms_screen" to "Review SMS Transactions",
-    "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction"
+    "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
+    "tag_management" to "Manage Tags"
 )
