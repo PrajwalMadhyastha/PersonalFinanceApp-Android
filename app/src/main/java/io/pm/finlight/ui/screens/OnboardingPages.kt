@@ -147,10 +147,14 @@ fun CategorySetupPage(viewModel: OnboardingViewModel) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // --- UPDATED: Text now specifies "Expense Categories" ---
         Text("Select Expense Categories", style = MaterialTheme.typography.headlineSmall)
         Text("Choose the spending categories you use most often.", style = MaterialTheme.typography.bodyMedium)
-        Text("You can add more, delete and modify these later in the settings.", style = MaterialTheme.typography.bodyMedium)
+        // --- NEW: Added blurb about managing settings later ---
+        Text(
+            "You can add or remove more in Settings later.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
@@ -185,10 +189,16 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
     ) {
         Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Give yourself a spending target for the month. You can change this later.",
+            "Give yourself a spending target for the month.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp)
+        )
+        // --- NEW: Added blurb about managing settings later ---
+        Text(
+            "This can be changed any time in Settings.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(

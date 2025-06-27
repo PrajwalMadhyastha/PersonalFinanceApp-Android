@@ -209,6 +209,15 @@ fun SettingsScreen(
         contentPadding = PaddingValues(vertical = 9.dp),
     ) {
         item { SettingSectionHeader("App Management") }
+        // --- NEW: Added Manage Accounts option ---
+        item {
+            SettingsActionItem(
+                text = "Manage Accounts",
+                subtitle = "View, add, or edit your financial accounts.",
+                icon = Icons.Default.AccountBalanceWallet,
+                onClick = { navController.navigate("account_list") },
+            )
+        }
         item {
             SettingsActionItem(
                 text = "Manage Budgets",
@@ -229,7 +238,7 @@ fun SettingsScreen(
             SettingsActionItem(
                 text = "Manage Tags",
                 subtitle = "Create and organize custom tags for transactions.",
-                icon = Icons.Default.NewLabel, // Or another suitable icon
+                icon = Icons.Default.NewLabel,
                 onClick = { navController.navigate("tag_management") },
             )
         }

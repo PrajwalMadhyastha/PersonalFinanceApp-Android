@@ -24,7 +24,6 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // --- UPDATED: Page count is now 7 to include the final confirmation page ---
     val pagerState = rememberPagerState { 7 }
     val scope = rememberCoroutineScope()
 
@@ -50,9 +49,10 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
+            // --- FIX: Disable manual user scrolling to prevent UI glitches during permission requests ---
+            userScrollEnabled = false
         ) { page ->
-            // --- UPDATED: New page order with auto-advancing permissions and a final page ---
             when (page) {
                 0 -> WelcomePage()
                 1 -> AccountSetupPage(viewModel)
