@@ -54,7 +54,6 @@ fun WelcomePage() {
         Text(
             buildAnnotatedString {
                 append("Your ")
-                // --- MODIFIED: Use a distinct bright green color for emphasis ---
                 withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
                     append("PRIVACY")
                 }
@@ -148,8 +147,10 @@ fun CategorySetupPage(viewModel: OnboardingViewModel) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Select Initial Categories", style = MaterialTheme.typography.headlineSmall)
-        Text("Choose the categories you use most often.", style = MaterialTheme.typography.bodyMedium)
+        // --- UPDATED: Text now specifies "Expense Categories" ---
+        Text("Select Expense Categories", style = MaterialTheme.typography.headlineSmall)
+        Text("Choose the spending categories you use most often.", style = MaterialTheme.typography.bodyMedium)
+        Text("You can add more, delete and modify these later in the settings.", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
@@ -201,9 +202,6 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
     }
 }
 
-/**
- * A dedicated page for explaining and requesting SMS permissions that auto-advances.
- */
 @Composable
 fun SmsPermissionPage(onPermissionResult: () -> Unit) {
     val context = LocalContext.current
@@ -215,7 +213,6 @@ fun SmsPermissionPage(onPermissionResult: () -> Unit) {
         } else {
             Toast.makeText(context, "SMS Scanning Enabled!", Toast.LENGTH_SHORT).show()
         }
-        // --- MODIFIED: Auto-advance to the next page after the user responds ---
         onPermissionResult()
     }
 
@@ -244,9 +241,6 @@ fun SmsPermissionPage(onPermissionResult: () -> Unit) {
     }
 }
 
-/**
- * A dedicated page for notifications that auto-advances.
- */
 @Composable
 fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
     val context = LocalContext.current
@@ -258,7 +252,6 @@ fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
         } else {
             Toast.makeText(context, "You can enable notifications later in settings.", Toast.LENGTH_LONG).show()
         }
-        // --- MODIFIED: Auto-advance to the next page after the user responds ---
         onPermissionResult()
     }
 
@@ -288,7 +281,6 @@ fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
         } else {
-            // If on an older Android version, just advance the page since no permission is needed.
             LaunchedEffect(Unit) {
                 onPermissionResult()
             }
@@ -296,9 +288,6 @@ fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
     }
 }
 
-/**
- * NEW: A final confirmation page for the onboarding flow.
- */
 @Composable
 fun CompletionPage() {
     Column(

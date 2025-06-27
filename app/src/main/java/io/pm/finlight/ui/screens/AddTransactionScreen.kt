@@ -80,13 +80,21 @@ fun AddTransactionScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
 
+    val isExpense = transactionType == "expense"
+    // --- UPDATED: Validation logic simplified as category is only relevant for expenses ---
+    val isSaveEnabled = (
+            description.isNotBlank() &&
+                    amount.isNotBlank() &&
+                    selectedAccount != null &&
+                    (!isExpense || selectedCategory != null) // If it's an expense, category must be selected
+            )
+
     LaunchedEffect(validationError) {
         validationError?.let {
             snackbarHostState.showSnackbar(it)
         }
     }
 
-    // A Box to host the Snackbar, as Scaffold is removed
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -95,11 +103,16 @@ fun AddTransactionScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             item {
-                TabRow(selectedTabIndex = if (transactionType == "expense") 0 else 1) {
+                TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
                     transactionTypes.forEachIndexed { index, title ->
                         Tab(
-                            selected = (if (transactionType == "expense") 0 else 1) == index,
-                            onClick = { transactionType = if (index == 0) "expense" else "income" },
+                            selected = (if (isExpense) 0 else 1) == index,
+                            onClick = {
+                                transactionType = if (index == 0) "expense" else "income"
+                                if (transactionType == "income") {
+                                    selectedCategory = null
+                                }
+                            },
                             text = { Text(title) },
                         )
                     }
@@ -164,24 +177,27 @@ fun AddTransactionScreen(
                     }
                 }
             }
-            item {
-                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                    isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-                }) {
-                    OutlinedTextField(
-                        value = selectedCategory?.name ?: "Select Category",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Category") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    )
-                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                        categories.forEach { category ->
-                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                selectedCategory = category
-                                isCategoryDropdownExpanded = false
-                            })
+            // --- MODIFIED: Category dropdown is now only shown for expenses ---
+            if (isExpense) {
+                item {
+                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
+                        isCategoryDropdownExpanded = !isCategoryDropdownExpanded
+                    }) {
+                        OutlinedTextField(
+                            value = selectedCategory?.name ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Category") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        )
+                        ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                            categories.forEach { category ->
+                                DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                    selectedCategory = category
+                                    isCategoryDropdownExpanded = false
+                                })
+                            }
                         }
                     }
                 }
@@ -212,7 +228,7 @@ fun AddTransactionScreen(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank(),
+                        enabled = isSaveEnabled,
                     ) {
                         Text("Save Transaction")
                     }

@@ -15,7 +15,6 @@ data class SelectableCategory(val name: String, var isSelected: Boolean)
 class OnboardingViewModel(
     private val accountRepository: AccountRepository,
     private val categoryRepository: CategoryRepository,
-    // --- NEW: Add SettingsRepository dependency ---
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
@@ -23,7 +22,7 @@ class OnboardingViewModel(
     private val _accounts = MutableStateFlow<List<Account>>(emptyList())
     val accounts = _accounts.asStateFlow()
 
-    // --- State for Category Setup ---
+    // --- UPDATED: State for Category Setup now only includes expense categories ---
     private val _categories = MutableStateFlow<List<SelectableCategory>>(
         listOf(
             SelectableCategory("Groceries", true),
@@ -33,12 +32,11 @@ class OnboardingViewModel(
             SelectableCategory("Rent", false),
             SelectableCategory("Shopping", false),
             SelectableCategory("Entertainment", false),
-            SelectableCategory("Salary", true)
+            // "Salary" has been removed to align with the new logic
         )
     )
     val categories = _categories.asStateFlow()
 
-    // --- NEW: State for Budget Setup ---
     private val _monthlyBudget = MutableStateFlow("")
     val monthlyBudget = _monthlyBudget.asStateFlow()
 
@@ -65,9 +63,7 @@ class OnboardingViewModel(
         }
     }
 
-    // --- NEW: Function to update budget state ---
     fun onBudgetChanged(newBudget: String) {
-        // Allow only digits
         if (newBudget.all { it.isDigit() }) {
             _monthlyBudget.value = newBudget
         }
@@ -88,7 +84,6 @@ class OnboardingViewModel(
                 categoryRepository.insert(Category(name = selectableCategory.name))
             }
 
-            // --- NEW: Save the monthly budget ---
             val budgetFloat = _monthlyBudget.value.toFloatOrNull() ?: 0f
             if (budgetFloat > 0) {
                 settingsRepository.saveOverallBudgetForCurrentMonth(budgetFloat)
