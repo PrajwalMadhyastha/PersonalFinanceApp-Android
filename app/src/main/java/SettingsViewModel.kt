@@ -16,7 +16,6 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
-// --- NEW: A sealed class to represent the result of the SMS scan ---
 sealed class ScanResult {
     data class Success(val count: Int) : ScanResult()
     object Error : ScanResult()
@@ -33,7 +32,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val categoryRepository = CategoryRepository(db.categoryDao())
     val smsScanStartDate: StateFlow<Long>
 
-    // --- NEW: A channel to emit one-time events for the UI to consume ---
     private val _scanEvent = Channel<ScanResult>()
     val scanEvent = _scanEvent.receiveAsFlow()
 
@@ -322,7 +320,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _csvValidationReport.value = null
     }
 
-    // --- REFACTORED: This function now sends an event upon completion ---
     fun rescanSms(startDate: Long?) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             return
@@ -349,7 +346,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 val newPotentialTransactions = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
                 _potentialTransactions.value = newPotentialTransactions
 
-                // Send a success event with the count of new transactions found.
                 _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Error during SMS scan", e)
@@ -362,6 +358,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun dismissPotentialTransaction(transaction: PotentialTransaction) {
         _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
+    }
+
+    // --- NEW: Function to remove a transaction from the list after it's been approved ---
+    fun onTransactionApproved(smsId: Long) {
+        _potentialTransactions.update { currentList ->
+            currentList.filterNot { it.sourceSmsId == smsId }
+        }
     }
 
     fun saveMerchantMapping(

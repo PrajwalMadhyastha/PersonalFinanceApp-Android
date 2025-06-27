@@ -1,6 +1,6 @@
 // =================================================================================
 // FILE: /app/src/main/java/com/pm/finlight/TransactionViewModel.kt
-// PURPOSE: Handles business logic for transactions, now including tag management.
+// PURPOSE: Handles business logic for transactions, now including on-the-go tag creation.
 // =================================================================================
 package io.pm.finlight
 
@@ -15,20 +15,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val transactionRepository: TransactionRepository
     private val accountRepository: AccountRepository
     private val categoryRepository: CategoryRepository
-    // --- NEW: Add TagRepository dependency ---
     private val tagRepository: TagRepository
 
     val allTransactions: StateFlow<List<TransactionDetails>>
 
     val allAccounts: Flow<List<Account>>
     val allCategories: Flow<List<Category>>
-    // --- NEW: Expose all available tags to the UI ---
     val allTags: StateFlow<List<Tag>>
 
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError = _validationError.asStateFlow()
 
-    // --- NEW: State to hold the currently selected tags for a transaction ---
     private val _selectedTags = MutableStateFlow<Set<Tag>>(emptySet())
     val selectedTags = _selectedTags.asStateFlow()
 
@@ -38,7 +35,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
         categoryRepository = CategoryRepository(db.categoryDao())
-        // --- NEW: Initialize TagRepository ---
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
 
         allTransactions =
@@ -52,7 +48,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         allAccounts = accountRepository.allAccounts
         allCategories = categoryRepository.allCategories
 
-        // --- NEW: Fetch all tags and expose as StateFlow ---
         allTags = tagRepository.allTags.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -60,13 +55,23 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
-    // --- NEW: Methods to manage tag selection ---
     fun onTagSelected(tag: Tag) {
         _selectedTags.update { currentTags ->
             if (tag in currentTags) {
                 currentTags - tag
             } else {
                 currentTags + tag
+            }
+        }
+    }
+
+    // --- NEW: Function to add a new tag from a transaction screen ---
+    fun addTagOnTheGo(tagName: String) {
+        if (tagName.isNotBlank()) {
+            viewModelScope.launch {
+                // The database schema ensures tag names are unique,
+                // so the insert will be ignored if it already exists.
+                tagRepository.insert(Tag(name = tagName))
             }
         }
     }
@@ -88,7 +93,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
-    // --- UPDATED: Now saves the transaction with its selected tags ---
     fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -128,7 +132,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return true
     }
 
-    // --- UPDATED: Now updates the transaction with its selected tags ---
     fun updateTransaction(transaction: Transaction): Boolean {
         _validationError.value = null
 

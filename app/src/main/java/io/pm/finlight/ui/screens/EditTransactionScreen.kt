@@ -2,16 +2,21 @@ package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
@@ -23,7 +28,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -48,30 +56,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import io.pm.finlight.Account
 import io.pm.finlight.Category
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EditTransactionScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
     transactionId: Int,
-    isFromCsvImport: Boolean = false,
-    csvLineNumber: Int = -1,
-    initialCsvData: String? = null,
 ) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var newTagName by remember { mutableStateOf("") }
 
     var transactionType by remember { mutableStateOf("expense") }
     val transactionTypes = listOf("Expense", "Income")
@@ -92,16 +95,23 @@ fun EditTransactionScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
     val transactionFromDb by viewModel.getTransactionById(transactionId).collectAsState(initial = null)
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
     val isExpense = transactionType == "expense"
-    // --- UPDATED: Validation logic for the update button ---
     val isUpdateEnabled = (
             description.isNotBlank() &&
                     amount.isNotBlank() &&
                     selectedAccount != null &&
-                    (!isExpense || selectedCategory != null) // If it's an expense, category must be selected
+                    (!isExpense || selectedCategory != null)
             )
+
+    val allTags by viewModel.allTags.collectAsState()
+    val selectedTags by viewModel.selectedTags.collectAsState()
+
+    LaunchedEffect(key1 = transactionId) {
+        if (transactionId != -1) {
+            viewModel.loadTagsForTransaction(transactionId)
+        }
+    }
 
     LaunchedEffect(transactionFromDb, accounts, categories) {
         if (transactionFromDb != null) {
@@ -156,9 +166,7 @@ fun EditTransactionScreen(
                 item {
                     OutlinedTextField(value = amount, onValueChange = {
                         amount = it
-                    }, label = {
-                        Text("Amount")
-                    }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 }
                 item {
                     OutlinedTextField(
@@ -200,7 +208,6 @@ fun EditTransactionScreen(
                         }
                     }
                 }
-                // --- MODIFIED: Category dropdown is now only shown for expenses ---
                 if (isExpense) {
                     item {
                         ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
@@ -221,8 +228,49 @@ fun EditTransactionScreen(
                         }
                     }
                 }
+
                 item {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        allTags.forEach { tag ->
+                            FilterChip(
+                                selected = tag in selectedTags,
+                                onClick = { viewModel.onTagSelected(tag) },
+                                label = { Text(tag.name) }
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = newTagName,
+                            onValueChange = { newTagName = it },
+                            label = { Text("New Tag") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                viewModel.addTagOnTheGo(newTagName)
+                                newTagName = ""
+                            },
+                            enabled = newTagName.isNotBlank()
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+                        }
+                    }
+                }
+
+                item {
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                             Text("Cancel")
                         }
@@ -282,9 +330,7 @@ fun EditTransactionScreen(
                 showDatePicker = false
             }) { Text("OK") }
         }, dismissButton = {
-            TextButton(
-                onClick = { showDatePicker = false },
-            ) { Text("Cancel") }
+            TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
         }) { DatePicker(state = datePickerState) }
     }
 

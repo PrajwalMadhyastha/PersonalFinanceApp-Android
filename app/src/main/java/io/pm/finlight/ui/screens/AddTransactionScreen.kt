@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
@@ -27,6 +28,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -69,6 +71,7 @@ fun AddTransactionScreen(
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var newTagName by remember { mutableStateOf("") }
 
     var transactionType by remember { mutableStateOf("expense") }
     val transactionTypes = listOf("Expense", "Income")
@@ -96,11 +99,9 @@ fun AddTransactionScreen(
                     (!isExpense || selectedCategory != null)
             )
 
-    // --- NEW: Get all available and selected tags from ViewModel ---
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
 
-    // --- NEW: Clear selected tags when the screen is left ---
     DisposableEffect(Unit) {
         onDispose {
             viewModel.clearSelectedTags()
@@ -218,16 +219,14 @@ fun AddTransactionScreen(
                 }
             }
 
-            // --- NEW: UI for selecting tags ---
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                // --- FIXED: Use MaterialTheme 3 reference ---
                 Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
-                // --- FIXED: Use Modifier.height() extension function ---
                 Spacer(modifier = Modifier.height(8.dp))
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     allTags.forEach { tag ->
                         FilterChip(
@@ -235,6 +234,28 @@ fun AddTransactionScreen(
                             onClick = { viewModel.onTagSelected(tag) },
                             label = { Text(tag.name) }
                         )
+                    }
+                }
+                // --- NEW: UI to add a new tag on the fly ---
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newTagName,
+                        onValueChange = { newTagName = it },
+                        label = { Text("New Tag") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            viewModel.addTagOnTheGo(newTagName)
+                            newTagName = "" // Clear input
+                        },
+                        enabled = newTagName.isNotBlank()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add New Tag")
                     }
                 }
             }

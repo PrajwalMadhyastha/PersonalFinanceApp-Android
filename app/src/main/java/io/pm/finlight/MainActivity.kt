@@ -53,7 +53,6 @@ class MainActivity : AppCompatActivity() {
                 var showOnboarding by remember { mutableStateOf(!hasSeenOnboarding) }
 
                 if (showOnboarding) {
-                    // --- UPDATED LOGIC TO LAUNCH NEW ONBOARDING FLOW ---
                     val onboardingViewModel: OnboardingViewModel = viewModel(factory = OnboardingViewModelFactory(application))
                     OnboardingScreen(
                         viewModel = onboardingViewModel,
@@ -289,7 +288,7 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
         composable("search_screen") { SearchScreen(navController) }
         composable(
             route = "review_sms_screen",
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.com/review_sms" })
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
         ) { ReviewSmsScreen(navController, settingsViewModel) }
         composable("sms_debug_screen") { SmsDebugScreen(navController, settingsViewModel) }
         composable(
@@ -301,7 +300,7 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
                 navArgument("smsId") { type = NavType.LongType },
                 navArgument("smsSender") { type = NavType.StringType }
             ),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.com/approve?amount={amount}&type={type}&merchant={merchant}&smsId={smsId}&smsSender={smsSender}" })
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve?amount={amount}&type={type}&merchant={merchant}&smsId={smsId}&smsSender={smsSender}" })
         ) { backStackEntry ->
             val arguments = requireNotNull(backStackEntry.arguments)
             ApproveTransactionScreen(
@@ -316,23 +315,19 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             )
         }
         composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
+        // --- FIXED: Removed the unused optional arguments for CSV import ---
         composable(
-            route = "edit_transaction/{transactionId}?isFromCsv={isFromCsv}&lineNumber={lineNumber}&rowDataJson={rowDataJson}",
+            route = "edit_transaction/{transactionId}",
             arguments = listOf(
-                navArgument("transactionId") { type = NavType.IntType; defaultValue = -1 },
-                navArgument("isFromCsv") { type = NavType.BoolType; defaultValue = false },
-                navArgument("lineNumber") { type = NavType.IntType; defaultValue = -1 },
-                navArgument("rowDataJson") { type = NavType.StringType; nullable = true }
+                navArgument("transactionId") { type = NavType.IntType }
             )
         ) { backStackEntry ->
             val arguments = requireNotNull(backStackEntry.arguments)
+            // --- FIXED: Call signature now matches the composable function ---
             EditTransactionScreen(
                 navController = navController,
                 viewModel = transactionViewModel,
-                transactionId = arguments.getInt("transactionId"),
-                isFromCsvImport = arguments.getBoolean("isFromCsv"),
-                csvLineNumber = arguments.getInt("lineNumber"),
-                initialCsvData = arguments.getString("rowDataJson")?.let { URLDecoder.decode(it, "UTF-8") }
+                transactionId = arguments.getInt("transactionId")
             )
         }
         composable("account_list") { AccountListScreen(navController, accountViewModel) }

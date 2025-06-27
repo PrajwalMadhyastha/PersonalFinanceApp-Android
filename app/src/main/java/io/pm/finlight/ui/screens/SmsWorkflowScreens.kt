@@ -6,12 +6,16 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -24,35 +28,38 @@ import java.net.URLEncoder
 @Composable
 fun ReviewSmsScreen(
     navController: NavController,
-    viewModel: SettingsViewModel = viewModel(),
+    viewModel: SettingsViewModel,
 ) {
     val potentialTransactions by viewModel.potentialTransactions.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
 
-    // --- FIX: This effect will pop the back stack if the list becomes empty after it has been loaded. ---
-    val hasLoadedOnce = remember { mutableStateOf(false) }
-    LaunchedEffect(potentialTransactions) {
-        // If the list is not empty, we know it has loaded at least once.
-        if (potentialTransactions.isNotEmpty()) {
-            hasLoadedOnce.value = true
+    // --- FIX: This state now correctly handles all loading and empty states ---
+    var hasLoadedOnce by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isScanning, potentialTransactions) {
+        // As soon as scanning is finished, we mark the initial load as complete.
+        if (!isScanning) {
+            hasLoadedOnce = true
         }
-        // If it has loaded before and is now empty (e.g., user dismissed the last item), go back.
-        if (hasLoadedOnce.value && potentialTransactions.isEmpty()) {
+        // If the load is complete and the list is now empty, it's time to go back.
+        if (hasLoadedOnce && potentialTransactions.isEmpty()) {
             navController.popBackStack()
         }
     }
 
-    // This handles the initial case where a scan finds 0 new transactions, so the user isn't navigated here and then immediately back.
-    if (potentialTransactions.isEmpty()) {
+    // Show a loading indicator *only* while the initial scan is in progress.
+    if (isScanning) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Reviewing transactions...", style = MaterialTheme.typography.titleMedium)
+                Text("Scanning for transactions...", style = MaterialTheme.typography.titleMedium)
                 CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
             }
         }
     } else {
+        // Once scanning is done, show the list of transactions.
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -64,7 +71,7 @@ fun ReviewSmsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            items(potentialTransactions) { pt ->
+            items(potentialTransactions, key = { it.sourceSmsId }) { pt ->
                 PotentialTransactionItem(
                     transaction = pt,
                     onDismiss = { viewModel.dismissPotentialTransaction(it) },
@@ -126,12 +133,12 @@ fun PotentialTransactionItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ApproveTransactionScreen(
     navController: NavController,
-    transactionViewModel: TransactionViewModel = viewModel(),
-    settingsViewModel: SettingsViewModel = viewModel(),
+    transactionViewModel: TransactionViewModel,
+    settingsViewModel: SettingsViewModel,
     amount: Float,
     transactionType: String,
     merchant: String,
@@ -140,6 +147,7 @@ fun ApproveTransactionScreen(
 ) {
     var description by remember { mutableStateOf(merchant) }
     var notes by remember { mutableStateOf("") }
+    var newTagName by remember { mutableStateOf("") }
     var selectedTransactionType by remember(transactionType) { mutableStateOf(transactionType) }
     val transactionTypes = listOf("Expense", "Income")
 
@@ -150,6 +158,21 @@ fun ApproveTransactionScreen(
     val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    val allTags by transactionViewModel.allTags.collectAsState()
+    val selectedTags by transactionViewModel.selectedTags.collectAsState()
+
+    val isExpense = selectedTransactionType == "expense"
+    val isSaveEnabled = (
+            selectedAccount != null &&
+                    (!isExpense || selectedCategory != null)
+            )
+
+    DisposableEffect(Unit) {
+        onDispose {
+            transactionViewModel.clearSelectedTags()
+        }
+    }
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -165,9 +188,9 @@ fun ApproveTransactionScreen(
             }, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth())
         }
         item {
-            TabRow(selectedTabIndex = if (selectedTransactionType == "expense") 0 else 1) {
+            TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
                 transactionTypes.forEachIndexed { index, title ->
-                    Tab(selected = (if (selectedTransactionType == "expense") 0 else 1) == index, onClick = {
+                    Tab(selected = (if (isExpense) 0 else 1) == index, onClick = {
                         selectedTransactionType = if (index == 0) "expense" else "income"
                     }, text = { Text(title) })
                 }
@@ -193,22 +216,24 @@ fun ApproveTransactionScreen(
                 }
             }
         }
-        item {
-            ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-            }) {
-                OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {
-                }, readOnly = true, label = {
-                    Text("Category")
-                }, trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded)
-                }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                    categories.forEach { category ->
-                        DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                            selectedCategory = category
-                            isCategoryDropdownExpanded = false
-                        })
+        if (isExpense) {
+            item {
+                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
+                    isCategoryDropdownExpanded = !isCategoryDropdownExpanded
+                }) {
+                    OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {
+                    }, readOnly = true, label = {
+                        Text("Category")
+                    }, trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded)
+                    }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                        categories.forEach { category ->
+                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                selectedCategory = category
+                                isCategoryDropdownExpanded = false
+                            })
+                        }
                     }
                 }
             }
@@ -220,6 +245,45 @@ fun ApproveTransactionScreen(
                 label = { Text("Notes (Optional)") },
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+        item {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                allTags.forEach { tag ->
+                    FilterChip(
+                        selected = tag in selectedTags,
+                        onClick = { transactionViewModel.onTagSelected(tag) },
+                        label = { Text(tag.name) }
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = newTagName,
+                    onValueChange = { newTagName = it },
+                    label = { Text("New Tag") },
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = {
+                        transactionViewModel.addTagOnTheGo(newTagName)
+                        newTagName = ""
+                    },
+                    enabled = newTagName.isNotBlank()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+                }
+            }
         }
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -244,14 +308,12 @@ fun ApproveTransactionScreen(
                                 sourceSmsId = smsId,
                             )
                         if (success) {
+                            settingsViewModel.onTransactionApproved(smsId)
                             navController.popBackStack()
                         }
                     },
-                    modifier =
-                        Modifier.weight(
-                            1f,
-                        ),
-                    enabled = selectedAccount != null && selectedCategory != null,
+                    modifier = Modifier.weight(1f),
+                    enabled = isSaveEnabled,
                 ) { Text("Save Transaction") }
             }
         }
