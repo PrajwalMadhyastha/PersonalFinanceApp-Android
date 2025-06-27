@@ -153,6 +153,10 @@ interface TransactionDao {
     @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
     suspend fun countTransactionsForCategory(categoryId: Int): Int
 
+    @Query("SELECT COUNT(*) FROM transaction_tag_cross_ref WHERE tagId = :tagId")
+    suspend fun countTransactionsForTag(tagId: Int): Int
+
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(transactions: List<Transaction>)
 
