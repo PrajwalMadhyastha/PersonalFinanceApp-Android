@@ -343,9 +343,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
                 }
 
+                // ============================ FIX START ============================
+                // The block of code that automatically created accounts during the scan has been removed.
+                // This was the source of the race condition. Account creation is now handled exclusively
+                // in `TransactionViewModel.approveSmsTransaction` when the user clicks "Save".
+                // This ensures the database write happens sequentially before the UI needs the new data.
+                // ============================= FIX END =============================
+
                 val newPotentialTransactions = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
                 _potentialTransactions.value = newPotentialTransactions
 
+                Log.d("AutoAccount_Debug", "Scan complete. Sending Success event with count: ${newPotentialTransactions.size}")
                 _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Error during SMS scan", e)
@@ -360,7 +368,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
     }
 
-    // --- NEW: Function to remove a transaction from the list after it's been approved ---
     fun onTransactionApproved(smsId: Long) {
         _potentialTransactions.update { currentList ->
             currentList.filterNot { it.sourceSmsId == smsId }

@@ -8,6 +8,7 @@ package io.pm.finlight
  * @param transactionType The type of transaction, either 'expense' or 'income'.
  * @param merchantName The name of the merchant, if it can be determined.
  * @param originalMessage The original SMS body, for reference and debugging.
+ * @param potentialAccount Holds the parsed account name and type, if found.
  */
 data class PotentialTransaction(
     val sourceSmsId: Long,
@@ -16,4 +17,6 @@ data class PotentialTransaction(
     val transactionType: String,
     val merchantName: String?,
     val originalMessage: String,
+    // --- NEW: Add a field for the automatically parsed account details ---
+    val potentialAccount: PotentialAccount? = null,
 )

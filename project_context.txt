@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Fri Jun 27 19:28:17 IST 2025
+Generated on: Sat Jun 28 12:52:45 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -539,8 +539,8 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: /app/src/main/java/com/pm/finlight/TransactionViewModel.kt
-// PURPOSE: Handles business logic for the transaction list and add/edit screens.
-// NOTE: Added extensive logging to debug data flow.
+// PURPOSE: Handles business logic for transactions.
+// NOTE: Now contains the complete logic for approving SMS transactions.
 // =================================================================================
 package io.pm.finlight
 
@@ -548,47 +548,146 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
     private val accountRepository: AccountRepository
     private val categoryRepository: CategoryRepository
+    private val tagRepository: TagRepository
+
+    // --- FIX: Made the database instance a class property to be accessible in other functions ---
+    private val db = AppDatabase.getInstance(application)
 
     val allTransactions: StateFlow<List<TransactionDetails>>
-
-    val allAccounts: Flow<List<Account>>
+    val allAccounts: StateFlow<List<Account>>
     val allCategories: Flow<List<Category>>
+    val allTags: StateFlow<List<Tag>>
 
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError = _validationError.asStateFlow()
 
+    private val _selectedTags = MutableStateFlow<Set<Tag>>(emptySet())
+    val selectedTags = _selectedTags.asStateFlow()
+
+
     init {
-        val db = AppDatabase.getInstance(application)
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
         categoryRepository = CategoryRepository(db.categoryDao())
+        tagRepository = TagRepository(db.tagDao(), db.transactionDao())
 
         allTransactions =
             transactionRepository.allTransactions
-                .onEach { transactions ->
-                    // DEBUG LOG: See what the ViewModel is receiving from the repository
-                    Log.d("TransactionFlowDebug", "ViewModel Received Update. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}")
-                }
                 .stateIn(
                     scope = viewModelScope,
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = emptyList(),
                 )
 
-        allAccounts = accountRepository.allAccounts
+        allAccounts = accountRepository.allAccounts.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
         allCategories = categoryRepository.allCategories
+
+        allTags = tagRepository.allTags.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
     }
+
+    fun onTagSelected(tag: Tag) {
+        _selectedTags.update { currentTags ->
+            if (tag in currentTags) {
+                currentTags - tag
+            } else {
+                currentTags + tag
+            }
+        }
+    }
+
+    fun addTagOnTheGo(tagName: String) {
+        if (tagName.isNotBlank()) {
+            viewModelScope.launch {
+                tagRepository.insert(Tag(name = tagName))
+            }
+        }
+    }
+
+    fun loadTagsForTransaction(transactionId: Int) {
+        viewModelScope.launch {
+            transactionRepository.getTagsForTransaction(transactionId).collect { tags ->
+                _selectedTags.value = tags.toSet()
+            }
+        }
+    }
+
+    fun clearSelectedTags() {
+        _selectedTags.value = emptySet()
+    }
+
 
     fun getTransactionById(id: Int): Flow<Transaction?> {
         return transactionRepository.getTransactionById(id)
     }
+
+    suspend fun approveSmsTransaction(
+        potentialTxn: PotentialTransaction,
+        description: String,
+        categoryId: Int?,
+        notes: String?,
+        tags: Set<Tag>
+    ): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Step 1: Find or create the account.
+                val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
+                val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
+
+                var account = db.accountDao().findByName(accountName)
+                if (account == null) {
+                    Log.d("ViewModel_Approve", "Account '$accountName' not found. Creating new one.")
+                    val newAccount = Account(name = accountName, type = accountType)
+                    accountRepository.insert(newAccount)
+                    // Re-fetch to be certain
+                    account = db.accountDao().findByName(accountName)
+                }
+
+                if (account == null) {
+                    Log.e("ViewModel_Approve", "Failed to find or create account.")
+                    return@withContext false
+                }
+
+                // Step 2: Create the transaction object.
+                val newTransaction = Transaction(
+                    description = description,
+                    categoryId = categoryId,
+                    amount = potentialTxn.amount,
+                    date = System.currentTimeMillis(),
+                    accountId = account.id, // This is now safe
+                    notes = notes,
+                    transactionType = potentialTxn.transactionType,
+                    sourceSmsId = potentialTxn.sourceSmsId
+                )
+
+                // Step 3: Insert transaction and tags.
+                transactionRepository.insertTransactionWithTags(newTransaction, tags)
+                Log.d("ViewModel_Approve", "Successfully approved and saved transaction.")
+                true
+            } catch (e: Exception) {
+                Log.e("ViewModel_Approve", "Error approving SMS transaction", e)
+                false
+            }
+        }
+    }
+
 
     fun addTransaction(
         description: String,
@@ -624,9 +723,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 sourceSmsId = sourceSmsId,
             )
         viewModelScope.launch {
-            // DEBUG LOG: See when a transaction is being added
-            Log.d("TransactionFlowDebug", "ViewModel: Attempting to add transaction '${newTransaction.description}'")
-            transactionRepository.insert(newTransaction)
+            transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)
         }
         return true
     }
@@ -644,7 +741,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch {
-            transactionRepository.update(transaction)
+            transactionRepository.updateTransactionWithTags(transaction, _selectedTags.value)
         }
         return true
     }
@@ -1655,7 +1752,6 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -1667,8 +1763,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -1676,10 +1772,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import io.pm.finlight.Account
 import io.pm.finlight.OnboardingViewModel
-import io.pm.finlight.R
-import io.pm.finlight.SelectableCategory
 
 @Composable
 fun WelcomePage() {
@@ -1706,11 +1799,11 @@ fun WelcomePage() {
         Text(
             buildAnnotatedString {
                 append("Your ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
                     append("PRIVACY")
                 }
                 append(" is our ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
                     append("PRIORITY")
                 }
                 append(". All your financial data is ")
@@ -1730,66 +1823,6 @@ fun WelcomePage() {
 }
 
 @Composable
-fun AccountSetupPage(viewModel: OnboardingViewModel) {
-    val accounts by viewModel.accounts.collectAsState()
-    var accountName by remember { mutableStateOf("") }
-    var accountType by remember { mutableStateOf("Checking") }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Create Your First Accounts", style = MaterialTheme.typography.headlineSmall)
-        Text("You can add more later.", style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = accountName,
-            onValueChange = { accountName = it },
-            label = { Text("Account Name (e.g., My Bank)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = accountType,
-            onValueChange = { accountType = it },
-            label = { Text("Account Type (e.g., Savings, Wallet)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = {
-                viewModel.addAccount(accountName, accountType)
-                accountName = "" // Reset field
-            },
-            enabled = accountName.isNotBlank() && accountType.isNotBlank()
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Add Account")
-            Spacer(Modifier.width(8.dp))
-            Text("Add Account")
-        }
-
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider()
-        LazyColumn(modifier = Modifier.fillMaxWidth()) {
-            items(accounts) { acc ->
-                ListItem(
-                    headlineContent = { Text(acc.name) },
-                    supportingContent = { Text(acc.type) },
-                    trailingContent = {
-                        IconButton(onClick = { viewModel.removeAccount(acc) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Remove Account")
-                        }
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun CategorySetupPage(viewModel: OnboardingViewModel) {
     val categories by viewModel.categories.collectAsState()
 
@@ -1799,8 +1832,13 @@ fun CategorySetupPage(viewModel: OnboardingViewModel) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Select Initial Categories", style = MaterialTheme.typography.headlineSmall)
-        Text("Choose the categories you use most often.", style = MaterialTheme.typography.bodyMedium)
+        Text("Select Expense Categories", style = MaterialTheme.typography.headlineSmall)
+        Text("Choose the spending categories you use most often.", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            "You can add or remove more in Settings later.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
@@ -1835,10 +1873,15 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
     ) {
         Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Give yourself a spending target for the month. You can change this later.",
+            "Give yourself a spending target for the month.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp)
+        )
+        Text(
+            "This can be changed any time in Settings.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
@@ -1852,11 +1895,8 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
     }
 }
 
-/**
- * NEW: A dedicated page for explaining and requesting SMS permissions.
- */
 @Composable
-fun SmsPermissionPage() {
+fun SmsPermissionPage(onPermissionResult: () -> Unit) {
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -1866,6 +1906,7 @@ fun SmsPermissionPage() {
         } else {
             Toast.makeText(context, "SMS Scanning Enabled!", Toast.LENGTH_SHORT).show()
         }
+        onPermissionResult()
     }
 
     Column(
@@ -1893,11 +1934,8 @@ fun SmsPermissionPage() {
     }
 }
 
-/**
- * NEW: A dedicated page for notifications that contains the final finish button.
- */
 @Composable
-fun NotificationPermissionPage(onFinish: () -> Unit) {
+fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -1907,6 +1945,7 @@ fun NotificationPermissionPage(onFinish: () -> Unit) {
         } else {
             Toast.makeText(context, "You can enable notifications later in settings.", Toast.LENGTH_LONG).show()
         }
+        onPermissionResult()
     }
 
     Column(
@@ -1927,7 +1966,6 @@ fun NotificationPermissionPage(onFinish: () -> Unit) {
         )
         Spacer(Modifier.height(24.dp))
 
-        // Notification permission is only needed for Android 13 (TIRAMISU) and above.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Button(onClick = {
                 permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -1935,11 +1973,41 @@ fun NotificationPermissionPage(onFinish: () -> Unit) {
                 Text("Enable Notifications")
             }
             Spacer(Modifier.height(16.dp))
+        } else {
+            LaunchedEffect(Unit) {
+                onPermissionResult()
+            }
         }
+    }
+}
 
-        TextButton(onClick = onFinish) {
-            Text("Finish Setup")
-        }
+@Composable
+fun CompletionPage() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = "Success Icon",
+            modifier = Modifier.size(100.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "You're All Set!",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Your accounts and preferences have been saved. You can now start tracking your finances.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
+        )
     }
 }
 -e 
@@ -2347,49 +2415,59 @@ package io.pm.finlight.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.google.gson.Gson
 import io.pm.finlight.*
+import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
 @Composable
 fun ReviewSmsScreen(
     navController: NavController,
-    viewModel: SettingsViewModel = viewModel(),
+    viewModel: SettingsViewModel,
 ) {
     val potentialTransactions by viewModel.potentialTransactions.collectAsState()
-    val smsScanStartDate by viewModel.smsScanStartDate.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
 
-    LaunchedEffect(Unit) {
-        viewModel.rescanSms(smsScanStartDate)
+    var hasLoadedOnce by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isScanning, potentialTransactions) {
+        if (!isScanning) {
+            hasLoadedOnce = true
+        }
+        if (hasLoadedOnce && potentialTransactions.isEmpty()) {
+            navController.popBackStack()
+        }
     }
 
-    if (potentialTransactions.isEmpty()) {
+    if (isScanning && !hasLoadedOnce) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("No new transactions to review.", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Go back to Settings and tap 'Scan' to find transactions.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                )
+                Text("Scanning for transactions...", style = MaterialTheme.typography.titleMedium)
+                CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
             }
         }
     } else {
@@ -2404,13 +2482,13 @@ fun ReviewSmsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            items(potentialTransactions) { pt ->
+            items(potentialTransactions, key = { it.sourceSmsId }) { pt ->
                 PotentialTransactionItem(
                     transaction = pt,
                     onDismiss = { viewModel.dismissPotentialTransaction(it) },
                     onApprove = { transaction ->
-                        val merchant = URLEncoder.encode(transaction.merchantName ?: "Unknown", "UTF-8")
-                        val route = "approve_transaction_screen/${transaction.amount}/${transaction.transactionType}/$merchant/${transaction.sourceSmsId}/${transaction.smsSender}"
+                        val encodedPotentialTxn = URLEncoder.encode(Gson().toJson(transaction), "UTF-8")
+                        val route = "approve_transaction_screen?potentialTxnJson=$encodedPotentialTxn"
                         navController.navigate(route)
                     },
                 )
@@ -2443,6 +2521,14 @@ fun PotentialTransactionItem(
                     fontWeight = FontWeight.Bold,
                 )
             }
+            transaction.potentialAccount?.let {
+                Text(
+                    text = "Account: ${it.formattedName} (${it.accountType})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "Type: ${transaction.transactionType.replaceFirstChar { it.uppercase() }}",
@@ -2466,30 +2552,37 @@ fun PotentialTransactionItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ApproveTransactionScreen(
     navController: NavController,
-    transactionViewModel: TransactionViewModel = viewModel(),
-    settingsViewModel: SettingsViewModel = viewModel(),
-    amount: Float,
-    transactionType: String,
-    merchant: String,
-    smsId: Long,
-    smsSender: String,
+    transactionViewModel: TransactionViewModel,
+    settingsViewModel: SettingsViewModel,
+    potentialTxn: PotentialTransaction,
 ) {
-    var description by remember { mutableStateOf(merchant) }
+    var description by remember { mutableStateOf(potentialTxn.merchantName ?: "") }
     var notes by remember { mutableStateOf("") }
-    var selectedTransactionType by remember(transactionType) { mutableStateOf(transactionType) }
+    var newTagName by remember { mutableStateOf("") }
+    var selectedTransactionType by remember(potentialTxn.transactionType) { mutableStateOf(potentialTxn.transactionType) }
     val transactionTypes = listOf("Expense", "Income")
-
-    val accounts by transactionViewModel.allAccounts.collectAsState(initial = emptyList())
-    var selectedAccount by remember { mutableStateOf<Account?>(null) }
-    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    val allTags by transactionViewModel.allTags.collectAsState()
+    val selectedTags by transactionViewModel.selectedTags.collectAsState()
+
+    val isExpense = selectedTransactionType == "expense"
+    // --- FIX: Save is always enabled unless it's an expense with no category ---
+    val isSaveEnabled = !isExpense || selectedCategory != null
+
+    DisposableEffect(Unit) {
+        onDispose {
+            transactionViewModel.clearSelectedTags()
+        }
+    }
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -2501,54 +2594,45 @@ fun ApproveTransactionScreen(
             }, label = { Text("Description / Merchant") }, modifier = Modifier.fillMaxWidth())
         }
         item {
-            OutlinedTextField(value = amount.toString(), onValueChange = {
+            OutlinedTextField(value = potentialTxn.amount.toString(), onValueChange = {
             }, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth())
         }
         item {
-            TabRow(selectedTabIndex = if (selectedTransactionType == "expense") 0 else 1) {
+            OutlinedTextField(
+                value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Account") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        item {
+            TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
                 transactionTypes.forEachIndexed { index, title ->
-                    Tab(selected = (if (selectedTransactionType == "expense") 0 else 1) == index, onClick = {
+                    Tab(selected = (if (isExpense) 0 else 1) == index, onClick = {
                         selectedTransactionType = if (index == 0) "expense" else "income"
                     }, text = { Text(title) })
                 }
             }
         }
-        item {
-            ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = {
-                isAccountDropdownExpanded = !isAccountDropdownExpanded
-            }) {
-                OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {
-                }, readOnly = true, label = {
-                    Text("Account")
-                }, trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded)
-                }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
-                    accounts.forEach { account ->
-                        DropdownMenuItem(text = { Text(account.name) }, onClick = {
-                            selectedAccount = account
-                            isAccountDropdownExpanded = false
-                        })
-                    }
-                }
-            }
-        }
-        item {
-            ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-            }) {
-                OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {
-                }, readOnly = true, label = {
-                    Text("Category")
-                }, trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded)
-                }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                    categories.forEach { category ->
-                        DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                            selectedCategory = category
-                            isCategoryDropdownExpanded = false
-                        })
+        if (isExpense) {
+            item {
+                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
+                    isCategoryDropdownExpanded = !isCategoryDropdownExpanded
+                }) {
+                    OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {
+                    }, readOnly = true, label = {
+                        Text("Category")
+                    }, trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded)
+                    }, modifier = Modifier.fillMaxWidth().menuAnchor())
+                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                        categories.forEach { category ->
+                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                selectedCategory = category
+                                isCategoryDropdownExpanded = false
+                            })
+                        }
                     }
                 }
             }
@@ -2562,91 +2646,70 @@ fun ApproveTransactionScreen(
             )
         }
         item {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                allTags.forEach { tag ->
+                    FilterChip(
+                        selected = tag in selectedTags,
+                        onClick = { transactionViewModel.onTagSelected(tag) },
+                        label = { Text(tag.name) }
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = newTagName,
+                    onValueChange = { newTagName = it },
+                    label = { Text("New Tag") },
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = {
+                        transactionViewModel.addTagOnTheGo(newTagName)
+                        newTagName = ""
+                    },
+                    enabled = newTagName.isNotBlank()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+                }
+            }
+        }
+        item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                     Text("Cancel")
                 }
                 Button(
                     onClick = {
-                        settingsViewModel.saveMerchantMapping(smsSender, description)
-                        val success =
-                            transactionViewModel.addTransaction(
+                        // --- FIX: Centralized logic into the ViewModel ---
+                        scope.launch {
+                            val success = transactionViewModel.approveSmsTransaction(
+                                potentialTxn = potentialTxn,
                                 description = description,
                                 categoryId = selectedCategory?.id,
-                                amountStr = amount.toString(),
-                                accountId = selectedAccount!!.id,
-                                notes =
-                                    notes.takeIf {
-                                        it.isNotBlank()
-                                    },
-                                date = System.currentTimeMillis(),
-                                transactionType = selectedTransactionType,
-                                sourceSmsId = smsId,
+                                notes = notes.takeIf { it.isNotBlank() },
+                                tags = selectedTags
                             )
-                        if (success) {
-                            navController.popBackStack()
+                            if (success) {
+                                settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
+                                settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
+                                navController.popBackStack()
+                            }
                         }
                     },
-                    modifier =
-                        Modifier.weight(
-                            1f,
-                        ),
-                    enabled = selectedAccount != null && selectedCategory != null,
+                    modifier = Modifier.weight(1f),
+                    enabled = isSaveEnabled,
                 ) { Text("Save Transaction") }
-            }
-        }
-    }
-}
-
-@Composable
-fun SmsDebugScreen(
-    navController: NavController,
-    viewModel: SettingsViewModel = viewModel(),
-) {
-    val smsMessages by viewModel.potentialTransactions.collectAsState()
-    val context = LocalContext.current
-    val hasSmsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
-
-    LaunchedEffect(hasSmsPermission) {
-        if (hasSmsPermission) {
-            viewModel.rescanSms(null)
-        }
-    }
-
-    Column(modifier = Modifier.padding(16.dp)) {
-        Button(
-            onClick = {
-                if (hasSmsPermission) {
-                    viewModel.rescanSms(null)
-                } else {
-                    Toast.makeText(context, "Grant SMS permission in settings first.", Toast.LENGTH_LONG).show()
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Refresh SMS Messages")
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        if (smsMessages.isEmpty() && hasSmsPermission) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No messages found.")
-            }
-        } else if (!hasSmsPermission) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Permission not granted.", textAlign = TextAlign.Center)
-            }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(smsMessages) { sms ->
-                    Card {
-                        Column(Modifier.padding(8.dp)) {
-                            Text(sms.smsSender, fontWeight = FontWeight.Bold)
-                            Text(sms.originalMessage, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
             }
         }
     }
@@ -2778,16 +2841,21 @@ package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
@@ -2796,7 +2864,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
@@ -2809,6 +2881,7 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -2828,7 +2901,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddTransactionScreen(
     navController: NavController,
@@ -2837,6 +2910,7 @@ fun AddTransactionScreen(
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var newTagName by remember { mutableStateOf("") }
 
     var transactionType by remember { mutableStateOf("expense") }
     val transactionTypes = listOf("Expense", "Income")
@@ -2856,13 +2930,29 @@ fun AddTransactionScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
 
+    val isExpense = transactionType == "expense"
+    val isSaveEnabled = (
+            description.isNotBlank() &&
+                    amount.isNotBlank() &&
+                    selectedAccount != null &&
+                    (!isExpense || selectedCategory != null)
+            )
+
+    val allTags by viewModel.allTags.collectAsState()
+    val selectedTags by viewModel.selectedTags.collectAsState()
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearSelectedTags()
+        }
+    }
+
     LaunchedEffect(validationError) {
         validationError?.let {
             snackbarHostState.showSnackbar(it)
         }
     }
 
-    // A Box to host the Snackbar, as Scaffold is removed
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -2871,11 +2961,16 @@ fun AddTransactionScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             item {
-                TabRow(selectedTabIndex = if (transactionType == "expense") 0 else 1) {
+                TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
                     transactionTypes.forEachIndexed { index, title ->
                         Tab(
-                            selected = (if (transactionType == "expense") 0 else 1) == index,
-                            onClick = { transactionType = if (index == 0) "expense" else "income" },
+                            selected = (if (isExpense) 0 else 1) == index,
+                            onClick = {
+                                transactionType = if (index == 0) "expense" else "income"
+                                if (transactionType == "income") {
+                                    selectedCategory = null
+                                }
+                            },
                             text = { Text(title) },
                         )
                     }
@@ -2890,9 +2985,7 @@ fun AddTransactionScreen(
                 OutlinedTextField(value = amount, onValueChange = {
                     amount = it
                 }, label = {
-                    Text(
-                        "Amount",
-                    )
+                    Text("Amount")
                 }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             }
             item {
@@ -2940,31 +3033,75 @@ fun AddTransactionScreen(
                     }
                 }
             }
-            item {
-                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                    isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-                }) {
-                    OutlinedTextField(
-                        value = selectedCategory?.name ?: "Select Category",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Category") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    )
-                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                        categories.forEach { category ->
-                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                selectedCategory = category
-                                isCategoryDropdownExpanded = false
-                            })
+            if (isExpense) {
+                item {
+                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
+                        isCategoryDropdownExpanded = !isCategoryDropdownExpanded
+                    }) {
+                        OutlinedTextField(
+                            value = selectedCategory?.name ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Category") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        )
+                        ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                            categories.forEach { category ->
+                                DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                    selectedCategory = category
+                                    isCategoryDropdownExpanded = false
+                                })
+                            }
                         }
                     }
                 }
             }
+
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    allTags.forEach { tag ->
+                        FilterChip(
+                            selected = tag in selectedTags,
+                            onClick = { viewModel.onTagSelected(tag) },
+                            label = { Text(tag.name) }
+                        )
+                    }
+                }
+                // --- NEW: UI to add a new tag on the fly ---
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newTagName,
+                        onValueChange = { newTagName = it },
+                        label = { Text("New Tag") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            viewModel.addTagOnTheGo(newTagName)
+                            newTagName = "" // Clear input
+                        },
+                        enabled = newTagName.isNotBlank()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+                    }
+                }
+            }
+
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
@@ -2988,7 +3125,7 @@ fun AddTransactionScreen(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = selectedAccount != null && amount.isNotBlank() && description.isNotBlank(),
+                        enabled = isSaveEnabled,
                     ) {
                         Text("Save Transaction")
                     }
@@ -3262,9 +3399,11 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ManageSearch
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -3277,6 +3416,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import io.pm.finlight.DataExportService
+import io.pm.finlight.ScanResult
 import io.pm.finlight.SettingsViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -3311,6 +3451,20 @@ fun SettingsScreen(
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
         )
+    }
+
+    LaunchedEffect(key1 = viewModel.scanEvent) {
+        viewModel.scanEvent.collect { result ->
+            if (result is ScanResult.Success) {
+                if (result.count > 0) {
+                    navController.navigate("review_sms_screen")
+                } else {
+                    Toast.makeText(context, "No new transactions found.", Toast.LENGTH_SHORT).show()
+                }
+            } else if (result is ScanResult.Error) {
+                Toast.makeText(context, "An error occurred during scan.", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     val permissionLauncher =
@@ -3467,6 +3621,14 @@ fun SettingsScreen(
         item { SettingSectionHeader("App Management") }
         item {
             SettingsActionItem(
+                text = "Manage Accounts",
+                subtitle = "View, add, or edit your financial accounts.",
+                icon = Icons.Default.AccountBalanceWallet,
+                onClick = { navController.navigate("account_list") },
+            )
+        }
+        item {
+            SettingsActionItem(
                 text = "Manage Budgets",
                 subtitle = "Set and edit your overall and category-specific monthly budgets.",
                 icon = Icons.Default.Savings,
@@ -3485,7 +3647,7 @@ fun SettingsScreen(
             SettingsActionItem(
                 text = "Manage Tags",
                 subtitle = "Create and organize custom tags for transactions.",
-                icon = Icons.Default.NewLabel, // Or another suitable icon
+                icon = Icons.Default.NewLabel,
                 onClick = { navController.navigate("tag_management") },
             )
         }
@@ -3560,30 +3722,63 @@ fun SettingsScreen(
         }
 
         item { SettingSectionHeader("SMS Scanning") }
+        // --- REFACTORED: "Scan from date" item with its own button ---
         item {
-            SettingsActionItem(
-                text = "Scan From Specific Date...",
-                subtitle = "Current default start date: ${dateFormatter.format(Date(smsScanStartDate))}",
-                icon = Icons.Default.EventRepeat,
-                onClick = {
-                    if (hasSmsPermission) {
-                        showDatePickerDialog = true
-                    } else {
-                        showSmsRationaleDialog = true
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            if (hasSmsPermission) {
+                                showDatePickerDialog = true
+                            } else {
+                                showSmsRationaleDialog = true
+                            }
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.EventRepeat, contentDescription = null, modifier = Modifier.padding(end = 16.dp))
+                    Column {
+                        Text("Scan From Date", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Current: ${dateFormatter.format(Date(smsScanStartDate))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                },
-            )
+                }
+                OutlinedButton(
+                    onClick = {
+                        if (hasSmsPermission) {
+                            if (!isScanning) {
+                                viewModel.rescanSms(smsScanStartDate)
+                            }
+                        } else {
+                            showSmsRationaleDialog = true
+                        }
+                    },
+                    enabled = !isScanning
+                ) {
+                    Text("Scan")
+                }
+            }
         }
+        // --- REFACTORED: "Scan full inbox" item with clearer text ---
         item {
             SettingsActionItem(
-                text = "Review Scanned SMS Transactions",
-                subtitle = "Approve or dismiss transactions found in your inbox.",
-                icon = Icons.Default.Refresh,
+                text = "Scan Full Inbox",
+                subtitle = "Scan all messages to find new transactions.",
+                icon = Icons.AutoMirrored.Filled.ManageSearch,
                 onClick = {
                     if (hasSmsPermission) {
-                        Toast.makeText(context, "Scanning for new transactions...", Toast.LENGTH_SHORT).show()
-                        viewModel.rescanSms(smsScanStartDate)
-                        navController.navigate("review_sms_screen")
+                        if (!isScanning) {
+                            viewModel.rescanSms(null) // Pass null for a full scan
+                        }
                     } else {
                         showSmsRationaleDialog = true
                     }
@@ -4643,16 +4838,21 @@ package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
@@ -4664,7 +4864,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -4689,32 +4892,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import io.pm.finlight.Account
 import io.pm.finlight.Category
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EditTransactionScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
     transactionId: Int,
-    isFromCsvImport: Boolean = false,
-    csvLineNumber: Int = -1,
-    initialCsvData: String? = null,
 ) {
-    val transaction by viewModel.getTransactionById(transactionId).collectAsState(initial = null)
-
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var newTagName by remember { mutableStateOf("") }
 
     var transactionType by remember { mutableStateOf("expense") }
     val transactionTypes = listOf("Expense", "Income")
@@ -4729,33 +4925,32 @@ fun EditTransactionScreen(
 
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
-    // --- FIXED: Corrected typo from 'mutableStateof' to 'mutableStateOf' ---
     var showTimePicker by remember { mutableStateOf(false) }
     val selectedDateTime = remember { Calendar.getInstance() }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
     val transactionFromDb by viewModel.getTransactionById(transactionId).collectAsState(initial = null)
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
-    LaunchedEffect(transactionFromDb, initialCsvData, accounts, categories) {
-        if (isFromCsvImport && initialCsvData != null) {
-            val gson = Gson()
-            val listType = object : TypeToken<List<String>>() {}.type
-            val tokens: List<String> = gson.fromJson(initialCsvData, listType)
+    val isExpense = transactionType == "expense"
+    val isUpdateEnabled = (
+            description.isNotBlank() &&
+                    amount.isNotBlank() &&
+                    selectedAccount != null &&
+                    (!isExpense || selectedCategory != null)
+            )
 
-            try {
-                selectedDateTime.time = dateFormat.parse(tokens[0]) ?: Date()
-                description = tokens[1]
-                amount = tokens[2]
-                transactionType = tokens[3].lowercase()
-                notes = tokens.getOrElse(6) { "" }
-                selectedCategory = categories.find { it.name.equals(tokens[4], ignoreCase = true) }
-                selectedAccount = accounts.find { it.name.equals(tokens[5], ignoreCase = true) }
-            } catch (e: Exception) {
-                // Handle parsing error
-            }
-        } else if (transactionFromDb != null) {
+    val allTags by viewModel.allTags.collectAsState()
+    val selectedTags by viewModel.selectedTags.collectAsState()
+
+    LaunchedEffect(key1 = transactionId) {
+        if (transactionId != -1) {
+            viewModel.loadTagsForTransaction(transactionId)
+        }
+    }
+
+    LaunchedEffect(transactionFromDb, accounts, categories) {
+        if (transactionFromDb != null) {
             transactionFromDb?.let { txn ->
                 description = txn.description
                 amount = txn.amount.toString()
@@ -4776,8 +4971,7 @@ fun EditTransactionScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        val canShowForm = (!isFromCsvImport && transactionFromDb != null) || isFromCsvImport
-        if (canShowForm) {
+        if (transactionFromDb != null) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
@@ -4785,12 +4979,15 @@ fun EditTransactionScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 item {
-                    TabRow(selectedTabIndex = if (transactionType == "expense") 0 else 1) {
+                    TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
                         transactionTypes.forEachIndexed { index, title ->
                             Tab(
-                                selected = (if (transactionType == "expense") 0 else 1) == index,
+                                selected = (if (isExpense) 0 else 1) == index,
                                 onClick = {
                                     transactionType = if (index == 0) "expense" else "income"
+                                    if (transactionType == "income") {
+                                        selectedCategory = null
+                                    }
                                 },
                                 text = { Text(title) },
                             )
@@ -4805,11 +5002,7 @@ fun EditTransactionScreen(
                 item {
                     OutlinedTextField(value = amount, onValueChange = {
                         amount = it
-                    }, label = {
-                        Text(
-                            "Amount",
-                        )
-                    }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 }
                 item {
                     OutlinedTextField(
@@ -4837,16 +5030,11 @@ fun EditTransactionScreen(
                     ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = {
                         isAccountDropdownExpanded = !isAccountDropdownExpanded
                     }) {
-                        OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {
-                        }, readOnly = true, label = {
-                            Text("Account")
-                        }, trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded)
-                        }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                        ExposedDropdownMenu(
-                            expanded = isAccountDropdownExpanded,
-                            onDismissRequest = { isAccountDropdownExpanded = false },
-                        ) {
+                        OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {},
+                            readOnly = true, label = { Text("Account") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor())
+                        ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
                             accounts.forEach { account ->
                                 DropdownMenuItem(text = { Text(account.name) }, onClick = {
                                     selectedAccount = account
@@ -4856,92 +5044,108 @@ fun EditTransactionScreen(
                         }
                     }
                 }
-                item {
-                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                        isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-                    }) {
-                        OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {
-                        }, readOnly = true, label = {
-                            Text("Category")
-                        }, trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded)
-                        }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                        ExposedDropdownMenu(
-                            expanded = isCategoryDropdownExpanded,
-                            onDismissRequest = { isCategoryDropdownExpanded = false },
-                        ) {
-                            categories.forEach { category ->
-                                DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                    selectedCategory = category
-                                    isCategoryDropdownExpanded = false
-                                })
+                if (isExpense) {
+                    item {
+                        ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
+                            isCategoryDropdownExpanded = !isCategoryDropdownExpanded
+                        }) {
+                            OutlinedTextField(value = selectedCategory?.name ?: "", onValueChange = {},
+                                readOnly = true, label = { Text("Category") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor())
+                            ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
+                                categories.forEach { category ->
+                                    DropdownMenuItem(text = { Text(category.name) }, onClick = {
+                                        selectedCategory = category
+                                        isCategoryDropdownExpanded = false
+                                    })
+                                }
                             }
                         }
                     }
                 }
+
                 item {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        allTags.forEach { tag ->
+                            FilterChip(
+                                selected = tag in selectedTags,
+                                onClick = { viewModel.onTagSelected(tag) },
+                                label = { Text(tag.name) }
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = newTagName,
+                            onValueChange = { newTagName = it },
+                            label = { Text("New Tag") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                viewModel.addTagOnTheGo(newTagName)
+                                newTagName = ""
+                            },
+                            enabled = newTagName.isNotBlank()
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+                        }
+                    }
+                }
+
+                item {
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                             Text("Cancel")
                         }
                         Button(
                             onClick = {
-                                if (isFromCsvImport) {
-                                    val correctedData =
-                                        listOf(
-                                            dateFormat.format(selectedDateTime.time),
-                                            description,
-                                            amount,
-                                            transactionType,
-                                            selectedCategory?.name ?: "",
-                                            selectedAccount?.name ?: "",
-                                            notes,
+                                val updatedAmount = amount.toDoubleOrNull() ?: 0.0
+                                val currentTransaction = transactionFromDb
+                                if (currentTransaction != null && selectedAccount != null) {
+                                    val updatedTransaction =
+                                        currentTransaction.copy(
+                                            description = description,
+                                            amount = updatedAmount,
+                                            accountId = selectedAccount!!.id,
+                                            categoryId = selectedCategory?.id,
+                                            notes = notes.takeIf { it.isNotBlank() },
+                                            date = selectedDateTime.timeInMillis,
+                                            transactionType = transactionType,
                                         )
-                                    val gson = Gson()
-                                    navController.previousBackStackEntry?.savedStateHandle?.set("corrected_row", gson.toJson(correctedData))
-                                    navController.previousBackStackEntry?.savedStateHandle?.set("corrected_row_line", csvLineNumber)
-                                    navController.popBackStack()
-                                } else {
-                                    val updatedAmount = amount.toDoubleOrNull() ?: 0.0
-                                    val currentTransaction = transactionFromDb
-                                    if (currentTransaction != null && selectedAccount != null) {
-                                        val updatedTransaction =
-                                            currentTransaction.copy(
-                                                description = description,
-                                                amount = updatedAmount,
-                                                accountId = selectedAccount!!.id,
-                                                categoryId = selectedCategory?.id,
-                                                notes =
-                                                    notes.takeIf {
-                                                        it.isNotBlank()
-                                                    },
-                                                date = selectedDateTime.timeInMillis,
-                                                transactionType = transactionType,
-                                            )
-                                        if (viewModel.updateTransaction(updatedTransaction)) {
-                                            navController.popBackStack()
-                                        }
+                                    if (viewModel.updateTransaction(updatedTransaction)) {
+                                        navController.popBackStack()
                                     }
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            enabled = selectedAccount != null && selectedCategory != null,
+                            enabled = isUpdateEnabled,
                         ) {
-                            Text(if (isFromCsvImport) "Update Row" else "Update Transaction")
+                            Text("Update Transaction")
                         }
                     }
                 }
-                if (!isFromCsvImport) {
-                    item {
-                        Button(
-                            onClick = { showDeleteDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete Icon")
-                            Spacer(Modifier.width(8.dp))
-                            Text("Delete Transaction")
-                        }
+                item {
+                    Button(
+                        onClick = { showDeleteDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Icon")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Delete Transaction")
                     }
                 }
             }
@@ -4962,9 +5166,7 @@ fun EditTransactionScreen(
                 showDatePicker = false
             }) { Text("OK") }
         }, dismissButton = {
-            TextButton(
-                onClick = { showDatePicker = false },
-            ) { Text("Cancel") }
+            TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
         }) { DatePicker(state = datePickerState) }
     }
 
@@ -4987,9 +5189,7 @@ fun EditTransactionScreen(
             AlertDialog(onDismissRequest = {
                 showDeleteDialog = false
             }, title = {
-                Text(
-                    "Confirm Deletion",
-                )
+                Text("Confirm Deletion")
             }, text = { Text("Are you sure you want to permanently delete this transaction?") }, confirmButton = {
                 Button(
                     onClick = {
@@ -5033,19 +5233,21 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // --- UPDATED: Page count is now 6 ---
+    // --- UPDATED: Page count is now 6 as Account Setup is removed ---
     val pagerState = rememberPagerState { 6 }
     val scope = rememberCoroutineScope()
+
+    val onNextClicked: () -> Unit = {
+        scope.launch {
+            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+        }
+    }
 
     Scaffold(
         bottomBar = {
             OnboardingBottomBar(
                 pagerState = pagerState,
-                onNextClicked = {
-                    scope.launch {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                    }
-                },
+                onNextClicked = onNextClicked,
                 onFinishClicked = {
                     viewModel.finishOnboarding()
                     onOnboardingFinished()
@@ -5057,19 +5259,17 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
+            userScrollEnabled = false
         ) { page ->
-            // --- UPDATED: New page order with split permissions ---
+            // --- UPDATED: AccountSetupPage (page 1) has been removed ---
             when (page) {
                 0 -> WelcomePage()
-                1 -> AccountSetupPage(viewModel)
-                2 -> CategorySetupPage(viewModel)
-                3 -> BudgetSetupPage(viewModel)
-                4 -> SmsPermissionPage()
-                5 -> NotificationPermissionPage(onFinish = {
-                    viewModel.finishOnboarding()
-                    onOnboardingFinished()
-                })
+                1 -> CategorySetupPage(viewModel)
+                2 -> BudgetSetupPage(viewModel)
+                3 -> SmsPermissionPage(onPermissionResult = onNextClicked)
+                4 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
+                5 -> CompletionPage()
             }
         }
     }
@@ -6454,11 +6654,10 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import com.google.gson.Gson
 import io.pm.finlight.ui.screens.*
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
 import java.net.URLDecoder
-import com.google.gson.Gson
-import io.pm.finlight.*
 import java.util.concurrent.Executor
 
 class MainActivity : AppCompatActivity() {
@@ -6474,7 +6673,6 @@ class MainActivity : AppCompatActivity() {
                 var showOnboarding by remember { mutableStateOf(!hasSeenOnboarding) }
 
                 if (showOnboarding) {
-                    // --- UPDATED LOGIC TO LAUNCH NEW ONBOARDING FLOW ---
                     val onboardingViewModel: OnboardingViewModel = viewModel(factory = OnboardingViewModelFactory(application))
                     OnboardingScreen(
                         viewModel = onboardingViewModel,
@@ -6710,50 +6908,39 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
         composable("search_screen") { SearchScreen(navController) }
         composable(
             route = "review_sms_screen",
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.com/review_sms" })
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
         ) { ReviewSmsScreen(navController, settingsViewModel) }
-        composable("sms_debug_screen") { SmsDebugScreen(navController, settingsViewModel) }
+
+        // --- FIX: The route now expects a single JSON string parameter ---
         composable(
-            route = "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}",
+            route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
             arguments = listOf(
-                navArgument("amount") { type = NavType.FloatType },
-                navArgument("type") { type = NavType.StringType },
-                navArgument("merchant") { type = NavType.StringType },
-                navArgument("smsId") { type = NavType.LongType },
-                navArgument("smsSender") { type = NavType.StringType }
-            ),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.com/approve?amount={amount}&type={type}&merchant={merchant}&smsId={smsId}&smsSender={smsSender}" })
+                navArgument("potentialTxnJson") { type = NavType.StringType }
+            )
         ) { backStackEntry ->
-            val arguments = requireNotNull(backStackEntry.arguments)
+            // --- FIX: Deserialize the JSON back into a PotentialTransaction object ---
+            val json = backStackEntry.arguments?.getString("potentialTxnJson")
+            val potentialTxn = Gson().fromJson(URLDecoder.decode(json, "UTF-8"), PotentialTransaction::class.java)
+
             ApproveTransactionScreen(
                 navController = navController,
                 transactionViewModel = transactionViewModel,
                 settingsViewModel = settingsViewModel,
-                amount = arguments.getFloat("amount"),
-                transactionType = arguments.getString("type") ?: "expense",
-                merchant = URLDecoder.decode(arguments.getString("merchant") ?: "Unknown", "UTF-8"),
-                smsId = arguments.getLong("smsId"),
-                smsSender = arguments.getString("smsSender") ?: ""
+                potentialTxn = potentialTxn
             )
         }
         composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
         composable(
-            route = "edit_transaction/{transactionId}?isFromCsv={isFromCsv}&lineNumber={lineNumber}&rowDataJson={rowDataJson}",
+            route = "edit_transaction/{transactionId}",
             arguments = listOf(
-                navArgument("transactionId") { type = NavType.IntType; defaultValue = -1 },
-                navArgument("isFromCsv") { type = NavType.BoolType; defaultValue = false },
-                navArgument("lineNumber") { type = NavType.IntType; defaultValue = -1 },
-                navArgument("rowDataJson") { type = NavType.StringType; nullable = true }
+                navArgument("transactionId") { type = NavType.IntType }
             )
         ) { backStackEntry ->
             val arguments = requireNotNull(backStackEntry.arguments)
             EditTransactionScreen(
                 navController = navController,
                 viewModel = transactionViewModel,
-                transactionId = arguments.getInt("transactionId"),
-                isFromCsvImport = arguments.getBoolean("isFromCsv"),
-                csvLineNumber = arguments.getInt("lineNumber"),
-                initialCsvData = arguments.getString("rowDataJson")?.let { URLDecoder.decode(it, "UTF-8") }
+                transactionId = arguments.getInt("transactionId")
             )
         }
         composable("account_list") { AccountListScreen(navController, accountViewModel) }
@@ -6808,21 +6995,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 
 /**
- * Factory for creating an OnboardingViewModel with a constructor that takes an Application.
- * This is necessary to provide the repositories to the ViewModel.
+ * Factory for creating an OnboardingViewModel.
  */
 class OnboardingViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(OnboardingViewModel::class.java)) {
             val db = AppDatabase.getInstance(application)
-            val accountRepository = AccountRepository(db.accountDao())
+            // --- UPDATED: AccountRepository is no longer needed for onboarding ---
             val categoryRepository = CategoryRepository(db.categoryDao())
-            // --- NEW: Create SettingsRepository dependency ---
             val settingsRepository = SettingsRepository(application)
 
             @Suppress("UNCHECKED_CAST")
-            // --- UPDATED: Pass SettingsRepository to ViewModel ---
-            return OnboardingViewModel(accountRepository, categoryRepository, settingsRepository) as T
+            // --- UPDATED: Pass only the required dependencies ---
+            return OnboardingViewModel(categoryRepository, settingsRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
@@ -7011,17 +7196,13 @@ import kotlinx.coroutines.launch
 data class SelectableCategory(val name: String, var isSelected: Boolean)
 
 class OnboardingViewModel(
-    private val accountRepository: AccountRepository,
+    // --- UPDATED: AccountRepository is no longer needed here ---
     private val categoryRepository: CategoryRepository,
-    // --- NEW: Add SettingsRepository dependency ---
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
-    // --- State for Account Setup ---
-    private val _accounts = MutableStateFlow<List<Account>>(emptyList())
-    val accounts = _accounts.asStateFlow()
+    // --- REMOVED: State for Account Setup is no longer part of onboarding ---
 
-    // --- State for Category Setup ---
     private val _categories = MutableStateFlow<List<SelectableCategory>>(
         listOf(
             SelectableCategory("Groceries", true),
@@ -7031,25 +7212,12 @@ class OnboardingViewModel(
             SelectableCategory("Rent", false),
             SelectableCategory("Shopping", false),
             SelectableCategory("Entertainment", false),
-            SelectableCategory("Salary", true)
         )
     )
     val categories = _categories.asStateFlow()
 
-    // --- NEW: State for Budget Setup ---
     private val _monthlyBudget = MutableStateFlow("")
     val monthlyBudget = _monthlyBudget.asStateFlow()
-
-    fun addAccount(name: String, type: String) {
-        if (name.isNotBlank() && type.isNotBlank()) {
-            val newAccount = Account(name = name, type = type)
-            _accounts.update { it + newAccount }
-        }
-    }
-
-    fun removeAccount(account: Account) {
-        _accounts.update { it - account }
-    }
 
     fun toggleCategorySelection(categoryName: String) {
         _categories.update { currentCategories ->
@@ -7063,30 +7231,24 @@ class OnboardingViewModel(
         }
     }
 
-    // --- NEW: Function to update budget state ---
     fun onBudgetChanged(newBudget: String) {
-        // Allow only digits
         if (newBudget.all { it.isDigit() }) {
             _monthlyBudget.value = newBudget
         }
     }
 
     /**
-     * Saves the initial accounts, categories, and budget to the database and preferences.
+     * Saves the initial categories and budget to the database and preferences.
      */
     fun finishOnboarding() {
         viewModelScope.launch {
-            // Save Accounts
-            _accounts.value.forEach { account ->
-                accountRepository.insert(account)
-            }
+            // --- REMOVED: Account saving logic is gone ---
 
             // Save selected Categories
             _categories.value.filter { it.isSelected }.forEach { selectableCategory ->
                 categoryRepository.insert(Category(name = selectableCategory.name))
             }
 
-            // --- NEW: Save the monthly budget ---
             val budgetFloat = _monthlyBudget.value.toFloatOrNull() ?: 0f
             if (budgetFloat > 0) {
                 settingsRepository.saveOverallBudgetForCurrentMonth(budgetFloat)
@@ -7570,29 +7732,74 @@ abstract class AppDatabase : RoomDatabase() {
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
 package io.pm.finlight
 
+import android.util.Log
+
+data class PotentialAccount(
+    val formattedName: String, // e.g., "SBI - xx3201"
+    val accountType: String,   // e.g., "Credit Card"
+)
+
 object SmsParser {
+    private const val TAG = "SmsParser"
     private val AMOUNT_REGEX = "(?:rs|inr|rs\\.?)\\s*([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
 
-    // --- UPDATED: More robust and better-prioritized list of patterns ---
+    // --- UPDATED: Added a more specific pattern at the top of the list to handle multi-word account types ---
+    private val ACCOUNT_PATTERNS =
+        listOf(
+            // Pattern for complex types like "SBI Credit Card ending with 3201"
+            "(?:on your|on)\\s+([A-Za-z0-9\\s]+?)\\s+((?:Credit|Meal|Savings)?\\s*(?:Card|Account|Acct))\\s+(?:ending with|ending in|xx)?\\s*(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
+            // Fallback for simple types like "HDFC Bank Card 9922"
+            "on\\s+([A-Za-z0-9\\s]+?)\\s+(card|account|acct|a/c)\\s+(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
+            // Pattern for "Acct XX823"
+            "(?:acct|account|a/c)\\s+xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
+            // Pattern for "card no.xx7809"
+            "card no\\.\\s*xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE)
+        )
+
     private val MERCHANT_REGEX_PATTERNS =
         listOf(
-            // Priority 1: Look for income transactions from a sender.
             "(?:credited|received).*from\\s+([A-Za-z0-9\\s.&'-]+?)(?:\\.|$)".toRegex(RegexOption.IGNORE_CASE),
-            // Priority 2: Specific HDFC pattern "at ..MERCHANT.. on" - made greedy to capture full name.
             "at\\s*\\.\\.\\s*([A-Za-z0-9_\\s]+)\\s*on".toRegex(RegexOption.IGNORE_CASE),
-            // Priority 3: Specific pattern for "DAKSHIN CAFE credited"
             ";\\s*([A-Za-z0-9\\s.&'-]+?)\\s*credited".toRegex(RegexOption.IGNORE_CASE),
-            // Priority 4: UPI transactions
             "UPI.*(?:to|\\bat\\b)\\s+([A-Za-z0-9\\s.&'()]+?)(?:\\s+on|\\s+Ref|$)".toRegex(RegexOption.IGNORE_CASE),
-            // Priority 5: Virtual Payment Address (VPA)
             "to\\s+([a-zA-Z0-9.\\-_]+@[a-zA-Z0-9]+)".toRegex(RegexOption.IGNORE_CASE),
-            // Priority 6: Generic "at" or "to" a merchant
             "(?:\\bat\\b|to\\s+)([A-Za-z0-9\\s.&'-]+?)(?:\\s+on\\s+|\\s+for\\s+|\\.|$|\\s+was\\s+)".toRegex(RegexOption.IGNORE_CASE),
-            // Priority 7: Merchant name after "Info:"
             "Info:\\s*([A-Za-z0-9\\s.&'-]+)".toRegex(RegexOption.IGNORE_CASE),
         )
+
+    private fun parseAccount(smsBody: String, sender: String): PotentialAccount? {
+        for (pattern in ACCOUNT_PATTERNS) {
+            val match = pattern.find(smsBody)
+            if (match != null && match.groupValues.size >= 2) {
+                return when (match.groupValues.size) {
+                    2 -> {
+                        val number = match.groupValues[1]
+                        val bankName = sender.split("-").getOrNull(1)?.replaceBefore("B", "")?.replace("BK", "Bank") ?: "Unknown Bank"
+                        PotentialAccount(
+                            formattedName = "$bankName - xx$number",
+                            accountType = "Savings Account"
+                        )
+                    }
+                    // --- UPDATED: This block now correctly handles the new, more specific regex ---
+                    4 -> {
+                        val bankName = match.groupValues[1].trim()
+                        val type = match.groupValues[2].trim() // Captures the full type, e.g., "Credit Card"
+                        val number = match.groupValues[3]
+                        PotentialAccount(
+                            formattedName = "$bankName - xx$number",
+                            accountType = type // Assign the full captured type directly
+                        )
+                    }
+                    else -> null
+                }
+            }
+        }
+        Log.d(TAG, "No specific account pattern matched for sender: $sender")
+        return null
+    }
+
 
     fun parse(
         sms: SmsMessage,
@@ -7618,7 +7825,6 @@ object SmsParser {
             for (pattern in MERCHANT_REGEX_PATTERNS) {
                 val match = pattern.find(messageBody)
                 if (match != null) {
-                    // --- CORRECTED: Added a final .trim() to remove trailing spaces ---
                     val potentialName = match.groups[1]?.value?.replace("_", " ")?.replace(Regex("\\s+"), " ")?.trim()
                     if (!potentialName.isNullOrBlank() && !potentialName.contains("call", ignoreCase = true) && !potentialName.matches(Regex(".*\\d{6,}.*"))) {
                         merchantName = potentialName
@@ -7628,6 +7834,8 @@ object SmsParser {
             }
         }
 
+        val potentialAccount = parseAccount(messageBody, sms.sender)
+
         return PotentialTransaction(
             sourceSmsId = sms.id,
             smsSender = sms.sender,
@@ -7635,6 +7843,7 @@ object SmsParser {
             transactionType = transactionType,
             merchantName = merchantName,
             originalMessage = messageBody,
+            potentialAccount = potentialAccount
         )
     }
 }
@@ -8048,11 +8257,18 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+
+sealed class ScanResult {
+    data class Success(val count: Int) : ScanResult()
+    object Error : ScanResult()
+}
+
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
@@ -8063,6 +8279,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val accountRepository = AccountRepository(db.accountDao())
     private val categoryRepository = CategoryRepository(db.categoryDao())
     val smsScanStartDate: StateFlow<Long>
+
+    private val _scanEvent = Channel<ScanResult>()
+    val scanEvent = _scanEvent.receiveAsFlow()
 
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
@@ -8112,7 +8331,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
 
     init {
-        // --- NEW: Initialize the smsScanStartDate StateFlow ---
         smsScanStartDate =
             settingsRepository.getSmsScanStartDate()
                 .stateIn(
@@ -8246,7 +8464,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- NEW: Function to update and re-validate a single row ---
     fun updateAndRevalidateRow(
         lineNumber: Int,
         correctedData: List<String>,
@@ -8270,12 +8487,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- CORRECTED: Final import logic now correctly handles creating new entities ---
     fun commitCsvImport(rowsToImport: List<ReviewableRow>) {
         viewModelScope.launch(Dispatchers.IO) {
             Log.d("CsvImportDebug", "ViewModel: commitCsvImport called with ${rowsToImport.size} rows.")
 
-            // Fetch current accounts and categories ONCE to avoid repeated DB calls in the loop.
             val allAccounts = accountRepository.allAccounts.first()
             val allCategories = categoryRepository.allCategories.first()
             val accountMap = allAccounts.associateBy { it.name.lowercase() }.toMutableMap()
@@ -8294,12 +8509,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     val accountName = columns[5]
                     val notes = columns.getOrNull(6)
 
-                    // Get or create Category
                     var category = categoryMap[categoryName.lowercase()]
                     if (category == null) {
                         val newCategory = Category(name = categoryName)
                         categoryRepository.insert(newCategory)
-                        // Re-fetch to get the one with the auto-generated ID
                         val updatedCategories = categoryRepository.allCategories.first()
                         category = updatedCategories.find { it.name.equals(categoryName, ignoreCase = true) }
                         if (category != null) {
@@ -8307,16 +8520,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             Log.d("CsvImportDebug", "ViewModel: Created and found new category '$categoryName' with ID ${category.id}")
                         } else {
                             Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new category '$categoryName'")
-                            continue // Skip this transaction
+                            continue
                         }
                     }
 
-                    // Get or create Account
                     var account = accountMap[accountName.lowercase()]
                     if (account == null) {
                         val newAccount = Account(name = accountName, type = "Imported")
                         accountRepository.insert(newAccount)
-                        // Re-fetch to get the one with the auto-generated ID
                         val updatedAccounts = accountRepository.allAccounts.first()
                         account = updatedAccounts.find { it.name.equals(accountName, ignoreCase = true) }
                         if (account != null) {
@@ -8324,7 +8535,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             Log.d("CsvImportDebug", "ViewModel: Created and found new account '$accountName' with ID ${account.id}")
                         } else {
                             Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new account '$accountName'")
-                            continue // Skip this transaction
+                            continue
                         }
                     }
 
@@ -8343,7 +8554,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             accountId = account.id,
                             categoryId = category.id,
                         )
-                    // Insert transactions one by one since insertAll is not available
                     transactionRepository.insert(transaction)
                     Log.d("CsvImportDebug", "ViewModel: Inserted transaction for row ${row.lineNumber}: '${transaction.description}'")
                 } catch (e: Exception) {
@@ -8365,33 +8575,64 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         viewModelScope.launch {
             _isScanning.value = true
-
-            val rawMessages =
-                withContext(Dispatchers.IO) {
+            try {
+                val rawMessages = withContext(Dispatchers.IO) {
                     SmsRepository(context).fetchAllSms(startDate)
                 }
 
-            val existingMappings =
-                withContext(Dispatchers.IO) {
+                val existingMappings = withContext(Dispatchers.IO) {
                     merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                 }
-            val existingSmsIds =
-                withContext(Dispatchers.IO) {
+                val existingSmsIds = withContext(Dispatchers.IO) {
                     transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
                 }
 
-            val parsedList =
-                withContext(Dispatchers.Default) {
+                val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
                 }
 
-            _potentialTransactions.value = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
-            _isScanning.value = false
+                withContext(Dispatchers.IO) {
+                    Log.d("AutoAccount_Debug", "Starting account creation check for ${parsedList.size} potential transactions.")
+                    val allAccounts = accountRepository.allAccounts.first().toMutableSet()
+                    parsedList.forEach { potentialTxn ->
+                        potentialTxn.potentialAccount?.let { potAcc ->
+                            Log.d("AutoAccount_Debug", "Checking account: ${potAcc.formattedName}")
+                            val accountExists = allAccounts.any { it.name.equals(potAcc.formattedName, ignoreCase = true) }
+                            Log.d("AutoAccount_Debug", "Account '${potAcc.formattedName}' exists? $accountExists")
+                            if (!accountExists) {
+                                val newAccount = Account(name = potAcc.formattedName, type = potAcc.accountType)
+                                Log.d("AutoAccount_Debug", "Account does not exist. Inserting: ${newAccount.name}")
+                                accountRepository.insert(newAccount)
+                                allAccounts.add(newAccount)
+                                Log.d("AutoAccount_Debug", "Finished inserting. Account list size now: ${allAccounts.size}")
+                            }
+                        }
+                    }
+                    Log.d("AutoAccount_Debug", "Finished account creation check.")
+                }
+
+                val newPotentialTransactions = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
+                _potentialTransactions.value = newPotentialTransactions
+
+                Log.d("AutoAccount_Debug", "Scan complete. Sending Success event with count: ${newPotentialTransactions.size}")
+                _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
+            } catch (e: Exception) {
+                Log.e("SettingsViewModel", "Error during SMS scan", e)
+                _scanEvent.send(ScanResult.Error)
+            } finally {
+                _isScanning.value = false
+            }
         }
     }
 
     fun dismissPotentialTransaction(transaction: PotentialTransaction) {
         _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
+    }
+
+    fun onTransactionApproved(smsId: Long) {
+        _potentialTransactions.update { currentList ->
+            currentList.filterNot { it.sourceSmsId == smsId }
+        }
     }
 
     fun saveMerchantMapping(
@@ -8520,6 +8761,7 @@ package io.pm.finlight
  * @param transactionType The type of transaction, either 'expense' or 'income'.
  * @param merchantName The name of the merchant, if it can be determined.
  * @param originalMessage The original SMS body, for reference and debugging.
+ * @param potentialAccount Holds the parsed account name and type, if found.
  */
 data class PotentialTransaction(
     val sourceSmsId: Long,
@@ -8528,6 +8770,8 @@ data class PotentialTransaction(
     val transactionType: String,
     val merchantName: String?,
     val originalMessage: String,
+    // --- NEW: Add a field for the automatically parsed account details ---
+    val potentialAccount: PotentialAccount? = null,
 )
 -e 
 
@@ -8536,7 +8780,7 @@ data class PotentialTransaction(
 // =================================================================================
 // FILE: /app/src/main/java/com/pm/finlight/TransactionDao.kt
 // PURPOSE: Data Access Object for Transactions.
-// NOTE: The `getAllTransactions` query has been corrected to fetch all records.
+// NOTE: Added methods for managing the many-to-many relationship with Tags.
 // =================================================================================
 package io.pm.finlight
 
@@ -8545,10 +8789,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
-    /**
-     * CORRECTED: This query now fetches ALL transaction details without a LIMIT,
-     * ensuring the full history is loaded.
-     */
     @Query(
         """
         SELECT
@@ -8698,14 +8938,26 @@ interface TransactionDao {
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()
 
+    // --- UPDATED: Insert now returns the ID of the new row ---
     @Insert
-    suspend fun insert(transaction: Transaction)
+    suspend fun insert(transaction: Transaction): Long
 
     @Update
     suspend fun update(transaction: Transaction)
 
     @Delete
     suspend fun delete(transaction: Transaction)
+
+    // --- NEW: Methods for managing tags ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun addTagsToTransaction(crossRefs: List<TransactionTagCrossRef>)
+
+    @Query("DELETE FROM transaction_tag_cross_ref WHERE transactionId = :transactionId")
+    suspend fun clearTagsForTransaction(transactionId: Int)
+
+    @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
+    fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
+
 }
 -e 
 
@@ -9267,7 +9519,7 @@ import androidx.core.net.toUri
 import java.net.URLEncoder
 
 object NotificationHelper {
-    private const val DEEP_LINK_URI = "app://finlight.pm.com"
+    private const val DEEP_LINK_URI = "app://finlight.pm.io"
 
     fun showTransactionNotification(
         context: Context,
@@ -9278,14 +9530,18 @@ object NotificationHelper {
         }
 
         val encodedMerchant = URLEncoder.encode(potentialTransaction.merchantName ?: "Unknown", "UTF-8")
+        // --- FIX: Encode the account name and add it to the URI ---
+        val encodedAccountName = URLEncoder.encode(potentialTransaction.potentialAccount?.formattedName ?: "Unknown Account", "UTF-8")
+
         val approveUri =
             (
-                "$DEEP_LINK_URI/approve?amount=${potentialTransaction.amount}" +
-                    "&type=${potentialTransaction.transactionType}" +
-                    "&merchant=$encodedMerchant" +
-                    "&smsId=${potentialTransaction.sourceSmsId}" +
-                    "&smsSender=${potentialTransaction.smsSender}"
-            ).toUri()
+                    "$DEEP_LINK_URI/approve?amount=${potentialTransaction.amount}" +
+                            "&type=${potentialTransaction.transactionType}" +
+                            "&merchant=$encodedMerchant" +
+                            "&smsId=${potentialTransaction.sourceSmsId}" +
+                            "&smsSender=${potentialTransaction.smsSender}" +
+                            "&accountName=$encodedAccountName" // Add the account name parameter
+                    ).toUri()
 
         val intent =
             Intent(Intent.ACTION_VIEW, approveUri).apply {
@@ -9302,7 +9558,6 @@ object NotificationHelper {
 
         val notificationIcon = android.R.drawable.ic_dialog_info
 
-        // --- BUG FIX: Dynamically set the notification text based on transaction type ---
         val typeText = potentialTransaction.transactionType.replaceFirstChar { it.uppercase() }
         val bigText = "$typeText of ₹${"%.2f".format(
             potentialTransaction.amount,
@@ -9359,9 +9614,6 @@ object NotificationHelper {
         NotificationManagerCompat.from(context).notify(2, notification)
     }
 
-    /**
-     * NEW: Creates and displays a notification for the weekly summary.
-     */
     fun showWeeklySummaryNotification(
         context: Context,
         totalIncome: Double,
@@ -9400,8 +9652,8 @@ object NotificationHelper {
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================
 // =================================================================================
 // FILE: /app/src/main/java/com/pm/finlight/TransactionRepository.kt
-// PURPOSE: Centralizes data operations between ViewModels and the Database DAOs.
-// NOTE: Added logging to trace database interactions.
+// PURPOSE: Centralizes data operations.
+// NOTE: Now includes logic to handle saving transactions with their associated tags.
 // =================================================================================
 package io.pm.finlight
 
@@ -9410,7 +9662,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
 
 class TransactionRepository(private val transactionDao: TransactionDao) {
-    // DEBUG LOG: Added .onEach to see every new list emitted from the database flow.
     val allTransactions: Flow<List<TransactionDetails>> =
         transactionDao.getAllTransactions()
             .onEach { transactions ->
@@ -9473,9 +9724,38 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.countTransactionsForCategory(categoryId)
     }
 
-    // DEBUG LOG: Log every time a transaction is inserted.
+    // --- NEW: Expose DAO method for getting tags for a specific transaction ---
+    fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
+        return transactionDao.getTagsForTransaction(transactionId)
+    }
+
+    // --- NEW: A transactional method to insert a transaction and its tags ---
+    suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
+        val transactionId = transactionDao.insert(transaction).toInt()
+        if (tags.isNotEmpty()) {
+            val crossRefs = tags.map { tag ->
+                TransactionTagCrossRef(transactionId = transactionId, tagId = tag.id)
+            }
+            transactionDao.addTagsToTransaction(crossRefs)
+        }
+    }
+
+    // --- NEW: A transactional method to update a transaction and its tags ---
+    suspend fun updateTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
+        // First, update the core transaction object
+        transactionDao.update(transaction)
+        // Then, clear all existing tag associations for this transaction
+        transactionDao.clearTagsForTransaction(transaction.id)
+        // Finally, if there are any selected tags, insert the new associations
+        if (tags.isNotEmpty()) {
+            val crossRefs = tags.map { tag ->
+                TransactionTagCrossRef(transactionId = transaction.id, tagId = tag.id)
+            }
+            transactionDao.addTagsToTransaction(crossRefs)
+        }
+    }
+
     suspend fun insert(transaction: Transaction) {
-        Log.d("TransactionFlowDebug", "Repository: Inserting transaction '${transaction.description}'")
         transactionDao.insert(transaction)
     }
 

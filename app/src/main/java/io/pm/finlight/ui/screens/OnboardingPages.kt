@@ -78,66 +78,6 @@ fun WelcomePage() {
 }
 
 @Composable
-fun AccountSetupPage(viewModel: OnboardingViewModel) {
-    val accounts by viewModel.accounts.collectAsState()
-    var accountName by remember { mutableStateOf("") }
-    var accountType by remember { mutableStateOf("Checking") }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Create Your First Accounts", style = MaterialTheme.typography.headlineSmall)
-        Text("You can add more later.", style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = accountName,
-            onValueChange = { accountName = it },
-            label = { Text("Account Name (e.g., My Bank)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = accountType,
-            onValueChange = { accountType = it },
-            label = { Text("Account Type (e.g., Savings, Wallet)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = {
-                viewModel.addAccount(accountName, accountType)
-                accountName = "" // Reset field
-            },
-            enabled = accountName.isNotBlank() && accountType.isNotBlank()
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Add Account")
-            Spacer(Modifier.width(8.dp))
-            Text("Add Account")
-        }
-
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider()
-        LazyColumn(modifier = Modifier.fillMaxWidth()) {
-            items(accounts) { acc ->
-                ListItem(
-                    headlineContent = { Text(acc.name) },
-                    supportingContent = { Text(acc.type) },
-                    trailingContent = {
-                        IconButton(onClick = { viewModel.removeAccount(acc) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Remove Account")
-                        }
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun CategorySetupPage(viewModel: OnboardingViewModel) {
     val categories by viewModel.categories.collectAsState()
 
@@ -149,7 +89,6 @@ fun CategorySetupPage(viewModel: OnboardingViewModel) {
     ) {
         Text("Select Expense Categories", style = MaterialTheme.typography.headlineSmall)
         Text("Choose the spending categories you use most often.", style = MaterialTheme.typography.bodyMedium)
-        // --- NEW: Added blurb about managing settings later ---
         Text(
             "You can add or remove more in Settings later.",
             style = MaterialTheme.typography.bodySmall,
@@ -194,7 +133,6 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp)
         )
-        // --- NEW: Added blurb about managing settings later ---
         Text(
             "This can be changed any time in Settings.",
             style = MaterialTheme.typography.bodySmall,

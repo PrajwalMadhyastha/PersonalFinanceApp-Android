@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ManageSearch
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -379,7 +380,7 @@ fun SettingsScreen(
             SettingsActionItem(
                 text = "Scan Full Inbox",
                 subtitle = "Scan all messages to find new transactions.",
-                icon = Icons.Default.ManageSearch,
+                icon = Icons.AutoMirrored.Filled.ManageSearch,
                 onClick = {
                     if (hasSmsPermission) {
                         if (!isScanning) {

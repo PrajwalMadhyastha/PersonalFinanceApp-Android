@@ -9,11 +9,12 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
+import com.google.gson.Gson
 import java.net.URLEncoder
 
 object NotificationHelper {
-    // --- FIXED: The hostname now correctly matches the AndroidManifest.xml intent-filter ---
-    private const val DEEP_LINK_URI = "app://finlight.pm.io"
+    // --- FIX: The deep link URI now points to a more specific path for direct approval ---
+    private const val DEEP_LINK_URI = "app://finlight.pm.io/approve_sms"
 
     fun showTransactionNotification(
         context: Context,
@@ -23,15 +24,13 @@ object NotificationHelper {
             return
         }
 
-        val encodedMerchant = URLEncoder.encode(potentialTransaction.merchantName ?: "Unknown", "UTF-8")
-        val approveUri =
-            (
-                    "$DEEP_LINK_URI/approve?amount=${potentialTransaction.amount}" +
-                            "&type=${potentialTransaction.transactionType}" +
-                            "&merchant=$encodedMerchant" +
-                            "&smsId=${potentialTransaction.sourceSmsId}" +
-                            "&smsSender=${potentialTransaction.smsSender}"
-                    ).toUri()
+        // --- FIX: The entire PotentialTransaction is serialized into a single JSON string ---
+        // This is more robust than passing individual parameters in the URL.
+        val potentialTxnJson = Gson().toJson(potentialTransaction)
+        val encodedJson = URLEncoder.encode(potentialTxnJson, "UTF-8")
+
+        // --- FIX: The URI now uses the new path and passes the JSON object ---
+        val approveUri = "$DEEP_LINK_URI?potentialTxnJson=$encodedJson".toUri()
 
         val intent =
             Intent(Intent.ACTION_VIEW, approveUri).apply {

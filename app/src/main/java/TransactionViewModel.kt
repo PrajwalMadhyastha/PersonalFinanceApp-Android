@@ -1,6 +1,7 @@
 // =================================================================================
 // FILE: /app/src/main/java/com/pm/finlight/TransactionViewModel.kt
-// PURPOSE: Handles business logic for transactions, now including on-the-go tag creation.
+// PURPOSE: Handles business logic for transactions.
+// NOTE: Now contains the complete logic for approving SMS transactions.
 // =================================================================================
 package io.pm.finlight
 
@@ -8,8 +9,10 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
@@ -17,9 +20,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
 
-    val allTransactions: StateFlow<List<TransactionDetails>>
+    // --- FIX: Made the database instance a class property to be accessible in other functions ---
+    private val db = AppDatabase.getInstance(application)
 
-    val allAccounts: Flow<List<Account>>
+    val allTransactions: StateFlow<List<TransactionDetails>>
+    val allAccounts: StateFlow<List<Account>>
     val allCategories: Flow<List<Category>>
     val allTags: StateFlow<List<Tag>>
 
@@ -31,7 +36,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
 
     init {
-        val db = AppDatabase.getInstance(application)
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
         categoryRepository = CategoryRepository(db.categoryDao())
@@ -45,7 +49,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     initialValue = emptyList(),
                 )
 
-        allAccounts = accountRepository.allAccounts
+        allAccounts = accountRepository.allAccounts.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
         allCategories = categoryRepository.allCategories
 
         allTags = tagRepository.allTags.stateIn(
@@ -65,12 +74,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- NEW: Function to add a new tag from a transaction screen ---
     fun addTagOnTheGo(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
-                // The database schema ensures tag names are unique,
-                // so the insert will be ignored if it already exists.
                 tagRepository.insert(Tag(name = tagName))
             }
         }
@@ -92,6 +98,57 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun getTransactionById(id: Int): Flow<Transaction?> {
         return transactionRepository.getTransactionById(id)
     }
+
+    suspend fun approveSmsTransaction(
+        potentialTxn: PotentialTransaction,
+        description: String,
+        categoryId: Int?,
+        notes: String?,
+        tags: Set<Tag>
+    ): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Step 1: Find or create the account.
+                val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
+                val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
+
+                var account = db.accountDao().findByName(accountName)
+                if (account == null) {
+                    Log.d("ViewModel_Approve", "Account '$accountName' not found. Creating new one.")
+                    val newAccount = Account(name = accountName, type = accountType)
+                    accountRepository.insert(newAccount)
+                    // Re-fetch to be certain
+                    account = db.accountDao().findByName(accountName)
+                }
+
+                if (account == null) {
+                    Log.e("ViewModel_Approve", "Failed to find or create account.")
+                    return@withContext false
+                }
+
+                // Step 2: Create the transaction object.
+                val newTransaction = Transaction(
+                    description = description,
+                    categoryId = categoryId,
+                    amount = potentialTxn.amount,
+                    date = System.currentTimeMillis(),
+                    accountId = account.id, // This is now safe
+                    notes = notes,
+                    transactionType = potentialTxn.transactionType,
+                    sourceSmsId = potentialTxn.sourceSmsId
+                )
+
+                // Step 3: Insert transaction and tags.
+                transactionRepository.insertTransactionWithTags(newTransaction, tags)
+                Log.d("ViewModel_Approve", "Successfully approved and saved transaction.")
+                true
+            } catch (e: Exception) {
+                Log.e("ViewModel_Approve", "Error approving SMS transaction", e)
+                false
+            }
+        }
+    }
+
 
     fun addTransaction(
         description: String,

@@ -13,16 +13,13 @@ import kotlinx.coroutines.launch
 data class SelectableCategory(val name: String, var isSelected: Boolean)
 
 class OnboardingViewModel(
-    private val accountRepository: AccountRepository,
+    // --- UPDATED: AccountRepository is no longer needed here ---
     private val categoryRepository: CategoryRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
-    // --- State for Account Setup ---
-    private val _accounts = MutableStateFlow<List<Account>>(emptyList())
-    val accounts = _accounts.asStateFlow()
+    // --- REMOVED: State for Account Setup is no longer part of onboarding ---
 
-    // --- UPDATED: State for Category Setup now only includes expense categories ---
     private val _categories = MutableStateFlow<List<SelectableCategory>>(
         listOf(
             SelectableCategory("Groceries", true),
@@ -32,24 +29,12 @@ class OnboardingViewModel(
             SelectableCategory("Rent", false),
             SelectableCategory("Shopping", false),
             SelectableCategory("Entertainment", false),
-            // "Salary" has been removed to align with the new logic
         )
     )
     val categories = _categories.asStateFlow()
 
     private val _monthlyBudget = MutableStateFlow("")
     val monthlyBudget = _monthlyBudget.asStateFlow()
-
-    fun addAccount(name: String, type: String) {
-        if (name.isNotBlank() && type.isNotBlank()) {
-            val newAccount = Account(name = name, type = type)
-            _accounts.update { it + newAccount }
-        }
-    }
-
-    fun removeAccount(account: Account) {
-        _accounts.update { it - account }
-    }
 
     fun toggleCategorySelection(categoryName: String) {
         _categories.update { currentCategories ->
@@ -70,14 +55,11 @@ class OnboardingViewModel(
     }
 
     /**
-     * Saves the initial accounts, categories, and budget to the database and preferences.
+     * Saves the initial categories and budget to the database and preferences.
      */
     fun finishOnboarding() {
         viewModelScope.launch {
-            // Save Accounts
-            _accounts.value.forEach { account ->
-                accountRepository.insert(account)
-            }
+            // --- REMOVED: Account saving logic is gone ---
 
             // Save selected Categories
             _categories.value.filter { it.isSelected }.forEach { selectableCategory ->

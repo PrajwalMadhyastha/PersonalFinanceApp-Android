@@ -33,11 +33,10 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import com.google.gson.Gson
 import io.pm.finlight.ui.screens.*
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
 import java.net.URLDecoder
-import com.google.gson.Gson
-import io.pm.finlight.*
 import java.util.concurrent.Executor
 
 class MainActivity : AppCompatActivity() {
@@ -290,32 +289,27 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             route = "review_sms_screen",
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
         ) { ReviewSmsScreen(navController, settingsViewModel) }
-        composable("sms_debug_screen") { SmsDebugScreen(navController, settingsViewModel) }
+
+        // --- FIX: The composable route now correctly mirrors the deep link from NotificationHelper ---
         composable(
-            route = "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}",
+            route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
             arguments = listOf(
-                navArgument("amount") { type = NavType.FloatType },
-                navArgument("type") { type = NavType.StringType },
-                navArgument("merchant") { type = NavType.StringType },
-                navArgument("smsId") { type = NavType.LongType },
-                navArgument("smsSender") { type = NavType.StringType }
+                navArgument("potentialTxnJson") { type = NavType.StringType }
             ),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve?amount={amount}&type={type}&merchant={merchant}&smsId={smsId}&smsSender={smsSender}" })
+            // --- FIX: Added the correct deep link pattern ---
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve_sms?potentialTxnJson={potentialTxnJson}" })
         ) { backStackEntry ->
-            val arguments = requireNotNull(backStackEntry.arguments)
+            val json = backStackEntry.arguments?.getString("potentialTxnJson")
+            val potentialTxn = Gson().fromJson(URLDecoder.decode(json, "UTF-8"), PotentialTransaction::class.java)
+
             ApproveTransactionScreen(
                 navController = navController,
                 transactionViewModel = transactionViewModel,
                 settingsViewModel = settingsViewModel,
-                amount = arguments.getFloat("amount"),
-                transactionType = arguments.getString("type") ?: "expense",
-                merchant = URLDecoder.decode(arguments.getString("merchant") ?: "Unknown", "UTF-8"),
-                smsId = arguments.getLong("smsId"),
-                smsSender = arguments.getString("smsSender") ?: ""
+                potentialTxn = potentialTxn
             )
         }
         composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
-        // --- FIXED: Removed the unused optional arguments for CSV import ---
         composable(
             route = "edit_transaction/{transactionId}",
             arguments = listOf(
@@ -323,7 +317,6 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             )
         ) { backStackEntry ->
             val arguments = requireNotNull(backStackEntry.arguments)
-            // --- FIXED: Call signature now matches the composable function ---
             EditTransactionScreen(
                 navController = navController,
                 viewModel = transactionViewModel,
