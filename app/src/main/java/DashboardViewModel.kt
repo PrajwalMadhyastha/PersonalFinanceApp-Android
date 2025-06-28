@@ -1,8 +1,3 @@
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/DashboardViewModel.kt
-// PURPOSE: Handles logic for the Dashboard.
-// NOTE: Added the `accountsSummary` StateFlow.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -12,7 +7,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * ViewModel for the Dashboard screen.
@@ -100,26 +97,15 @@ class DashboardViewModel(
             transactionRepository.allTransactions.map { it.take(5) }
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        val currentMonth = Calendar.getInstance().get(Calendar.MONTH) + 1
-        val currentYear = Calendar.getInstance().get(Calendar.YEAR)
-        val budgets = budgetDao.getBudgetsForMonth(currentMonth, currentYear)
+        // --- PERFORMANCE OPTIMIZATION ---
+        // Instead of calculating budget spending in the ViewModel, we now use the new,
+        // efficient query from the BudgetDao. This offloads the heavy work to the database.
+        val currentMonth = calendar.get(Calendar.MONTH) + 1
+        val currentYear = calendar.get(Calendar.YEAR)
+        val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
+        budgetStatus = budgetDao.getBudgetsWithSpendingForMonth(yearMonthString, currentMonth, currentYear)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        budgetStatus =
-            budgets.combine(transactionRepository.allTransactions) { budgetList, allTransactions ->
-                budgetList.map { budget ->
-                    val spending =
-                        allTransactions
-                            .filter { it.categoryName == budget.categoryName }
-                            .filter { it.transaction.transactionType == "expense" }
-                            .filter {
-                                val cal = Calendar.getInstance().apply { timeInMillis = it.transaction.date }
-                                cal.get(Calendar.MONTH) + 1 == currentMonth && cal.get(Calendar.YEAR) == currentYear
-                            }
-                            .sumOf { it.transaction.amount }
-
-                    BudgetWithSpending(budget = budget, spent = spending)
-                }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         // --- NEW: Initialize the new StateFlow ---
         accountsSummary =
