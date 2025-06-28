@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
+// REASON: Updated to hide the Floating Action Button (FAB) on the budget screen
+// to avoid redundant UI elements.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -180,7 +185,6 @@ fun MainAppScreen() {
     val navController = rememberNavController()
     val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application))
     val userName by dashboardViewModel.userName.collectAsState()
-    // --- NEW: Collect the profile picture URI state ---
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
 
     val bottomNavItems = listOf(
@@ -202,28 +206,21 @@ fun MainAppScreen() {
     }
 
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
+
+    // --- FIX: The list of routes that should show the FAB no longer includes budget_screen ---
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
-        baseCurrentRoute,
+        BottomNavItem.Transactions.route,
         "account_list",
-        "budget_screen",
         "recurring_transactions"
     )
-    val showFab = currentRoute in fabRoutes || baseCurrentRoute in fabRoutes
+    val showFab = baseCurrentRoute in fabRoutes
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    // --- UPDATED: Conditionally show the greeting text ---
-                    if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
-                        Text(currentTitle)
-                    } else {
-                        Text(currentTitle)
-                    }
-                },
+                title = { Text(currentTitle) },
                 navigationIcon = {
-                    // --- UPDATED: Show profile picture on dashboard, back arrow otherwise ---
                     if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
                         AsyncImage(
                             model = profilePictureUri,
@@ -283,9 +280,6 @@ fun MainAppScreen() {
                         }
                         "account_list" -> {
                             navController.navigate("add_account")
-                        }
-                        "budget_screen" -> {
-                            navController.navigate("add_budget")
                         }
                         "recurring_transactions" -> {
                             navController.navigate("add_recurring_transaction")

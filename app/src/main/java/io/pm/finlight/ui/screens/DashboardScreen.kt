@@ -95,7 +95,7 @@ fun DashboardScreen(
                     onClick = { navController.navigate("budget_screen") }
                 )
                 StatCard(
-                    label = "Monthly Expenses",
+                    label = "Safe To Spend",
                     amount = monthlyExpenses.toFloat(),
                     modifier = Modifier.weight(1f),
                     onClick = {
