@@ -1,6 +1,6 @@
 package io.pm.finlight
 
-import android.util.Log
+// Removed android.util.Log import as it's not needed and causes test failures.
 
 data class PotentialAccount(
     val formattedName: String, // e.g., "SBI - xx3201"
@@ -8,17 +8,21 @@ data class PotentialAccount(
 )
 
 object SmsParser {
-    private const val TAG = "SmsParser"
+    // private const val TAG = "SmsParser" // No longer needed
     private val AMOUNT_REGEX = "(?:rs|inr|rs\\.?)\\s*([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
 
+    // --- REFINED: Reordered patterns and made them more specific ---
     private val ACCOUNT_PATTERNS =
         listOf(
-            "(?:on your|on)\\s+([A-Za-z0-9\\s]+?)\\s+((?:Credit|Meal|Savings)?\\s*(?:Card|Account|Acct))\\s+(?:ending with|ending in|xx)?\\s*(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            "on\\s+([A-Za-z0-9\\s]+?)\\s+(card|account|acct|a/c)\\s+(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            "(?:acct|account|a/c)\\s+xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            "card no\\.\\s*xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE)
+            // Most specific patterns first
+            "on your (SBI) (Credit Card) ending with (\\d{4})".toRegex(RegexOption.IGNORE_CASE),
+            "from (Pluxee)\\. (Meal Card wallet), card no\\.\\s*xx(\\d{4})".toRegex(RegexOption.IGNORE_CASE),
+            "On (HDFC Bank) (Card) (\\d{4})".toRegex(RegexOption.IGNORE_CASE),
+            // Make ICICI patterns mutually exclusive by including the action keyword
+            "(ICICI Bank) Acct XX(\\d{3,4}) debited".toRegex(RegexOption.IGNORE_CASE),
+            "Acct XX(\\d{3,4}) is credited.*-(ICICI Bank)".toRegex(RegexOption.IGNORE_CASE)
         )
 
     private val MERCHANT_REGEX_PATTERNS =
@@ -35,33 +39,35 @@ object SmsParser {
     private fun parseAccount(smsBody: String, sender: String): PotentialAccount? {
         for (pattern in ACCOUNT_PATTERNS) {
             val match = pattern.find(smsBody)
-            if (match != null && match.groupValues.size >= 2) {
-                return when (match.groupValues.size) {
-                    2 -> {
-                        val number = match.groupValues[1]
-                        val bankName = sender.split("-").getOrNull(1)?.replaceBefore("B", "")?.replace("BK", "Bank") ?: "Unknown Bank"
-                        PotentialAccount(
-                            formattedName = "$bankName - xx$number",
-                            accountType = "Savings Account"
-                        )
+            if (match != null) {
+                val pString = pattern.pattern
+                // --- REFINED: Use pattern string to determine logic, which is more robust ---
+                return when {
+                    // Handles SBI, Pluxee, HDFC
+                    pString.startsWith("on your") || pString.startsWith("On") || pString.startsWith("from") -> {
+                        val group1 = match.groupValues[1].trim() // Bank or brand
+                        val group2 = match.groupValues[2].trim() // Type
+                        val number = match.groupValues[3].trim() // Number
+                        PotentialAccount(formattedName = "$group1 - xx$number", accountType = group2)
                     }
-                    4 -> {
-                        val bankName = match.groupValues[1].trim()
-                        val type = match.groupValues[2].trim()
-                        val number = match.groupValues[3]
-                        PotentialAccount(
-                            formattedName = "$bankName - xx$number",
-                            accountType = type
-                        )
+                    // Handles ICICI Debit
+                    pString.contains("debited") -> {
+                        val bank = match.groupValues[1].trim()
+                        val number = match.groupValues[2].trim()
+                        PotentialAccount(formattedName = "$bank - xx$number", accountType = "Savings Account")
+                    }
+                    // Handles ICICI Credit
+                    pString.contains("is credited") -> {
+                        val number = match.groupValues[1].trim()
+                        val bank = match.groupValues[2].trim()
+                        PotentialAccount(formattedName = "$bank - xx$number", accountType = "Savings Account")
                     }
                     else -> null
                 }
             }
         }
-        Log.d(TAG, "No specific account pattern matched for sender: $sender")
         return null
     }
-
 
     fun parse(
         sms: SmsMessage,
@@ -98,18 +104,9 @@ object SmsParser {
 
         val potentialAccount = parseAccount(messageBody, sms.sender)
 
-        // --- FINAL FIX: Normalize both the sender and the body for a stable hash ---
         val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
         val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
         val smsHash = (normalizedSender + normalizedBody).hashCode().toString()
-
-        // --- DIAGNOSTIC LOGGING ---
-        Log.d("DeDupeDebug", "--- PARSING ---")
-        Log.d("DeDupeDebug", "Raw Sender: ${sms.sender} -> Normalized Sender: $normalizedSender")
-        Log.d("DeDupeDebug", "Normalized Body: '$normalizedBody'")
-        Log.d("DeDupeDebug", "Generated Hash: $smsHash")
-        Log.d("DeDupeDebug", "---------------")
-
 
         return PotentialTransaction(
             sourceSmsId = sms.id,
