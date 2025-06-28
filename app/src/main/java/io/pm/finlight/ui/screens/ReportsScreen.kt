@@ -41,14 +41,8 @@ fun ReportsScreen(
     val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
     val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Reports") }) },
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+
+        LazyColumn() {
             // --- Pie Chart Card (Unchanged) ---
             item {
                 Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
@@ -105,4 +99,3 @@ fun ReportsScreen(
             }
         }
     }
-}

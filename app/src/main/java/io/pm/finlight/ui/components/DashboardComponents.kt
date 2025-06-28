@@ -1,8 +1,3 @@
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/ui/components/DashboardComponents.kt
-// PURPOSE: UI components for the Dashboard screen.
-// NOTE: Added the new `AccountSummaryCard` composable.
-// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.LinearEasing
@@ -81,10 +76,13 @@ fun StatCard(
     label: String,
     amount: Float,
     modifier: Modifier = Modifier,
-    isPerDay: Boolean = false
+    isPerDay: Boolean = false,
+    // --- NEW: Add an onClick parameter to make the card interactive ---
+    onClick: () -> Unit = {}
 ) {
     Card(
-        modifier = modifier,
+        // --- NEW: Apply the clickable modifier ---
+        modifier = modifier.clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(
@@ -99,7 +97,6 @@ fun StatCard(
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(4.dp))
-            // --- UPDATED: Call the top-level helper function directly ---
             Text(
                 text = "${formatAmountCompact(amount)}${if (isPerDay) "/day" else ""}",
                 style = MaterialTheme.typography.titleMedium,
@@ -117,7 +114,10 @@ fun OverallBudgetCard(
     navController: NavController
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        // --- NEW: Make the entire card clickable to navigate to the budget screen ---
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { navController.navigate("budget_screen") },
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
         Column(
@@ -129,6 +129,8 @@ fun OverallBudgetCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
+                // The "Edit" button is now redundant since the whole card is clickable,
+                // but we can leave it for user clarity.
                 if (totalBudget > 0) {
                     TextButton(onClick = { navController.navigate("budget_screen") }) {
                         Text("Edit")
@@ -138,7 +140,6 @@ fun OverallBudgetCard(
             Spacer(modifier = Modifier.height(16.dp))
 
             if (totalBudget <= 0) {
-                // --- NEW: State for when no budget is set ---
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
@@ -154,19 +155,15 @@ fun OverallBudgetCard(
                     }
                 }
             } else {
-                // --- EXISTING: State for when a budget IS set ---
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
-                    // The Liquid Tumbler visualization
                     LiquidTumbler(
                         progress = (amountSpent / totalBudget),
                         modifier = Modifier.size(120.dp)
                     )
-
-                    // The text summary
                     Column {
                         Text("Spent", style = MaterialTheme.typography.labelLarge)
                         Text(
@@ -291,9 +288,6 @@ fun NetWorthCard(netWorth: Double) {
     }
 }
 
-/**
- * NEW: A card to display a summary of all user accounts and their balances.
- */
 @Composable
 fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavController) {
     Card(
@@ -309,7 +303,6 @@ fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavCon
                 )
                 TextButton(
                     onClick = {
-                        // Navigate to the full account list screen, which you already have
                         navController.navigate("account_list")
                     }
                 ) { Text("View All") }
@@ -399,7 +392,6 @@ fun BudgetWatchCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
-                // --- NEW: Shortcut to add a category budget ---
                 TextButton(onClick = { navController.navigate("add_budget") }) {
                     Text("+ Add Category Budget")
                 }

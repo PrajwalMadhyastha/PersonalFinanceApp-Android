@@ -61,9 +61,25 @@ fun DashboardScreen(
         }
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard(label = "Monthly Income", amount = monthlyIncome.toFloat(), modifier = Modifier.weight(1f))
-                StatCard(label = "Total Budget", amount = overallBudget, modifier = Modifier.weight(1f))
-                StatCard(label = "Safe to Spend", amount = safeToSpend, modifier = Modifier.weight(1f), isPerDay = true)
+                StatCard(
+                    label = "Monthly Income",
+                    amount = monthlyIncome.toFloat(),
+                    modifier = Modifier.weight(1f),
+                    onClick = { navController.navigate("transaction_list?type=income") }
+                )
+                // --- FIX: Make the "Total Budget" card navigate to the budget screen ---
+                StatCard(
+                    label = "Total Budget",
+                    amount = overallBudget,
+                    modifier = Modifier.weight(1f),
+                    onClick = { navController.navigate("budget_screen") }
+                )
+                StatCard(
+                    label = "Monthly Expenses",
+                    amount = monthlyExpenses.toFloat(),
+                    modifier = Modifier.weight(1f),
+                    onClick = { navController.navigate("transaction_list?type=expense") }
+                )
             }
         }
         item {

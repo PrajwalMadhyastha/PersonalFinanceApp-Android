@@ -26,6 +26,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -177,20 +178,23 @@ fun MainAppScreen() {
     )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
+    val currentDestination = navBackStackEntry?.destination
 
-    val currentTitle = screenTitles[currentRoute] ?: "Finance App"
+    // --- FIX: Use a more robust check that handles arguments correctly ---
+    val currentRoute = currentDestination?.route
+    val baseCurrentRoute = currentRoute?.substringBefore("?")
+    val currentTitle = screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
+    val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
 
-    val showBottomBar = bottomNavItems.any { it.route == currentRoute }
 
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
-        BottomNavItem.Transactions.route,
+        baseCurrentRoute, // Also show FAB on filtered transaction list
         "account_list",
         "budget_screen",
         "recurring_transactions"
     )
-    val showFab = currentRoute in fabRoutes
+    val showFab = currentRoute in fabRoutes || baseCurrentRoute in fabRoutes
 
     Scaffold(
         topBar = {
@@ -216,10 +220,12 @@ fun MainAppScreen() {
             if (showBottomBar) {
                 NavigationBar {
                     bottomNavItems.forEach { screen ->
+                        // --- FIX: Use NavDestination.hierarchy for a robust selection check ---
+                        val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
                         NavigationBarItem(
                             icon = { Icon(screen.icon, contentDescription = screen.label) },
                             label = { Text(screen.label) },
-                            selected = currentRoute == screen.route,
+                            selected = isSelected,
                             onClick = {
                                 navController.navigate(screen.route) {
                                     popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -235,7 +241,7 @@ fun MainAppScreen() {
         floatingActionButton = {
             if (showFab) {
                 FloatingActionButton(onClick = {
-                    when (currentRoute) {
+                    when (baseCurrentRoute) { // Use base route to determine FAB action
                         BottomNavItem.Dashboard.route, BottomNavItem.Transactions.route -> {
                             navController.navigate("add_transaction")
                         }
@@ -278,7 +284,19 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(context))
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }
-        composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, transactionViewModel) }
+        composable(
+            route = "${BottomNavItem.Transactions.route}?type={type}",
+            arguments = listOf(navArgument("type") {
+                type = NavType.StringType
+                nullable = true
+            })
+        ) { backStackEntry ->
+            TransactionListScreen(
+                navController = navController,
+                viewModel = transactionViewModel,
+                filterType = backStackEntry.arguments?.getString("type")
+            )
+        }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
         composable(BottomNavItem.Profile.route) { ProfileScreen(navController) }
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
@@ -290,13 +308,11 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
         ) { ReviewSmsScreen(navController, settingsViewModel) }
 
-        // --- FIX: The composable route now correctly mirrors the deep link from NotificationHelper ---
         composable(
             route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
             arguments = listOf(
                 navArgument("potentialTxnJson") { type = NavType.StringType }
             ),
-            // --- FIX: Added the correct deep link pattern ---
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve_sms?potentialTxnJson={potentialTxnJson}" })
         ) { backStackEntry ->
             val json = backStackEntry.arguments?.getString("potentialTxnJson")
