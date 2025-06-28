@@ -23,6 +23,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import io.pm.finlight.BottomNavItem
 import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.DashboardViewModel
 import io.pm.finlight.DashboardViewModelFactory
@@ -39,7 +41,6 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
     budgetViewModel: BudgetViewModel,
 ) {
-    // --- userName is still collected in MainActivity, but we don't display it here anymore ---
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
     val monthlyExpenses by viewModel.monthlyExpenses.collectAsState()
@@ -53,7 +54,6 @@ fun DashboardScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // --- REMOVED: The extra "Hi, user" Text composable is gone from here ---
         item {
             OverallBudgetCard(
                 totalBudget = overallBudget,
@@ -67,8 +67,16 @@ fun DashboardScreen(
                     label = "Monthly Income",
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
-                    onClick = { navController.navigate("transaction_list?type=income") }
+                    // --- UPDATED: Correct navigation logic for top-level destination ---
+                    onClick = {
+                        navController.navigate("transaction_list?type=income") {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 )
+                // --- CORRECT: This navigates to a detail screen, not a main section, so the simple navigate call is correct.
                 StatCard(
                     label = "Total Budget",
                     amount = overallBudget,
@@ -79,14 +87,28 @@ fun DashboardScreen(
                     label = "Monthly Expenses",
                     amount = monthlyExpenses.toFloat(),
                     modifier = Modifier.weight(1f),
-                    onClick = { navController.navigate("transaction_list?type=expense") }
+                    // --- UPDATED: Correct navigation logic for top-level destination ---
+                    onClick = {
+                        navController.navigate("transaction_list?type=expense") {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 )
             }
         }
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 FilledTonalButton(
-                    onClick = { navController.navigate("reports_screen") },
+                    // --- UPDATED: Correct navigation logic for top-level destination ---
+                    onClick = {
+                        navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -94,7 +116,14 @@ fun DashboardScreen(
                     Text("View Trends")
                 }
                 FilledTonalButton(
-                    onClick = { navController.navigate("reports_screen") },
+                    // --- UPDATED: Correct navigation logic for top-level destination ---
+                    onClick = {
+                        navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
