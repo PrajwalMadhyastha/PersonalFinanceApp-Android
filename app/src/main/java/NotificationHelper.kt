@@ -13,9 +13,46 @@ import com.google.gson.Gson
 import java.net.URLEncoder
 
 object NotificationHelper {
-    // --- FIX: The deep link URI now points to a more specific path for direct approval ---
-    private const val DEEP_LINK_URI = "app://finlight.pm.io/approve_sms"
+    private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
+    // --- NEW: A deep link to directly edit a transaction ---
+    private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/edit_transaction"
 
+    // --- NEW: Informational notification for auto-saved transactions ---
+    fun showAutoSaveConfirmationNotification(
+        context: Context,
+        transaction: Transaction
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val editUri = "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri()
+        val intent = Intent(Intent.ACTION_VIEW, editUri).apply {
+            `package` = context.packageName
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            transaction.id, // Use transaction ID for unique pending intent
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Transaction Auto-Saved")
+            .setContentText("Saved ${transaction.description} (₹${"%.2f".format(transaction.amount)}). Tap to edit or categorize.")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .addAction(android.R.drawable.ic_menu_edit, "Edit", pendingIntent)
+
+        with(NotificationManagerCompat.from(context)) {
+            notify(transaction.id, builder.build())
+        }
+    }
+
+    // --- RETAINED: Notification for manual review flow ---
     fun showTransactionNotification(
         context: Context,
         potentialTransaction: PotentialTransaction,
@@ -24,50 +61,39 @@ object NotificationHelper {
             return
         }
 
-        // --- FIX: The entire PotentialTransaction is serialized into a single JSON string ---
-        // This is more robust than passing individual parameters in the URL.
         val potentialTxnJson = Gson().toJson(potentialTransaction)
         val encodedJson = URLEncoder.encode(potentialTxnJson, "UTF-8")
+        val approveUri = "$DEEP_LINK_URI_APPROVE?potentialTxnJson=$encodedJson".toUri()
 
-        // --- FIX: The URI now uses the new path and passes the JSON object ---
-        val approveUri = "$DEEP_LINK_URI?potentialTxnJson=$encodedJson".toUri()
+        val intent = Intent(Intent.ACTION_VIEW, approveUri).apply {
+            `package` = context.packageName
+        }
 
-        val intent =
-            Intent(Intent.ACTION_VIEW, approveUri).apply {
-                `package` = context.packageName
-            }
-
-        val pendingIntent =
-            PendingIntent.getActivity(
-                context,
-                potentialTransaction.sourceSmsId.toInt(),
-                intent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            potentialTransaction.sourceSmsId.toInt(),
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
 
         val notificationIcon = android.R.drawable.ic_dialog_info
-
         val typeText = potentialTransaction.transactionType.replaceFirstChar { it.uppercase() }
-        val bigText = "$typeText of ₹${"%.2f".format(
-            potentialTransaction.amount,
-        )} from ${potentialTransaction.merchantName ?: "Unknown Sender"} detected. Tap to add this to your transaction history."
+        val bigText = "$typeText of ₹${"%.2f".format(potentialTransaction.amount)} from ${potentialTransaction.merchantName ?: "Unknown Sender"} detected. Tap to add."
 
-        val builder =
-            NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
-                .setSmallIcon(notificationIcon)
-                .setContentTitle("New Transaction Found")
-                .setContentText("Tap to review and categorize a transaction from ${potentialTransaction.merchantName ?: "Unknown Sender"}.")
-                .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .addAction(notificationIcon, "Review & Categorize", pendingIntent)
+        val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(notificationIcon)
+            .setContentTitle("New Transaction Found")
+            .setContentText("Tap to review a transaction from ${potentialTransaction.merchantName ?: "Unknown Sender"}.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .addAction(notificationIcon, "Review & Categorize", pendingIntent)
 
         with(NotificationManagerCompat.from(context)) {
             notify(potentialTransaction.sourceSmsId.toInt(), builder.build())
         }
     }
-
     fun showDailyReportNotification(
         context: Context,
         totalExpenses: Double,

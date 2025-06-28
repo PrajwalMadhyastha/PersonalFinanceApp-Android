@@ -33,14 +33,13 @@ data class Transaction(
     val id: Int = 0,
     val description: String,
     val categoryId: Int?,
-    // The amount is now always positive.
     val amount: Double,
     val date: Long,
     val accountId: Int,
     val notes: String?,
-    // --- NEW: Added to distinguish between income and expense ---
-    val transactionType: String = "expense", // Default to 'expense'
+    val transactionType: String = "expense",
     val sourceSmsId: Long? = null,
-    // --- BUG FIX: Add a stable hash to uniquely identify an SMS for de-duplication ---
     val sourceSmsHash: String? = null,
+    // --- NEW: Add a field to track the origin of the transaction ---
+    val source: String = "Manual Entry"
 )

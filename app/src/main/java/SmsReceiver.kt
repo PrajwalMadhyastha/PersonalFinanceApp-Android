@@ -1,11 +1,14 @@
 package io.pm.finlight
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.provider.Telephony
 import android.telephony.SmsMessage as TelephonySmsMessage
 import android.util.Log
+import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -52,7 +55,7 @@ class SmsReceiver : BroadcastReceiver() {
                             if (account == null) {
                                 val newAccount = Account(name = accountName, type = accountType)
                                 accountDao.insert(newAccount)
-                                account = accountDao.findByName(accountName) // Re-query to get the new account with its ID
+                                account = accountDao.findByName(accountName)
                             }
 
                             if (account != null) {
@@ -61,22 +64,25 @@ class SmsReceiver : BroadcastReceiver() {
                                     amount = potentialTxn.amount,
                                     date = System.currentTimeMillis(),
                                     accountId = account.id,
-                                    categoryId = null, // Category is unknown at this point
-                                    notes = "Auto-imported from SMS.",
+                                    categoryId = null,
+                                    notes = "", // Keep notes empty for user
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
-                                    sourceSmsHash = potentialTxn.sourceSmsHash
+                                    sourceSmsHash = potentialTxn.sourceSmsHash,
+                                    // --- UPDATED: Set the source for auto-imports ---
+                                    source = "Auto-Imported"
                                 )
-                                transactionDao.insert(newTransaction)
-                                Log.d(TAG, "Transaction saved successfully from SMS.")
+                                // The insert method returns the ID of the new row
+                                val newTransactionId = transactionDao.insert(newTransaction)
+                                Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
+
+                                // --- UPDATED: Show informational notification ---
+                                if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                                    NotificationHelper.showAutoSaveConfirmationNotification(context, newTransaction.copy(id = newTransactionId.toInt()))
+                                }
+
                             } else {
                                 Log.e(TAG, "Failed to find or create an account for the transaction.")
-                            }
-                        } else {
-                            if (potentialTxn == null) {
-                                Log.d(TAG, "SMS from $sender did not parse to a transaction.")
-                            } else {
-                                Log.d(TAG, "SMS with hash ${potentialTxn.sourceSmsHash} is a duplicate. Skipping.")
                             }
                         }
                     }

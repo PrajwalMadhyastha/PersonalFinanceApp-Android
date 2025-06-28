@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,6 +36,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
@@ -75,6 +77,7 @@ fun EditTransactionScreen(
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var newTagName by remember { mutableStateOf("") }
+    var source by remember { mutableStateOf("") }
 
     var transactionType by remember { mutableStateOf("expense") }
     val transactionTypes = listOf("Expense", "Income")
@@ -123,6 +126,7 @@ fun EditTransactionScreen(
                 selectedAccount = accounts.find { it.id == txn.accountId }
                 selectedCategory = categories.find { it.id == txn.categoryId }
                 transactionType = txn.transactionType
+                source = txn.source
             }
         }
     }
@@ -227,6 +231,24 @@ fun EditTransactionScreen(
                             }
                         }
                     }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = source,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Source") },
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = "Source Info") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        enabled = false
+                    )
                 }
 
                 item {

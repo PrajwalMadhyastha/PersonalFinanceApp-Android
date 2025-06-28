@@ -347,7 +347,9 @@ fun AppNavHost(
             route = "edit_transaction/{transactionId}",
             arguments = listOf(
                 navArgument("transactionId") { type = NavType.IntType }
-            )
+            ),
+            // --- UPDATED: Add deep link to handle notifications for auto-saved transactions ---
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/edit_transaction/{transactionId}" })
         ) { backStackEntry ->
             val arguments = requireNotNull(backStackEntry.arguments)
             EditTransactionScreen(

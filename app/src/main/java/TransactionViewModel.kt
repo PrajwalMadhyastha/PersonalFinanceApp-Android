@@ -104,7 +104,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
-    // --- RESTORED: This function is needed for the manual approval screen ---
     suspend fun approveSmsTransaction(
         potentialTxn: PotentialTransaction,
         description: String,
@@ -139,7 +138,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     notes = notes,
                     transactionType = potentialTxn.transactionType,
                     sourceSmsId = potentialTxn.sourceSmsId,
-                    sourceSmsHash = potentialTxn.sourceSmsHash
+                    sourceSmsHash = potentialTxn.sourceSmsHash,
+                    // --- UPDATED: Set the source for reviewed imports ---
+                    source = "Reviewed Import"
                 )
 
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
@@ -186,7 +187,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 notes = notes,
                 transactionType = transactionType,
                 sourceSmsId = sourceSmsId,
-                sourceSmsHash = sourceSmsHash
+                sourceSmsHash = sourceSmsHash,
+                source = "Manual Entry" // Default source
             )
         viewModelScope.launch {
             transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)
@@ -207,6 +209,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch {
+            // The source field is preserved on update
             transactionRepository.updateTransactionWithTags(transaction, _selectedTags.value)
         }
         return true

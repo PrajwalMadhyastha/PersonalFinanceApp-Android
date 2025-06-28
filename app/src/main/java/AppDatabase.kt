@@ -22,7 +22,7 @@ import java.util.Calendar
         Tag::class, // <-- NEW
         TransactionTagCrossRef::class // <-- NEW
     ],
-    version = 7, // <-- CRITICAL: Version number is incremented to 7
+    version = 8, // <-- CRITICAL: Version number is incremented to 8
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -126,6 +126,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN source TEXT NOT NULL DEFAULT 'Manual Entry'")
+                db.execSQL("UPDATE transactions SET source = 'Reviewed Import' WHERE sourceSmsId IS NOT NULL")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -136,7 +143,7 @@ abstract class AppDatabase : RoomDatabase() {
                         "finance_database",
                     )
                         // --- CRITICAL: Added the new MIGRATION_5_6 ---
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
