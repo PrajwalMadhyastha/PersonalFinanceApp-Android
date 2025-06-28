@@ -17,15 +17,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val db = AppDatabase.getInstance(application)
 
-    // --- NEW: A private StateFlow to hold the current filter type ---
     private val _transactionTypeFilter = MutableStateFlow<String?>(null)
 
-    // --- NEW: This public StateFlow now dynamically filters the transactions ---
     val allTransactions: StateFlow<List<TransactionDetails>> =
         _transactionTypeFilter.flatMapLatest { filterType ->
             transactionRepository.allTransactions.map { list ->
                 if (filterType == null) {
-                    list // If no filter, return the whole list
+                    list
                 } else {
                     list.filter { it.transaction.transactionType == filterType }
                 }
@@ -52,8 +50,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         categoryRepository = CategoryRepository(db.categoryDao())
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
 
-        // The allTransactions StateFlow is now initialized above with the filter logic
-
         allAccounts = accountRepository.allAccounts.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -69,7 +65,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
-    // --- NEW: Public function to update the filter ---
     fun setTransactionTypeFilter(type: String?) {
         _transactionTypeFilter.value = type
     }
@@ -109,6 +104,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
+    // --- RESTORED: This function is needed for the manual approval screen ---
     suspend fun approveSmsTransaction(
         potentialTxn: PotentialTransaction,
         description: String,

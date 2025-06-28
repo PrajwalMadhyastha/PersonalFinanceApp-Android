@@ -1,14 +1,11 @@
 package io.pm.finlight
 
-import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.provider.Telephony
 import android.telephony.SmsMessage as TelephonySmsMessage
 import android.util.Log
-import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -21,60 +18,72 @@ class SmsReceiver : BroadcastReceiver() {
         context: Context,
         intent: Intent,
     ) {
-        Log.d(TAG, "onReceive triggered for action: ${intent.action}")
-
         if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
-                    Log.d(TAG, "Received ${messages.size} message parts.")
-
                     val messagesBySender = messages.groupBy { it.originatingAddress }
 
                     for ((sender, parts) in messagesBySender) {
+                        if (sender == null) continue
+
                         val fullBody = parts.joinToString("") { it.messageBody }
-                        val firstMessage = parts.first()
-                        val smsId = firstMessage.timestampMillis
-
-                        // --- DIAGNOSTIC LOGGING ---
-                        Log.d("DeDupeDebug", "--- RECEIVER ---")
-                        Log.d("DeDupeDebug", "Receiver processing message from: $sender")
-                        Log.d("DeDupeDebug", "Combined Body: '$fullBody'")
-                        Log.d("DeDupeDebug", "----------------")
-
+                        val smsId = parts.first().timestampMillis
 
                         val db = AppDatabase.getInstance(context)
-                        val transactionRepository = TransactionRepository(db.transactionDao())
+                        val transactionDao = db.transactionDao()
+                        val accountDao = db.accountDao()
                         val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
 
                         val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
-                        val existingSmsHashes = transactionRepository.getAllSmsHashes().first().toSet()
+                        val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
-                        val smsMessage = SmsMessage(id = smsId, sender = sender ?: "Unknown", body = fullBody, date = smsId)
-                        val potentialTransaction = SmsParser.parse(smsMessage, existingMappings)
+                        val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
+                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings)
 
-                        if (potentialTransaction != null) {
-                            if (!existingSmsHashes.contains(potentialTransaction.sourceSmsHash)) {
-                                Log.d(TAG, "New potential transaction found: $potentialTransaction")
-                                if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                                    NotificationHelper.showTransactionNotification(context, potentialTransaction)
-                                    Log.d(TAG, "Notification sent for transaction.")
-                                } else {
-                                    Log.w(TAG, "Post Notifications permission not granted.")
-                                }
+                        if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
+                            Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
+
+                            val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
+                            val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
+
+                            var account = accountDao.findByName(accountName)
+                            if (account == null) {
+                                val newAccount = Account(name = accountName, type = accountType)
+                                accountDao.insert(newAccount)
+                                account = accountDao.findByName(accountName) // Re-query to get the new account with its ID
+                            }
+
+                            if (account != null) {
+                                val newTransaction = Transaction(
+                                    description = potentialTxn.merchantName ?: "Unknown Merchant",
+                                    amount = potentialTxn.amount,
+                                    date = System.currentTimeMillis(),
+                                    accountId = account.id,
+                                    categoryId = null, // Category is unknown at this point
+                                    notes = "Auto-imported from SMS.",
+                                    transactionType = potentialTxn.transactionType,
+                                    sourceSmsId = potentialTxn.sourceSmsId,
+                                    sourceSmsHash = potentialTxn.sourceSmsHash
+                                )
+                                transactionDao.insert(newTransaction)
+                                Log.d(TAG, "Transaction saved successfully from SMS.")
                             } else {
-                                Log.d(TAG, "SMS with hash: ${potentialTransaction.sourceSmsHash} is a duplicate. Skipping.")
+                                Log.e(TAG, "Failed to find or create an account for the transaction.")
                             }
                         } else {
-                            Log.d(TAG, "SMS from $sender did not parse to a transaction.")
+                            if (potentialTxn == null) {
+                                Log.d(TAG, "SMS from $sender did not parse to a transaction.")
+                            } else {
+                                Log.d(TAG, "SMS with hash ${potentialTxn.sourceSmsHash} is a duplicate. Skipping.")
+                            }
                         }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error processing SMS", e)
                 } finally {
                     pendingResult.finish()
-                    Log.d(TAG, "Pending result finished.")
                 }
             }
         }

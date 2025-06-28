@@ -282,7 +282,6 @@ fun MainAppScreen() {
 fun AppNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
-    // --- NEW: Accept the DashboardViewModel instance ---
     dashboardViewModel: DashboardViewModel
 ) {
     val settingsViewModel: SettingsViewModel = viewModel()
@@ -298,7 +297,6 @@ fun AppNavHost(
         modifier = modifier
     ) {
         composable(BottomNavItem.Dashboard.route) {
-            // --- UPDATED: Pass the existing ViewModel instance ---
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }
         composable(
@@ -318,8 +316,9 @@ fun AppNavHost(
         composable(BottomNavItem.Profile.route) { ProfileScreen(navController, profileViewModel) }
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
-
         composable("search_screen") { SearchScreen(navController) }
+
+        // --- RESTORED: Routes for the manual SMS review flow ---
         composable(
             route = "review_sms_screen",
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
@@ -342,6 +341,7 @@ fun AppNavHost(
                 potentialTxn = potentialTxn
             )
         }
+
         composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
         composable(
             route = "edit_transaction/{transactionId}",

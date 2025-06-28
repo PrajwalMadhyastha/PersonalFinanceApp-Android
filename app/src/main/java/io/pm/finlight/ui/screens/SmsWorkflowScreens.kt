@@ -162,7 +162,6 @@ fun ApproveTransactionScreen(
     val selectedTags by transactionViewModel.selectedTags.collectAsState()
 
     val isExpense = selectedTransactionType == "expense"
-    // --- FIX: Save is always enabled unless it's an expense with no category ---
     val isSaveEnabled = !isExpense || selectedCategory != null
 
     DisposableEffect(Unit) {
@@ -278,7 +277,6 @@ fun ApproveTransactionScreen(
                 }
                 Button(
                     onClick = {
-                        // --- FIX: Centralized logic into the ViewModel ---
                         scope.launch {
                             val success = transactionViewModel.approveSmsTransaction(
                                 potentialTxn = potentialTxn,

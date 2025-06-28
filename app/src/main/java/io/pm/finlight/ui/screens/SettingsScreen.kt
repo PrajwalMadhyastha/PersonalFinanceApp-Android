@@ -60,6 +60,7 @@ fun SettingsScreen(
         )
     }
 
+    // --- RESTORED: Listen for the scan event to navigate ---
     LaunchedEffect(key1 = viewModel.scanEvent) {
         viewModel.scanEvent.collect { result ->
             if (result is ScanResult.Success) {
@@ -328,8 +329,8 @@ fun SettingsScreen(
             )
         }
 
+        // --- RESTORED: SMS Scanning section for manual review ---
         item { SettingSectionHeader("SMS Scanning") }
-        // --- REFACTORED: "Scan from date" item with its own button ---
         item {
             Row(
                 modifier = Modifier
@@ -363,7 +364,7 @@ fun SettingsScreen(
                     onClick = {
                         if (hasSmsPermission) {
                             if (!isScanning) {
-                                viewModel.rescanSms(smsScanStartDate)
+                                viewModel.rescanSmsForReview(smsScanStartDate)
                             }
                         } else {
                             showSmsRationaleDialog = true
@@ -375,16 +376,15 @@ fun SettingsScreen(
                 }
             }
         }
-        // --- REFACTORED: "Scan full inbox" item with clearer text ---
         item {
             SettingsActionItem(
                 text = "Scan Full Inbox",
-                subtitle = "Scan all messages to find new transactions.",
+                subtitle = "Scan all messages to find transactions for review.",
                 icon = Icons.AutoMirrored.Filled.ManageSearch,
                 onClick = {
                     if (hasSmsPermission) {
                         if (!isScanning) {
-                            viewModel.rescanSms(null) // Pass null for a full scan
+                            viewModel.rescanSmsForReview(null) // Pass null for a full scan
                         }
                     } else {
                         showSmsRationaleDialog = true

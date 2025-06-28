@@ -73,14 +73,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = true,
         )
 
+    // --- RESTORED: State for the manual review flow ---
     private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
     val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
-
-    private val _smsMessages = MutableStateFlow<List<SmsMessage>>(emptyList())
-    val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
 
     init {
         smsScanStartDate =
@@ -90,6 +88,72 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = 0L,
                 )
+    }
+
+    // --- RESTORED: Function to handle the manual "Scan Inbox" action ---
+    fun rescanSmsForReview(startDate: Long?) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            // In a real app, you'd send an event to the UI to request permission
+            return
+        }
+
+        viewModelScope.launch {
+            _isScanning.value = true
+            try {
+                val rawMessages = withContext(Dispatchers.IO) {
+                    SmsRepository(context).fetchAllSms(startDate)
+                }
+
+                val existingMappings = withContext(Dispatchers.IO) {
+                    merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
+                }
+
+                val existingSmsHashes = withContext(Dispatchers.IO) {
+                    transactionRepository.getAllSmsHashes().first().toSet()
+                }
+
+                val parsedList = withContext(Dispatchers.Default) {
+                    rawMessages.mapNotNull { sms ->
+                        SmsParser.parse(sms, existingMappings)
+                    }
+                }
+
+                val newPotentialTransactions = parsedList.filter { potential ->
+                    !existingSmsHashes.contains(potential.sourceSmsHash)
+                }
+
+                // Key difference: This populates the list for the UI review flow
+                _potentialTransactions.value = newPotentialTransactions
+
+                // This event tells the UI to navigate to the review screen
+                _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
+            } catch (e: Exception) {
+                Log.e("SettingsViewModel", "Error during SMS scan for review", e)
+                _scanEvent.send(ScanResult.Error)
+            } finally {
+                _isScanning.value = false
+            }
+        }
+    }
+
+    // --- RESTORED: Functions to manage the list during the review process ---
+    fun dismissPotentialTransaction(transaction: PotentialTransaction) {
+        _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
+    }
+
+    fun onTransactionApproved(smsId: Long) {
+        _potentialTransactions.update { currentList ->
+            currentList.filterNot { it.sourceSmsId == smsId }
+        }
+    }
+
+    fun saveMerchantMapping(
+        sender: String,
+        merchantName: String,
+    ) {
+        viewModelScope.launch {
+            merchantMappingRepository.insert(MerchantMapping(smsSender = sender, merchantName = merchantName))
+        }
     }
 
     fun saveSmsScanStartDate(date: Long) {
@@ -318,77 +382,5 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun clearCsvValidationReport() {
         _csvValidationReport.value = null
-    }
-
-    fun rescanSms(startDate: Long?) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
-
-        viewModelScope.launch {
-            _isScanning.value = true
-            try {
-                val rawMessages = withContext(Dispatchers.IO) {
-                    SmsRepository(context).fetchAllSms(startDate)
-                }
-
-                val existingMappings = withContext(Dispatchers.IO) {
-                    merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
-                }
-
-                val existingSmsHashes = withContext(Dispatchers.IO) {
-                    transactionRepository.getAllSmsHashes().first().toSet()
-                }
-
-                // --- DIAGNOSTIC LOGGING ---
-                Log.d("DeDupeDebug", "--- SCAN INBOX ---")
-                Log.d("DeDupeDebug", "Found ${existingSmsHashes.size} existing hashes in DB.")
-                Log.d("DeDupeDebug", "Hashes: $existingSmsHashes")
-                Log.d("DeDupeDebug", "------------------")
-
-
-                val parsedList = withContext(Dispatchers.Default) {
-                    rawMessages.mapNotNull { sms ->
-                        // --- DIAGNOSTIC LOGGING ---
-                        Log.d("DeDupeDebug", "--- SCAN INBOX: Processing Raw SMS ---")
-                        Log.d("DeDupeDebug", "Body: '${sms.body}'")
-                        Log.d("DeDupeDebug", "------------------------------------")
-                        SmsParser.parse(sms, existingMappings)
-                    }
-                }
-
-                val newPotentialTransactions = parsedList.filter { potential ->
-                    !existingSmsHashes.contains(potential.sourceSmsHash)
-                }
-
-                _potentialTransactions.value = newPotentialTransactions
-
-                _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
-            } catch (e: Exception) {
-                Log.e("SettingsViewModel", "Error during SMS scan", e)
-                _scanEvent.send(ScanResult.Error)
-            } finally {
-                _isScanning.value = false
-            }
-        }
-    }
-
-    fun dismissPotentialTransaction(transaction: PotentialTransaction) {
-        _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
-    }
-
-    fun onTransactionApproved(smsId: Long) {
-        _potentialTransactions.update { currentList ->
-            currentList.filterNot { it.sourceSmsId == smsId }
-        }
-    }
-
-    fun saveMerchantMapping(
-        sender: String,
-        merchantName: String,
-    ) {
-        viewModelScope.launch {
-            merchantMappingRepository.insert(MerchantMapping(smsSender = sender, merchantName = merchantName))
-        }
     }
 }
