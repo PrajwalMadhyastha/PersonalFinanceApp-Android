@@ -11,9 +11,6 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-/**
- * ViewModel for the Dashboard screen.
- */
 class DashboardViewModel(
     private val transactionRepository: TransactionRepository,
     private val accountRepository: AccountRepository,
@@ -21,6 +18,8 @@ class DashboardViewModel(
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
     val userName: StateFlow<String>
+    val profilePictureUri: StateFlow<String?>
+
     val netWorth: StateFlow<Double>
     val monthlyIncome: StateFlow<Double>
     val monthlyExpenses: StateFlow<Double>
@@ -37,6 +36,13 @@ class DashboardViewModel(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = "User"
+            )
+
+        profilePictureUri = settingsRepository.getProfilePictureUri()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = null
             )
 
         val calendar = Calendar.getInstance()
@@ -99,7 +105,6 @@ class DashboardViewModel(
                 list.sumOf { it.balance }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-        // --- FINAL PERFORMANCE FIX: Use the new, efficient, limited query ---
         recentTransactions =
             transactionRepository.recentTransactions
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

@@ -15,6 +15,9 @@ val workVersion = "2.9.0"
 val robolectricVersion = "4.13"
 val coroutinesTestVersion = "1.8.1"
 val gsonVersion = "2.10.1"
+val coilVersion = "2.6.0"
+// --- NEW: Add Image Cropper library version ---
+val imageCropperVersion = "4.5.0"
 
 // Read properties from local.properties
 val keystorePropertiesFile = rootProject.file("local.properties")
@@ -68,7 +71,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Tell the release build type to use your new signing configuration
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -131,6 +133,11 @@ dependencies {
     implementation("com.google.code.gson:gson:$gsonVersion")
 
     implementation("androidx.tracing:tracing-ktx:$tracingVersion")
+
+    implementation("io.coil-kt:coil-compose:$coilVersion")
+
+    // --- NEW: Add the image cropper dependency ---
+    implementation("com.vanniktech:android-image-cropper:$imageCropperVersion")
 
     // Local unit tests
     testImplementation("junit:junit:4.13.2")

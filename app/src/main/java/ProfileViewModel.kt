@@ -1,24 +1,92 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ProfileViewModel.kt
+// REASON: Fixed a SecurityException crash when saving a cropped profile picture.
+// FIX: Instead of trying to persist permissions for a temporary URI from the
+// cropper, the ViewModel now copies the image into the app's private internal
+// storage and saves the path to that new, permanent file.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
+import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 
-/**
- * ViewModel for the Profile screen.
- */
 class ProfileViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsRepository = SettingsRepository(application)
+    private val context = application
 
-    // Expose the user's name as a StateFlow so the UI can observe it
     val userName: StateFlow<String> = settingsRepository.getUserName()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = "User" // Provide an initial default value
+            initialValue = "User"
         )
+
+    val profilePictureUri: StateFlow<String?> = settingsRepository.getProfilePictureUri()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = null
+        )
+
+    /**
+     * Saves the cropped image from the source URI to internal storage and persists its path.
+     */
+    fun saveProfilePictureUri(sourceUri: Uri?) {
+        viewModelScope.launch {
+            if (sourceUri == null) {
+                settingsRepository.saveProfilePictureUri(null)
+                return@launch
+            }
+            // Copy the file to internal storage and get the new path
+            val localPath = saveImageToInternalStorage(sourceUri)
+            // Save the path to our new local file
+            settingsRepository.saveProfilePictureUri(localPath)
+        }
+    }
+
+    /**
+     * Copies a file from a given content URI to the app's private internal storage.
+     * @param sourceUri The temporary URI of the file to copy (e.g., from the image cropper).
+     * @return The absolute path to the newly created file, or null if an error occurred.
+     */
+    private suspend fun saveImageToInternalStorage(sourceUri: Uri): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Open an input stream from the source URI provided by the cropper
+                val inputStream = context.contentResolver.openInputStream(sourceUri)
+
+                // Create a destination file in the app's private 'files' directory
+                val fileName = "profile_${System.currentTimeMillis()}.jpg"
+                val file = File(context.filesDir, fileName)
+
+                // Open an output stream to the destination file
+                val outputStream = FileOutputStream(file)
+
+                // Copy the bytes from the input stream to the output stream
+                inputStream?.use { input ->
+                    outputStream.use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                // Return the path of the file we just created
+                file.absolutePath
+            } catch (e: Exception) {
+                Log.e("ProfileViewModel", "Error saving image to internal storage", e)
+                null
+            }
+        }
+    }
 }

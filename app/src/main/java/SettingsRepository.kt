@@ -7,12 +7,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.util.Calendar
 
-/**
- * A repository for managing simple key-value settings using SharedPreferences.
- * This is ideal for user preferences or data that doesn't need a full database table.
- *
- * @param context The application context, required to access SharedPreferences.
- */
 class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences =
@@ -20,6 +14,9 @@ class SettingsRepository(context: Context) {
 
     companion object {
         private const val PREF_NAME = "finance_app_settings"
+        private const val KEY_USER_NAME = "user_name"
+        // --- NEW: Add key for profile picture URI ---
+        private const val KEY_PROFILE_PICTURE_URI = "profile_picture_uri"
         private const val KEY_BUDGET_PREFIX = "overall_budget_"
         private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
         private const val KEY_WEEKLY_SUMMARY_ENABLED = "weekly_summary_enabled"
@@ -27,16 +24,12 @@ class SettingsRepository(context: Context) {
         private const val KEY_DAILY_REPORT_ENABLED = "daily_report_enabled"
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
-        // --- NEW: Add a key for storing the user's name ---
-        private const val KEY_USER_NAME = "user_name"
     }
 
-    // --- NEW: Function to save the user's name ---
     fun saveUserName(name: String) {
         prefs.edit().putString(KEY_USER_NAME, name).apply()
     }
 
-    // --- NEW: Flow to read the user's name from SharedPreferences ---
     fun getUserName(): Flow<String> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
@@ -45,8 +38,26 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Emit the initial value, defaulting to "User" if not set.
             trySend(prefs.getString(KEY_USER_NAME, "User") ?: "User")
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    // --- NEW: Function to save the profile picture URI ---
+    fun saveProfilePictureUri(uriString: String?) {
+        prefs.edit().putString(KEY_PROFILE_PICTURE_URI, uriString).apply()
+    }
+
+    // --- NEW: Flow to read the profile picture URI ---
+    fun getProfilePictureUri(): Flow<String?> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_PROFILE_PICTURE_URI) {
+                    trySend(sharedPreferences.getString(KEY_PROFILE_PICTURE_URI, null))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getString(KEY_PROFILE_PICTURE_URI, null))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
@@ -59,28 +70,15 @@ class SettingsRepository(context: Context) {
         prefs.edit().putBoolean(KEY_HAS_SEEN_ONBOARDING, hasSeen).apply()
     }
 
-
-    /**
-     * Generates a unique key for the overall budget for a specific month and year.
-     * Example: "overall_budget_2024_06" for June 2024.
-     */
     private fun getBudgetKey(year: Int, month: Int): String {
-        // Using String.format to ensure month is zero-padded (e.g., 01, 02, ... 12)
         return String.format("%s%d_%02d", KEY_BUDGET_PREFIX, year, month)
     }
 
-    /**
-     * Saves the overall budget amount for the current month.
-     *
-     * @param amount The budget amount to save.
-     */
     fun saveOverallBudgetForCurrentMonth(amount: Float) {
         val calendar = Calendar.getInstance()
         val year = calendar.get(Calendar.YEAR)
-        val month = calendar.get(Calendar.MONTH) + 1 // Month is 0-based
+        val month = calendar.get(Calendar.MONTH) + 1
         val key = getBudgetKey(year, month)
-
-        // Use the 'edit' KTX extension function for a concise transaction.
         prefs.edit().putFloat(key, amount).apply()
     }
 
@@ -88,7 +86,6 @@ class SettingsRepository(context: Context) {
         prefs.edit().putLong(KEY_SMS_SCAN_START_DATE, date).apply()
     }
 
-    // --- NEW: Flow to read the scan start date preference ---
     fun getSmsScanStartDate(): Flow<Long> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
@@ -97,7 +94,6 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Default to 30 days ago if no setting is saved
             val thirtyDaysAgo = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -30) }.timeInMillis
             trySend(prefs.getLong(KEY_SMS_SCAN_START_DATE, thirtyDaysAgo))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }

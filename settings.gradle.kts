@@ -1,3 +1,5 @@
+// This file should be in the root directory of your project
+
 pluginManagement {
     repositories {
         google()
@@ -10,8 +12,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // --- NEW: Add JitPack repository ---
         maven { url = uri("https://jitpack.io") }
     }
 }
-rootProject.name = "Personal Finance App"
+rootProject.name = "Finlight" // Or your actual project name
 include(":app")

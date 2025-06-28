@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jun 28 14:36:38 IST 2025
+Generated on: Sat Jun 28 22:25:44 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -20,6 +20,9 @@ val workVersion = "2.9.0"
 val robolectricVersion = "4.13"
 val coroutinesTestVersion = "1.8.1"
 val gsonVersion = "2.10.1"
+val coilVersion = "2.6.0"
+// --- NEW: Add Image Cropper library version ---
+val imageCropperVersion = "4.5.0"
 
 // Read properties from local.properties
 val keystorePropertiesFile = rootProject.file("local.properties")
@@ -73,7 +76,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Tell the release build type to use your new signing configuration
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -137,6 +139,11 @@ dependencies {
 
     implementation("androidx.tracing:tracing-ktx:$tracingVersion")
 
+    implementation("io.coil-kt:coil-compose:$coilVersion")
+
+    // --- NEW: Add the image cropper dependency ---
+    implementation("com.vanniktech:android-image-cropper:$imageCropperVersion")
+
     // Local unit tests
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.test:core-ktx:$androidxTestVersion")
@@ -190,7 +197,8 @@ dependencies {
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.PersonalFinanceApp"
-        tools:targetApi="31">
+        tools:targetApi="33"
+        android:enableOnBackInvokedCallback="true">
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
@@ -556,15 +564,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val db = AppDatabase.getInstance(application)
 
-    // --- NEW: A private StateFlow to hold the current filter type ---
     private val _transactionTypeFilter = MutableStateFlow<String?>(null)
 
-    // --- NEW: This public StateFlow now dynamically filters the transactions ---
     val allTransactions: StateFlow<List<TransactionDetails>> =
         _transactionTypeFilter.flatMapLatest { filterType ->
             transactionRepository.allTransactions.map { list ->
                 if (filterType == null) {
-                    list // If no filter, return the whole list
+                    list
                 } else {
                     list.filter { it.transaction.transactionType == filterType }
                 }
@@ -591,8 +597,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         categoryRepository = CategoryRepository(db.categoryDao())
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
 
-        // The allTransactions StateFlow is now initialized above with the filter logic
-
         allAccounts = accountRepository.allAccounts.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -608,7 +612,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
-    // --- NEW: Public function to update the filter ---
     fun setTransactionTypeFilter(type: String?) {
         _transactionTypeFilter.value = type
     }
@@ -682,7 +685,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     notes = notes,
                     transactionType = potentialTxn.transactionType,
                     sourceSmsId = potentialTxn.sourceSmsId,
-                    sourceSmsHash = potentialTxn.sourceSmsHash
+                    sourceSmsHash = potentialTxn.sourceSmsHash,
+                    // --- UPDATED: Set the source for reviewed imports ---
+                    source = "Reviewed Import"
                 )
 
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
@@ -729,7 +734,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 notes = notes,
                 transactionType = transactionType,
                 sourceSmsId = sourceSmsId,
-                sourceSmsHash = sourceSmsHash
+                sourceSmsHash = sourceSmsHash,
+                source = "Manual Entry" // Default source
             )
         viewModelScope.launch {
             transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)
@@ -750,6 +756,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch {
+            // The source field is preserved on update
             transactionRepository.updateTransactionWithTags(transaction, _selectedTags.value)
         }
         return true
@@ -1777,6 +1784,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -1830,6 +1838,48 @@ fun WelcomePage() {
         )
     }
 }
+
+// --- NEW: A page to ask for the user's name ---
+@Composable
+fun UserNamePage(viewModel: OnboardingViewModel) {
+    val name by viewModel.userName.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.AccountCircle,
+            contentDescription = "User Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "This will be used to personalize your experience.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+        Spacer(Modifier.height(24.dp))
+        OutlinedTextField(
+            value = name,
+            onValueChange = { viewModel.onNameChanged(it) },
+            label = { Text("Your Name") },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Text,
+                capitalization = KeyboardCapitalization.Words
+            ),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
 
 @Composable
 fun CategorySetupPage(viewModel: OnboardingViewModel) {
@@ -2584,7 +2634,6 @@ fun ApproveTransactionScreen(
     val selectedTags by transactionViewModel.selectedTags.collectAsState()
 
     val isExpense = selectedTransactionType == "expense"
-    // --- FIX: Save is always enabled unless it's an expense with no category ---
     val isSaveEnabled = !isExpense || selectedCategory != null
 
     DisposableEffect(Unit) {
@@ -2700,7 +2749,6 @@ fun ApproveTransactionScreen(
                 }
                 Button(
                     onClick = {
-                        // --- FIX: Centralized logic into the ViewModel ---
                         scope.launch {
                             val success = transactionViewModel.approveSmsTransaction(
                                 potentialTxn = potentialTxn,
@@ -3464,6 +3512,7 @@ fun SettingsScreen(
         )
     }
 
+    // --- RESTORED: Listen for the scan event to navigate ---
     LaunchedEffect(key1 = viewModel.scanEvent) {
         viewModel.scanEvent.collect { result ->
             if (result is ScanResult.Success) {
@@ -3732,8 +3781,8 @@ fun SettingsScreen(
             )
         }
 
+        // --- RESTORED: SMS Scanning section for manual review ---
         item { SettingSectionHeader("SMS Scanning") }
-        // --- REFACTORED: "Scan from date" item with its own button ---
         item {
             Row(
                 modifier = Modifier
@@ -3767,7 +3816,7 @@ fun SettingsScreen(
                     onClick = {
                         if (hasSmsPermission) {
                             if (!isScanning) {
-                                viewModel.rescanSms(smsScanStartDate)
+                                viewModel.rescanSmsForReview(smsScanStartDate)
                             }
                         } else {
                             showSmsRationaleDialog = true
@@ -3779,16 +3828,15 @@ fun SettingsScreen(
                 }
             }
         }
-        // --- REFACTORED: "Scan full inbox" item with clearer text ---
         item {
             SettingsActionItem(
                 text = "Scan Full Inbox",
-                subtitle = "Scan all messages to find new transactions.",
+                subtitle = "Scan all messages to find transactions for review.",
                 icon = Icons.AutoMirrored.Filled.ManageSearch,
                 onClick = {
                     if (hasSmsPermission) {
                         if (!isScanning) {
-                            viewModel.rescanSms(null) // Pass null for a full scan
+                            viewModel.rescanSmsForReview(null) // Pass null for a full scan
                         }
                     } else {
                         showSmsRationaleDialog = true
@@ -4221,13 +4269,16 @@ package io.pm.finlight.ui.screens
 
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Timeline
@@ -4237,14 +4288,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import coil.compose.AsyncImage
+import io.pm.finlight.BottomNavItem
 import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.DashboardViewModel
 import io.pm.finlight.DashboardViewModelFactory
+import io.pm.finlight.R
 import io.pm.finlight.ui.components.AccountSummaryCard
 import io.pm.finlight.ui.components.BudgetWatchCard
 import io.pm.finlight.ui.components.NetWorthCard
@@ -4258,11 +4317,11 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
     budgetViewModel: BudgetViewModel,
 ) {
+    val profilePictureUri by viewModel.profilePictureUri.collectAsState()
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
     val monthlyExpenses by viewModel.monthlyExpenses.collectAsState()
     val overallBudget by viewModel.overallMonthlyBudget.collectAsState()
-    val safeToSpend by viewModel.safeToSpendPerDay.collectAsState()
     val budgetStatus by viewModel.budgetStatus.collectAsState()
     val recentTransactions by viewModel.recentTransactions.collectAsState()
     val accountsSummary by viewModel.accountsSummary.collectAsState()
@@ -4271,6 +4330,8 @@ fun DashboardScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        // --- UPDATED: The profile picture in the TopAppBar is handled in MainActivity ---
+        // This item is now removed to avoid duplication. The greeting is now part of the TopAppBar.
         item {
             OverallBudgetCard(
                 totalBudget = overallBudget,
@@ -4284,9 +4345,16 @@ fun DashboardScreen(
                     label = "Monthly Income",
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
-                    onClick = { navController.navigate("transaction_list?type=income") }
+                    onClick = {
+                        navController.navigate("${BottomNavItem.Transactions.route}?type=income") {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 )
-                // --- FIX: Make the "Total Budget" card navigate to the budget screen ---
                 StatCard(
                     label = "Total Budget",
                     amount = overallBudget,
@@ -4297,14 +4365,28 @@ fun DashboardScreen(
                     label = "Monthly Expenses",
                     amount = monthlyExpenses.toFloat(),
                     modifier = Modifier.weight(1f),
-                    onClick = { navController.navigate("transaction_list?type=expense") }
+                    onClick = {
+                        navController.navigate("${BottomNavItem.Transactions.route}?type=expense") {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 )
             }
         }
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 FilledTonalButton(
-                    onClick = { navController.navigate("reports_screen") },
+                    onClick = {
+                        navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -4312,7 +4394,13 @@ fun DashboardScreen(
                     Text("View Trends")
                 }
                 FilledTonalButton(
-                    onClick = { navController.navigate("reports_screen") },
+                    onClick = {
+                        navController.navigate(BottomNavItem.Reports.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -4898,6 +4986,7 @@ import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -4914,6 +5003,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
@@ -4954,6 +5044,7 @@ fun EditTransactionScreen(
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var newTagName by remember { mutableStateOf("") }
+    var source by remember { mutableStateOf("") }
 
     var transactionType by remember { mutableStateOf("expense") }
     val transactionTypes = listOf("Expense", "Income")
@@ -5002,6 +5093,7 @@ fun EditTransactionScreen(
                 selectedAccount = accounts.find { it.id == txn.accountId }
                 selectedCategory = categories.find { it.id == txn.categoryId }
                 transactionType = txn.transactionType
+                source = txn.source
             }
         }
     }
@@ -5106,6 +5198,24 @@ fun EditTransactionScreen(
                             }
                         }
                     }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = source,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Source") },
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = "Source Info") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        enabled = false
+                    )
                 }
 
                 item {
@@ -5276,8 +5386,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // --- UPDATED: Page count is now 6 as Account Setup is removed ---
-    val pagerState = rememberPagerState { 6 }
+    // --- UPDATED: Page count is now 7 to include the new name page ---
+    val pagerState = rememberPagerState { 7 }
     val scope = rememberCoroutineScope()
 
     val onNextClicked: () -> Unit = {
@@ -5305,14 +5415,15 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
                 .padding(innerPadding),
             userScrollEnabled = false
         ) { page ->
-            // --- UPDATED: AccountSetupPage (page 1) has been removed ---
+            // --- UPDATED: Added UserNamePage at index 1 ---
             when (page) {
                 0 -> WelcomePage()
-                1 -> CategorySetupPage(viewModel)
-                2 -> BudgetSetupPage(viewModel)
-                3 -> SmsPermissionPage(onPermissionResult = onNextClicked)
-                4 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
-                5 -> CompletionPage()
+                1 -> UserNamePage(viewModel)
+                2 -> CategorySetupPage(viewModel)
+                3 -> BudgetSetupPage(viewModel)
+                4 -> SmsPermissionPage(onPermissionResult = onNextClicked)
+                5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
+                6 -> CompletionPage()
             }
         }
     }
@@ -5372,6 +5483,10 @@ fun PageIndicator(pageCount: Int, currentPage: Int) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 package io.pm.finlight.ui.screens
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -5383,7 +5498,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -5393,18 +5507,44 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
+import com.canhub.cropper.CropImageView
+import io.pm.finlight.ProfileViewModel
 import io.pm.finlight.R
 
 @Composable
-fun ProfileScreen(navController: NavController) {
+fun ProfileScreen(
+    navController: NavController,
+    viewModel: ProfileViewModel = viewModel()
+) {
+    val userName by viewModel.userName.collectAsState()
+    val profilePictureUri by viewModel.profilePictureUri.collectAsState()
+    val context = LocalContext.current
+
+    val imageCropper = rememberLauncherForActivityResult(CropImageContract()) { result ->
+        if (result.isSuccessful) {
+            viewModel.saveProfilePictureUri(result.uriContent)
+        } else {
+            val exception = result.error
+            Toast.makeText(context, "Image cropping failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Column(modifier = Modifier.padding(16.dp)) {
-        // User Info Placeholder
         Card(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(4.dp)
@@ -5413,16 +5553,37 @@ fun ProfileScreen(navController: NavController) {
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = "User Profile",
+                AsyncImage(
+                    model = profilePictureUri,
+                    contentDescription = "User Profile Picture",
+                    placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                    error = painterResource(id = R.drawable.ic_launcher_foreground),
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(64.dp)
                         .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                        .clickable {
+                            val cropOptions = CropImageContractOptions(
+                                uri = null,
+                                cropImageOptions = CropImageOptions(
+                                    cropShape = CropImageView.CropShape.OVAL,
+                                    aspectRatioX = 1,
+                                    aspectRatioY = 1,
+                                    fixAspectRatio = true,
+                                    outputCompressQuality = 70,
+                                    imageSourceIncludeGallery = true,
+                                    imageSourceIncludeCamera = true
+                                )
+                            )
+                            imageCropper.launch(cropOptions)
+                        }
                 )
+
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
-                    Text("User Name", style = MaterialTheme.typography.titleLarge)
+                    Text(userName, style = MaterialTheme.typography.titleLarge)
                     Text("user.email@pm.com", style = MaterialTheme.typography.bodyMedium)
                 }
             }
@@ -5430,7 +5591,6 @@ fun ProfileScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // App Settings Navigation
         ListItem(
             headlineContent = { Text("App Settings") },
             leadingContent = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
@@ -6819,6 +6979,11 @@ fun LockScreen(onUnlock: () -> Unit) {
 @Composable
 fun MainAppScreen() {
     val navController = rememberNavController()
+    // --- NEW: Get an instance of the DashboardViewModel ---
+    val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application))
+    // --- NEW: Collect the user name state ---
+    val userName by dashboardViewModel.userName.collectAsState()
+
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
@@ -6828,17 +6993,20 @@ fun MainAppScreen() {
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
-
-    // --- FIX: Use a more robust check that handles arguments correctly ---
     val currentRoute = currentDestination?.route
     val baseCurrentRoute = currentRoute?.substringBefore("?")
-    val currentTitle = screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
+
+    // --- UPDATED: Title logic is now dynamic ---
+    val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
+        "Hi, $userName!" // Show greeting on dashboard
+    } else {
+        screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
+    }
+
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
-
-
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
-        baseCurrentRoute, // Also show FAB on filtered transaction list
+        baseCurrentRoute,
         "account_list",
         "budget_screen",
         "recurring_transactions"
@@ -6869,7 +7037,6 @@ fun MainAppScreen() {
             if (showBottomBar) {
                 NavigationBar {
                     bottomNavItems.forEach { screen ->
-                        // --- FIX: Use NavDestination.hierarchy for a robust selection check ---
                         val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
                         NavigationBarItem(
                             icon = { Icon(screen.icon, contentDescription = screen.label) },
@@ -6890,7 +7057,7 @@ fun MainAppScreen() {
         floatingActionButton = {
             if (showFab) {
                 FloatingActionButton(onClick = {
-                    when (baseCurrentRoute) { // Use base route to determine FAB action
+                    when (baseCurrentRoute) {
                         BottomNavItem.Dashboard.route, BottomNavItem.Transactions.route -> {
                             navController.navigate("add_transaction")
                         }
@@ -6910,18 +7077,28 @@ fun MainAppScreen() {
             }
         }
     ) { innerPadding ->
-        AppNavHost(navController = navController, modifier = Modifier.padding(innerPadding))
+        AppNavHost(
+            navController = navController,
+            modifier = Modifier.padding(innerPadding),
+            // --- NEW: Pass the ViewModel instance to the NavHost ---
+            dashboardViewModel = dashboardViewModel
+        )
     }
 }
 
 
 @Composable
-fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) {
+fun AppNavHost(
+    navController: NavHostController,
+    modifier: Modifier = Modifier,
+    dashboardViewModel: DashboardViewModel
+) {
     val settingsViewModel: SettingsViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
     val accountViewModel: AccountViewModel = viewModel()
     val categoryViewModel: CategoryViewModel = viewModel()
     val budgetViewModel: BudgetViewModel = viewModel()
+    val profileViewModel: ProfileViewModel = viewModel()
 
     NavHost(
         navController = navController,
@@ -6929,8 +7106,6 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
         modifier = modifier
     ) {
         composable(BottomNavItem.Dashboard.route) {
-            val context = LocalContext.current.applicationContext as Application
-            val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(context))
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }
         composable(
@@ -6947,11 +7122,12 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        composable(BottomNavItem.Profile.route) { ProfileScreen(navController) }
+        composable(BottomNavItem.Profile.route) { ProfileScreen(navController, profileViewModel) }
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
-
         composable("search_screen") { SearchScreen(navController) }
+
+        // --- RESTORED: Routes for the manual SMS review flow ---
         composable(
             route = "review_sms_screen",
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
@@ -6974,12 +7150,15 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
                 potentialTxn = potentialTxn
             )
         }
+
         composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
         composable(
             route = "edit_transaction/{transactionId}",
             arguments = listOf(
                 navArgument("transactionId") { type = NavType.IntType }
-            )
+            ),
+            // --- UPDATED: Add deep link to handle notifications for auto-saved transactions ---
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/edit_transaction/{transactionId}" })
         ) { backStackEntry ->
             val arguments = requireNotNull(backStackEntry.arguments)
             EditTransactionScreen(
@@ -7215,6 +7394,57 @@ class MerchantMappingRepository(private val merchantMappingDao: MerchantMappingD
 -e 
 
 
+================== FILE: ./app/src/main/java/ProfileViewModel.kt ==================
+package io.pm.finlight
+
+import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class ProfileViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val settingsRepository = SettingsRepository(application)
+    private val context = application
+
+    val userName: StateFlow<String> = settingsRepository.getUserName()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = "User"
+        )
+
+    // --- NEW: Expose the profile picture URI as a StateFlow ---
+    val profilePictureUri: StateFlow<String?> = settingsRepository.getProfilePictureUri()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = null
+        )
+
+    // --- NEW: Function to save the selected image URI ---
+    fun saveProfilePictureUri(uri: Uri?) {
+        viewModelScope.launch {
+            val uriString = uri?.toString()
+            // Persist read permissions for the content URI
+            uri?.let {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            settingsRepository.saveProfilePictureUri(uriString)
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/LoginRequest.kt ==================
 package io.pm.finlight
 
@@ -7241,12 +7471,13 @@ import kotlinx.coroutines.launch
 data class SelectableCategory(val name: String, var isSelected: Boolean)
 
 class OnboardingViewModel(
-    // --- UPDATED: AccountRepository is no longer needed here ---
     private val categoryRepository: CategoryRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
-    // --- REMOVED: State for Account Setup is no longer part of onboarding ---
+    // --- NEW: StateFlow to hold the user's name ---
+    private val _userName = MutableStateFlow("")
+    val userName = _userName.asStateFlow()
 
     private val _categories = MutableStateFlow<List<SelectableCategory>>(
         listOf(
@@ -7263,6 +7494,11 @@ class OnboardingViewModel(
 
     private val _monthlyBudget = MutableStateFlow("")
     val monthlyBudget = _monthlyBudget.asStateFlow()
+
+    // --- NEW: Function to update the name state ---
+    fun onNameChanged(newName: String) {
+        _userName.value = newName
+    }
 
     fun toggleCategorySelection(categoryName: String) {
         _categories.update { currentCategories ->
@@ -7287,7 +7523,10 @@ class OnboardingViewModel(
      */
     fun finishOnboarding() {
         viewModelScope.launch {
-            // --- REMOVED: Account saving logic is gone ---
+            // --- NEW: Save the user's name ---
+            if (_userName.value.isNotBlank()) {
+                settingsRepository.saveUserName(_userName.value)
+            }
 
             // Save selected Categories
             _categories.value.filter { it.isSelected }.forEach { selectableCategory ->
@@ -7514,7 +7753,7 @@ import java.util.Calendar
         Tag::class, // <-- NEW
         TransactionTagCrossRef::class // <-- NEW
     ],
-    version = 7, // <-- CRITICAL: Version number is incremented to 7
+    version = 8, // <-- CRITICAL: Version number is incremented to 8
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -7618,6 +7857,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN source TEXT NOT NULL DEFAULT 'Manual Entry'")
+                db.execSQL("UPDATE transactions SET source = 'Reviewed Import' WHERE sourceSmsId IS NOT NULL")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -7628,7 +7874,7 @@ abstract class AppDatabase : RoomDatabase() {
                         "finance_database",
                     )
                         // --- CRITICAL: Added the new MIGRATION_5_6 ---
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -7782,7 +8028,7 @@ abstract class AppDatabase : RoomDatabase() {
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
 package io.pm.finlight
 
-import android.util.Log
+// Removed android.util.Log import as it's not needed and causes test failures.
 
 data class PotentialAccount(
     val formattedName: String, // e.g., "SBI - xx3201"
@@ -7790,17 +8036,21 @@ data class PotentialAccount(
 )
 
 object SmsParser {
-    private const val TAG = "SmsParser"
+    // private const val TAG = "SmsParser" // No longer needed
     private val AMOUNT_REGEX = "(?:rs|inr|rs\\.?)\\s*([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
 
+    // --- REFINED: Reordered patterns and made them more specific ---
     private val ACCOUNT_PATTERNS =
         listOf(
-            "(?:on your|on)\\s+([A-Za-z0-9\\s]+?)\\s+((?:Credit|Meal|Savings)?\\s*(?:Card|Account|Acct))\\s+(?:ending with|ending in|xx)?\\s*(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            "on\\s+([A-Za-z0-9\\s]+?)\\s+(card|account|acct|a/c)\\s+(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            "(?:acct|account|a/c)\\s+xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            "card no\\.\\s*xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE)
+            // Most specific patterns first
+            "on your (SBI) (Credit Card) ending with (\\d{4})".toRegex(RegexOption.IGNORE_CASE),
+            "from (Pluxee)\\. (Meal Card wallet), card no\\.\\s*xx(\\d{4})".toRegex(RegexOption.IGNORE_CASE),
+            "On (HDFC Bank) (Card) (\\d{4})".toRegex(RegexOption.IGNORE_CASE),
+            // Make ICICI patterns mutually exclusive by including the action keyword
+            "(ICICI Bank) Acct XX(\\d{3,4}) debited".toRegex(RegexOption.IGNORE_CASE),
+            "Acct XX(\\d{3,4}) is credited.*-(ICICI Bank)".toRegex(RegexOption.IGNORE_CASE)
         )
 
     private val MERCHANT_REGEX_PATTERNS =
@@ -7817,33 +8067,35 @@ object SmsParser {
     private fun parseAccount(smsBody: String, sender: String): PotentialAccount? {
         for (pattern in ACCOUNT_PATTERNS) {
             val match = pattern.find(smsBody)
-            if (match != null && match.groupValues.size >= 2) {
-                return when (match.groupValues.size) {
-                    2 -> {
-                        val number = match.groupValues[1]
-                        val bankName = sender.split("-").getOrNull(1)?.replaceBefore("B", "")?.replace("BK", "Bank") ?: "Unknown Bank"
-                        PotentialAccount(
-                            formattedName = "$bankName - xx$number",
-                            accountType = "Savings Account"
-                        )
+            if (match != null) {
+                val pString = pattern.pattern
+                // --- REFINED: Use pattern string to determine logic, which is more robust ---
+                return when {
+                    // Handles SBI, Pluxee, HDFC
+                    pString.startsWith("on your") || pString.startsWith("On") || pString.startsWith("from") -> {
+                        val group1 = match.groupValues[1].trim() // Bank or brand
+                        val group2 = match.groupValues[2].trim() // Type
+                        val number = match.groupValues[3].trim() // Number
+                        PotentialAccount(formattedName = "$group1 - xx$number", accountType = group2)
                     }
-                    4 -> {
-                        val bankName = match.groupValues[1].trim()
-                        val type = match.groupValues[2].trim()
-                        val number = match.groupValues[3]
-                        PotentialAccount(
-                            formattedName = "$bankName - xx$number",
-                            accountType = type
-                        )
+                    // Handles ICICI Debit
+                    pString.contains("debited") -> {
+                        val bank = match.groupValues[1].trim()
+                        val number = match.groupValues[2].trim()
+                        PotentialAccount(formattedName = "$bank - xx$number", accountType = "Savings Account")
+                    }
+                    // Handles ICICI Credit
+                    pString.contains("is credited") -> {
+                        val number = match.groupValues[1].trim()
+                        val bank = match.groupValues[2].trim()
+                        PotentialAccount(formattedName = "$bank - xx$number", accountType = "Savings Account")
                     }
                     else -> null
                 }
             }
         }
-        Log.d(TAG, "No specific account pattern matched for sender: $sender")
         return null
     }
-
 
     fun parse(
         sms: SmsMessage,
@@ -7880,18 +8132,9 @@ object SmsParser {
 
         val potentialAccount = parseAccount(messageBody, sms.sender)
 
-        // --- FINAL FIX: Normalize both the sender and the body for a stable hash ---
         val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
         val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
         val smsHash = (normalizedSender + normalizedBody).hashCode().toString()
-
-        // --- DIAGNOSTIC LOGGING ---
-        Log.d("DeDupeDebug", "--- PARSING ---")
-        Log.d("DeDupeDebug", "Raw Sender: ${sms.sender} -> Normalized Sender: $normalizedSender")
-        Log.d("DeDupeDebug", "Normalized Body: '$normalizedBody'")
-        Log.d("DeDupeDebug", "Generated Hash: $smsHash")
-        Log.d("DeDupeDebug", "---------------")
-
 
         return PotentialTransaction(
             sourceSmsId = sms.id,
@@ -7938,12 +8181,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.util.Calendar
 
-/**
- * A repository for managing simple key-value settings using SharedPreferences.
- * This is ideal for user preferences or data that doesn't need a full database table.
- *
- * @param context The application context, required to access SharedPreferences.
- */
 class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences =
@@ -7951,6 +8188,9 @@ class SettingsRepository(context: Context) {
 
     companion object {
         private const val PREF_NAME = "finance_app_settings"
+        private const val KEY_USER_NAME = "user_name"
+        // --- NEW: Add key for profile picture URI ---
+        private const val KEY_PROFILE_PICTURE_URI = "profile_picture_uri"
         private const val KEY_BUDGET_PREFIX = "overall_budget_"
         private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
         private const val KEY_WEEKLY_SUMMARY_ENABLED = "weekly_summary_enabled"
@@ -7958,6 +8198,42 @@ class SettingsRepository(context: Context) {
         private const val KEY_DAILY_REPORT_ENABLED = "daily_report_enabled"
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
+    }
+
+    fun saveUserName(name: String) {
+        prefs.edit().putString(KEY_USER_NAME, name).apply()
+    }
+
+    fun getUserName(): Flow<String> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_USER_NAME) {
+                    trySend(sharedPreferences.getString(KEY_USER_NAME, "User") ?: "User")
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getString(KEY_USER_NAME, "User") ?: "User")
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    // --- NEW: Function to save the profile picture URI ---
+    fun saveProfilePictureUri(uriString: String?) {
+        prefs.edit().putString(KEY_PROFILE_PICTURE_URI, uriString).apply()
+    }
+
+    // --- NEW: Flow to read the profile picture URI ---
+    fun getProfilePictureUri(): Flow<String?> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_PROFILE_PICTURE_URI) {
+                    trySend(sharedPreferences.getString(KEY_PROFILE_PICTURE_URI, null))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getString(KEY_PROFILE_PICTURE_URI, null))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
     }
 
     fun hasSeenOnboarding(): Boolean {
@@ -7968,28 +8244,15 @@ class SettingsRepository(context: Context) {
         prefs.edit().putBoolean(KEY_HAS_SEEN_ONBOARDING, hasSeen).apply()
     }
 
-
-    /**
-     * Generates a unique key for the overall budget for a specific month and year.
-     * Example: "overall_budget_2024_06" for June 2024.
-     */
     private fun getBudgetKey(year: Int, month: Int): String {
-        // Using String.format to ensure month is zero-padded (e.g., 01, 02, ... 12)
         return String.format("%s%d_%02d", KEY_BUDGET_PREFIX, year, month)
     }
 
-    /**
-     * Saves the overall budget amount for the current month.
-     *
-     * @param amount The budget amount to save.
-     */
     fun saveOverallBudgetForCurrentMonth(amount: Float) {
         val calendar = Calendar.getInstance()
         val year = calendar.get(Calendar.YEAR)
-        val month = calendar.get(Calendar.MONTH) + 1 // Month is 0-based
+        val month = calendar.get(Calendar.MONTH) + 1
         val key = getBudgetKey(year, month)
-
-        // Use the 'edit' KTX extension function for a concise transaction.
         prefs.edit().putFloat(key, amount).apply()
     }
 
@@ -7997,7 +8260,6 @@ class SettingsRepository(context: Context) {
         prefs.edit().putLong(KEY_SMS_SCAN_START_DATE, date).apply()
     }
 
-    // --- NEW: Flow to read the scan start date preference ---
     fun getSmsScanStartDate(): Flow<Long> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
@@ -8006,7 +8268,6 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Default to 30 days ago if no setting is saved
             val thirtyDaysAgo = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -30) }.timeInMillis
             trySend(prefs.getLong(KEY_SMS_SCAN_START_DATE, thirtyDaysAgo))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
@@ -8379,14 +8640,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = true,
         )
 
+    // --- RESTORED: State for the manual review flow ---
     private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
     val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
-
-    private val _smsMessages = MutableStateFlow<List<SmsMessage>>(emptyList())
-    val smsMessages: StateFlow<List<SmsMessage>> = _smsMessages.asStateFlow()
 
     init {
         smsScanStartDate =
@@ -8396,6 +8655,72 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = 0L,
                 )
+    }
+
+    // --- RESTORED: Function to handle the manual "Scan Inbox" action ---
+    fun rescanSmsForReview(startDate: Long?) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            // In a real app, you'd send an event to the UI to request permission
+            return
+        }
+
+        viewModelScope.launch {
+            _isScanning.value = true
+            try {
+                val rawMessages = withContext(Dispatchers.IO) {
+                    SmsRepository(context).fetchAllSms(startDate)
+                }
+
+                val existingMappings = withContext(Dispatchers.IO) {
+                    merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
+                }
+
+                val existingSmsHashes = withContext(Dispatchers.IO) {
+                    transactionRepository.getAllSmsHashes().first().toSet()
+                }
+
+                val parsedList = withContext(Dispatchers.Default) {
+                    rawMessages.mapNotNull { sms ->
+                        SmsParser.parse(sms, existingMappings)
+                    }
+                }
+
+                val newPotentialTransactions = parsedList.filter { potential ->
+                    !existingSmsHashes.contains(potential.sourceSmsHash)
+                }
+
+                // Key difference: This populates the list for the UI review flow
+                _potentialTransactions.value = newPotentialTransactions
+
+                // This event tells the UI to navigate to the review screen
+                _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
+            } catch (e: Exception) {
+                Log.e("SettingsViewModel", "Error during SMS scan for review", e)
+                _scanEvent.send(ScanResult.Error)
+            } finally {
+                _isScanning.value = false
+            }
+        }
+    }
+
+    // --- RESTORED: Functions to manage the list during the review process ---
+    fun dismissPotentialTransaction(transaction: PotentialTransaction) {
+        _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
+    }
+
+    fun onTransactionApproved(smsId: Long) {
+        _potentialTransactions.update { currentList ->
+            currentList.filterNot { it.sourceSmsId == smsId }
+        }
+    }
+
+    fun saveMerchantMapping(
+        sender: String,
+        merchantName: String,
+    ) {
+        viewModelScope.launch {
+            merchantMappingRepository.insert(MerchantMapping(smsSender = sender, merchantName = merchantName))
+        }
     }
 
     fun saveSmsScanStartDate(date: Long) {
@@ -8625,78 +8950,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun clearCsvValidationReport() {
         _csvValidationReport.value = null
     }
-
-    fun rescanSms(startDate: Long?) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
-
-        viewModelScope.launch {
-            _isScanning.value = true
-            try {
-                val rawMessages = withContext(Dispatchers.IO) {
-                    SmsRepository(context).fetchAllSms(startDate)
-                }
-
-                val existingMappings = withContext(Dispatchers.IO) {
-                    merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
-                }
-
-                val existingSmsHashes = withContext(Dispatchers.IO) {
-                    transactionRepository.getAllSmsHashes().first().toSet()
-                }
-
-                // --- DIAGNOSTIC LOGGING ---
-                Log.d("DeDupeDebug", "--- SCAN INBOX ---")
-                Log.d("DeDupeDebug", "Found ${existingSmsHashes.size} existing hashes in DB.")
-                Log.d("DeDupeDebug", "Hashes: $existingSmsHashes")
-                Log.d("DeDupeDebug", "------------------")
-
-
-                val parsedList = withContext(Dispatchers.Default) {
-                    rawMessages.mapNotNull { sms ->
-                        // --- DIAGNOSTIC LOGGING ---
-                        Log.d("DeDupeDebug", "--- SCAN INBOX: Processing Raw SMS ---")
-                        Log.d("DeDupeDebug", "Body: '${sms.body}'")
-                        Log.d("DeDupeDebug", "------------------------------------")
-                        SmsParser.parse(sms, existingMappings)
-                    }
-                }
-
-                val newPotentialTransactions = parsedList.filter { potential ->
-                    !existingSmsHashes.contains(potential.sourceSmsHash)
-                }
-
-                _potentialTransactions.value = newPotentialTransactions
-
-                _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
-            } catch (e: Exception) {
-                Log.e("SettingsViewModel", "Error during SMS scan", e)
-                _scanEvent.send(ScanResult.Error)
-            } finally {
-                _isScanning.value = false
-            }
-        }
-    }
-
-    fun dismissPotentialTransaction(transaction: PotentialTransaction) {
-        _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
-    }
-
-    fun onTransactionApproved(smsId: Long) {
-        _potentialTransactions.update { currentList ->
-            currentList.filterNot { it.sourceSmsId == smsId }
-        }
-    }
-
-    fun saveMerchantMapping(
-        sender: String,
-        merchantName: String,
-    ) {
-        viewModelScope.launch {
-            merchantMappingRepository.insert(MerchantMapping(smsSender = sender, merchantName = merchantName))
-        }
-    }
 }
 -e 
 
@@ -8840,6 +9093,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
+
+    // --- NEW: Highly efficient query for the dashboard's "Recent Transactions" card ---
+    // This fetches only the top 5 transactions directly from the database.
     @Query(
         """
         SELECT
@@ -8854,11 +9110,29 @@ interface TransactionDao {
             categories AS C ON T.categoryId = C.id
         ORDER BY
             T.date DESC
-    """,
+        LIMIT 5
+    """
+    )
+    fun getRecentTransactionDetails(): Flow<List<TransactionDetails>>
+
+    @Query(
+        """
+        SELECT
+            T.*,
+            A.name as accountName,
+            C.name as categoryName
+        FROM
+            transactions AS T
+        LEFT JOIN
+            accounts AS A ON T.accountId = A.id
+        LEFT JOIN
+            categories AS C ON T.categoryId = C.id
+        ORDER BY
+            T.date DESC
+    """
     )
     fun getAllTransactions(): Flow<List<TransactionDetails>>
 
-    // --- BUG FIX: Add a new query to efficiently get all existing SMS hashes for de-duplication ---
     @Query("SELECT sourceSmsHash FROM transactions WHERE sourceSmsHash IS NOT NULL")
     fun getAllSmsHashes(): Flow<List<String>>
 
@@ -8877,7 +9151,7 @@ interface TransactionDao {
         WHERE T.date BETWEEN :startDate AND :endDate
         ORDER BY
             T.date DESC
-    """,
+    """
     )
     fun getTransactionDetailsForRange(
         startDate: Long,
@@ -8894,7 +9168,7 @@ interface TransactionDao {
         LEFT JOIN categories AS C ON T.categoryId = C.id
         WHERE T.accountId = :accountId
         ORDER BY T.date DESC
-    """,
+    """
     )
     fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>>
 
@@ -8918,7 +9192,7 @@ interface TransactionDao {
         SELECT SUM(T.amount) FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate AND T.transactionType = 'expense'
-    """,
+    """
     )
     fun getSpendingForCategory(
         categoryName: String,
@@ -8934,7 +9208,7 @@ interface TransactionDao {
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
         GROUP BY C.name
         ORDER BY totalAmount ASC
-    """,
+    """
     )
     fun getSpendingByCategoryForMonth(
         startDate: Long,
@@ -8951,7 +9225,7 @@ interface TransactionDao {
         WHERE date >= :startDate
         GROUP BY monthYear
         ORDER BY monthYear ASC
-    """,
+    """
     )
     fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>>
 
@@ -8969,7 +9243,7 @@ interface TransactionDao {
             (:startDate IS NULL OR t.date >= :startDate) AND
             (:endDate IS NULL OR t.date <= :endDate)
         ORDER BY t.date DESC
-    """,
+    """
     )
     suspend fun searchTransactions(
         keyword: String,
@@ -9367,6 +9641,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import com.github.mikephil.charting.utils.Utils
 
 class MainApplication : Application() {
     companion object {
@@ -9377,6 +9652,9 @@ class MainApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // --- FIX: Initialize the MPAndroidChart library ---
+        Utils.init(this)
+
         createTransactionNotificationChannel()
         createDailyReportNotificationChannel()
         createSummaryNotificationChannel()
@@ -9412,7 +9690,6 @@ class MainApplication : Application() {
         }
     }
 
-    // --- ADDED: Function to create the new weekly summary channel ---
     private fun createSummaryNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "Weekly Summaries"
@@ -9487,16 +9764,15 @@ data class Transaction(
     val id: Int = 0,
     val description: String,
     val categoryId: Int?,
-    // The amount is now always positive.
     val amount: Double,
     val date: Long,
     val accountId: Int,
     val notes: String?,
-    // --- NEW: Added to distinguish between income and expense ---
-    val transactionType: String = "expense", // Default to 'expense'
+    val transactionType: String = "expense",
     val sourceSmsId: Long? = null,
-    // --- BUG FIX: Add a stable hash to uniquely identify an SMS for de-duplication ---
     val sourceSmsHash: String? = null,
+    // --- NEW: Add a field to track the origin of the transaction ---
+    val source: String = "Manual Entry"
 )
 -e 
 
@@ -9525,60 +9801,75 @@ class SmsReceiver : BroadcastReceiver() {
         context: Context,
         intent: Intent,
     ) {
-        Log.d(TAG, "onReceive triggered for action: ${intent.action}")
-
         if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
-                    Log.d(TAG, "Received ${messages.size} message parts.")
-
                     val messagesBySender = messages.groupBy { it.originatingAddress }
 
                     for ((sender, parts) in messagesBySender) {
+                        if (sender == null) continue
+
                         val fullBody = parts.joinToString("") { it.messageBody }
-                        val firstMessage = parts.first()
-                        val smsId = firstMessage.timestampMillis
-
-                        // --- DIAGNOSTIC LOGGING ---
-                        Log.d("DeDupeDebug", "--- RECEIVER ---")
-                        Log.d("DeDupeDebug", "Receiver processing message from: $sender")
-                        Log.d("DeDupeDebug", "Combined Body: '$fullBody'")
-                        Log.d("DeDupeDebug", "----------------")
-
+                        val smsId = parts.first().timestampMillis
 
                         val db = AppDatabase.getInstance(context)
-                        val transactionRepository = TransactionRepository(db.transactionDao())
+                        val transactionDao = db.transactionDao()
+                        val accountDao = db.accountDao()
                         val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
 
                         val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
-                        val existingSmsHashes = transactionRepository.getAllSmsHashes().first().toSet()
+                        val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
-                        val smsMessage = SmsMessage(id = smsId, sender = sender ?: "Unknown", body = fullBody, date = smsId)
-                        val potentialTransaction = SmsParser.parse(smsMessage, existingMappings)
+                        val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
+                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings)
 
-                        if (potentialTransaction != null) {
-                            if (!existingSmsHashes.contains(potentialTransaction.sourceSmsHash)) {
-                                Log.d(TAG, "New potential transaction found: $potentialTransaction")
-                                if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                                    NotificationHelper.showTransactionNotification(context, potentialTransaction)
-                                    Log.d(TAG, "Notification sent for transaction.")
-                                } else {
-                                    Log.w(TAG, "Post Notifications permission not granted.")
-                                }
-                            } else {
-                                Log.d(TAG, "SMS with hash: ${potentialTransaction.sourceSmsHash} is a duplicate. Skipping.")
+                        if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
+                            Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
+
+                            val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
+                            val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
+
+                            var account = accountDao.findByName(accountName)
+                            if (account == null) {
+                                val newAccount = Account(name = accountName, type = accountType)
+                                accountDao.insert(newAccount)
+                                account = accountDao.findByName(accountName)
                             }
-                        } else {
-                            Log.d(TAG, "SMS from $sender did not parse to a transaction.")
+
+                            if (account != null) {
+                                val newTransaction = Transaction(
+                                    description = potentialTxn.merchantName ?: "Unknown Merchant",
+                                    amount = potentialTxn.amount,
+                                    date = System.currentTimeMillis(),
+                                    accountId = account.id,
+                                    categoryId = null,
+                                    notes = "", // Keep notes empty for user
+                                    transactionType = potentialTxn.transactionType,
+                                    sourceSmsId = potentialTxn.sourceSmsId,
+                                    sourceSmsHash = potentialTxn.sourceSmsHash,
+                                    // --- UPDATED: Set the source for auto-imports ---
+                                    source = "Auto-Imported"
+                                )
+                                // The insert method returns the ID of the new row
+                                val newTransactionId = transactionDao.insert(newTransaction)
+                                Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
+
+                                // --- UPDATED: Show informational notification ---
+                                if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                                    NotificationHelper.showAutoSaveConfirmationNotification(context, newTransaction.copy(id = newTransactionId.toInt()))
+                                }
+
+                            } else {
+                                Log.e(TAG, "Failed to find or create an account for the transaction.")
+                            }
                         }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error processing SMS", e)
                 } finally {
                     pendingResult.finish()
-                    Log.d(TAG, "Pending result finished.")
                 }
             }
         }
@@ -9603,9 +9894,46 @@ import com.google.gson.Gson
 import java.net.URLEncoder
 
 object NotificationHelper {
-    // --- FIX: The deep link URI now points to a more specific path for direct approval ---
-    private const val DEEP_LINK_URI = "app://finlight.pm.io/approve_sms"
+    private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
+    // --- NEW: A deep link to directly edit a transaction ---
+    private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/edit_transaction"
 
+    // --- NEW: Informational notification for auto-saved transactions ---
+    fun showAutoSaveConfirmationNotification(
+        context: Context,
+        transaction: Transaction
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val editUri = "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri()
+        val intent = Intent(Intent.ACTION_VIEW, editUri).apply {
+            `package` = context.packageName
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            transaction.id, // Use transaction ID for unique pending intent
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Transaction Auto-Saved")
+            .setContentText("Saved ${transaction.description} (₹${"%.2f".format(transaction.amount)}). Tap to edit or categorize.")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .addAction(android.R.drawable.ic_menu_edit, "Edit", pendingIntent)
+
+        with(NotificationManagerCompat.from(context)) {
+            notify(transaction.id, builder.build())
+        }
+    }
+
+    // --- RETAINED: Notification for manual review flow ---
     fun showTransactionNotification(
         context: Context,
         potentialTransaction: PotentialTransaction,
@@ -9614,50 +9942,39 @@ object NotificationHelper {
             return
         }
 
-        // --- FIX: The entire PotentialTransaction is serialized into a single JSON string ---
-        // This is more robust than passing individual parameters in the URL.
         val potentialTxnJson = Gson().toJson(potentialTransaction)
         val encodedJson = URLEncoder.encode(potentialTxnJson, "UTF-8")
+        val approveUri = "$DEEP_LINK_URI_APPROVE?potentialTxnJson=$encodedJson".toUri()
 
-        // --- FIX: The URI now uses the new path and passes the JSON object ---
-        val approveUri = "$DEEP_LINK_URI?potentialTxnJson=$encodedJson".toUri()
+        val intent = Intent(Intent.ACTION_VIEW, approveUri).apply {
+            `package` = context.packageName
+        }
 
-        val intent =
-            Intent(Intent.ACTION_VIEW, approveUri).apply {
-                `package` = context.packageName
-            }
-
-        val pendingIntent =
-            PendingIntent.getActivity(
-                context,
-                potentialTransaction.sourceSmsId.toInt(),
-                intent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            potentialTransaction.sourceSmsId.toInt(),
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
 
         val notificationIcon = android.R.drawable.ic_dialog_info
-
         val typeText = potentialTransaction.transactionType.replaceFirstChar { it.uppercase() }
-        val bigText = "$typeText of ₹${"%.2f".format(
-            potentialTransaction.amount,
-        )} from ${potentialTransaction.merchantName ?: "Unknown Sender"} detected. Tap to add this to your transaction history."
+        val bigText = "$typeText of ₹${"%.2f".format(potentialTransaction.amount)} from ${potentialTransaction.merchantName ?: "Unknown Sender"} detected. Tap to add."
 
-        val builder =
-            NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
-                .setSmallIcon(notificationIcon)
-                .setContentTitle("New Transaction Found")
-                .setContentText("Tap to review and categorize a transaction from ${potentialTransaction.merchantName ?: "Unknown Sender"}.")
-                .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .addAction(notificationIcon, "Review & Categorize", pendingIntent)
+        val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(notificationIcon)
+            .setContentTitle("New Transaction Found")
+            .setContentText("Tap to review a transaction from ${potentialTransaction.merchantName ?: "Unknown Sender"}.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .addAction(notificationIcon, "Review & Categorize", pendingIntent)
 
         with(NotificationManagerCompat.from(context)) {
             notify(potentialTransaction.sourceSmsId.toInt(), builder.build())
         }
     }
-
     fun showDailyReportNotification(
         context: Context,
         totalExpenses: Double,
@@ -9744,6 +10061,9 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                     "Repository Flow Emitted. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}",
                 )
             }
+
+    // --- NEW: Expose the new limited query for the dashboard ---
+    val recentTransactions: Flow<List<TransactionDetails>> = transactionDao.getRecentTransactionDetails()
 
     fun getAllSmsHashes(): Flow<List<String>> {
         return transactionDao.getAllSmsHashes()
@@ -9856,16 +10176,15 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-/**
- * ViewModel for the Dashboard screen.
- * This class is now testable because its dependencies are provided via the constructor.
- */
 class DashboardViewModel(
     private val transactionRepository: TransactionRepository,
     private val accountRepository: AccountRepository,
     private val budgetDao: BudgetDao,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
+    val userName: StateFlow<String>
+    val profilePictureUri: StateFlow<String?>
+
     val netWorth: StateFlow<Double>
     val monthlyIncome: StateFlow<Double>
     val monthlyExpenses: StateFlow<Double>
@@ -9874,11 +10193,23 @@ class DashboardViewModel(
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
     val safeToSpendPerDay: StateFlow<Float>
-
-    // --- NEW: Expose the list of accounts with their balances ---
     val accountsSummary: StateFlow<List<AccountWithBalance>>
 
     init {
+        userName = settingsRepository.getUserName()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = "User"
+            )
+
+        profilePictureUri = settingsRepository.getProfilePictureUri()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = null
+            )
+
         val calendar = Calendar.getInstance()
         val monthStart =
             calendar.apply {
@@ -9900,6 +10231,7 @@ class DashboardViewModel(
             }.timeInMillis
 
         val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         monthlyIncome =
             transactionsThisMonth.map { transactions ->
@@ -9939,20 +10271,15 @@ class DashboardViewModel(
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
         recentTransactions =
-            transactionRepository.allTransactions.map { it.take(5) }
+            transactionRepository.recentTransactions
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        // --- PERFORMANCE OPTIMIZATION ---
-        // Instead of calculating budget spending in the ViewModel, we now use the new,
-        // efficient query from the BudgetDao. This offloads the heavy work to the database.
         val currentMonth = calendar.get(Calendar.MONTH) + 1
         val currentYear = calendar.get(Calendar.YEAR)
         val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
         budgetStatus = budgetDao.getBudgetsWithSpendingForMonth(yearMonthString, currentMonth, currentYear)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-
-        // --- NEW: Initialize the new StateFlow ---
         accountsSummary =
             accountRepository.accountsWithBalance
                 .stateIn(
@@ -10428,10 +10755,8 @@ import org.junit.Test
 
 /**
  * Unit tests for the SmsParser utility.
- * These tests run on the local JVM and do not require an Android device or emulator.
  */
 class SmsParserTest {
-    // A mock map of user-defined mappings, empty for these tests.
     private val emptyMappings = emptyMap<String, String>()
 
     @Test
@@ -10470,17 +10795,81 @@ class SmsParserTest {
         assertNull("Parser should return null for a non-financial message", result)
     }
 
-    @Test
-    fun `test parses HDFC debit message with complex merchant name`() {
-        val smsBody = "Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on 2025-06-22."
-        val mockSms = SmsMessage(id = 4L, sender = "JD-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+    // --- NEW TESTS FOR THE PROVIDED EXAMPLES ---
 
+    @Test
+    fun `test parses SBI Credit Card message`() {
+        val smsBody = "Rs.267.00 spent on your SBI Credit Card ending with 3201 at HALLI THOTA on 29-06-25 via UPI (Ref No. 1231230123). Trxn. Not done by you? Report at https://sbicards.com/Dispute)"
+        val mockSms = SmsMessage(id = 4L, sender = "VM-SBICRD", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNotNull(result)
+        assertEquals(267.00, result?.amount)
+        assertEquals("expense", result?.transactionType)
+        assertEquals("HALLI THOTA", result?.merchantName)
+        assertNotNull(result?.potentialAccount)
+        assertEquals("SBI - xx3201", result?.potentialAccount?.formattedName)
+        assertEquals("Credit Card", result?.potentialAccount?.accountType)
+    }
+
+    @Test
+    fun `test parses ICICI debit message`() {
+        val smsBody = "ICICI Bank Acct XX823 debited for Rs 240.00 on 21-Jun-25; DAKSHIN CAFE credited. UPI: 552200221100. Call 18002661 for dispute."
+        val mockSms = SmsMessage(id = 5L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNotNull(result)
+        assertEquals(240.00, result?.amount)
+        assertEquals("expense", result?.transactionType)
+        assertEquals("DAKSHIN CAFE", result?.merchantName)
+        assertNotNull(result?.potentialAccount)
+        assertEquals("ICICI Bank - xx823", result?.potentialAccount?.formattedName)
+        assertEquals("Savings Account", result?.potentialAccount?.accountType)
+    }
+
+    @Test
+    fun `test parses HDFC card message`() {
+        val smsBody = "[JD-HDFCBK-S] Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on2025-06-22:08:01:24.Not You> To Block+Reissue Call 1800232323232/SMS BLOCK CC 9922 to 123098123"
+        val mockSms = SmsMessage(id = 6L, sender = "JD-HDFCBK", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings)
 
         assertNotNull(result)
         assertEquals(388.19, result?.amount)
         assertEquals("expense", result?.transactionType)
-        assertEquals("MC DONALDS", result?.merchantName) // Note: underscore is cleaned up
+        assertEquals("MC DONALDS", result?.merchantName)
+        assertNotNull(result?.potentialAccount)
+        assertEquals("HDFC Bank - xx9922", result?.potentialAccount?.formattedName)
+        assertEquals("Card", result?.potentialAccount?.accountType)
+    }
+
+    @Test
+    fun `test parses Pluxee Meal Card message`() {
+        val smsBody = "[VD-PLUXEE-S] Rs.40.00 spent from Pluxee. Meal Card wallet, card no.xx7809 on 22-06-2025 14:46:11 at KITCHEN AFF . Avl bal Rs.3402.65. Not you call 213091823"
+        val mockSms = SmsMessage(id = 7L, sender = "VD-PLUXEE", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNotNull(result)
+        assertEquals(40.00, result?.amount)
+        assertEquals("expense", result?.transactionType)
+        assertEquals("KITCHEN AFF", result?.merchantName)
+        assertNotNull(result?.potentialAccount)
+        assertEquals("Pluxee - xx7809", result?.potentialAccount?.formattedName)
+        assertEquals("Meal Card wallet", result?.potentialAccount?.accountType)
+    }
+
+    @Test
+    fun `test parses ICICI credit message with tricky format`() {
+        val smsBody = "Dear Customer, Acct XX823 is credited with Rs 6000.00 on 26-Jun-25 from GANGA MANGA. UPI:5577822323232-ICICI Bank"
+        val mockSms = SmsMessage(id = 8L, sender = "QP-ICIBNK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNotNull(result)
+        assertEquals(6000.00, result?.amount)
+        assertEquals("income", result?.transactionType)
+        assertEquals("GANGA MANGA", result?.merchantName)
+        assertNotNull(result?.potentialAccount)
+        assertEquals("ICICI Bank - xx823", result?.potentialAccount?.formattedName)
+        assertEquals("Savings Account", result?.potentialAccount?.accountType)
     }
 }
 -e 

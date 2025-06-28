@@ -11,7 +11,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -19,8 +23,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -34,6 +41,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.ui.screens.*
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
@@ -170,10 +178,10 @@ fun LockScreen(onUnlock: () -> Unit) {
 @Composable
 fun MainAppScreen() {
     val navController = rememberNavController()
-    // --- NEW: Get an instance of the DashboardViewModel ---
     val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application))
-    // --- NEW: Collect the user name state ---
     val userName by dashboardViewModel.userName.collectAsState()
+    // --- NEW: Collect the profile picture URI state ---
+    val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
 
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
@@ -187,9 +195,8 @@ fun MainAppScreen() {
     val currentRoute = currentDestination?.route
     val baseCurrentRoute = currentRoute?.substringBefore("?")
 
-    // --- UPDATED: Title logic is now dynamic ---
     val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
-        "Hi, $userName!" // Show greeting on dashboard
+        "Hi, $userName!"
     } else {
         screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
     }
@@ -207,9 +214,31 @@ fun MainAppScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(currentTitle) },
+                title = {
+                    // --- UPDATED: Conditionally show the greeting text ---
+                    if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
+                        Text(currentTitle)
+                    } else {
+                        Text(currentTitle)
+                    }
+                },
                 navigationIcon = {
-                    if (!showBottomBar) {
+                    // --- UPDATED: Show profile picture on dashboard, back arrow otherwise ---
+                    if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
+                        AsyncImage(
+                            model = profilePictureUri,
+                            contentDescription = "User Profile Picture",
+                            placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                            error = painterResource(id = R.drawable.ic_launcher_foreground),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .padding(start = 16.dp)
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { navController.navigate(BottomNavItem.Profile.route) }
+                        )
+                    } else if (!showBottomBar) {
                         IconButton(onClick = { navController.popBackStack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
@@ -271,7 +300,6 @@ fun MainAppScreen() {
         AppNavHost(
             navController = navController,
             modifier = Modifier.padding(innerPadding),
-            // --- NEW: Pass the ViewModel instance to the NavHost ---
             dashboardViewModel = dashboardViewModel
         )
     }
@@ -317,8 +345,6 @@ fun AppNavHost(
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
         composable("search_screen") { SearchScreen(navController) }
-
-        // --- RESTORED: Routes for the manual SMS review flow ---
         composable(
             route = "review_sms_screen",
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
@@ -348,7 +374,6 @@ fun AppNavHost(
             arguments = listOf(
                 navArgument("transactionId") { type = NavType.IntType }
             ),
-            // --- UPDATED: Add deep link to handle notifications for auto-saved transactions ---
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/edit_transaction/{transactionId}" })
         ) { backStackEntry ->
             val arguments = requireNotNull(backStackEntry.arguments)
