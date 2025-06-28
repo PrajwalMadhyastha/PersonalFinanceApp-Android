@@ -14,6 +14,9 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
+    // --- NEW: Expose the new limited query for the dashboard ---
+    val recentTransactions: Flow<List<TransactionDetails>> = transactionDao.getRecentTransactionDetails()
+
     fun getAllSmsHashes(): Flow<List<String>> {
         return transactionDao.getAllSmsHashes()
     }

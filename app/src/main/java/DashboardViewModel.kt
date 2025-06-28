@@ -13,7 +13,6 @@ import java.util.Locale
 
 /**
  * ViewModel for the Dashboard screen.
- * This class is now testable because its dependencies are provided via the constructor.
  */
 class DashboardViewModel(
     private val transactionRepository: TransactionRepository,
@@ -21,10 +20,7 @@ class DashboardViewModel(
     private val budgetDao: BudgetDao,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
-
-    // --- NEW: StateFlow to hold the user's name ---
     val userName: StateFlow<String>
-
     val netWorth: StateFlow<Double>
     val monthlyIncome: StateFlow<Double>
     val monthlyExpenses: StateFlow<Double>
@@ -36,7 +32,6 @@ class DashboardViewModel(
     val accountsSummary: StateFlow<List<AccountWithBalance>>
 
     init {
-        // --- NEW: Initialize the userName StateFlow ---
         userName = settingsRepository.getUserName()
             .stateIn(
                 scope = viewModelScope,
@@ -65,6 +60,7 @@ class DashboardViewModel(
             }.timeInMillis
 
         val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         monthlyIncome =
             transactionsThisMonth.map { transactions ->
@@ -103,8 +99,9 @@ class DashboardViewModel(
                 list.sumOf { it.balance }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
+        // --- FINAL PERFORMANCE FIX: Use the new, efficient, limited query ---
         recentTransactions =
-            transactionRepository.allTransactions.map { it.take(5) }
+            transactionRepository.recentTransactions
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         val currentMonth = calendar.get(Calendar.MONTH) + 1
@@ -112,7 +109,6 @@ class DashboardViewModel(
         val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
         budgetStatus = budgetDao.getBudgetsWithSpendingForMonth(yearMonthString, currentMonth, currentYear)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
 
         accountsSummary =
             accountRepository.accountsWithBalance

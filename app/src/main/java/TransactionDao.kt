@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
+
+    // --- NEW: Highly efficient query for the dashboard's "Recent Transactions" card ---
+    // This fetches only the top 5 transactions directly from the database.
     @Query(
         """
         SELECT
@@ -19,11 +22,29 @@ interface TransactionDao {
             categories AS C ON T.categoryId = C.id
         ORDER BY
             T.date DESC
-    """,
+        LIMIT 5
+    """
+    )
+    fun getRecentTransactionDetails(): Flow<List<TransactionDetails>>
+
+    @Query(
+        """
+        SELECT
+            T.*,
+            A.name as accountName,
+            C.name as categoryName
+        FROM
+            transactions AS T
+        LEFT JOIN
+            accounts AS A ON T.accountId = A.id
+        LEFT JOIN
+            categories AS C ON T.categoryId = C.id
+        ORDER BY
+            T.date DESC
+    """
     )
     fun getAllTransactions(): Flow<List<TransactionDetails>>
 
-    // --- BUG FIX: Add a new query to efficiently get all existing SMS hashes for de-duplication ---
     @Query("SELECT sourceSmsHash FROM transactions WHERE sourceSmsHash IS NOT NULL")
     fun getAllSmsHashes(): Flow<List<String>>
 
@@ -42,7 +63,7 @@ interface TransactionDao {
         WHERE T.date BETWEEN :startDate AND :endDate
         ORDER BY
             T.date DESC
-    """,
+    """
     )
     fun getTransactionDetailsForRange(
         startDate: Long,
@@ -59,7 +80,7 @@ interface TransactionDao {
         LEFT JOIN categories AS C ON T.categoryId = C.id
         WHERE T.accountId = :accountId
         ORDER BY T.date DESC
-    """,
+    """
     )
     fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>>
 
@@ -83,7 +104,7 @@ interface TransactionDao {
         SELECT SUM(T.amount) FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate AND T.transactionType = 'expense'
-    """,
+    """
     )
     fun getSpendingForCategory(
         categoryName: String,
@@ -99,7 +120,7 @@ interface TransactionDao {
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
         GROUP BY C.name
         ORDER BY totalAmount ASC
-    """,
+    """
     )
     fun getSpendingByCategoryForMonth(
         startDate: Long,
@@ -116,7 +137,7 @@ interface TransactionDao {
         WHERE date >= :startDate
         GROUP BY monthYear
         ORDER BY monthYear ASC
-    """,
+    """
     )
     fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>>
 
@@ -134,7 +155,7 @@ interface TransactionDao {
             (:startDate IS NULL OR t.date >= :startDate) AND
             (:endDate IS NULL OR t.date <= :endDate)
         ORDER BY t.date DESC
-    """,
+    """
     )
     suspend fun searchTransactions(
         keyword: String,

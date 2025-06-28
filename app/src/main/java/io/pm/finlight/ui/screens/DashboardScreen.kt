@@ -67,16 +67,17 @@ fun DashboardScreen(
                     label = "Monthly Income",
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
-                    // --- UPDATED: Correct navigation logic for top-level destination ---
+                    // --- BUG FIX: Use the correct navigation action to switch tabs and pass arguments ---
                     onClick = {
-                        navController.navigate("transaction_list?type=income") {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        navController.navigate("${BottomNavItem.Transactions.route}?type=income") {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
                             launchSingleTop = true
                             restoreState = true
                         }
                     }
                 )
-                // --- CORRECT: This navigates to a detail screen, not a main section, so the simple navigate call is correct.
                 StatCard(
                     label = "Total Budget",
                     amount = overallBudget,
@@ -87,10 +88,12 @@ fun DashboardScreen(
                     label = "Monthly Expenses",
                     amount = monthlyExpenses.toFloat(),
                     modifier = Modifier.weight(1f),
-                    // --- UPDATED: Correct navigation logic for top-level destination ---
+                    // --- BUG FIX: Use the correct navigation action to switch tabs and pass arguments ---
                     onClick = {
-                        navController.navigate("transaction_list?type=expense") {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        navController.navigate("${BottomNavItem.Transactions.route}?type=expense") {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
                             launchSingleTop = true
                             restoreState = true
                         }
@@ -101,7 +104,6 @@ fun DashboardScreen(
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 FilledTonalButton(
-                    // --- UPDATED: Correct navigation logic for top-level destination ---
                     onClick = {
                         navController.navigate(BottomNavItem.Reports.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -116,7 +118,6 @@ fun DashboardScreen(
                     Text("View Trends")
                 }
                 FilledTonalButton(
-                    // --- UPDATED: Correct navigation logic for top-level destination ---
                     onClick = {
                         navController.navigate(BottomNavItem.Reports.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }

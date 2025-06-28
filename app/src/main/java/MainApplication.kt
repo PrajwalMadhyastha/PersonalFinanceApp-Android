@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import com.github.mikephil.charting.utils.Utils
 
 class MainApplication : Application() {
     companion object {
@@ -14,6 +15,9 @@ class MainApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // --- FIX: Initialize the MPAndroidChart library ---
+        Utils.init(this)
+
         createTransactionNotificationChannel()
         createDailyReportNotificationChannel()
         createSummaryNotificationChannel()
@@ -49,7 +53,6 @@ class MainApplication : Application() {
         }
     }
 
-    // --- ADDED: Function to create the new weekly summary channel ---
     private fun createSummaryNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "Weekly Summaries"
