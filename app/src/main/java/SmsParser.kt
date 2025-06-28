@@ -13,16 +13,11 @@ object SmsParser {
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
 
-    // --- UPDATED: Added a more specific pattern at the top of the list to handle multi-word account types ---
     private val ACCOUNT_PATTERNS =
         listOf(
-            // Pattern for complex types like "SBI Credit Card ending with 3201"
             "(?:on your|on)\\s+([A-Za-z0-9\\s]+?)\\s+((?:Credit|Meal|Savings)?\\s*(?:Card|Account|Acct))\\s+(?:ending with|ending in|xx)?\\s*(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            // Fallback for simple types like "HDFC Bank Card 9922"
             "on\\s+([A-Za-z0-9\\s]+?)\\s+(card|account|acct|a/c)\\s+(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            // Pattern for "Acct XX823"
             "(?:acct|account|a/c)\\s+xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            // Pattern for "card no.xx7809"
             "card no\\.\\s*xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE)
         )
 
@@ -50,14 +45,13 @@ object SmsParser {
                             accountType = "Savings Account"
                         )
                     }
-                    // --- UPDATED: This block now correctly handles the new, more specific regex ---
                     4 -> {
                         val bankName = match.groupValues[1].trim()
-                        val type = match.groupValues[2].trim() // Captures the full type, e.g., "Credit Card"
+                        val type = match.groupValues[2].trim()
                         val number = match.groupValues[3]
                         PotentialAccount(
                             formattedName = "$bankName - xx$number",
-                            accountType = type // Assign the full captured type directly
+                            accountType = type
                         )
                     }
                     else -> null
@@ -104,6 +98,19 @@ object SmsParser {
 
         val potentialAccount = parseAccount(messageBody, sms.sender)
 
+        // --- FINAL FIX: Normalize both the sender and the body for a stable hash ---
+        val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
+        val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
+        val smsHash = (normalizedSender + normalizedBody).hashCode().toString()
+
+        // --- DIAGNOSTIC LOGGING ---
+        Log.d("DeDupeDebug", "--- PARSING ---")
+        Log.d("DeDupeDebug", "Raw Sender: ${sms.sender} -> Normalized Sender: $normalizedSender")
+        Log.d("DeDupeDebug", "Normalized Body: '$normalizedBody'")
+        Log.d("DeDupeDebug", "Generated Hash: $smsHash")
+        Log.d("DeDupeDebug", "---------------")
+
+
         return PotentialTransaction(
             sourceSmsId = sms.id,
             smsSender = sms.sender,
@@ -111,7 +118,8 @@ object SmsParser {
             transactionType = transactionType,
             merchantName = merchantName,
             originalMessage = messageBody,
-            potentialAccount = potentialAccount
+            potentialAccount = potentialAccount,
+            sourceSmsHash = smsHash
         )
     }
 }

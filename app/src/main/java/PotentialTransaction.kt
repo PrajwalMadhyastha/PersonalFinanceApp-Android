@@ -19,4 +19,6 @@ data class PotentialTransaction(
     val originalMessage: String,
     // --- NEW: Add a field for the automatically parsed account details ---
     val potentialAccount: PotentialAccount? = null,
+    // --- BUG FIX: Add a stable hash to uniquely identify an SMS for de-duplication ---
+    val sourceSmsHash: String? = null,
 )

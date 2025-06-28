@@ -280,6 +280,8 @@ fun AddTransactionScreen(
                                     date = selectedDateTime.timeInMillis,
                                     transactionType = transactionType,
                                     sourceSmsId = null,
+                                    // --- FIX: Pass null for the new hash parameter ---
+                                    sourceSmsHash = null
                                 )
                             if (success) {
                                 navController.popBackStack()

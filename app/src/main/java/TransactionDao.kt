@@ -1,8 +1,3 @@
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/TransactionDao.kt
-// PURPOSE: Data Access Object for Transactions.
-// NOTE: Added methods for managing the many-to-many relationship with Tags.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -27,6 +22,10 @@ interface TransactionDao {
     """,
     )
     fun getAllTransactions(): Flow<List<TransactionDetails>>
+
+    // --- BUG FIX: Add a new query to efficiently get all existing SMS hashes for de-duplication ---
+    @Query("SELECT sourceSmsHash FROM transactions WHERE sourceSmsHash IS NOT NULL")
+    fun getAllSmsHashes(): Flow<List<String>>
 
     @Query(
         """
@@ -159,7 +158,6 @@ interface TransactionDao {
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()
 
-    // --- UPDATED: Insert now returns the ID of the new row ---
     @Insert
     suspend fun insert(transaction: Transaction): Long
 
@@ -169,7 +167,6 @@ interface TransactionDao {
     @Delete
     suspend fun delete(transaction: Transaction)
 
-    // --- NEW: Methods for managing tags ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addTagsToTransaction(crossRefs: List<TransactionTagCrossRef>)
 

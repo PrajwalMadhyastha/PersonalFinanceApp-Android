@@ -41,4 +41,6 @@ data class Transaction(
     // --- NEW: Added to distinguish between income and expense ---
     val transactionType: String = "expense", // Default to 'expense'
     val sourceSmsId: Long? = null,
+    // --- BUG FIX: Add a stable hash to uniquely identify an SMS for de-duplication ---
+    val sourceSmsHash: String? = null,
 )

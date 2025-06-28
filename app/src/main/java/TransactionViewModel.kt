@@ -1,8 +1,3 @@
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/TransactionViewModel.kt
-// PURPOSE: Handles business logic for transactions.
-// NOTE: Now contains the complete logic for approving SMS transactions.
-// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -20,7 +15,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
 
-    // --- FIX: Made the database instance a class property to be accessible in other functions ---
     private val db = AppDatabase.getInstance(application)
 
     val allTransactions: StateFlow<List<TransactionDetails>>
@@ -108,7 +102,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                // Step 1: Find or create the account.
                 val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                 val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
 
@@ -117,7 +110,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     Log.d("ViewModel_Approve", "Account '$accountName' not found. Creating new one.")
                     val newAccount = Account(name = accountName, type = accountType)
                     accountRepository.insert(newAccount)
-                    // Re-fetch to be certain
                     account = db.accountDao().findByName(accountName)
                 }
 
@@ -126,19 +118,19 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     return@withContext false
                 }
 
-                // Step 2: Create the transaction object.
                 val newTransaction = Transaction(
                     description = description,
                     categoryId = categoryId,
                     amount = potentialTxn.amount,
                     date = System.currentTimeMillis(),
-                    accountId = account.id, // This is now safe
+                    accountId = account.id,
                     notes = notes,
                     transactionType = potentialTxn.transactionType,
-                    sourceSmsId = potentialTxn.sourceSmsId
+                    sourceSmsId = potentialTxn.sourceSmsId,
+                    // --- BUG FIX: Persist the stable hash to the database. ---
+                    sourceSmsHash = potentialTxn.sourceSmsHash
                 )
 
-                // Step 3: Insert transaction and tags.
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
                 Log.d("ViewModel_Approve", "Successfully approved and saved transaction.")
                 true
@@ -159,6 +151,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         date: Long,
         transactionType: String,
         sourceSmsId: Long?,
+        sourceSmsHash: String? // Added for consistency, will be null for manual entries
     ): Boolean {
         _validationError.value = null
 
@@ -182,6 +175,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 notes = notes,
                 transactionType = transactionType,
                 sourceSmsId = sourceSmsId,
+                sourceSmsHash = sourceSmsHash
             )
         viewModelScope.launch {
             transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)

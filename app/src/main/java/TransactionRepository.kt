@@ -1,8 +1,3 @@
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/TransactionRepository.kt
-// PURPOSE: Centralizes data operations.
-// NOTE: Now includes logic to handle saving transactions with their associated tags.
-// =================================================================================
 package io.pm.finlight
 
 import android.util.Log
@@ -18,6 +13,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                     "Repository Flow Emitted. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}",
                 )
             }
+
+    fun getAllSmsHashes(): Flow<List<String>> {
+        return transactionDao.getAllSmsHashes()
+    }
 
     fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>> {
         return transactionDao.getTransactionsForAccountDetails(accountId)
@@ -72,12 +71,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.countTransactionsForCategory(categoryId)
     }
 
-    // --- NEW: Expose DAO method for getting tags for a specific transaction ---
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
         return transactionDao.getTagsForTransaction(transactionId)
     }
 
-    // --- NEW: A transactional method to insert a transaction and its tags ---
     suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
         val transactionId = transactionDao.insert(transaction).toInt()
         if (tags.isNotEmpty()) {
@@ -88,13 +85,9 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         }
     }
 
-    // --- NEW: A transactional method to update a transaction and its tags ---
     suspend fun updateTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
-        // First, update the core transaction object
         transactionDao.update(transaction)
-        // Then, clear all existing tag associations for this transaction
         transactionDao.clearTagsForTransaction(transaction.id)
-        // Finally, if there are any selected tags, insert the new associations
         if (tags.isNotEmpty()) {
             val crossRefs = tags.map { tag ->
                 TransactionTagCrossRef(transactionId = transaction.id, tagId = tag.id)

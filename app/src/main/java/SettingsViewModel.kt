@@ -335,25 +335,34 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 val existingMappings = withContext(Dispatchers.IO) {
                     merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                 }
-                val existingSmsIds = withContext(Dispatchers.IO) {
-                    transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
+
+                val existingSmsHashes = withContext(Dispatchers.IO) {
+                    transactionRepository.getAllSmsHashes().first().toSet()
                 }
+
+                // --- DIAGNOSTIC LOGGING ---
+                Log.d("DeDupeDebug", "--- SCAN INBOX ---")
+                Log.d("DeDupeDebug", "Found ${existingSmsHashes.size} existing hashes in DB.")
+                Log.d("DeDupeDebug", "Hashes: $existingSmsHashes")
+                Log.d("DeDupeDebug", "------------------")
+
 
                 val parsedList = withContext(Dispatchers.Default) {
-                    rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
+                    rawMessages.mapNotNull { sms ->
+                        // --- DIAGNOSTIC LOGGING ---
+                        Log.d("DeDupeDebug", "--- SCAN INBOX: Processing Raw SMS ---")
+                        Log.d("DeDupeDebug", "Body: '${sms.body}'")
+                        Log.d("DeDupeDebug", "------------------------------------")
+                        SmsParser.parse(sms, existingMappings)
+                    }
                 }
 
-                // ============================ FIX START ============================
-                // The block of code that automatically created accounts during the scan has been removed.
-                // This was the source of the race condition. Account creation is now handled exclusively
-                // in `TransactionViewModel.approveSmsTransaction` when the user clicks "Save".
-                // This ensures the database write happens sequentially before the UI needs the new data.
-                // ============================= FIX END =============================
+                val newPotentialTransactions = parsedList.filter { potential ->
+                    !existingSmsHashes.contains(potential.sourceSmsHash)
+                }
 
-                val newPotentialTransactions = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
                 _potentialTransactions.value = newPotentialTransactions
 
-                Log.d("AutoAccount_Debug", "Scan complete. Sending Success event with count: ${newPotentialTransactions.size}")
                 _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Error during SMS scan", e)

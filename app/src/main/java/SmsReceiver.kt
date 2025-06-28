@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Telephony
+import android.telephony.SmsMessage as TelephonySmsMessage
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.CoroutineScope
@@ -29,39 +30,32 @@ class SmsReceiver : BroadcastReceiver() {
                     val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
                     Log.d(TAG, "Received ${messages.size} message parts.")
 
-                    val db = AppDatabase.getInstance(context)
-                    val transactionRepository = TransactionRepository(db.transactionDao())
-                    val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
+                    val messagesBySender = messages.groupBy { it.originatingAddress }
 
-                    // --- CORRECTED: Use the same de-duplication logic as the manual scan ---
-                    // 1. Get existing mappings and already imported SMS IDs from the database
-                    val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
-                    val existingSmsIds =
-                        transactionRepository.allTransactions.first()
-                            .mapNotNull { transactionDetail ->
-                                transactionDetail.transaction.notes?.let { notes ->
-                                    val match = "sms_id:(\\d+)".toRegex().find(notes)
-                                    match?.groups?.get(1)?.value?.toLongOrNull()
-                                }
-                            }.toSet()
+                    for ((sender, parts) in messagesBySender) {
+                        val fullBody = parts.joinToString("") { it.messageBody }
+                        val firstMessage = parts.first()
+                        val smsId = firstMessage.timestampMillis
 
-                    // 2. Process each incoming message
-                    for (sms in messages) {
-                        // In modern Android, the intent contains the SMS ID. We need to query for it.
-                        // For simplicity in the receiver, we will continue to use timestamp as a proxy for the ID.
-                        // A more complex implementation might query the ContentResolver again here.
-                        val smsId = sms.timestampMillis
-                        val sender = sms.originatingAddress ?: "Unknown"
+                        // --- DIAGNOSTIC LOGGING ---
+                        Log.d("DeDupeDebug", "--- RECEIVER ---")
+                        Log.d("DeDupeDebug", "Receiver processing message from: $sender")
+                        Log.d("DeDupeDebug", "Combined Body: '$fullBody'")
+                        Log.d("DeDupeDebug", "----------------")
 
-                        Log.d(TAG, "Processing SMS with approximate ID (timestamp): $smsId from $sender")
 
-                        // NOTE: This de-duplication is not perfect because we don't have the real _ID here.
-                        // We check against timestamp, which is a good heuristic.
-                        if (!existingSmsIds.contains(smsId)) {
-                            val smsMessage = SmsMessage(id = smsId, sender = sender, body = sms.messageBody, date = smsId)
-                            val potentialTransaction = SmsParser.parse(smsMessage, existingMappings)
+                        val db = AppDatabase.getInstance(context)
+                        val transactionRepository = TransactionRepository(db.transactionDao())
+                        val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
 
-                            if (potentialTransaction != null) {
+                        val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
+                        val existingSmsHashes = transactionRepository.getAllSmsHashes().first().toSet()
+
+                        val smsMessage = SmsMessage(id = smsId, sender = sender ?: "Unknown", body = fullBody, date = smsId)
+                        val potentialTransaction = SmsParser.parse(smsMessage, existingMappings)
+
+                        if (potentialTransaction != null) {
+                            if (!existingSmsHashes.contains(potentialTransaction.sourceSmsHash)) {
                                 Log.d(TAG, "New potential transaction found: $potentialTransaction")
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                                     NotificationHelper.showTransactionNotification(context, potentialTransaction)
@@ -70,10 +64,10 @@ class SmsReceiver : BroadcastReceiver() {
                                     Log.w(TAG, "Post Notifications permission not granted.")
                                 }
                             } else {
-                                Log.d(TAG, "SMS did not parse to a transaction.")
+                                Log.d(TAG, "SMS with hash: ${potentialTransaction.sourceSmsHash} is a duplicate. Skipping.")
                             }
                         } else {
-                            Log.d(TAG, "SMS with ID: $smsId appears to be a duplicate. Skipping.")
+                            Log.d(TAG, "SMS from $sender did not parse to a transaction.")
                         }
                     }
                 } catch (e: Exception) {
