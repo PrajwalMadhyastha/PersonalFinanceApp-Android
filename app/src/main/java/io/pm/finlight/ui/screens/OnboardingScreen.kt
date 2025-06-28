@@ -24,8 +24,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // --- UPDATED: Page count is now 6 as Account Setup is removed ---
-    val pagerState = rememberPagerState { 6 }
+    // --- UPDATED: Page count is now 7 to include the new name page ---
+    val pagerState = rememberPagerState { 7 }
     val scope = rememberCoroutineScope()
 
     val onNextClicked: () -> Unit = {
@@ -53,14 +53,15 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
                 .padding(innerPadding),
             userScrollEnabled = false
         ) { page ->
-            // --- UPDATED: AccountSetupPage (page 1) has been removed ---
+            // --- UPDATED: Added UserNamePage at index 1 ---
             when (page) {
                 0 -> WelcomePage()
-                1 -> CategorySetupPage(viewModel)
-                2 -> BudgetSetupPage(viewModel)
-                3 -> SmsPermissionPage(onPermissionResult = onNextClicked)
-                4 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
-                5 -> CompletionPage()
+                1 -> UserNamePage(viewModel)
+                2 -> CategorySetupPage(viewModel)
+                3 -> BudgetSetupPage(viewModel)
+                4 -> SmsPermissionPage(onPermissionResult = onNextClicked)
+                5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
+                6 -> CompletionPage()
             }
         }
     }

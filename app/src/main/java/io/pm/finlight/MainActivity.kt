@@ -170,6 +170,11 @@ fun LockScreen(onUnlock: () -> Unit) {
 @Composable
 fun MainAppScreen() {
     val navController = rememberNavController()
+    // --- NEW: Get an instance of the DashboardViewModel ---
+    val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application))
+    // --- NEW: Collect the user name state ---
+    val userName by dashboardViewModel.userName.collectAsState()
+
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
@@ -179,17 +184,20 @@ fun MainAppScreen() {
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
-
-    // --- FIX: Use a more robust check that handles arguments correctly ---
     val currentRoute = currentDestination?.route
     val baseCurrentRoute = currentRoute?.substringBefore("?")
-    val currentTitle = screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
+
+    // --- UPDATED: Title logic is now dynamic ---
+    val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
+        "Hi, $userName!" // Show greeting on dashboard
+    } else {
+        screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
+    }
+
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
-
-
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
-        baseCurrentRoute, // Also show FAB on filtered transaction list
+        baseCurrentRoute,
         "account_list",
         "budget_screen",
         "recurring_transactions"
@@ -220,7 +228,6 @@ fun MainAppScreen() {
             if (showBottomBar) {
                 NavigationBar {
                     bottomNavItems.forEach { screen ->
-                        // --- FIX: Use NavDestination.hierarchy for a robust selection check ---
                         val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
                         NavigationBarItem(
                             icon = { Icon(screen.icon, contentDescription = screen.label) },
@@ -241,7 +248,7 @@ fun MainAppScreen() {
         floatingActionButton = {
             if (showFab) {
                 FloatingActionButton(onClick = {
-                    when (baseCurrentRoute) { // Use base route to determine FAB action
+                    when (baseCurrentRoute) {
                         BottomNavItem.Dashboard.route, BottomNavItem.Transactions.route -> {
                             navController.navigate("add_transaction")
                         }
@@ -261,18 +268,29 @@ fun MainAppScreen() {
             }
         }
     ) { innerPadding ->
-        AppNavHost(navController = navController, modifier = Modifier.padding(innerPadding))
+        AppNavHost(
+            navController = navController,
+            modifier = Modifier.padding(innerPadding),
+            // --- NEW: Pass the ViewModel instance to the NavHost ---
+            dashboardViewModel = dashboardViewModel
+        )
     }
 }
 
 
 @Composable
-fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) {
+fun AppNavHost(
+    navController: NavHostController,
+    modifier: Modifier = Modifier,
+    // --- NEW: Accept the DashboardViewModel instance ---
+    dashboardViewModel: DashboardViewModel
+) {
     val settingsViewModel: SettingsViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
     val accountViewModel: AccountViewModel = viewModel()
     val categoryViewModel: CategoryViewModel = viewModel()
     val budgetViewModel: BudgetViewModel = viewModel()
+    val profileViewModel: ProfileViewModel = viewModel()
 
     NavHost(
         navController = navController,
@@ -280,8 +298,7 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
         modifier = modifier
     ) {
         composable(BottomNavItem.Dashboard.route) {
-            val context = LocalContext.current.applicationContext as Application
-            val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(context))
+            // --- UPDATED: Pass the existing ViewModel instance ---
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }
         composable(
@@ -298,7 +315,7 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        composable(BottomNavItem.Profile.route) { ProfileScreen(navController) }
+        composable(BottomNavItem.Profile.route) { ProfileScreen(navController, profileViewModel) }
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
 

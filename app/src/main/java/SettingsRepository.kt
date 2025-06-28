@@ -27,6 +27,28 @@ class SettingsRepository(context: Context) {
         private const val KEY_DAILY_REPORT_ENABLED = "daily_report_enabled"
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
+        // --- NEW: Add a key for storing the user's name ---
+        private const val KEY_USER_NAME = "user_name"
+    }
+
+    // --- NEW: Function to save the user's name ---
+    fun saveUserName(name: String) {
+        prefs.edit().putString(KEY_USER_NAME, name).apply()
+    }
+
+    // --- NEW: Flow to read the user's name from SharedPreferences ---
+    fun getUserName(): Flow<String> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_USER_NAME) {
+                    trySend(sharedPreferences.getString(KEY_USER_NAME, "User") ?: "User")
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            // Emit the initial value, defaulting to "User" if not set.
+            trySend(prefs.getString(KEY_USER_NAME, "User") ?: "User")
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
     }
 
     fun hasSeenOnboarding(): Boolean {

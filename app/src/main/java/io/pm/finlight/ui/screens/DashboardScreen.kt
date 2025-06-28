@@ -39,6 +39,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
     budgetViewModel: BudgetViewModel,
 ) {
+    // --- userName is still collected in MainActivity, but we don't display it here anymore ---
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
     val monthlyExpenses by viewModel.monthlyExpenses.collectAsState()
@@ -52,6 +53,7 @@ fun DashboardScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        // --- REMOVED: The extra "Hi, user" Text composable is gone from here ---
         item {
             OverallBudgetCard(
                 totalBudget = overallBudget,
@@ -67,7 +69,6 @@ fun DashboardScreen(
                     modifier = Modifier.weight(1f),
                     onClick = { navController.navigate("transaction_list?type=income") }
                 )
-                // --- FIX: Make the "Total Budget" card navigate to the budget screen ---
                 StatCard(
                     label = "Total Budget",
                     amount = overallBudget,

@@ -21,18 +21,29 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import io.pm.finlight.ProfileViewModel
 import io.pm.finlight.R
 
 @Composable
-fun ProfileScreen(navController: NavController) {
+fun ProfileScreen(
+    navController: NavController,
+    // --- NEW: Inject the ProfileViewModel ---
+    viewModel: ProfileViewModel = viewModel()
+) {
+    // --- NEW: Collect the user name from the ViewModel ---
+    val userName by viewModel.userName.collectAsState()
+
     Column(modifier = Modifier.padding(16.dp)) {
-        // User Info Placeholder
+        // User Info Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(4.dp)
@@ -50,7 +61,8 @@ fun ProfileScreen(navController: NavController) {
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
-                    Text("User Name", style = MaterialTheme.typography.titleLarge)
+                    // --- UPDATED: Display the actual user name ---
+                    Text(userName, style = MaterialTheme.typography.titleLarge)
                     Text("user.email@pm.com", style = MaterialTheme.typography.bodyMedium)
                 }
             }

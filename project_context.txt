@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jun 28 12:52:45 IST 2025
+Generated on: Sat Jun 28 14:36:38 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -537,11 +537,6 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 
 
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/TransactionViewModel.kt
-// PURPOSE: Handles business logic for transactions.
-// NOTE: Now contains the complete logic for approving SMS transactions.
-// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -559,10 +554,27 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
 
-    // --- FIX: Made the database instance a class property to be accessible in other functions ---
     private val db = AppDatabase.getInstance(application)
 
-    val allTransactions: StateFlow<List<TransactionDetails>>
+    // --- NEW: A private StateFlow to hold the current filter type ---
+    private val _transactionTypeFilter = MutableStateFlow<String?>(null)
+
+    // --- NEW: This public StateFlow now dynamically filters the transactions ---
+    val allTransactions: StateFlow<List<TransactionDetails>> =
+        _transactionTypeFilter.flatMapLatest { filterType ->
+            transactionRepository.allTransactions.map { list ->
+                if (filterType == null) {
+                    list // If no filter, return the whole list
+                } else {
+                    list.filter { it.transaction.transactionType == filterType }
+                }
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     val allAccounts: StateFlow<List<Account>>
     val allCategories: Flow<List<Category>>
     val allTags: StateFlow<List<Tag>>
@@ -573,20 +585,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedTags = MutableStateFlow<Set<Tag>>(emptySet())
     val selectedTags = _selectedTags.asStateFlow()
 
-
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
         categoryRepository = CategoryRepository(db.categoryDao())
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
 
-        allTransactions =
-            transactionRepository.allTransactions
-                .stateIn(
-                    scope = viewModelScope,
-                    started = SharingStarted.WhileSubscribed(5000),
-                    initialValue = emptyList(),
-                )
+        // The allTransactions StateFlow is now initialized above with the filter logic
 
         allAccounts = accountRepository.allAccounts.stateIn(
             scope = viewModelScope,
@@ -601,6 +606,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+    }
+
+    // --- NEW: Public function to update the filter ---
+    fun setTransactionTypeFilter(type: String?) {
+        _transactionTypeFilter.value = type
     }
 
     fun onTagSelected(tag: Tag) {
@@ -647,7 +657,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                // Step 1: Find or create the account.
                 val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                 val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
 
@@ -656,7 +665,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     Log.d("ViewModel_Approve", "Account '$accountName' not found. Creating new one.")
                     val newAccount = Account(name = accountName, type = accountType)
                     accountRepository.insert(newAccount)
-                    // Re-fetch to be certain
                     account = db.accountDao().findByName(accountName)
                 }
 
@@ -665,19 +673,18 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     return@withContext false
                 }
 
-                // Step 2: Create the transaction object.
                 val newTransaction = Transaction(
                     description = description,
                     categoryId = categoryId,
                     amount = potentialTxn.amount,
                     date = System.currentTimeMillis(),
-                    accountId = account.id, // This is now safe
+                    accountId = account.id,
                     notes = notes,
                     transactionType = potentialTxn.transactionType,
-                    sourceSmsId = potentialTxn.sourceSmsId
+                    sourceSmsId = potentialTxn.sourceSmsId,
+                    sourceSmsHash = potentialTxn.sourceSmsHash
                 )
 
-                // Step 3: Insert transaction and tags.
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
                 Log.d("ViewModel_Approve", "Successfully approved and saved transaction.")
                 true
@@ -698,6 +705,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         date: Long,
         transactionType: String,
         sourceSmsId: Long?,
+        sourceSmsHash: String?
     ): Boolean {
         _validationError.value = null
 
@@ -721,6 +729,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 notes = notes,
                 transactionType = transactionType,
                 sourceSmsId = sourceSmsId,
+                sourceSmsHash = sourceSmsHash
             )
         viewModelScope.launch {
             transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)
@@ -3119,6 +3128,8 @@ fun AddTransactionScreen(
                                     date = selectedDateTime.timeInMillis,
                                     transactionType = transactionType,
                                     sourceSmsId = null,
+                                    // --- FIX: Pass null for the new hash parameter ---
+                                    sourceSmsHash = null
                                 )
                             if (success) {
                                 navController.popBackStack()
@@ -3951,6 +3962,8 @@ private fun SettingsActionItem(
 package io.pm.finlight.ui.screens
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.navigation.NavController
@@ -3961,7 +3974,21 @@ import io.pm.finlight.ui.components.TransactionList
 fun TransactionListScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
+    // --- NEW: Accept an optional filter type ---
+    filterType: String?
 ) {
+    // --- NEW: Apply the filter when the screen is composed ---
+    LaunchedEffect(filterType) {
+        viewModel.setTransactionTypeFilter(filterType)
+    }
+
+    // --- NEW: Reset the filter when the user navigates away ---
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.setTransactionTypeFilter(null)
+        }
+    }
+
     val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
     TransactionList(
         transactions = transactions,
@@ -4253,9 +4280,25 @@ fun DashboardScreen(
         }
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard(label = "Monthly Income", amount = monthlyIncome.toFloat(), modifier = Modifier.weight(1f))
-                StatCard(label = "Total Budget", amount = overallBudget, modifier = Modifier.weight(1f))
-                StatCard(label = "Safe to Spend", amount = safeToSpend, modifier = Modifier.weight(1f), isPerDay = true)
+                StatCard(
+                    label = "Monthly Income",
+                    amount = monthlyIncome.toFloat(),
+                    modifier = Modifier.weight(1f),
+                    onClick = { navController.navigate("transaction_list?type=income") }
+                )
+                // --- FIX: Make the "Total Budget" card navigate to the budget screen ---
+                StatCard(
+                    label = "Total Budget",
+                    amount = overallBudget,
+                    modifier = Modifier.weight(1f),
+                    onClick = { navController.navigate("budget_screen") }
+                )
+                StatCard(
+                    label = "Monthly Expenses",
+                    amount = monthlyExpenses.toFloat(),
+                    modifier = Modifier.weight(1f),
+                    onClick = { navController.navigate("transaction_list?type=expense") }
+                )
             }
         }
         item {
@@ -5451,14 +5494,8 @@ fun ReportsScreen(
     val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
     val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Reports") }) },
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+
+        LazyColumn() {
             // --- Pie Chart Card (Unchanged) ---
             item {
                 Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
@@ -5515,7 +5552,6 @@ fun ReportsScreen(
             }
         }
     }
-}
 -e 
 
 
@@ -5670,11 +5706,6 @@ fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt ==================
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/ui/components/DashboardComponents.kt
-// PURPOSE: UI components for the Dashboard screen.
-// NOTE: Added the new `AccountSummaryCard` composable.
-// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.LinearEasing
@@ -5753,10 +5784,13 @@ fun StatCard(
     label: String,
     amount: Float,
     modifier: Modifier = Modifier,
-    isPerDay: Boolean = false
+    isPerDay: Boolean = false,
+    // --- NEW: Add an onClick parameter to make the card interactive ---
+    onClick: () -> Unit = {}
 ) {
     Card(
-        modifier = modifier,
+        // --- NEW: Apply the clickable modifier ---
+        modifier = modifier.clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(
@@ -5771,7 +5805,6 @@ fun StatCard(
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(4.dp))
-            // --- UPDATED: Call the top-level helper function directly ---
             Text(
                 text = "${formatAmountCompact(amount)}${if (isPerDay) "/day" else ""}",
                 style = MaterialTheme.typography.titleMedium,
@@ -5789,7 +5822,10 @@ fun OverallBudgetCard(
     navController: NavController
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        // --- NEW: Make the entire card clickable to navigate to the budget screen ---
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { navController.navigate("budget_screen") },
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
         Column(
@@ -5801,6 +5837,8 @@ fun OverallBudgetCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
+                // The "Edit" button is now redundant since the whole card is clickable,
+                // but we can leave it for user clarity.
                 if (totalBudget > 0) {
                     TextButton(onClick = { navController.navigate("budget_screen") }) {
                         Text("Edit")
@@ -5810,7 +5848,6 @@ fun OverallBudgetCard(
             Spacer(modifier = Modifier.height(16.dp))
 
             if (totalBudget <= 0) {
-                // --- NEW: State for when no budget is set ---
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
@@ -5826,19 +5863,15 @@ fun OverallBudgetCard(
                     }
                 }
             } else {
-                // --- EXISTING: State for when a budget IS set ---
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
-                    // The Liquid Tumbler visualization
                     LiquidTumbler(
                         progress = (amountSpent / totalBudget),
                         modifier = Modifier.size(120.dp)
                     )
-
-                    // The text summary
                     Column {
                         Text("Spent", style = MaterialTheme.typography.labelLarge)
                         Text(
@@ -5963,9 +5996,6 @@ fun NetWorthCard(netWorth: Double) {
     }
 }
 
-/**
- * NEW: A card to display a summary of all user accounts and their balances.
- */
 @Composable
 fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavController) {
     Card(
@@ -5981,7 +6011,6 @@ fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavCon
                 )
                 TextButton(
                     onClick = {
-                        // Navigate to the full account list screen, which you already have
                         navController.navigate("account_list")
                     }
                 ) { Text("View All") }
@@ -6071,7 +6100,6 @@ fun BudgetWatchCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
-                // --- NEW: Shortcut to add a category budget ---
                 TextButton(onClick = { navController.navigate("add_budget") }) {
                     Text("+ Add Category Budget")
                 }
@@ -6647,6 +6675,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -6798,20 +6827,23 @@ fun MainAppScreen() {
     )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
+    val currentDestination = navBackStackEntry?.destination
 
-    val currentTitle = screenTitles[currentRoute] ?: "Finance App"
+    // --- FIX: Use a more robust check that handles arguments correctly ---
+    val currentRoute = currentDestination?.route
+    val baseCurrentRoute = currentRoute?.substringBefore("?")
+    val currentTitle = screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
+    val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
 
-    val showBottomBar = bottomNavItems.any { it.route == currentRoute }
 
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
-        BottomNavItem.Transactions.route,
+        baseCurrentRoute, // Also show FAB on filtered transaction list
         "account_list",
         "budget_screen",
         "recurring_transactions"
     )
-    val showFab = currentRoute in fabRoutes
+    val showFab = currentRoute in fabRoutes || baseCurrentRoute in fabRoutes
 
     Scaffold(
         topBar = {
@@ -6837,10 +6869,12 @@ fun MainAppScreen() {
             if (showBottomBar) {
                 NavigationBar {
                     bottomNavItems.forEach { screen ->
+                        // --- FIX: Use NavDestination.hierarchy for a robust selection check ---
+                        val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
                         NavigationBarItem(
                             icon = { Icon(screen.icon, contentDescription = screen.label) },
                             label = { Text(screen.label) },
-                            selected = currentRoute == screen.route,
+                            selected = isSelected,
                             onClick = {
                                 navController.navigate(screen.route) {
                                     popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -6856,7 +6890,7 @@ fun MainAppScreen() {
         floatingActionButton = {
             if (showFab) {
                 FloatingActionButton(onClick = {
-                    when (currentRoute) {
+                    when (baseCurrentRoute) { // Use base route to determine FAB action
                         BottomNavItem.Dashboard.route, BottomNavItem.Transactions.route -> {
                             navController.navigate("add_transaction")
                         }
@@ -6899,7 +6933,19 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(context))
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }
-        composable(BottomNavItem.Transactions.route) { TransactionListScreen(navController, transactionViewModel) }
+        composable(
+            route = "${BottomNavItem.Transactions.route}?type={type}",
+            arguments = listOf(navArgument("type") {
+                type = NavType.StringType
+                nullable = true
+            })
+        ) { backStackEntry ->
+            TransactionListScreen(
+                navController = navController,
+                viewModel = transactionViewModel,
+                filterType = backStackEntry.arguments?.getString("type")
+            )
+        }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
         composable(BottomNavItem.Profile.route) { ProfileScreen(navController) }
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
@@ -6911,14 +6957,13 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
         ) { ReviewSmsScreen(navController, settingsViewModel) }
 
-        // --- FIX: The route now expects a single JSON string parameter ---
         composable(
             route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
             arguments = listOf(
                 navArgument("potentialTxnJson") { type = NavType.StringType }
-            )
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve_sms?potentialTxnJson={potentialTxnJson}" })
         ) { backStackEntry ->
-            // --- FIX: Deserialize the JSON back into a PotentialTransaction object ---
             val json = backStackEntry.arguments?.getString("potentialTxnJson")
             val potentialTxn = Gson().fromJson(URLDecoder.decode(json, "UTF-8"), PotentialTransaction::class.java)
 
@@ -7469,7 +7514,7 @@ import java.util.Calendar
         Tag::class, // <-- NEW
         TransactionTagCrossRef::class // <-- NEW
     ],
-    version = 6, // <-- CRITICAL: Version number is incremented to 6
+    version = 7, // <-- CRITICAL: Version number is incremented to 7
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -7567,6 +7612,11 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
         }
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN sourceSmsHash TEXT")
+            }
+        }
 
 
         fun getInstance(context: Context): AppDatabase {
@@ -7578,7 +7628,7 @@ abstract class AppDatabase : RoomDatabase() {
                         "finance_database",
                     )
                         // --- CRITICAL: Added the new MIGRATION_5_6 ---
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -7745,16 +7795,11 @@ object SmsParser {
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
 
-    // --- UPDATED: Added a more specific pattern at the top of the list to handle multi-word account types ---
     private val ACCOUNT_PATTERNS =
         listOf(
-            // Pattern for complex types like "SBI Credit Card ending with 3201"
             "(?:on your|on)\\s+([A-Za-z0-9\\s]+?)\\s+((?:Credit|Meal|Savings)?\\s*(?:Card|Account|Acct))\\s+(?:ending with|ending in|xx)?\\s*(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            // Fallback for simple types like "HDFC Bank Card 9922"
             "on\\s+([A-Za-z0-9\\s]+?)\\s+(card|account|acct|a/c)\\s+(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            // Pattern for "Acct XX823"
             "(?:acct|account|a/c)\\s+xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE),
-            // Pattern for "card no.xx7809"
             "card no\\.\\s*xx(\\d{3,4})".toRegex(RegexOption.IGNORE_CASE)
         )
 
@@ -7782,14 +7827,13 @@ object SmsParser {
                             accountType = "Savings Account"
                         )
                     }
-                    // --- UPDATED: This block now correctly handles the new, more specific regex ---
                     4 -> {
                         val bankName = match.groupValues[1].trim()
-                        val type = match.groupValues[2].trim() // Captures the full type, e.g., "Credit Card"
+                        val type = match.groupValues[2].trim()
                         val number = match.groupValues[3]
                         PotentialAccount(
                             formattedName = "$bankName - xx$number",
-                            accountType = type // Assign the full captured type directly
+                            accountType = type
                         )
                     }
                     else -> null
@@ -7836,6 +7880,19 @@ object SmsParser {
 
         val potentialAccount = parseAccount(messageBody, sms.sender)
 
+        // --- FINAL FIX: Normalize both the sender and the body for a stable hash ---
+        val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
+        val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
+        val smsHash = (normalizedSender + normalizedBody).hashCode().toString()
+
+        // --- DIAGNOSTIC LOGGING ---
+        Log.d("DeDupeDebug", "--- PARSING ---")
+        Log.d("DeDupeDebug", "Raw Sender: ${sms.sender} -> Normalized Sender: $normalizedSender")
+        Log.d("DeDupeDebug", "Normalized Body: '$normalizedBody'")
+        Log.d("DeDupeDebug", "Generated Hash: $smsHash")
+        Log.d("DeDupeDebug", "---------------")
+
+
         return PotentialTransaction(
             sourceSmsId = sms.id,
             smsSender = sms.sender,
@@ -7843,7 +7900,8 @@ object SmsParser {
             transactionType = transactionType,
             merchantName = merchantName,
             originalMessage = messageBody,
-            potentialAccount = potentialAccount
+            potentialAccount = potentialAccount,
+            sourceSmsHash = smsHash
         )
     }
 }
@@ -8583,38 +8641,34 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 val existingMappings = withContext(Dispatchers.IO) {
                     merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                 }
-                val existingSmsIds = withContext(Dispatchers.IO) {
-                    transactionRepository.allTransactions.first().mapNotNull { it.transaction.sourceSmsId }.toSet()
+
+                val existingSmsHashes = withContext(Dispatchers.IO) {
+                    transactionRepository.getAllSmsHashes().first().toSet()
                 }
+
+                // --- DIAGNOSTIC LOGGING ---
+                Log.d("DeDupeDebug", "--- SCAN INBOX ---")
+                Log.d("DeDupeDebug", "Found ${existingSmsHashes.size} existing hashes in DB.")
+                Log.d("DeDupeDebug", "Hashes: $existingSmsHashes")
+                Log.d("DeDupeDebug", "------------------")
+
 
                 val parsedList = withContext(Dispatchers.Default) {
-                    rawMessages.mapNotNull { SmsParser.parse(it, existingMappings) }
-                }
-
-                withContext(Dispatchers.IO) {
-                    Log.d("AutoAccount_Debug", "Starting account creation check for ${parsedList.size} potential transactions.")
-                    val allAccounts = accountRepository.allAccounts.first().toMutableSet()
-                    parsedList.forEach { potentialTxn ->
-                        potentialTxn.potentialAccount?.let { potAcc ->
-                            Log.d("AutoAccount_Debug", "Checking account: ${potAcc.formattedName}")
-                            val accountExists = allAccounts.any { it.name.equals(potAcc.formattedName, ignoreCase = true) }
-                            Log.d("AutoAccount_Debug", "Account '${potAcc.formattedName}' exists? $accountExists")
-                            if (!accountExists) {
-                                val newAccount = Account(name = potAcc.formattedName, type = potAcc.accountType)
-                                Log.d("AutoAccount_Debug", "Account does not exist. Inserting: ${newAccount.name}")
-                                accountRepository.insert(newAccount)
-                                allAccounts.add(newAccount)
-                                Log.d("AutoAccount_Debug", "Finished inserting. Account list size now: ${allAccounts.size}")
-                            }
-                        }
+                    rawMessages.mapNotNull { sms ->
+                        // --- DIAGNOSTIC LOGGING ---
+                        Log.d("DeDupeDebug", "--- SCAN INBOX: Processing Raw SMS ---")
+                        Log.d("DeDupeDebug", "Body: '${sms.body}'")
+                        Log.d("DeDupeDebug", "------------------------------------")
+                        SmsParser.parse(sms, existingMappings)
                     }
-                    Log.d("AutoAccount_Debug", "Finished account creation check.")
                 }
 
-                val newPotentialTransactions = parsedList.filter { potential -> !existingSmsIds.contains(potential.sourceSmsId) }
+                val newPotentialTransactions = parsedList.filter { potential ->
+                    !existingSmsHashes.contains(potential.sourceSmsHash)
+                }
+
                 _potentialTransactions.value = newPotentialTransactions
 
-                Log.d("AutoAccount_Debug", "Scan complete. Sending Success event with count: ${newPotentialTransactions.size}")
                 _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Error during SMS scan", e)
@@ -8772,16 +8826,13 @@ data class PotentialTransaction(
     val originalMessage: String,
     // --- NEW: Add a field for the automatically parsed account details ---
     val potentialAccount: PotentialAccount? = null,
+    // --- BUG FIX: Add a stable hash to uniquely identify an SMS for de-duplication ---
+    val sourceSmsHash: String? = null,
 )
 -e 
 
 
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/TransactionDao.kt
-// PURPOSE: Data Access Object for Transactions.
-// NOTE: Added methods for managing the many-to-many relationship with Tags.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -8806,6 +8857,10 @@ interface TransactionDao {
     """,
     )
     fun getAllTransactions(): Flow<List<TransactionDetails>>
+
+    // --- BUG FIX: Add a new query to efficiently get all existing SMS hashes for de-duplication ---
+    @Query("SELECT sourceSmsHash FROM transactions WHERE sourceSmsHash IS NOT NULL")
+    fun getAllSmsHashes(): Flow<List<String>>
 
     @Query(
         """
@@ -8938,7 +8993,6 @@ interface TransactionDao {
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()
 
-    // --- UPDATED: Insert now returns the ID of the new row ---
     @Insert
     suspend fun insert(transaction: Transaction): Long
 
@@ -8948,7 +9002,6 @@ interface TransactionDao {
     @Delete
     suspend fun delete(transaction: Transaction)
 
-    // --- NEW: Methods for managing tags ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addTagsToTransaction(crossRefs: List<TransactionTagCrossRef>)
 
@@ -9064,6 +9117,31 @@ interface BudgetDao {
         year: Int,
     ): Flow<List<Budget>>
 
+    // --- PERFORMANCE OPTIMIZATION ---
+    // This new query calculates the actual spending for each category budget directly in the database.
+    // It is much more efficient than fetching all transactions and all budgets into memory and combining them in the ViewModel.
+    // It joins Budgets with an aggregate sum from Transactions for a given month and year.
+    // --- FIX: The @Transaction annotation was removed as it's illegal on a @Query that returns a Flow. ---
+    @Query("""
+        SELECT
+            B.*,
+            IFNULL(TxSums.totalSpent, 0.0) as spent
+        FROM
+            budgets AS B
+        LEFT JOIN
+            (SELECT
+                C.name as categoryName,
+                SUM(T.amount) as totalSpent
+             FROM transactions AS T
+             JOIN categories AS C ON T.categoryId = C.id
+             WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch') = :yearMonth
+             GROUP BY C.name) AS TxSums
+        ON B.categoryName = TxSums.categoryName
+        WHERE B.month = :month AND B.year = :year
+    """)
+    fun getBudgetsWithSpendingForMonth(yearMonth: String, month: Int, year: Int): Flow<List<BudgetWithSpending>>
+
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(budgets: List<Budget>)
 
@@ -9177,20 +9255,29 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AccountDao {
-    // --- UPDATED: This query now calculates the balance for each account ---
+    // --- PERFORMANCE OPTIMIZATION ---
+    // The original query ran a sub-query for every account, which is very inefficient (N+1 problem).
+    // This new query is significantly more performant. It calculates the balances for all accounts
+    // in a single pass using GROUP BY, and then LEFT JOINs the results back to the accounts table.
+    // This ensures that even with thousands of transactions and many accounts, the query remains fast.
     @Transaction
     @Query(
         """
         SELECT
             A.*,
-            (SELECT IFNULL(SUM(CASE WHEN T.transactionType = 'income' THEN T.amount ELSE -T.amount END), 0.0)
-             FROM transactions AS T
-             WHERE T.accountId = A.id) as balance
+            IFNULL(TxSums.balance, 0.0) as balance
         FROM
             accounts AS A
+        LEFT JOIN
+            (SELECT
+                accountId,
+                SUM(CASE WHEN transactionType = 'income' THEN amount ELSE -amount END) as balance
+             FROM transactions
+             GROUP BY accountId) AS TxSums
+        ON A.id = TxSums.accountId
         ORDER BY
             A.name ASC
-    """,
+    """
     )
     fun getAccountsWithBalance(): Flow<List<AccountWithBalance>>
 
@@ -9408,6 +9495,8 @@ data class Transaction(
     // --- NEW: Added to distinguish between income and expense ---
     val transactionType: String = "expense", // Default to 'expense'
     val sourceSmsId: Long? = null,
+    // --- BUG FIX: Add a stable hash to uniquely identify an SMS for de-duplication ---
+    val sourceSmsHash: String? = null,
 )
 -e 
 
@@ -9421,6 +9510,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Telephony
+import android.telephony.SmsMessage as TelephonySmsMessage
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.CoroutineScope
@@ -9444,39 +9534,32 @@ class SmsReceiver : BroadcastReceiver() {
                     val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
                     Log.d(TAG, "Received ${messages.size} message parts.")
 
-                    val db = AppDatabase.getInstance(context)
-                    val transactionRepository = TransactionRepository(db.transactionDao())
-                    val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
+                    val messagesBySender = messages.groupBy { it.originatingAddress }
 
-                    // --- CORRECTED: Use the same de-duplication logic as the manual scan ---
-                    // 1. Get existing mappings and already imported SMS IDs from the database
-                    val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
-                    val existingSmsIds =
-                        transactionRepository.allTransactions.first()
-                            .mapNotNull { transactionDetail ->
-                                transactionDetail.transaction.notes?.let { notes ->
-                                    val match = "sms_id:(\\d+)".toRegex().find(notes)
-                                    match?.groups?.get(1)?.value?.toLongOrNull()
-                                }
-                            }.toSet()
+                    for ((sender, parts) in messagesBySender) {
+                        val fullBody = parts.joinToString("") { it.messageBody }
+                        val firstMessage = parts.first()
+                        val smsId = firstMessage.timestampMillis
 
-                    // 2. Process each incoming message
-                    for (sms in messages) {
-                        // In modern Android, the intent contains the SMS ID. We need to query for it.
-                        // For simplicity in the receiver, we will continue to use timestamp as a proxy for the ID.
-                        // A more complex implementation might query the ContentResolver again here.
-                        val smsId = sms.timestampMillis
-                        val sender = sms.originatingAddress ?: "Unknown"
+                        // --- DIAGNOSTIC LOGGING ---
+                        Log.d("DeDupeDebug", "--- RECEIVER ---")
+                        Log.d("DeDupeDebug", "Receiver processing message from: $sender")
+                        Log.d("DeDupeDebug", "Combined Body: '$fullBody'")
+                        Log.d("DeDupeDebug", "----------------")
 
-                        Log.d(TAG, "Processing SMS with approximate ID (timestamp): $smsId from $sender")
 
-                        // NOTE: This de-duplication is not perfect because we don't have the real _ID here.
-                        // We check against timestamp, which is a good heuristic.
-                        if (!existingSmsIds.contains(smsId)) {
-                            val smsMessage = SmsMessage(id = smsId, sender = sender, body = sms.messageBody, date = smsId)
-                            val potentialTransaction = SmsParser.parse(smsMessage, existingMappings)
+                        val db = AppDatabase.getInstance(context)
+                        val transactionRepository = TransactionRepository(db.transactionDao())
+                        val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
 
-                            if (potentialTransaction != null) {
+                        val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
+                        val existingSmsHashes = transactionRepository.getAllSmsHashes().first().toSet()
+
+                        val smsMessage = SmsMessage(id = smsId, sender = sender ?: "Unknown", body = fullBody, date = smsId)
+                        val potentialTransaction = SmsParser.parse(smsMessage, existingMappings)
+
+                        if (potentialTransaction != null) {
+                            if (!existingSmsHashes.contains(potentialTransaction.sourceSmsHash)) {
                                 Log.d(TAG, "New potential transaction found: $potentialTransaction")
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                                     NotificationHelper.showTransactionNotification(context, potentialTransaction)
@@ -9485,10 +9568,10 @@ class SmsReceiver : BroadcastReceiver() {
                                     Log.w(TAG, "Post Notifications permission not granted.")
                                 }
                             } else {
-                                Log.d(TAG, "SMS did not parse to a transaction.")
+                                Log.d(TAG, "SMS with hash: ${potentialTransaction.sourceSmsHash} is a duplicate. Skipping.")
                             }
                         } else {
-                            Log.d(TAG, "SMS with ID: $smsId appears to be a duplicate. Skipping.")
+                            Log.d(TAG, "SMS from $sender did not parse to a transaction.")
                         }
                     }
                 } catch (e: Exception) {
@@ -9516,10 +9599,12 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
+import com.google.gson.Gson
 import java.net.URLEncoder
 
 object NotificationHelper {
-    private const val DEEP_LINK_URI = "app://finlight.pm.io"
+    // --- FIX: The deep link URI now points to a more specific path for direct approval ---
+    private const val DEEP_LINK_URI = "app://finlight.pm.io/approve_sms"
 
     fun showTransactionNotification(
         context: Context,
@@ -9529,19 +9614,13 @@ object NotificationHelper {
             return
         }
 
-        val encodedMerchant = URLEncoder.encode(potentialTransaction.merchantName ?: "Unknown", "UTF-8")
-        // --- FIX: Encode the account name and add it to the URI ---
-        val encodedAccountName = URLEncoder.encode(potentialTransaction.potentialAccount?.formattedName ?: "Unknown Account", "UTF-8")
+        // --- FIX: The entire PotentialTransaction is serialized into a single JSON string ---
+        // This is more robust than passing individual parameters in the URL.
+        val potentialTxnJson = Gson().toJson(potentialTransaction)
+        val encodedJson = URLEncoder.encode(potentialTxnJson, "UTF-8")
 
-        val approveUri =
-            (
-                    "$DEEP_LINK_URI/approve?amount=${potentialTransaction.amount}" +
-                            "&type=${potentialTransaction.transactionType}" +
-                            "&merchant=$encodedMerchant" +
-                            "&smsId=${potentialTransaction.sourceSmsId}" +
-                            "&smsSender=${potentialTransaction.smsSender}" +
-                            "&accountName=$encodedAccountName" // Add the account name parameter
-                    ).toUri()
+        // --- FIX: The URI now uses the new path and passes the JSON object ---
+        val approveUri = "$DEEP_LINK_URI?potentialTxnJson=$encodedJson".toUri()
 
         val intent =
             Intent(Intent.ACTION_VIEW, approveUri).apply {
@@ -9650,11 +9729,6 @@ object NotificationHelper {
 
 
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/TransactionRepository.kt
-// PURPOSE: Centralizes data operations.
-// NOTE: Now includes logic to handle saving transactions with their associated tags.
-// =================================================================================
 package io.pm.finlight
 
 import android.util.Log
@@ -9670,6 +9744,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                     "Repository Flow Emitted. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}",
                 )
             }
+
+    fun getAllSmsHashes(): Flow<List<String>> {
+        return transactionDao.getAllSmsHashes()
+    }
 
     fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>> {
         return transactionDao.getTransactionsForAccountDetails(accountId)
@@ -9724,12 +9802,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.countTransactionsForCategory(categoryId)
     }
 
-    // --- NEW: Expose DAO method for getting tags for a specific transaction ---
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
         return transactionDao.getTagsForTransaction(transactionId)
     }
 
-    // --- NEW: A transactional method to insert a transaction and its tags ---
     suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
         val transactionId = transactionDao.insert(transaction).toInt()
         if (tags.isNotEmpty()) {
@@ -9740,13 +9816,9 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         }
     }
 
-    // --- NEW: A transactional method to update a transaction and its tags ---
     suspend fun updateTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
-        // First, update the core transaction object
         transactionDao.update(transaction)
-        // Then, clear all existing tag associations for this transaction
         transactionDao.clearTagsForTransaction(transaction.id)
-        // Finally, if there are any selected tags, insert the new associations
         if (tags.isNotEmpty()) {
             val crossRefs = tags.map { tag ->
                 TransactionTagCrossRef(transactionId = transaction.id, tagId = tag.id)
@@ -9771,11 +9843,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
 
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/DashboardViewModel.kt
-// PURPOSE: Handles logic for the Dashboard.
-// NOTE: Added the `accountsSummary` StateFlow.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -9785,7 +9852,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * ViewModel for the Dashboard screen.
@@ -9873,26 +9942,15 @@ class DashboardViewModel(
             transactionRepository.allTransactions.map { it.take(5) }
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        val currentMonth = Calendar.getInstance().get(Calendar.MONTH) + 1
-        val currentYear = Calendar.getInstance().get(Calendar.YEAR)
-        val budgets = budgetDao.getBudgetsForMonth(currentMonth, currentYear)
+        // --- PERFORMANCE OPTIMIZATION ---
+        // Instead of calculating budget spending in the ViewModel, we now use the new,
+        // efficient query from the BudgetDao. This offloads the heavy work to the database.
+        val currentMonth = calendar.get(Calendar.MONTH) + 1
+        val currentYear = calendar.get(Calendar.YEAR)
+        val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
+        budgetStatus = budgetDao.getBudgetsWithSpendingForMonth(yearMonthString, currentMonth, currentYear)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        budgetStatus =
-            budgets.combine(transactionRepository.allTransactions) { budgetList, allTransactions ->
-                budgetList.map { budget ->
-                    val spending =
-                        allTransactions
-                            .filter { it.categoryName == budget.categoryName }
-                            .filter { it.transaction.transactionType == "expense" }
-                            .filter {
-                                val cal = Calendar.getInstance().apply { timeInMillis = it.transaction.date }
-                                cal.get(Calendar.MONTH) + 1 == currentMonth && cal.get(Calendar.YEAR) == currentYear
-                            }
-                            .sumOf { it.transaction.amount }
-
-                    BudgetWithSpending(budget = budget, spent = spending)
-                }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         // --- NEW: Initialize the new StateFlow ---
         accountsSummary =

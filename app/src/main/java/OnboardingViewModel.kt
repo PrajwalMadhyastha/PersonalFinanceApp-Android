@@ -13,12 +13,13 @@ import kotlinx.coroutines.launch
 data class SelectableCategory(val name: String, var isSelected: Boolean)
 
 class OnboardingViewModel(
-    // --- UPDATED: AccountRepository is no longer needed here ---
     private val categoryRepository: CategoryRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
-    // --- REMOVED: State for Account Setup is no longer part of onboarding ---
+    // --- NEW: StateFlow to hold the user's name ---
+    private val _userName = MutableStateFlow("")
+    val userName = _userName.asStateFlow()
 
     private val _categories = MutableStateFlow<List<SelectableCategory>>(
         listOf(
@@ -35,6 +36,11 @@ class OnboardingViewModel(
 
     private val _monthlyBudget = MutableStateFlow("")
     val monthlyBudget = _monthlyBudget.asStateFlow()
+
+    // --- NEW: Function to update the name state ---
+    fun onNameChanged(newName: String) {
+        _userName.value = newName
+    }
 
     fun toggleCategorySelection(categoryName: String) {
         _categories.update { currentCategories ->
@@ -59,7 +65,10 @@ class OnboardingViewModel(
      */
     fun finishOnboarding() {
         viewModelScope.launch {
-            // --- REMOVED: Account saving logic is gone ---
+            // --- NEW: Save the user's name ---
+            if (_userName.value.isNotBlank()) {
+                settingsRepository.saveUserName(_userName.value)
+            }
 
             // Save selected Categories
             _categories.value.filter { it.isSelected }.forEach { selectableCategory ->

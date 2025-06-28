@@ -21,6 +21,10 @@ class DashboardViewModel(
     private val budgetDao: BudgetDao,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
+
+    // --- NEW: StateFlow to hold the user's name ---
+    val userName: StateFlow<String>
+
     val netWorth: StateFlow<Double>
     val monthlyIncome: StateFlow<Double>
     val monthlyExpenses: StateFlow<Double>
@@ -29,11 +33,17 @@ class DashboardViewModel(
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
     val safeToSpendPerDay: StateFlow<Float>
-
-    // --- NEW: Expose the list of accounts with their balances ---
     val accountsSummary: StateFlow<List<AccountWithBalance>>
 
     init {
+        // --- NEW: Initialize the userName StateFlow ---
+        userName = settingsRepository.getUserName()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = "User"
+            )
+
         val calendar = Calendar.getInstance()
         val monthStart =
             calendar.apply {
@@ -97,9 +107,6 @@ class DashboardViewModel(
             transactionRepository.allTransactions.map { it.take(5) }
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        // --- PERFORMANCE OPTIMIZATION ---
-        // Instead of calculating budget spending in the ViewModel, we now use the new,
-        // efficient query from the BudgetDao. This offloads the heavy work to the database.
         val currentMonth = calendar.get(Calendar.MONTH) + 1
         val currentYear = calendar.get(Calendar.YEAR)
         val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
@@ -107,7 +114,6 @@ class DashboardViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
 
-        // --- NEW: Initialize the new StateFlow ---
         accountsSummary =
             accountRepository.accountsWithBalance
                 .stateIn(

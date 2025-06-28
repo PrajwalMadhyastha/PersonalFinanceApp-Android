@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -76,6 +77,48 @@ fun WelcomePage() {
         )
     }
 }
+
+// --- NEW: A page to ask for the user's name ---
+@Composable
+fun UserNamePage(viewModel: OnboardingViewModel) {
+    val name by viewModel.userName.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.AccountCircle,
+            contentDescription = "User Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "This will be used to personalize your experience.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+        Spacer(Modifier.height(24.dp))
+        OutlinedTextField(
+            value = name,
+            onValueChange = { viewModel.onNameChanged(it) },
+            label = { Text("Your Name") },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Text,
+                capitalization = KeyboardCapitalization.Words
+            ),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
 
 @Composable
 fun CategorySetupPage(viewModel: OnboardingViewModel) {
