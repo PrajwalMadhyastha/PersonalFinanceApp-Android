@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sun Jun 29 12:55:38 IST 2025
+Generated on: Sun Jun 29 14:40:28 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -186,7 +186,6 @@ dependencies {
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- The camera permission is required by the cropper library if you want to take a new picture -->
     <uses-permission android:name="android.permission.CAMERA" />
 
 
@@ -235,10 +234,6 @@ dependencies {
             </intent-filter>
         </receiver>
 
-        <!--
-         NEW: Explicitly declare the CropImageActivity from the image cropper library.
-         Applying Theme.AppCompat ensures it has an ActionBar where the 'Done' checkmark can appear.
-        -->
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
             android:theme="@style/Theme.AppCompat.DayNight"
@@ -528,7 +523,10 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
         return budgetDao.getBudgetsForMonth(month, year)
     }
 
-    // Expose the more efficient query to the ViewModel
+    fun getBudgetsForMonthWithSpending(yearMonth: String, month: Int, year: Int): Flow<List<BudgetWithSpending>> {
+        return budgetDao.getBudgetsWithSpendingForMonth(yearMonth, month, year)
+    }
+
     fun getActualSpendingForCategory(
         categoryName: String,
         month: Int,
@@ -793,14 +791,17 @@ import androidx.room.Embedded
 
 /**
  * A data class to hold the combined result of a database query.
- * It includes the full Transaction object, plus the names of the
- * linked Account and Category for easy display in the UI.
+ * It includes the full Transaction object, plus the names, icon, and color
+ * of the linked Account and Category for easy display in the UI.
  */
 data class TransactionDetails(
     @Embedded
     val transaction: Transaction,
     val accountName: String?,
     val categoryName: String?,
+    // --- NEW: Add fields for category icon and color ---
+    val categoryIconKey: String?,
+    val categoryColorKey: String?
 )
 -e 
 
@@ -1213,38 +1214,27 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
-/**
- * ViewModel to handle the business logic for Categories.
- */
 class CategoryViewModel(application: Application) : AndroidViewModel(application) {
     private val categoryRepository: CategoryRepository
-
-    // --- NEW: Add dependency on TransactionRepository for validation ---
     private val transactionRepository: TransactionRepository
-
     val allCategories: Flow<List<Category>>
-
-    // --- NEW: Channel for sending one-time events (like Toasts/Snackbars) to the UI ---
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
 
     init {
         val db = AppDatabase.getInstance(application)
         categoryRepository = CategoryRepository(db.categoryDao())
-        // Initialize the new repository
         transactionRepository = TransactionRepository(db.transactionDao())
         allCategories = categoryRepository.allCategories
     }
 
-    // A helper to get a single category by ID, not as a flow.
     suspend fun getCategoryById(id: Int): Category? {
-        // We take the first emission from the flow, which is the current state.
         return allCategories.firstOrNull()?.find { it.id == id }
     }
 
-    fun addCategory(name: String) =
+    fun addCategory(name: String, iconKey: String, colorKey: String) =
         viewModelScope.launch {
-            categoryRepository.insert(Category(name = name))
+            categoryRepository.insert(Category(name = name, iconKey = iconKey, colorKey = colorKey))
         }
 
     fun updateCategory(category: Category) =
@@ -1252,16 +1242,13 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
             categoryRepository.update(category)
         }
 
-    // --- UPDATED: Delete function now includes validation logic ---
     fun deleteCategory(category: Category) =
         viewModelScope.launch {
-            // Check if the category is in use before deleting.
             val transactionCount = transactionRepository.countTransactionsForCategory(category.id)
             if (transactionCount == 0) {
                 categoryRepository.delete(category)
                 _uiEvent.send("Category '${category.name}' deleted.")
             } else {
-                // Send an event to the UI explaining why deletion failed.
                 _uiEvent.send("Cannot delete '${category.name}'. It's used by $transactionCount transaction(s).")
             }
         }
@@ -1274,11 +1261,13 @@ package io.pm.finlight
 
 /**
  * A simple data class to hold the results of a GROUP BY query,
- * containing the name of a category and the total amount spent in it.
+ * containing the name of a category, its visual identifiers, and the total amount spent in it.
  */
 data class CategorySpending(
     val categoryName: String,
     val totalAmount: Double,
+    val colorKey: String?,
+    val iconKey: String?
 )
 -e 
 
@@ -1303,6 +1292,12 @@ data class Category(
     val id: Int = 0,
     @ColumnInfo(name = "name")
     val name: String,
+    // A key to identify the Material Icon for the category
+    @ColumnInfo(name = "iconKey")
+    val iconKey: String = "category", // Default icon
+    // --- NEW: A key to identify the icon's background color ---
+    @ColumnInfo(name = "colorKey")
+    val colorKey: String = "gray" // Default color
 )
 -e 
 
@@ -1781,8 +1776,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -1851,7 +1844,6 @@ fun WelcomePage() {
     }
 }
 
-// --- NEW: A page to ask for the user's name ---
 @Composable
 fun UserNamePage(viewModel: OnboardingViewModel) {
     val name by viewModel.userName.collectAsState()
@@ -1889,45 +1881,6 @@ fun UserNamePage(viewModel: OnboardingViewModel) {
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-    }
-}
-
-
-@Composable
-fun CategorySetupPage(viewModel: OnboardingViewModel) {
-    val categories by viewModel.categories.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Select Expense Categories", style = MaterialTheme.typography.headlineSmall)
-        Text("Choose the spending categories you use most often.", style = MaterialTheme.typography.bodyMedium)
-        Text(
-            "You can add or remove more in Settings later.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(16.dp))
-
-        LazyColumn(modifier = Modifier.fillMaxWidth()) {
-            items(categories) { category ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = category.isSelected,
-                        onCheckedChange = { viewModel.toggleCategorySelection(category.name) }
-                    )
-                    Text(text = category.name, modifier = Modifier.padding(start = 8.dp))
-                }
-            }
-        }
     }
 }
 
@@ -2004,6 +1957,47 @@ fun SmsPermissionPage(onPermissionResult: () -> Unit) {
         }
     }
 }
+
+@Composable
+fun SmsScanningInfoPage() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = "Magic Wand Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("Supercharge Your Setup", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            buildAnnotatedString {
+                append("After setup, you can visit the ")
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                    append("Settings")
+                }
+                append(" screen at any time to import existing transactions from your SMS inbox.\n\nYou'll have two options:\n\n")
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                    append("• Quick Scan:")
+                }
+                append(" A fast scan of recent messages. This defaults to the last 30 days, but you can pick any start date you like!\n\n")
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                    append("• Full Scan:")
+                }
+                append(" A complete scan of your entire inbox.")
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
 
 @Composable
 fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
@@ -2087,51 +2081,30 @@ fun CompletionPage() {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt ==================
 package io.pm.finlight.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.Category
+import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.CategoryViewModel
 import io.pm.finlight.ui.components.DeleteCategoryDialog
-import io.pm.finlight.ui.components.EditCategoryDialog
 
 @Composable
 fun CategoryListScreen(
@@ -2139,12 +2112,9 @@ fun CategoryListScreen(
     viewModel: CategoryViewModel,
 ) {
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
-    var newCategoryName by remember { mutableStateOf("") }
-
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
-
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(key1 = viewModel.uiEvent) {
@@ -2154,33 +2124,20 @@ fun CategoryListScreen(
     }
 
     Column(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Button(
+            onClick = {
+                selectedCategory = null
+                showEditDialog = true
+            },
+            modifier = Modifier.fillMaxWidth()
         ) {
-            OutlinedTextField(
-                value = newCategoryName,
-                onValueChange = { newCategoryName = it },
-                label = { Text("New Category Name") },
-                modifier = Modifier.weight(1f),
-            )
-            Button(
-                onClick = {
-                    if (newCategoryName.isNotBlank()) {
-                        viewModel.addCategory(newCategoryName)
-                        newCategoryName = ""
-                    }
-                },
-                enabled = newCategoryName.isNotBlank(),
-            ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
-            }
+            Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Add New Category")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -2188,159 +2145,163 @@ fun CategoryListScreen(
 
         LazyColumn {
             items(categories) { category ->
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(text = category.name, modifier = Modifier.weight(1f))
-                    IconButton(onClick = {
-                        selectedCategory = category
-                        showEditDialog = true
-                    }) {
-                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Category")
+                ListItem(
+                    headlineContent = { Text(category.name) },
+                    leadingContent = {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                                contentDescription = category.name,
+                                tint = Color.Black // Assuming a light background color
+                            )
+                        }
+                    },
+                    trailingContent = {
+                        Row {
+                            IconButton(onClick = {
+                                selectedCategory = category
+                                showEditDialog = true
+                            }) {
+                                Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Category")
+                            }
+                            IconButton(onClick = {
+                                selectedCategory = category
+                                showDeleteDialog = true
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete Category",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
                     }
-                    IconButton(onClick = {
-                        selectedCategory = category
-                        showDeleteDialog = true
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete Category",
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
+                )
                 HorizontalDivider()
             }
         }
     }
 
     if (showEditDialog) {
-        selectedCategory?.let {
-            EditCategoryDialog(
-                category = it,
-                onDismiss = { showEditDialog = false },
-                onConfirm = { updatedCategory ->
-                    viewModel.updateCategory(updatedCategory)
-                    showEditDialog = false
-                },
-            )
-        }
-    }
-
-    if (showDeleteDialog) {
-        selectedCategory?.let {
-            DeleteCategoryDialog(
-                category = it,
-                onDismiss = { showDeleteDialog = false },
-                onConfirm = {
-                    viewModel.deleteCategory(it)
-                    showDeleteDialog = false
-                },
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun EditCategoryScreen(
-    navController: NavController,
-    viewModel: CategoryViewModel,
-    categoryId: Int,
-) {
-    val snackbarHostState = remember { SnackbarHostState() }
-    var categoryName by remember { mutableStateOf("") }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var categoryToDelete by remember { mutableStateOf<Category?>(null) }
-
-    LaunchedEffect(key1 = categoryId) {
-        val category = viewModel.getCategoryById(categoryId)
-        if (category != null) {
-            categoryName = category.name
-        }
-    }
-
-    LaunchedEffect(key1 = viewModel.uiEvent) {
-        viewModel.uiEvent.collect { message ->
-            snackbarHostState.showSnackbar(message)
-        }
-    }
-
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Edit Category") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        categoryToDelete = Category(id = categoryId, name = categoryName)
-                        showDeleteDialog = true
-                    }) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Category")
-                    }
-                },
-            )
-        },
-    ) { innerPadding ->
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            OutlinedTextField(
-                value = categoryName,
-                onValueChange = { categoryName = it },
-                label = { Text("Category Name") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Button(
-                onClick = {
-                    if (categoryName.isNotBlank()) {
-                        viewModel.updateCategory(Category(id = categoryId, name = categoryName))
-                        navController.popBackStack()
-                    }
-                },
-                modifier = Modifier.align(Alignment.End),
-                enabled = categoryName.isNotBlank(),
-            ) {
-                Text("Update Category")
-            }
-        }
-    }
-
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Confirm Deletion") },
-            text = { Text("Are you sure you want to delete this category? This cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        categoryToDelete?.let {
-                            viewModel.deleteCategory(it)
-                        }
-                        showDeleteDialog = false
-                        navController.popBackStack()
-                    },
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+        EditCategoryDialog(
+            category = selectedCategory,
+            onDismiss = { showEditDialog = false },
+            onConfirm = { name, iconKey, colorKey ->
+                if (selectedCategory == null) {
+                    viewModel.addCategory(name, iconKey, colorKey)
+                } else {
+                    viewModel.updateCategory(selectedCategory!!.copy(name = name, iconKey = iconKey, colorKey = colorKey))
+                }
+                showEditDialog = false
             },
         )
     }
+
+    if (showDeleteDialog && selectedCategory != null) {
+        DeleteCategoryDialog(
+            category = selectedCategory!!,
+            onDismiss = { showDeleteDialog = false },
+            onConfirm = {
+                viewModel.deleteCategory(selectedCategory!!)
+                showDeleteDialog = false
+            },
+        )
+    }
+}
+
+
+@Composable
+fun EditCategoryDialog(
+    category: Category?,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, String) -> Unit,
+) {
+    var name by remember { mutableStateOf(category?.name ?: "") }
+    var selectedIconKey by remember { mutableStateOf(category?.iconKey ?: "category") }
+    var selectedColorKey by remember { mutableStateOf(category?.colorKey ?: "gray_light") }
+    val allIcons = remember { CategoryIconHelper.getAllIcons().entries.toList() }
+    val allColors = remember { CategoryIconHelper.getAllIconColors().entries.toList() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (category == null) "Add Category" else "Edit Category") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Category Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(16.dp))
+                Text("Select Icon", style = MaterialTheme.typography.titleMedium)
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 48.dp),
+                    modifier = Modifier.heightIn(max = 150.dp)
+                ) {
+                    items(allIcons) { (key, icon) ->
+                        IconButton(
+                            onClick = { selectedIconKey = key },
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = if (selectedIconKey == key) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    shape = MaterialTheme.shapes.medium
+                                )
+                        ) {
+                            Icon(imageVector = icon, contentDescription = key)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("Select Color", style = MaterialTheme.typography.titleMedium)
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 48.dp),
+                    modifier = Modifier.heightIn(max = 100.dp)
+                ) {
+                    items(allColors) { (key, color) ->
+                        Box(
+                            modifier = Modifier
+                                .padding(6.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .clickable { selectedColorKey = key }
+                                .border(
+                                    width = 2.dp,
+                                    color = if (selectedColorKey == key) MaterialTheme.colorScheme.outline else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        onConfirm(name, selectedIconKey, selectedColorKey)
+                    }
+                },
+                enabled = name.isNotBlank(),
+            ) {
+                Text(if (category == null) "Add" else "Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 -e 
 
@@ -2908,6 +2869,7 @@ fun EditAccountScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -2919,8 +2881,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
@@ -2959,11 +2923,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.Account
 import io.pm.finlight.Category
+import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
@@ -3000,72 +2967,27 @@ fun AddTransactionScreen(
     val validationError by viewModel.validationError.collectAsState()
 
     val isExpense = transactionType == "expense"
-    val isSaveEnabled = (
-            description.isNotBlank() &&
-                    amount.isNotBlank() &&
-                    selectedAccount != null &&
-                    (!isExpense || selectedCategory != null)
-            )
+    val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && (!isExpense || selectedCategory != null))
 
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
 
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModel.clearSelectedTags()
-        }
-    }
+    DisposableEffect(Unit) { onDispose { viewModel.clearSelectedTags() } }
 
-    LaunchedEffect(validationError) {
-        validationError?.let {
-            snackbarHostState.showSnackbar(it)
-        }
-    }
+    LaunchedEffect(validationError) { validationError?.let { snackbarHostState.showSnackbar(it) } }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             item {
                 TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
                     transactionTypes.forEachIndexed { index, title ->
-                        Tab(
-                            selected = (if (isExpense) 0 else 1) == index,
-                            onClick = {
-                                transactionType = if (index == 0) "expense" else "income"
-                                if (transactionType == "income") {
-                                    selectedCategory = null
-                                }
-                            },
-                            text = { Text(title) },
-                        )
+                        Tab(selected = (if (isExpense) 0 else 1) == index, onClick = { transactionType = if (index == 0) "expense" else "income"; if (transactionType == "income") selectedCategory = null }, text = { Text(title) })
                     }
                 }
             }
-            item {
-                OutlinedTextField(value = description, onValueChange = {
-                    description = it
-                }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-            }
-            item {
-                OutlinedTextField(value = amount, onValueChange = {
-                    amount = it
-                }, label = {
-                    Text("Amount")
-                }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            }
-            item {
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes (Optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
+            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
+            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
@@ -3081,166 +3003,96 @@ fun AddTransactionScreen(
                 }
             }
             item {
-                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = {
-                    isAccountDropdownExpanded = !isAccountDropdownExpanded
-                }) {
-                    OutlinedTextField(
-                        value = selectedAccount?.name ?: "Select Account",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Account") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    )
+                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                    OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {}, readOnly = true, label = { Text("Account") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
                     ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
                         accounts.forEach { account ->
-                            DropdownMenuItem(text = { Text(account.name) }, onClick = {
-                                selectedAccount = account
-                                isAccountDropdownExpanded = false
-                            })
+                            DropdownMenuItem(text = { Text(account.name) }, onClick = { selectedAccount = account; isAccountDropdownExpanded = false })
                         }
                     }
                 }
             }
             if (isExpense) {
                 item {
-                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                        isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-                    }) {
+                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
                         OutlinedTextField(
-                            value = selectedCategory?.name ?: "",
+                            value = selectedCategory?.name ?: "Select Category",
                             onValueChange = {},
                             readOnly = true,
                             label = { Text("Category") },
+                            leadingIcon = selectedCategory?.let { { CategoryIcon(it) } },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
                         )
                         ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
                             categories.forEach { category ->
-                                DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                    selectedCategory = category
-                                    isCategoryDropdownExpanded = false
-                                })
+                                DropdownMenuItem(
+                                    text = { CategoryDropdownItem(category = category) },
+                                    onClick = { selectedCategory = category; isCategoryDropdownExpanded = false }
+                                )
                             }
                         }
                     }
                 }
             }
-
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    allTags.forEach { tag ->
-                        FilterChip(
-                            selected = tag in selectedTags,
-                            onClick = { viewModel.onTagSelected(tag) },
-                            label = { Text(tag.name) }
-                        )
-                    }
+                FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    allTags.forEach { tag -> FilterChip(selected = tag in selectedTags, onClick = { viewModel.onTagSelected(tag) }, label = { Text(tag.name) }) }
                 }
-                // --- NEW: UI to add a new tag on the fly ---
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = newTagName,
-                        onValueChange = { newTagName = it },
-                        label = { Text("New Tag") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = {
-                            viewModel.addTagOnTheGo(newTagName)
-                            newTagName = "" // Clear input
-                        },
-                        enabled = newTagName.isNotBlank()
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add New Tag")
-                    }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = newTagName, onValueChange = { newTagName = it }, label = { Text("New Tag") }, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { viewModel.addTagOnTheGo(newTagName); newTagName = "" }, enabled = newTagName.isNotBlank()) { Icon(Icons.Default.Add, contentDescription = "Add New Tag") }
                 }
             }
-
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
-                        Text("Cancel")
-                    }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) { Text("Cancel") }
                     Button(
                         onClick = {
-                            val success =
-                                viewModel.addTransaction(
-                                    description = description,
-                                    categoryId = selectedCategory?.id,
-                                    amountStr = amount,
-                                    accountId = selectedAccount!!.id,
-                                    notes = notes.takeIf { it.isNotBlank() },
-                                    date = selectedDateTime.timeInMillis,
-                                    transactionType = transactionType,
-                                    sourceSmsId = null,
-                                    // --- FIX: Pass null for the new hash parameter ---
-                                    sourceSmsHash = null
-                                )
-                            if (success) {
-                                navController.popBackStack()
-                            }
+                            val success = viewModel.addTransaction(description = description, categoryId = selectedCategory?.id, amountStr = amount, accountId = selectedAccount!!.id, notes = notes.takeIf { it.isNotBlank() }, date = selectedDateTime.timeInMillis, transactionType = transactionType, sourceSmsId = null, sourceSmsHash = null)
+                            if (success) navController.popBackStack()
                         },
-                        modifier = Modifier.weight(1f),
-                        enabled = isSaveEnabled,
-                    ) {
-                        Text("Save Transaction")
-                    }
+                        modifier = Modifier.weight(1f), enabled = isSaveEnabled
+                    ) { Text("Save Transaction") }
                 }
             }
         }
         SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
-
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let {
-                            val newCalendar = Calendar.getInstance().apply { timeInMillis = it }
-                            selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
-                            selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
-                            selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
-                        }
-                        showDatePicker = false
-                    },
-                ) { Text("OK") }
-            },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } },
-        ) { DatePicker(state = datePickerState) }
+        DatePickerDialog(onDismissRequest = { showDatePicker = false }, confirmButton = { TextButton(onClick = { datePickerState.selectedDateMillis?.let { val cal = Calendar.getInstance().apply { timeInMillis = it }; selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR)); selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH)); selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH)) }; showDatePicker = false }) { Text("OK") } }, dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }) { DatePicker(state = datePickerState) }
     }
-
     if (showTimePicker) {
-        val timePickerState =
-            rememberTimePickerState(
-                initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
-                initialMinute = selectedDateTime.get(Calendar.MINUTE),
-            )
-        TimePickerDialog(
-            onDismissRequest = { showTimePicker = false },
-            onConfirm = {
-                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
-                showTimePicker = false
-            },
-        ) { TimePicker(state = timePickerState) }
+        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(Calendar.MINUTE))
+        TimePickerDialog(onDismissRequest = { showTimePicker = false }, onConfirm = { selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour); selectedDateTime.set(Calendar.MINUTE, timePickerState.minute); showTimePicker = false }) { TimePicker(state = timePickerState) }
+    }
+}
+
+@Composable
+private fun CategoryDropdownItem(category: Category) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CategoryIcon(category = category, modifier = Modifier.size(24.dp))
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(category.name)
+    }
+}
+
+@Composable
+private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = CategoryIconHelper.getIcon(category.iconKey),
+            contentDescription = null,
+            tint = Color.Black,
+            modifier = Modifier.padding(4.dp)
+        )
     }
 }
 -e 
@@ -3296,10 +3148,12 @@ package io.pm.finlight.ui.screens
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -3311,6 +3165,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -3321,12 +3176,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.Budget
 import io.pm.finlight.BudgetViewModel
+import io.pm.finlight.CategoryIconHelper
+import io.pm.finlight.BudgetWithSpending
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -3424,142 +3282,68 @@ fun BudgetScreen(
     navController: NavController,
     viewModel: BudgetViewModel = viewModel(),
 ) {
-    val categoryBudgets by viewModel.budgetsForCurrentMonth.collectAsState(initial = emptyList())
+    val categoryBudgets by viewModel.budgetsForCurrentMonth.collectAsState()
     val overallBudget by viewModel.overallBudget.collectAsState()
     val totalSpending by viewModel.totalSpending.collectAsState()
-
     var showDeleteDialog by remember { mutableStateOf(false) }
     var budgetToDelete by remember { mutableStateOf<Budget?>(null) }
     var showOverallBudgetDialog by remember { mutableStateOf(false) }
 
-    // --- FIX: Removed the Scaffold and its bottomBar ---
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.weight(1f), // Use weight to fill available space
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+        LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Set monthly budget", style = MaterialTheme.typography.headlineSmall)
-                        Text(
-                            "Setting a budget reduces expenditures about 10% on an average.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
+                        Text("Setting a budget reduces expenditures about 10% on an average.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     }
                     GaugeChart(progress = if (overallBudget > 0) (totalSpending.toFloat() / overallBudget) else 0f)
                 }
             }
-
             item {
-                // --- FIX: This card is now clickable to open the dialog ---
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable { showOverallBudgetDialog = true },
-                    elevation = CardDefaults.cardElevation(2.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MonetizationOn,
-                            contentDescription = "Overall Budget",
-                            modifier = Modifier.size(40.dp)
-                        )
+                Card(modifier = Modifier.fillMaxWidth().clickable { showOverallBudgetDialog = true }, elevation = CardDefaults.cardElevation(2.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.MonetizationOn, contentDescription = "Overall Budget", modifier = Modifier.size(40.dp))
                         Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            "Overall budget",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            "₹${"%,.0f".format(overallBudget)}",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text("Overall budget", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Text("₹${"%,.0f".format(overallBudget)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
                 }
             }
-
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Category wise budget",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = 16.dp)
-                    )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Category wise budget", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
                     IconButton(onClick = { navController.navigate("add_budget") }) {
                         Icon(Icons.Default.Add, contentDescription = "Add Category Budget")
                     }
                 }
             }
-
             if (categoryBudgets.isEmpty()) {
                 item {
-                    Text(
-                        "No category budgets set. Tap the '+' icon to add one.",
-                        modifier = Modifier.padding(16.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        color = Color.Gray
-                    )
+                    Text("No category budgets set. Tap the '+' icon to add one.", modifier = Modifier.padding(16.dp), textAlign = TextAlign.Center, color = Color.Gray)
                 }
             } else {
-                items(categoryBudgets) { budget ->
+                items(categoryBudgets) { budgetWithSpending ->
                     CategoryBudgetItem(
-                        budget = budget,
-                        viewModel = viewModel,
-                        onEdit = { navController.navigate("edit_budget/${budget.id}") },
-                        onDelete = {
-                            budgetToDelete = budget
-                            showDeleteDialog = true
-                        }
+                        budgetWithSpending = budgetWithSpending,
+                        onEdit = { navController.navigate("edit_budget/${budgetWithSpending.budget.id}") },
+                        onDelete = { budgetToDelete = budgetWithSpending.budget; showDeleteDialog = true }
                     )
                 }
             }
         }
     }
-
-
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete Budget?") },
             text = { Text("Are you sure you want to delete the budget for '${budgetToDelete?.categoryName}'?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        budgetToDelete?.let { viewModel.deleteBudget(it) }
-                        showDeleteDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
-            },
+            confirmButton = { Button(onClick = { budgetToDelete?.let { viewModel.deleteBudget(it) }; showDeleteDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } },
         )
     }
-
     if (showOverallBudgetDialog) {
-        EditOverallBudgetDialog(
-            currentBudget = overallBudget,
-            onDismiss = { showOverallBudgetDialog = false },
-            onConfirm = { newAmount ->
-                viewModel.saveOverallBudget(newAmount)
-                showOverallBudgetDialog = false
-            }
-        )
+        EditOverallBudgetDialog(currentBudget = overallBudget, onDismiss = { showOverallBudgetDialog = false }, onConfirm = { newAmount -> viewModel.saveOverallBudget(newAmount); showOverallBudgetDialog = false })
     }
 }
 
@@ -3570,87 +3354,46 @@ fun EditOverallBudgetDialog(
     onConfirm: (String) -> Unit
 ) {
     var budgetInput by remember { mutableStateOf(if (currentBudget > 0) "%.0f".format(currentBudget) else "") }
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Set Overall Budget") },
-        text = {
-            OutlinedTextField(
-                value = budgetInput,
-                onValueChange = { budgetInput = it.filter { char -> char.isDigit() } },
-                label = { Text("Total Monthly Budget Amount") },
-                leadingIcon = { Text("₹") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(budgetInput) },
-                enabled = budgetInput.isNotBlank()
-            ) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
+        text = { OutlinedTextField(value = budgetInput, onValueChange = { budgetInput = it.filter { char -> char.isDigit() } }, label = { Text("Total Monthly Budget Amount") }, leadingIcon = { Text("₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true) },
+        confirmButton = { Button(onClick = { onConfirm(budgetInput) }, enabled = budgetInput.isNotBlank()) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
 
 @Composable
 fun CategoryBudgetItem(
-    budget: Budget,
-    viewModel: BudgetViewModel,
+    budgetWithSpending: BudgetWithSpending,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val spending by viewModel.getActualSpending(budget.categoryName)
-        .collectAsState(initial = 0.0)
-    val progress = if (budget.amount > 0) (spending / budget.amount).toFloat() else 0f
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Category,
-                contentDescription = budget.categoryName,
-                modifier = Modifier.size(40.dp)
-            )
+    val progress = if (budgetWithSpending.budget.amount > 0) (budgetWithSpending.spent / budgetWithSpending.budget.amount).toFloat() else 0f
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), elevation = CardDefaults.cardElevation(2.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(budgetWithSpending.colorKey ?: "gray_light")),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
+                    contentDescription = budgetWithSpending.budget.categoryName,
+                    tint = Color.Black
+                )
+            }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(budget.categoryName, style = MaterialTheme.typography.titleMedium)
+                Text(budgetWithSpending.budget.categoryName, style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { progress.coerceIn(0f,1f) },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "₹${"%,.0f".format(spending)} of ₹${"%,.0f".format(budget.amount)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
+                Text("₹${"%,.0f".format(budgetWithSpending.spent)} of ₹${"%,.0f".format(budgetWithSpending.budget.amount)}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
             Spacer(modifier = Modifier.width(16.dp))
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit")
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete")
-            }
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit") }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Delete") }
         }
     }
 }
@@ -3707,6 +3450,7 @@ fun SettingsScreen(
     val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReportEnabled by viewModel.dailyReportEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
+    val isBackupEnabled by viewModel.backupEnabled.collectAsState()
     var showSmsRationaleDialog by remember { mutableStateOf(false) }
     var hasSmsPermission by remember {
         mutableStateOf(
@@ -3720,7 +3464,6 @@ fun SettingsScreen(
         )
     }
 
-    // --- RESTORED: Listen for the scan event to navigate ---
     LaunchedEffect(key1 = viewModel.scanEvent) {
         viewModel.scanEvent.collect { result ->
             if (result is ScanResult.Success) {
@@ -3989,7 +3732,6 @@ fun SettingsScreen(
             )
         }
 
-        // --- RESTORED: SMS Scanning section for manual review ---
         item { SettingSectionHeader("SMS Scanning") }
         item {
             Row(
@@ -4053,6 +3795,16 @@ fun SettingsScreen(
             )
         }
         item { SettingSectionHeader("Data Management") }
+        // --- NEW: Toggle for Google Drive Backup ---
+        item {
+            SettingsToggleItem(
+                title = "Enable Google Drive Backup",
+                subtitle = "Automatically back up app data to your Google account.",
+                icon = Icons.Default.CloudUpload,
+                checked = isBackupEnabled,
+                onCheckedChange = { viewModel.setBackupEnabled(it) },
+            )
+        }
         item {
             SettingsActionItem(
                 text = "Export Data as JSON",
@@ -5583,6 +5335,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -5594,7 +5348,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // --- UPDATED: Page count is now 7 to include the new name page ---
+    // --- UPDATED: Page count is now 7 after removing category selection ---
     val pagerState = rememberPagerState { 7 }
     val scope = rememberCoroutineScope()
 
@@ -5608,6 +5362,7 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
         bottomBar = {
             OnboardingBottomBar(
                 pagerState = pagerState,
+                viewModel = viewModel,
                 onNextClicked = onNextClicked,
                 onFinishClicked = {
                     viewModel.finishOnboarding()
@@ -5623,13 +5378,13 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
                 .padding(innerPadding),
             userScrollEnabled = false
         ) { page ->
-            // --- UPDATED: Added UserNamePage at index 1 ---
+            // --- UPDATED: Removed CategorySetupPage and shifted indices ---
             when (page) {
                 0 -> WelcomePage()
                 1 -> UserNamePage(viewModel)
-                2 -> CategorySetupPage(viewModel)
-                3 -> BudgetSetupPage(viewModel)
-                4 -> SmsPermissionPage(onPermissionResult = onNextClicked)
+                2 -> BudgetSetupPage(viewModel)
+                3 -> SmsPermissionPage(onPermissionResult = onNextClicked)
+                4 -> SmsScanningInfoPage()
                 5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
                 6 -> CompletionPage()
             }
@@ -5641,9 +5396,12 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
 @Composable
 fun OnboardingBottomBar(
     pagerState: PagerState,
+    viewModel: OnboardingViewModel,
     onNextClicked: () -> Unit,
     onFinishClicked: () -> Unit
 ) {
+    val userName by viewModel.userName.collectAsState()
+
     Surface(shadowElevation = 8.dp) {
         Row(
             modifier = Modifier
@@ -5654,15 +5412,31 @@ fun OnboardingBottomBar(
         ) {
             PageIndicator(pageCount = pagerState.pageCount, currentPage = pagerState.currentPage)
 
-            if (pagerState.currentPage < pagerState.pageCount - 1) {
-                Button(onClick = onNextClicked) {
+            // --- UPDATED: Page indices for hiding the "Next" button adjusted ---
+            val isNextButtonVisible = pagerState.currentPage < pagerState.pageCount - 1 &&
+                    pagerState.currentPage != 3 && // Hide on SMS Permission Page
+                    pagerState.currentPage != 5    // Hide on Notification Permission Page
+
+            val isNextEnabled = if (pagerState.currentPage == 1) {
+                userName.isNotBlank()
+            } else {
+                true
+            }
+
+            if (isNextButtonVisible) {
+                Button(
+                    onClick = onNextClicked,
+                    enabled = isNextEnabled
+                ) {
                     Text("Next")
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Page")
                 }
-            } else {
+            } else if (pagerState.currentPage == pagerState.pageCount - 1) {
                 Button(onClick = onFinishClicked) {
                     Text("Finish Setup")
                 }
+            } else {
+                Spacer(modifier = Modifier.width(0.dp))
             }
         }
     }
@@ -6124,6 +5898,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -6135,6 +5910,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Assessment
@@ -6158,6 +5935,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -6176,6 +5954,7 @@ import io.pm.finlight.BottomNavItem
 import io.pm.finlight.Budget
 import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
+import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
 import kotlinx.coroutines.flow.map
 import kotlin.math.sin
@@ -6503,26 +6282,16 @@ fun BudgetWatchCard(
 ) {
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = { navController.navigate("add_budget") }) {
-                    Text("+ Add Category Budget")
-                }
+                TextButton(onClick = { navController.navigate("add_budget") }) { Text("+ Add Category Budget") }
             }
             Spacer(modifier = Modifier.height(8.dp))
             if (budgetStatus.isEmpty()) {
-                Text(
-                    "No category-specific budgets set for this month.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(vertical = 16.dp)
-                )
+                Text("No category-specific budgets set for this month.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 budgetStatus.forEach { budgetWithSpendingItem ->
-                    BudgetItem(budget = budgetWithSpendingItem.budget, viewModel = viewModel)
+                    BudgetItem(budgetWithSpending = budgetWithSpendingItem)
                 }
             }
         }
@@ -6531,17 +6300,11 @@ fun BudgetWatchCard(
 
 
 @Composable
-fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
-    val spendingFlow = remember(budget.categoryName) {
-        viewModel.getActualSpending(budget.categoryName).map { spending ->
-            Math.abs(spending ?: 0.0)
-        }
-    }
-    val actualSpending by spendingFlow.collectAsState(initial = 0.0)
-
+fun BudgetItem(budgetWithSpending: BudgetWithSpending) {
+    val budget = budgetWithSpending.budget
+    val actualSpending = budgetWithSpending.spent
     val progress = if (budget.amount > 0) (actualSpending / budget.amount).toFloat() else 0f
     val amountRemaining = budget.amount - actualSpending
-
     val progressColor = when {
         progress > 1f -> MaterialTheme.colorScheme.error
         progress > 0.8f -> Color(0xFFFBC02D) // Amber
@@ -6550,34 +6313,26 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
 
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = budget.categoryName,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = "₹${"%.0f".format(budget.amount)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary
-            )
+            Box(
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(budgetWithSpending.colorKey ?: "gray_light")),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
+                    contentDescription = budget.categoryName,
+                    tint = Color.Black
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(text = budget.categoryName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(text = "₹${"%.0f".format(budget.amount)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
         }
         Spacer(modifier = Modifier.height(8.dp))
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.fillMaxWidth().height(8.dp),
-            color = progressColor
-        )
+        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp), color = progressColor)
         Spacer(modifier = Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                text = "Spent: ₹${"%.2f".format(actualSpending)}",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Text(
-                text = "Remaining: ₹${"%.2f".format(amountRemaining)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (amountRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-            )
+            Text(text = "Spent: ₹${"%.2f".format(actualSpending)}", style = MaterialTheme.typography.bodySmall)
+            Text(text = "Remaining: ₹${"%.2f".format(amountRemaining)}", style = MaterialTheme.typography.bodySmall, color = if (amountRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -6587,6 +6342,7 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt ==================
 package io.pm.finlight.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -6599,6 +6355,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
@@ -6610,11 +6367,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -6634,30 +6393,27 @@ fun TransactionItem(
         onClick = onClick,
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
+                    contentDescription = transactionDetails.categoryName,
+                    tint = Color.Black
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = transactionDetails.transaction.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
-                )
+                Text(text = transactionDetails.transaction.description, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
                 if (!transactionDetails.transaction.notes.isNullOrBlank()) {
-                    Text(
-                        text = transactionDetails.transaction.notes!!,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text(text = transactionDetails.transaction.notes!!, style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(
-                    text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-                Text(
-                    text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                Text(text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             val isIncome = transactionDetails.transaction.transactionType == "income"
@@ -6665,19 +6421,9 @@ fun TransactionItem(
             val icon = if (isIncome) Icons.Default.SouthWest else Icons.Default.NorthEast
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = amountColor,
-                )
+                Text(text = "₹${"%.2f".format(transactionDetails.transaction.amount)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = amountColor)
                 Spacer(modifier = Modifier.width(4.dp))
-                Icon(
-                    imageVector = icon,
-                    contentDescription = transactionDetails.transaction.transactionType,
-                    tint = amountColor,
-                    modifier = Modifier.size(20.dp),
-                )
+                Icon(imageVector = icon, contentDescription = transactionDetails.transaction.transactionType, tint = amountColor, modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -7584,6 +7330,13 @@ class CategoryRepository(private val categoryDao: CategoryDao) {
     }
 
     /**
+     * Inserts a list of categories in a non-blocking way.
+     */
+    suspend fun insertAll(categories: List<Category>) {
+        categoryDao.insertAll(categories)
+    }
+
+    /**
      * Updates a category in a non-blocking way.
      */
     suspend fun update(category: Category) {
@@ -7769,60 +7522,27 @@ data class LoginRequest(
 
 
 ================== FILE: ./app/src/main/java/OnboardingViewModel.kt ==================
-// FILE: app/src/main/java/io/pm/finlight/OnboardingViewModel.kt
-
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-// Data class to manage the state of categories during onboarding
-data class SelectableCategory(val name: String, var isSelected: Boolean)
 
 class OnboardingViewModel(
     private val categoryRepository: CategoryRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
-    // --- NEW: StateFlow to hold the user's name ---
     private val _userName = MutableStateFlow("")
     val userName = _userName.asStateFlow()
-
-    private val _categories = MutableStateFlow<List<SelectableCategory>>(
-        listOf(
-            SelectableCategory("Groceries", true),
-            SelectableCategory("Food", true),
-            SelectableCategory("Transportation", true),
-            SelectableCategory("Utilities", true),
-            SelectableCategory("Rent", false),
-            SelectableCategory("Shopping", false),
-            SelectableCategory("Entertainment", false),
-        )
-    )
-    val categories = _categories.asStateFlow()
 
     private val _monthlyBudget = MutableStateFlow("")
     val monthlyBudget = _monthlyBudget.asStateFlow()
 
-    // --- NEW: Function to update the name state ---
     fun onNameChanged(newName: String) {
         _userName.value = newName
-    }
-
-    fun toggleCategorySelection(categoryName: String) {
-        _categories.update { currentCategories ->
-            currentCategories.map {
-                if (it.name == categoryName) {
-                    it.copy(isSelected = !it.isSelected)
-                } else {
-                    it
-                }
-            }
-        }
     }
 
     fun onBudgetChanged(newBudget: String) {
@@ -7831,20 +7551,14 @@ class OnboardingViewModel(
         }
     }
 
-    /**
-     * Saves the initial categories and budget to the database and preferences.
-     */
     fun finishOnboarding() {
         viewModelScope.launch {
-            // --- NEW: Save the user's name ---
             if (_userName.value.isNotBlank()) {
                 settingsRepository.saveUserName(_userName.value)
             }
 
-            // Save selected Categories
-            _categories.value.filter { it.isSelected }.forEach { selectableCategory ->
-                categoryRepository.insert(Category(name = selectableCategory.name))
-            }
+            // --- UPDATED: Insert all predefined categories by default ---
+            categoryRepository.insertAll(CategoryIconHelper.predefinedCategories)
 
             val budgetFloat = _monthlyBudget.value.toFloatOrNull() ?: 0f
             if (budgetFloat > 0) {
@@ -7930,13 +7644,6 @@ class SmsRepository(private val context: Context) {
 
 
 ================== FILE: ./app/src/main/java/BudgetViewModel.kt ==================
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/BudgetViewModel.kt
-// REASON: Fixed a @Composable invocation error by moving the total spending calculation
-// from the UI layer into the ViewModel.
-// FIX: Added a new `totalSpending` StateFlow that combines the spending from all
-// category budgets into a single, observable value.
-// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -7956,7 +7663,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
     private val currentMonth: Int
     private val currentYear: Int
 
-    val budgetsForCurrentMonth: Flow<List<Budget>>
+    val budgetsForCurrentMonth: StateFlow<List<BudgetWithSpending>>
     val overallBudget: StateFlow<Float>
     val allCategories: Flow<List<Category>>
     val availableCategoriesForNewBudget: Flow<List<Category>>
@@ -7971,7 +7678,14 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         currentMonth = calendar.get(Calendar.MONTH) + 1
         currentYear = calendar.get(Calendar.YEAR)
 
-        budgetsForCurrentMonth = budgetRepository.getBudgetsForMonth(currentMonth, currentYear)
+        val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
+        budgetsForCurrentMonth = budgetRepository.getBudgetsForMonthWithSpending(yearMonthString, currentMonth, currentYear)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+
         allCategories = categoryRepository.allCategories
 
         overallBudget =
@@ -7984,20 +7698,17 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 
         availableCategoriesForNewBudget =
             combine(allCategories, budgetsForCurrentMonth) { categories, budgets ->
-                val budgetedCategoryNames = budgets.map { it.categoryName }.toSet()
+                val budgetedCategoryNames = budgets.map { it.budget.categoryName }.toSet()
                 categories.filter { category -> category.name !in budgetedCategoryNames }
             }
 
-        // NEW: Calculate total spending from all category budgets
         totalSpending = budgetsForCurrentMonth.flatMapLatest { budgets ->
             if (budgets.isEmpty()) {
-                flowOf(0.0) // Emit 0 if there are no budgets
+                flowOf(0.0)
             } else {
-                // Create a list of spending flows for each budget
-                val spendingFlows = budgets.map { budget ->
-                    getActualSpending(budget.categoryName)
+                val spendingFlows = budgets.map {
+                    getActualSpending(it.budget.categoryName)
                 }
-                // Combine them to get the sum
                 combine(spendingFlows) { amounts ->
                     amounts.sum()
                 }
@@ -8082,10 +7793,10 @@ import java.util.Calendar
         Budget::class,
         MerchantMapping::class,
         RecurringTransaction::class,
-        Tag::class, // <-- NEW
-        TransactionTagCrossRef::class // <-- NEW
+        Tag::class,
+        TransactionTagCrossRef::class
     ],
-    version = 8, // <-- CRITICAL: Version number is incremented to 8
+    version = 10,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -8095,13 +7806,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun budgetDao(): BudgetDao
     abstract fun merchantMappingDao(): MerchantMappingDao
     abstract fun recurringTransactionDao(): RecurringTransactionDao
-    abstract fun tagDao(): TagDao // <-- NEW DAO Interface
+    abstract fun tagDao(): TagDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        // --- Migrations 1-5 remain the same ---
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN transactionType TEXT NOT NULL DEFAULT 'expense'")
@@ -8111,15 +7821,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `merchant_mappings` (
-                        `smsSender` TEXT NOT NULL, 
-                        `merchantName` TEXT NOT NULL, 
-                        PRIMARY KEY(`smsSender`)
-                    )
-                    """.trimIndent(),
-                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_mappings` (`smsSender` TEXT NOT NULL, `merchantName` TEXT NOT NULL, PRIMARY KEY(`smsSender`))")
             }
         }
         val MIGRATION_3_4 = object : Migration(3, 4) {
@@ -8129,58 +7831,16 @@ abstract class AppDatabase : RoomDatabase() {
         }
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `recurring_transactions` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `description` TEXT NOT NULL, 
-                        `amount` REAL NOT NULL, 
-                        `transactionType` TEXT NOT NULL, 
-                        `recurrenceInterval` TEXT NOT NULL, 
-                        `startDate` INTEGER NOT NULL, 
-                        `accountId` INTEGER NOT NULL, 
-                        `categoryId` INTEGER, 
-                        FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, 
-                        FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
-                    )
-                    """.trimIndent(),
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_recurring_transactions_accountId` ON `recurring_transactions` (`accountId`)",
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_recurring_transactions_categoryId` ON `recurring_transactions` (`categoryId`)",
-                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `recurring_transactions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `description` TEXT NOT NULL, `amount` REAL NOT NULL, `transactionType` TEXT NOT NULL, `recurrenceInterval` TEXT NOT NULL, `startDate` INTEGER NOT NULL, `accountId` INTEGER NOT NULL, `categoryId` INTEGER, FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_transactions_accountId` ON `recurring_transactions` (`accountId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_transactions_categoryId` ON `recurring_transactions` (`categoryId`)")
             }
         }
-
-        // --- CRITICAL: Migration from 5 to 6 to add Tags and the relationship table ---
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Create the new 'tags' table
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `tags` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `name` TEXT NOT NULL
-                    )
-                    """.trimIndent()
-                )
-                // Add an index to ensure tag names are unique
+                db.execSQL("CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_name` ON `tags` (`name`)")
-
-                // Create the new 'transaction_tag_cross_ref' table for the many-to-many relationship
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `transaction_tag_cross_ref` (
-                        `transactionId` INTEGER NOT NULL, 
-                        `tagId` INTEGER NOT NULL, 
-                        PRIMARY KEY(`transactionId`, `tagId`),
-                        FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE,
-                        FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `transaction_tag_cross_ref` (`transactionId` INTEGER NOT NULL, `tagId` INTEGER NOT NULL, PRIMARY KEY(`transactionId`, `tagId`), FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE, FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) ON DELETE CASCADE)")
             }
         }
         val MIGRATION_6_7 = object : Migration(6, 7) {
@@ -8188,25 +7848,28 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN sourceSmsHash TEXT")
             }
         }
-
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN source TEXT NOT NULL DEFAULT 'Manual Entry'")
                 db.execSQL("UPDATE transactions SET source = 'Reviewed Import' WHERE sourceSmsId IS NOT NULL")
             }
         }
-
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE categories ADD COLUMN iconKey TEXT NOT NULL DEFAULT 'category'")
+            }
+        }
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE categories ADD COLUMN colorKey TEXT NOT NULL DEFAULT 'gray_light'")
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
-                    Room.databaseBuilder(
-                        context.applicationContext,
-                        AppDatabase::class.java,
-                        "finance_database",
-                    )
-                        // --- CRITICAL: Added the new MIGRATION_5_6 ---
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -8226,16 +7889,13 @@ abstract class AppDatabase : RoomDatabase() {
                 val accountDao = db.accountDao()
                 val categoryDao = db.categoryDao()
                 val transactionDao = db.transactionDao()
-                // --- NEW: Get Budget DAO ---
                 val budgetDao = db.budgetDao()
 
-                // Clear out any existing data
                 transactionDao.deleteAll()
-                budgetDao.deleteAll() // Assuming you add this
+                budgetDao.deleteAll()
                 categoryDao.deleteAll()
                 accountDao.deleteAll()
 
-                // --- 1. Populate Accounts ---
                 accountDao.insertAll(
                     listOf(
                         Account(id = 1, name = "SBI", type = "Savings"),
@@ -8244,37 +7904,22 @@ abstract class AppDatabase : RoomDatabase() {
                     ),
                 )
 
-                // --- 2. Populate Categories ---
-                categoryDao.insertAll(
-                    listOf(
-                        Category(id = 1, name = "Salary"),
-                        Category(id = 2, name = "Groceries"),
-                        Category(id = 3, name = "Rent"),
-                        Category(id = 4, name = "Food"),
-                        Category(id = 5, name = "Transportation"),
-                        Category(id = 6, name = "Utilities"),
-                    ),
-                )
+                categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
 
-                // --- 3. Populate Transactions (with corrected dates) ---
                 val calendar = Calendar.getInstance()
-
-                // Set to the start of the current month for an income transaction
                 calendar.set(Calendar.DAY_OF_MONTH, 5)
                 val incomeDate = calendar.timeInMillis
-
-                // Set to a few days ago within the current month for expenses
                 calendar.set(Calendar.DAY_OF_MONTH, 10)
                 val expenseDate1 = calendar.timeInMillis
-
                 calendar.set(Calendar.DAY_OF_MONTH, 15)
                 val expenseDate2 = calendar.timeInMillis
 
+                // --- FIXED: Use the correct, hardcoded IDs from the predefined list ---
                 transactionDao.insertAll(
                     listOf(
                         Transaction(
                             description = "Monthly Salary",
-                            categoryId = 1,
+                            categoryId = 12, // Corresponds to "Salary"
                             amount = 75000.0,
                             date = incomeDate,
                             accountId = 1,
@@ -8283,7 +7928,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Grocery Shopping",
-                            categoryId = 2,
+                            categoryId = 6, // Corresponds to "Groceries"
                             amount = 4500.0,
                             date = expenseDate1,
                             accountId = 2,
@@ -8292,62 +7937,24 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Dinner with friends",
-                            categoryId = 4,
+                            categoryId = 4, // Corresponds to "Food & Drinks"
                             amount = 1200.0,
                             date = expenseDate2,
                             accountId = 2,
                             notes = null,
                             transactionType = "expense",
-                        ),
-                        // A transaction from last month to test reports
-                        Transaction(
-                            description = "Apartment Rent",
-                            categoryId = 3,
-                            amount = 25000.0,
-                            date =
-                                Calendar.getInstance().apply {
-                                    add(Calendar.MONTH, -1)
-                                }.timeInMillis,
-                            accountId = 1,
-                            notes = "Monthly rent payment",
-                            transactionType = "expense",
-                        ),
-                        Transaction(
-                            description = "Bus",
-                            categoryId = 5,
-                            amount = 150.0,
-                            date =
-                                Calendar.getInstance().apply {
-                                    add(Calendar.DAY_OF_MONTH, -2)
-                                }.timeInMillis,
-                            accountId = 1,
-                            notes = "Travel",
-                            transactionType = "expense",
-                        ),
-                        Transaction(
-                            description = "Electricity Bill",
-                            categoryId = 6,
-                            amount = 850.0,
-                            date =
-                                Calendar.getInstance().apply {
-                                    add(Calendar.DAY_OF_MONTH, -1)
-                                }.timeInMillis,
-                            accountId = 3,
-                            notes = "Power bill",
-                            transactionType = "expense",
-                        ),
-                    ),
+                        )
+                    )
                 )
 
-                // --- 4. Populate Budgets for the current month ---
-                val month = calendar.get(Calendar.MONTH) + 1 // Calendar.MONTH is 0-based
+                val month = calendar.get(Calendar.MONTH) + 1
                 val year = calendar.get(Calendar.YEAR)
 
                 budgetDao.insertAll(
                     listOf(
                         Budget(categoryName = "Groceries", amount = 10000.0, month = month, year = year),
-                        Budget(categoryName = "Food", amount = 5000.0, month = month, year = year),
-                        Budget(categoryName = "Utilities", amount = 2000.0, month = month, year = year),
+                        Budget(categoryName = "Food & Drinks", amount = 5000.0, month = month, year = year),
+                        Budget(categoryName = "Bills", amount = 2000.0, month = month, year = year),
                     ),
                 )
             }
@@ -8521,7 +8128,6 @@ class SettingsRepository(context: Context) {
     companion object {
         private const val PREF_NAME = "finance_app_settings"
         private const val KEY_USER_NAME = "user_name"
-        // --- NEW: Add key for profile picture URI ---
         private const val KEY_PROFILE_PICTURE_URI = "profile_picture_uri"
         private const val KEY_BUDGET_PREFIX = "overall_budget_"
         private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
@@ -8530,7 +8136,30 @@ class SettingsRepository(context: Context) {
         private const val KEY_DAILY_REPORT_ENABLED = "daily_report_enabled"
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
+        // --- NEW: Key for storing the backup preference ---
+        private const val KEY_BACKUP_ENABLED = "google_drive_backup_enabled"
     }
+
+    // --- NEW: Function to save the backup preference ---
+    fun saveBackupEnabled(isEnabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BACKUP_ENABLED, isEnabled).apply()
+    }
+
+    // --- NEW: Flow to read the backup preference ---
+    fun getBackupEnabled(): Flow<Boolean> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_BACKUP_ENABLED) {
+                    trySend(sharedPreferences.getBoolean(KEY_BACKUP_ENABLED, true))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            // Default to true, as backup is enabled by default in the manifest
+            trySend(prefs.getBoolean(KEY_BACKUP_ENABLED, true))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
 
     fun saveUserName(name: String) {
         prefs.edit().putString(KEY_USER_NAME, name).apply()
@@ -8549,12 +8178,10 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Function to save the profile picture URI ---
     fun saveProfilePictureUri(uriString: String?) {
         prefs.edit().putString(KEY_PROFILE_PICTURE_URI, uriString).apply()
     }
 
-    // --- NEW: Flow to read the profile picture URI ---
     fun getProfilePictureUri(): Flow<String?> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
@@ -8606,13 +8233,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    /**
-     * Retrieves the overall budget for the current month as a Flow.
-     * This Flow will automatically emit a new value whenever the budget is updated.
-     *
-     * @return A Flow that emits the budget amount (Float). Defaults to 0f if not set.
-     */
-
     fun saveAppLockEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, isEnabled).apply()
     }
@@ -8632,7 +8252,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Flow to read the app lock preference ---
     fun getAppLockEnabled(): Flow<Boolean> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
@@ -8655,24 +8274,14 @@ class SettingsRepository(context: Context) {
         val month = calendar.get(Calendar.MONTH) + 1
         val key = getBudgetKey(year, month)
 
-        // callbackFlow is used to convert a callback-based API (like OnSharedPreferenceChangeListener)
-        // into a modern Flow, so the UI can react to changes.
         return callbackFlow {
-            // 1. Create a listener to watch for changes in SharedPreferences.
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
                 if (changedKey == key) {
-                    // If our specific budget key changed, emit the new value.
                     trySend(sharedPreferences.getFloat(key, 0f))
                 }
             }
-
-            // 2. Register the listener.
             prefs.registerOnSharedPreferenceChangeListener(listener)
-
-            // 3. Emit the initial value when the Flow is first collected.
             trySend(prefs.getFloat(key, 0f))
-
-            // 4. Unregister the listener when the Flow is cancelled to prevent memory leaks.
             awaitClose {
                 prefs.unregisterOnSharedPreferenceChangeListener(listener)
             }
@@ -8692,7 +8301,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Functions for Unknown Transaction Popup ---
     fun saveUnknownTransactionPopupEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled).apply()
     }
@@ -8738,9 +8346,9 @@ class SearchViewModelFactory(private val application: Application) : ViewModelPr
 package io.pm.finlight
 
 import android.app.Application
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.AndroidViewModel
 import com.github.mikephil.charting.data.*
-import com.github.mikephil.charting.utils.ColorTemplate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
@@ -8750,12 +8358,8 @@ import java.util.Locale
 
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
-
-    // Data for Pie Chart
     val spendingByCategoryPieData: Flow<PieData>
     val monthYear: String
-
-    // Data for Bar Chart, returns the data and the labels for the X-axis
     val monthlyTrendData: Flow<Pair<BarData, List<String>>>
 
     init {
@@ -8765,37 +8369,24 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         val calendar = Calendar.getInstance()
         monthYear = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(calendar.time)
 
-        // Date logic for current month's pie chart
-        val monthStart =
-            Calendar.getInstance().apply {
-                set(Calendar.DAY_OF_MONTH, 1)
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-            }.timeInMillis
-        val monthEnd =
-            Calendar.getInstance().apply {
-                add(Calendar.MONTH, 1)
-                set(Calendar.DAY_OF_MONTH, 1)
-                add(Calendar.DAY_OF_MONTH, -1)
-                set(Calendar.HOUR_OF_DAY, 23)
-                set(Calendar.MINUTE, 59)
-            }.timeInMillis
+        val monthStart = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0) }.timeInMillis
+        val monthEnd = Calendar.getInstance().apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23) }.timeInMillis
 
         spendingByCategoryPieData =
             transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd)
                 .map { spendingList ->
-                    // UPDATED: No longer need Math.abs() as amounts are positive.
                     val entries = spendingList.map { PieEntry(it.totalAmount.toFloat(), it.categoryName) }
+                    val colors = spendingList.map {
+                        (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
+                    }
                     val dataSet =
                         PieDataSet(entries, "Spending by Category").apply {
-                            colors = ColorTemplate.MATERIAL_COLORS.toList()
+                            this.colors = colors
                             valueTextSize = 12f
                         }
                     PieData(dataSet)
                 }
 
-        // Date logic for last 6 months' bar chart
         val sixMonthsAgo = Calendar.getInstance().apply { add(Calendar.MONTH, -6) }.timeInMillis
         monthlyTrendData =
             transactionRepository.getMonthlyTrends(sixMonthsAgo)
@@ -8806,14 +8397,13 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
                     trends.forEachIndexed { index, trend ->
                         incomeEntries.add(BarEntry(index.toFloat(), trend.totalIncome.toFloat()))
-                        // UPDATED: No longer need Math.abs() for expenses.
                         expenseEntries.add(BarEntry(index.toFloat(), trend.totalExpenses.toFloat()))
                         val date = SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(trend.monthYear)
                         labels.add(SimpleDateFormat("MMM", Locale.getDefault()).format(date ?: Date()))
                     }
 
-                    val incomeDataSet = BarDataSet(incomeEntries, "Income").apply { color = ColorTemplate.rgb("#66BB6A") }
-                    val expenseDataSet = BarDataSet(expenseEntries, "Expense").apply { color = ColorTemplate.rgb("#EF5350") }
+                    val incomeDataSet = BarDataSet(incomeEntries, "Income").apply { color = android.graphics.Color.rgb(102, 187, 106) }
+                    val expenseDataSet = BarDataSet(expenseEntries, "Expense").apply { color = android.graphics.Color.rgb(239, 83, 80) }
 
                     val barData = BarData(incomeDataSet, expenseDataSet)
                     Pair(barData, labels)
@@ -8901,6 +8491,7 @@ package io.pm.finlight
 
 import android.Manifest
 import android.app.Application
+import android.app.backup.BackupManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
@@ -8972,7 +8563,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = true,
         )
 
-    // --- RESTORED: State for the manual review flow ---
+    // --- NEW: StateFlow for the backup setting ---
+    val backupEnabled: StateFlow<Boolean> =
+        settingsRepository.getBackupEnabled().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = true,
+        )
+
     private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
     val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
 
@@ -8989,10 +8587,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 )
     }
 
-    // --- RESTORED: Function to handle the manual "Scan Inbox" action ---
+    // --- NEW: Function to handle changes to the backup setting ---
+    fun setBackupEnabled(enabled: Boolean) {
+        // Save the user's preference.
+        settingsRepository.saveBackupEnabled(enabled)
+
+        // IMPORTANT: Android's Auto Backup feature (to Google Drive) cannot be programmatically
+        // disabled by an app at runtime. The `android:allowBackup` flag in the Manifest
+        // is read at install time. This setting provides the user with an in-app choice,
+        // and we can notify the BackupManager that our app's data has changed, which
+        // may influence the timing of the next backup. However, this does NOT guarantee
+        // that backups will stop if the user toggles this off.
+        // The primary way for a user to disable this is in the system settings.
+        val backupManager = BackupManager(context)
+        backupManager.dataChanged()
+    }
+
     fun rescanSmsForReview(startDate: Long?) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            // In a real app, you'd send an event to the UI to request permission
             return
         }
 
@@ -9021,10 +8633,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     !existingSmsHashes.contains(potential.sourceSmsHash)
                 }
 
-                // Key difference: This populates the list for the UI review flow
                 _potentialTransactions.value = newPotentialTransactions
-
-                // This event tells the UI to navigate to the review screen
                 _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Error during SMS scan for review", e)
@@ -9035,7 +8644,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- RESTORED: Functions to manage the list during the review process ---
     fun dismissPotentialTransaction(transaction: PotentialTransaction) {
         _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
     }
@@ -9433,7 +9041,9 @@ interface TransactionDao {
         SELECT
             T.*,
             A.name as accountName,
-            C.name as categoryName
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
         FROM
             transactions AS T
         LEFT JOIN
@@ -9452,7 +9062,9 @@ interface TransactionDao {
         SELECT
             T.*,
             A.name as accountName,
-            C.name as categoryName
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
         FROM
             transactions AS T
         LEFT JOIN
@@ -9473,7 +9085,9 @@ interface TransactionDao {
         SELECT
             T.*,
             A.name as accountName,
-            C.name as categoryName
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
         FROM
             transactions AS T
         LEFT JOIN
@@ -9494,7 +9108,9 @@ interface TransactionDao {
         """
         SELECT T.*,
                A.name as accountName,
-               C.name as categoryName
+               C.name as categoryName,
+               C.iconKey as categoryIconKey,
+               C.colorKey as categoryColorKey
         FROM transactions AS T
         LEFT JOIN accounts AS A ON T.accountId = A.id
         LEFT JOIN categories AS C ON T.categoryId = C.id
@@ -9534,7 +9150,11 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT C.name as categoryName, SUM(T.amount) as totalAmount
+        SELECT 
+            C.name as categoryName, 
+            SUM(T.amount) as totalAmount,
+            C.iconKey as iconKey,
+            C.colorKey as colorKey
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
@@ -9563,7 +9183,7 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT t.*, a.name as accountName, c.name as categoryName
+        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
         FROM transactions t
         LEFT JOIN accounts a ON t.accountId = a.id
         LEFT JOIN categories c ON t.categoryId = c.id
@@ -9665,6 +9285,129 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
 -e 
 
 
+================== FILE: ./app/src/main/java/CategoryIconHelper.kt ==================
+package io.pm.finlight
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Fastfood
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.LocalGasStation
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Pets
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+
+/**
+ * A helper object to manage category icons and colors, and provide a predefined list of categories.
+ */
+object CategoryIconHelper {
+
+    private val iconColors = mapOf(
+        "green_light" to Color(0xFFA5D6A7),
+        "blue_light" to Color(0xFF90CAF9),
+        "purple_light" to Color(0xFFCE93D8),
+        "orange_light" to Color(0xFFFFCC80),
+        "red_light" to Color(0xFFEF9A9A),
+        "teal_light" to Color(0xFF80CBC4),
+        "pink_light" to Color(0xFFF48FB1),
+        "brown_light" to Color(0xFFBCAAA4),
+        "cyan_light" to Color(0xFF80DEEA),
+        "indigo_light" to Color(0xFF9FA8DA),
+        "deep_purple_light" to Color(0xFFB39DDB),
+        "yellow_light" to Color(0xFFFFF59D),
+        "gray_light" to Color(0xFFE0E0E0),
+    )
+
+    fun getIconBackgroundColor(colorKey: String): Color {
+        return iconColors[colorKey] ?: Color.LightGray
+    }
+
+    fun getAllIconColors(): Map<String, Color> {
+        return iconColors
+    }
+
+    // --- UPDATED: Each category now has a fixed, explicit ID ---
+    val predefinedCategories = listOf(
+        Category(id = 1, name = "Bills", iconKey = "receipt_long", colorKey = "green_light"),
+        Category(id = 2, name = "EMI", iconKey = "trending_up", colorKey = "blue_light"),
+        Category(id = 3, name = "Entertainment", iconKey = "star", colorKey = "purple_light"),
+        Category(id = 4, name = "Food & Drinks", iconKey = "restaurant", colorKey = "orange_light"),
+        Category(id = 5, name = "Fuel", iconKey = "local_gas_station", colorKey = "red_light"),
+        Category(id = 6, name = "Groceries", iconKey = "shopping_cart", colorKey = "teal_light"),
+        Category(id = 7, name = "Health", iconKey = "favorite", colorKey = "pink_light"),
+        Category(id = 8, name = "Investment", iconKey = "business", colorKey = "brown_light"),
+        Category(id = 9, name = "Shopping", iconKey = "shopping_bag", colorKey = "cyan_light"),
+        Category(id = 10, name = "Transfer", iconKey = "swap_horiz", colorKey = "indigo_light"),
+        Category(id = 11, name = "Travel", iconKey = "travel_explore", colorKey = "deep_purple_light"),
+        Category(id = 12, name = "Salary", iconKey = "account_balance", colorKey = "yellow_light"),
+        Category(id = 13, name = "Other", iconKey = "more_horiz", colorKey = "gray_light"),
+    )
+
+    fun getIcon(iconKey: String): ImageVector {
+        return when (iconKey) {
+            "receipt_long" -> Icons.AutoMirrored.Filled.ReceiptLong
+            "trending_up" -> Icons.AutoMirrored.Filled.TrendingUp
+            "star" -> Icons.Default.Star
+            "restaurant" -> Icons.Default.Restaurant
+            "local_gas_station" -> Icons.Default.LocalGasStation
+            "shopping_cart" -> Icons.Default.ShoppingCart
+            "favorite" -> Icons.Default.Favorite
+            "business" -> Icons.Default.Business
+            "shopping_bag" -> Icons.Default.ShoppingBag
+            "swap_horiz" -> Icons.Default.SwapHoriz
+            "travel_explore" -> Icons.Default.TravelExplore
+            "account_balance" -> Icons.Default.AccountBalance
+            "more_horiz" -> Icons.Default.MoreHoriz
+            "card_giftcard" -> Icons.Default.CardGiftcard
+            "school" -> Icons.Default.School
+            "pets" -> Icons.Default.Pets
+            "fastfood" -> Icons.Default.Fastfood
+            "directions_car" -> Icons.Default.DirectionsCar
+            else -> Icons.Default.Category
+        }
+    }
+
+    fun getAllIcons(): Map<String, ImageVector> {
+        return mapOf(
+            "receipt_long" to Icons.AutoMirrored.Filled.ReceiptLong,
+            "trending_up" to Icons.AutoMirrored.Filled.TrendingUp,
+            "star" to Icons.Default.Star,
+            "restaurant" to Icons.Default.Restaurant,
+            "local_gas_station" to Icons.Default.LocalGasStation,
+            "shopping_cart" to Icons.Default.ShoppingCart,
+            "favorite" to Icons.Default.Favorite,
+            "business" to Icons.Default.Business,
+            "shopping_bag" to Icons.Default.ShoppingBag,
+            "swap_horiz" to Icons.Default.SwapHoriz,
+            "travel_explore" to Icons.Default.TravelExplore,
+            "account_balance" to Icons.Default.AccountBalance,
+            "more_horiz" to Icons.Default.MoreHoriz,
+            "card_giftcard" to Icons.Default.CardGiftcard,
+            "school" to Icons.Default.School,
+            "pets" to Icons.Default.Pets,
+            "fastfood" to Icons.Default.Fastfood,
+            "directions_car" to Icons.Default.DirectionsCar,
+            "category" to Icons.Default.Category
+        )
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/CategoryDao.kt ==================
 package io.pm.finlight
 
@@ -9728,10 +9471,13 @@ interface BudgetDao {
     // It is much more efficient than fetching all transactions and all budgets into memory and combining them in the ViewModel.
     // It joins Budgets with an aggregate sum from Transactions for a given month and year.
     // --- FIX: The @Transaction annotation was removed as it's illegal on a @Query that returns a Flow. ---
-    @Query("""
+    @Query(
+        """
         SELECT
             B.*,
-            IFNULL(TxSums.totalSpent, 0.0) as spent
+            IFNULL(TxSums.totalSpent, 0.0) as spent,
+            Cat.iconKey as iconKey,
+            Cat.colorKey as colorKey
         FROM
             budgets AS B
         LEFT JOIN
@@ -9743,8 +9489,10 @@ interface BudgetDao {
              WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch') = :yearMonth
              GROUP BY C.name) AS TxSums
         ON B.categoryName = TxSums.categoryName
+        LEFT JOIN categories AS Cat ON B.categoryName = Cat.name
         WHERE B.month = :month AND B.year = :year
-    """)
+    """
+    )
     fun getBudgetsWithSpendingForMonth(yearMonth: String, month: Int, year: Int): Flow<List<BudgetWithSpending>>
 
 
@@ -9962,6 +9710,9 @@ data class BudgetWithSpending(
     @Embedded
     val budget: Budget,
     val spent: Double,
+    // --- NEW: Add fields for category icon and color ---
+    val iconKey: String?,
+    val colorKey: String?
 )
 -e 
 

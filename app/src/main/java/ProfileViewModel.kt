@@ -1,9 +1,6 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ProfileViewModel.kt
-// REASON: Fixed a SecurityException crash when saving a cropped profile picture.
-// FIX: Instead of trying to persist permissions for a temporary URI from the
-// cropper, the ViewModel now copies the image into the app's private internal
-// storage and saves the path to that new, permanent file.
+// REASON: Added a function to handle updating the user's name in SharedPreferences.
 // =================================================================================
 package io.pm.finlight
 
@@ -53,6 +50,15 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
             val localPath = saveImageToInternalStorage(sourceUri)
             // Save the path to our new local file
             settingsRepository.saveProfilePictureUri(localPath)
+        }
+    }
+
+    // --- NEW: Function to save the updated user name ---
+    fun updateUserName(name: String) {
+        viewModelScope.launch {
+            if (name.isNotBlank()) {
+                settingsRepository.saveUserName(name)
+            }
         }
     }
 

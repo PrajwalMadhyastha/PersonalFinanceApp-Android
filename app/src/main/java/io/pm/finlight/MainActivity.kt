@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Updated to hide the Floating Action Button (FAB) on the budget screen
-// to avoid redundant UI elements.
+// REASON: Updated the NavHost to include the new "edit_profile" screen route,
+// making it accessible from the rest of the application.
 // =================================================================================
 package io.pm.finlight
 
@@ -207,7 +207,6 @@ fun MainAppScreen() {
 
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
 
-    // --- FIX: The list of routes that should show the FAB no longer includes budget_screen ---
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
         BottomNavItem.Transactions.route,
@@ -336,6 +335,8 @@ fun AppNavHost(
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
         composable(BottomNavItem.Profile.route) { ProfileScreen(navController, profileViewModel) }
+        // --- NEW: Add the composable for the Edit Profile screen ---
+        composable("edit_profile") { EditProfileScreen(navController, profileViewModel) }
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
         composable("search_screen") { SearchScreen(navController) }

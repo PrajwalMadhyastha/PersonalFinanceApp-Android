@@ -34,5 +34,7 @@ val screenTitles = mapOf(
     "search_screen" to "Search",
     "review_sms_screen" to "Review SMS Transactions",
     "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
-    "tag_management" to "Manage Tags"
+    "tag_management" to "Manage Tags",
+    // --- NEW: Add the title for the new Edit Profile screen ---
+    "edit_profile" to "Edit Profile"
 )
