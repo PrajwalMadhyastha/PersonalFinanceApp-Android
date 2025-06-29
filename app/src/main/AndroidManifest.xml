@@ -10,7 +10,6 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- The camera permission is required by the cropper library if you want to take a new picture -->
     <uses-permission android:name="android.permission.CAMERA" />
 
 
@@ -59,10 +58,6 @@
             </intent-filter>
         </receiver>
 
-        <!--
-         NEW: Explicitly declare the CropImageActivity from the image cropper library.
-         Applying Theme.AppCompat ensures it has an ActionBar where the 'Done' checkmark can appear.
-        -->
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
             android:theme="@style/Theme.AppCompat.DayNight"

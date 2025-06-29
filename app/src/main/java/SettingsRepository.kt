@@ -15,7 +15,6 @@ class SettingsRepository(context: Context) {
     companion object {
         private const val PREF_NAME = "finance_app_settings"
         private const val KEY_USER_NAME = "user_name"
-        // --- NEW: Add key for profile picture URI ---
         private const val KEY_PROFILE_PICTURE_URI = "profile_picture_uri"
         private const val KEY_BUDGET_PREFIX = "overall_budget_"
         private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
@@ -24,7 +23,30 @@ class SettingsRepository(context: Context) {
         private const val KEY_DAILY_REPORT_ENABLED = "daily_report_enabled"
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
+        // --- NEW: Key for storing the backup preference ---
+        private const val KEY_BACKUP_ENABLED = "google_drive_backup_enabled"
     }
+
+    // --- NEW: Function to save the backup preference ---
+    fun saveBackupEnabled(isEnabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BACKUP_ENABLED, isEnabled).apply()
+    }
+
+    // --- NEW: Flow to read the backup preference ---
+    fun getBackupEnabled(): Flow<Boolean> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_BACKUP_ENABLED) {
+                    trySend(sharedPreferences.getBoolean(KEY_BACKUP_ENABLED, true))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            // Default to true, as backup is enabled by default in the manifest
+            trySend(prefs.getBoolean(KEY_BACKUP_ENABLED, true))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
 
     fun saveUserName(name: String) {
         prefs.edit().putString(KEY_USER_NAME, name).apply()
@@ -43,12 +65,10 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Function to save the profile picture URI ---
     fun saveProfilePictureUri(uriString: String?) {
         prefs.edit().putString(KEY_PROFILE_PICTURE_URI, uriString).apply()
     }
 
-    // --- NEW: Flow to read the profile picture URI ---
     fun getProfilePictureUri(): Flow<String?> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
@@ -100,13 +120,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    /**
-     * Retrieves the overall budget for the current month as a Flow.
-     * This Flow will automatically emit a new value whenever the budget is updated.
-     *
-     * @return A Flow that emits the budget amount (Float). Defaults to 0f if not set.
-     */
-
     fun saveAppLockEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, isEnabled).apply()
     }
@@ -126,7 +139,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Flow to read the app lock preference ---
     fun getAppLockEnabled(): Flow<Boolean> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
@@ -149,24 +161,14 @@ class SettingsRepository(context: Context) {
         val month = calendar.get(Calendar.MONTH) + 1
         val key = getBudgetKey(year, month)
 
-        // callbackFlow is used to convert a callback-based API (like OnSharedPreferenceChangeListener)
-        // into a modern Flow, so the UI can react to changes.
         return callbackFlow {
-            // 1. Create a listener to watch for changes in SharedPreferences.
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
                 if (changedKey == key) {
-                    // If our specific budget key changed, emit the new value.
                     trySend(sharedPreferences.getFloat(key, 0f))
                 }
             }
-
-            // 2. Register the listener.
             prefs.registerOnSharedPreferenceChangeListener(listener)
-
-            // 3. Emit the initial value when the Flow is first collected.
             trySend(prefs.getFloat(key, 0f))
-
-            // 4. Unregister the listener when the Flow is cancelled to prevent memory leaks.
             awaitClose {
                 prefs.unregisterOnSharedPreferenceChangeListener(listener)
             }
@@ -186,7 +188,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Functions for Unknown Transaction Popup ---
     fun saveUnknownTransactionPopupEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled).apply()
     }

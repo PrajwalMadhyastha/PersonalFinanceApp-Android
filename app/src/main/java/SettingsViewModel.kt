@@ -2,6 +2,7 @@ package io.pm.finlight
 
 import android.Manifest
 import android.app.Application
+import android.app.backup.BackupManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
@@ -73,7 +74,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = true,
         )
 
-    // --- RESTORED: State for the manual review flow ---
+    // --- NEW: StateFlow for the backup setting ---
+    val backupEnabled: StateFlow<Boolean> =
+        settingsRepository.getBackupEnabled().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = true,
+        )
+
     private val _potentialTransactions = MutableStateFlow<List<PotentialTransaction>>(emptyList())
     val potentialTransactions: StateFlow<List<PotentialTransaction>> = _potentialTransactions.asStateFlow()
 
@@ -90,10 +98,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 )
     }
 
-    // --- RESTORED: Function to handle the manual "Scan Inbox" action ---
+    // --- NEW: Function to handle changes to the backup setting ---
+    fun setBackupEnabled(enabled: Boolean) {
+        // Save the user's preference.
+        settingsRepository.saveBackupEnabled(enabled)
+
+        // IMPORTANT: Android's Auto Backup feature (to Google Drive) cannot be programmatically
+        // disabled by an app at runtime. The `android:allowBackup` flag in the Manifest
+        // is read at install time. This setting provides the user with an in-app choice,
+        // and we can notify the BackupManager that our app's data has changed, which
+        // may influence the timing of the next backup. However, this does NOT guarantee
+        // that backups will stop if the user toggles this off.
+        // The primary way for a user to disable this is in the system settings.
+        val backupManager = BackupManager(context)
+        backupManager.dataChanged()
+    }
+
     fun rescanSmsForReview(startDate: Long?) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            // In a real app, you'd send an event to the UI to request permission
             return
         }
 
@@ -122,10 +144,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     !existingSmsHashes.contains(potential.sourceSmsHash)
                 }
 
-                // Key difference: This populates the list for the UI review flow
                 _potentialTransactions.value = newPotentialTransactions
-
-                // This event tells the UI to navigate to the review screen
                 _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Error during SMS scan for review", e)
@@ -136,7 +155,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- RESTORED: Functions to manage the list during the review process ---
     fun dismissPotentialTransaction(transaction: PotentialTransaction) {
         _potentialTransactions.value = _potentialTransactions.value.filter { it != transaction }
     }

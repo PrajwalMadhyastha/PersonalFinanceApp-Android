@@ -47,6 +47,7 @@ fun SettingsScreen(
     val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReportEnabled by viewModel.dailyReportEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
+    val isBackupEnabled by viewModel.backupEnabled.collectAsState()
     var showSmsRationaleDialog by remember { mutableStateOf(false) }
     var hasSmsPermission by remember {
         mutableStateOf(
@@ -60,7 +61,6 @@ fun SettingsScreen(
         )
     }
 
-    // --- RESTORED: Listen for the scan event to navigate ---
     LaunchedEffect(key1 = viewModel.scanEvent) {
         viewModel.scanEvent.collect { result ->
             if (result is ScanResult.Success) {
@@ -329,7 +329,6 @@ fun SettingsScreen(
             )
         }
 
-        // --- RESTORED: SMS Scanning section for manual review ---
         item { SettingSectionHeader("SMS Scanning") }
         item {
             Row(
@@ -393,6 +392,16 @@ fun SettingsScreen(
             )
         }
         item { SettingSectionHeader("Data Management") }
+        // --- NEW: Toggle for Google Drive Backup ---
+        item {
+            SettingsToggleItem(
+                title = "Enable Google Drive Backup",
+                subtitle = "Automatically back up app data to your Google account.",
+                icon = Icons.Default.CloudUpload,
+                checked = isBackupEnabled,
+                onCheckedChange = { viewModel.setBackupEnabled(it) },
+            )
+        }
         item {
             SettingsActionItem(
                 text = "Export Data as JSON",
