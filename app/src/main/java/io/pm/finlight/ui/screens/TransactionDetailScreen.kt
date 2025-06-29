@@ -557,7 +557,7 @@ private fun CategoryPickerSheet(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    CategoryIcon(category)
+                    CategoryIconDisplay(category)
                     Text(category.name, style = MaterialTheme.typography.bodyMedium)
                 }
             }
@@ -643,7 +643,7 @@ private fun TagPickerSheet(
 // --- Helper Composables (mostly unchanged, but kept for context) ---
 
 @Composable
-private fun CategoryIcon(category: Category) {
+private fun CategoryIconDisplay(category: Category) {
     Box(
         modifier = Modifier
             .size(48.dp)
@@ -651,12 +651,21 @@ private fun CategoryIcon(category: Category) {
             .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = CategoryIconHelper.getIcon(category.iconKey),
-            contentDescription = category.name,
-            tint = Color.Black,
-            modifier = Modifier.size(24.dp)
-        )
+        if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                color = Color.Black,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                contentDescription = category.name,
+                tint = Color.Black,
+                modifier = Modifier.size(24.dp)
+            )
+        }
     }
 }
 
@@ -709,7 +718,8 @@ private fun TransactionHeaderCard(
                 text = details.categoryName ?: "Uncategorized",
                 icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
                 colorKey = details.categoryColorKey ?: "gray_light",
-                onClick = onCategoryClick
+                onClick = onCategoryClick,
+                category = details.toCategory()
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -747,12 +757,23 @@ private fun TransactionHeaderCard(
     }
 }
 
+// Extension function to convert TransactionDetails to a Category object
+private fun TransactionDetails.toCategory(): Category {
+    return Category(
+        id = this.transaction.categoryId ?: 0,
+        name = this.categoryName ?: "Uncategorized",
+        iconKey = this.categoryIconKey ?: "category",
+        colorKey = this.categoryColorKey ?: "gray_light"
+    )
+}
+
 @Composable
 private fun ChipWithIcon(
     text: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     colorKey: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    category: Category
 ) {
     Row(
         modifier = Modifier
@@ -763,12 +784,21 @@ private fun ChipWithIcon(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Color.Black,
-            modifier = Modifier.size(20.dp)
-        )
+        if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                color = Color.Black,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.size(20.dp)
+            )
+        }
         Text(
             text = text,
             fontWeight = FontWeight.SemiBold,

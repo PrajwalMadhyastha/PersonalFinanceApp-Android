@@ -422,14 +422,31 @@ fun BudgetItem(budgetWithSpending: BudgetWithSpending) {
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                modifier = Modifier.size(40.dp).clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(budgetWithSpending.colorKey ?: "gray_light")),
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        CategoryIconHelper.getIconBackgroundColor(
+                            budgetWithSpending.colorKey ?: "gray_light"
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
-                    contentDescription = budget.categoryName,
-                    tint = Color.Black
-                )
+                if (budgetWithSpending.iconKey == "letter_default") {
+                    Text(
+                        text = budgetWithSpending.budget.categoryName.firstOrNull()?.uppercase() ?: "?",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.Black
+                    )
+                } else {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
+                        contentDescription = budgetWithSpending.budget.categoryName,
+                        tint = Color.Black,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(16.dp))
             Text(text = budget.categoryName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))

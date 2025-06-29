@@ -52,6 +52,19 @@ object CategoryIconHelper {
         return iconColors
     }
 
+    /**
+     * NEW: Finds the first available color key that is not in the provided list of used keys.
+     * This ensures new categories get a unique color by default.
+     */
+    fun getNextAvailableColor(usedColorKeys: List<String>): String {
+        // Find the first color key from our predefined list that isn't already used.
+        return iconColors.keys.firstOrNull { it !in usedColorKeys }
+        // If all colors are used, cycle back and return the first one.
+            ?: iconColors.keys.firstOrNull()
+            // As a final fallback, return a default key.
+            ?: "gray_light"
+    }
+
     // --- UPDATED: Each category now has a fixed, explicit ID ---
     val predefinedCategories = listOf(
         Category(id = 1, name = "Bills", iconKey = "receipt_long", colorKey = "green_light"),

@@ -29,7 +29,21 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
 
     fun addCategory(name: String, iconKey: String, colorKey: String) =
         viewModelScope.launch {
-            categoryRepository.insert(Category(name = name, iconKey = iconKey, colorKey = colorKey))
+            // --- NEW: Logic to assign a better default icon and color ---
+            val usedColorKeys = allCategories.firstOrNull()?.map { it.colorKey } ?: emptyList()
+
+            // If the default icon was passed, use our special "letter" key.
+            // The UI will know how to render this.
+            val finalIconKey = if (iconKey == "category") "letter_default" else iconKey
+
+            // If the default color was passed, find the next available color.
+            val finalColorKey = if (colorKey == "gray_light") {
+                CategoryIconHelper.getNextAvailableColor(usedColorKeys)
+            } else {
+                colorKey
+            }
+
+            categoryRepository.insert(Category(name = name, iconKey = finalIconKey, colorKey = finalColorKey))
         }
 
     fun updateCategory(category: Category) =

@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -215,14 +216,24 @@ private fun CategoryDropdownItem(category: Category) {
 @Composable
 private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        modifier = modifier
+            .clip(CircleShape)
+            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = CategoryIconHelper.getIcon(category.iconKey),
-            contentDescription = null,
-            tint = Color.Black,
-            modifier = Modifier.padding(4.dp)
-        )
+        if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                fontWeight = FontWeight.Bold,
+                color = Color.Black
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.padding(4.dp)
+            )
+        }
     }
 }

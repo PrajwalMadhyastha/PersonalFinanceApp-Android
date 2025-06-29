@@ -18,7 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.Category
 import io.pm.finlight.CategoryIconHelper
@@ -67,6 +69,7 @@ fun CategoryListScreen(
                 ListItem(
                     headlineContent = { Text(category.name) },
                     leadingContent = {
+                        // --- UPDATED: To handle letter-based icons ---
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
@@ -74,11 +77,21 @@ fun CategoryListScreen(
                                 .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = CategoryIconHelper.getIcon(category.iconKey),
-                                contentDescription = category.name,
-                                tint = Color.Black // Assuming a light background color
-                            )
+                            if (category.iconKey == "letter_default") {
+                                Text(
+                                    text = category.name.firstOrNull()?.uppercase() ?: "?",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = Color.Black
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                                    contentDescription = category.name,
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     },
                     trailingContent = {

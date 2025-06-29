@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
@@ -44,11 +45,21 @@ fun TransactionItem(
                     .background(CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
-                    contentDescription = transactionDetails.categoryName,
-                    tint = Color.Black
-                )
+                if (transactionDetails.categoryIconKey == "letter_default") {
+                    Text(
+                        text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.Black
+                    )
+                } else {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
+                        contentDescription = transactionDetails.categoryName,
+                        tint = Color.Black,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
