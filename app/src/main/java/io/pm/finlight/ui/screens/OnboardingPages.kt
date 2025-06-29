@@ -8,8 +8,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -28,7 +26,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.OnboardingViewModel
 
 @Composable
@@ -116,51 +113,6 @@ fun UserNamePage(viewModel: OnboardingViewModel) {
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-    }
-}
-
-
-@Composable
-fun CategorySetupPage(viewModel: OnboardingViewModel) {
-    val categories by viewModel.categories.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Select Expense Categories", style = MaterialTheme.typography.headlineSmall)
-        Text("Choose the spending categories you use most often.", style = MaterialTheme.typography.bodyMedium)
-        Text(
-            "You can add or remove more in Settings later.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(16.dp))
-
-        LazyColumn(modifier = Modifier.fillMaxWidth()) {
-            items(categories) { selectableCategory ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = selectableCategory.isSelected,
-                        onCheckedChange = { viewModel.toggleCategorySelection(selectableCategory.category) }
-                    )
-                    // --- NEW: Display the icon for the category ---
-                    Icon(
-                        imageVector = CategoryIconHelper.getIcon(selectableCategory.category.iconKey),
-                        contentDescription = selectableCategory.category.name,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                    Text(text = selectableCategory.category.name)
-                }
-            }
-        }
     }
 }
 

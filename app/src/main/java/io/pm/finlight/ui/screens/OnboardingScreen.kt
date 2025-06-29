@@ -26,8 +26,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // Page count is 8 to include the new SMS info page
-    val pagerState = rememberPagerState { 8 }
+    // --- UPDATED: Page count is now 7 after removing category selection ---
+    val pagerState = rememberPagerState { 7 }
     val scope = rememberCoroutineScope()
 
     val onNextClicked: () -> Unit = {
@@ -40,7 +40,7 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
         bottomBar = {
             OnboardingBottomBar(
                 pagerState = pagerState,
-                viewModel = viewModel, // Pass ViewModel to control button state
+                viewModel = viewModel,
                 onNextClicked = onNextClicked,
                 onFinishClicked = {
                     viewModel.finishOnboarding()
@@ -54,17 +54,17 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            userScrollEnabled = false // Prevent swiping to enforce button logic
+            userScrollEnabled = false
         ) { page ->
+            // --- UPDATED: Removed CategorySetupPage and shifted indices ---
             when (page) {
                 0 -> WelcomePage()
                 1 -> UserNamePage(viewModel)
-                2 -> CategorySetupPage(viewModel)
-                3 -> BudgetSetupPage(viewModel)
-                4 -> SmsPermissionPage(onPermissionResult = onNextClicked)
-                5 -> SmsScanningInfoPage()
-                6 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
-                7 -> CompletionPage()
+                2 -> BudgetSetupPage(viewModel)
+                3 -> SmsPermissionPage(onPermissionResult = onNextClicked)
+                4 -> SmsScanningInfoPage()
+                5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
+                6 -> CompletionPage()
             }
         }
     }
@@ -74,7 +74,7 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
 @Composable
 fun OnboardingBottomBar(
     pagerState: PagerState,
-    viewModel: OnboardingViewModel, // ViewModel is needed to check the user's name
+    viewModel: OnboardingViewModel,
     onNextClicked: () -> Unit,
     onFinishClicked: () -> Unit
 ) {
@@ -90,11 +90,11 @@ fun OnboardingBottomBar(
         ) {
             PageIndicator(pageCount = pagerState.pageCount, currentPage = pagerState.currentPage)
 
+            // --- UPDATED: Page indices for hiding the "Next" button adjusted ---
             val isNextButtonVisible = pagerState.currentPage < pagerState.pageCount - 1 &&
-                    pagerState.currentPage != 4 && // Hide on SMS Permission Page
-                    pagerState.currentPage != 6    // Hide on Notification Permission Page
+                    pagerState.currentPage != 3 && // Hide on SMS Permission Page
+                    pagerState.currentPage != 5    // Hide on Notification Permission Page
 
-            // --- UPDATED: Check if the user is on the name page and if the name is blank ---
             val isNextEnabled = if (pagerState.currentPage == 1) {
                 userName.isNotBlank()
             } else {
@@ -104,7 +104,7 @@ fun OnboardingBottomBar(
             if (isNextButtonVisible) {
                 Button(
                     onClick = onNextClicked,
-                    enabled = isNextEnabled // Button is disabled if name is blank on the name page
+                    enabled = isNextEnabled
                 ) {
                     Text("Next")
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Page")

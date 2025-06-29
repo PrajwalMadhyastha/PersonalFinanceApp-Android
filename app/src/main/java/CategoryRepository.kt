@@ -19,6 +19,13 @@ class CategoryRepository(private val categoryDao: CategoryDao) {
     }
 
     /**
+     * Inserts a list of categories in a non-blocking way.
+     */
+    suspend fun insertAll(categories: List<Category>) {
+        categoryDao.insertAll(categories)
+    }
+
+    /**
      * Updates a category in a non-blocking way.
      */
     suspend fun update(category: Category) {
