@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.OnboardingViewModel
 
 @Composable
@@ -139,7 +140,7 @@ fun CategorySetupPage(viewModel: OnboardingViewModel) {
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
-            items(categories) { category ->
+            items(categories) { selectableCategory ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -147,10 +148,16 @@ fun CategorySetupPage(viewModel: OnboardingViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Checkbox(
-                        checked = category.isSelected,
-                        onCheckedChange = { viewModel.toggleCategorySelection(category.name) }
+                        checked = selectableCategory.isSelected,
+                        onCheckedChange = { viewModel.toggleCategorySelection(selectableCategory.category) }
                     )
-                    Text(text = category.name, modifier = Modifier.padding(start = 8.dp))
+                    // --- NEW: Display the icon for the category ---
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(selectableCategory.category.iconKey),
+                        contentDescription = selectableCategory.category.name,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Text(text = selectableCategory.category.name)
                 }
             }
         }

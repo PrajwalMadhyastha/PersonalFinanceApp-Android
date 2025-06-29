@@ -1,0 +1,119 @@
+package io.pm.finlight
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Fastfood
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.LocalGasStation
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Pets
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+
+/**
+ * A helper object to manage category icons and colors, and provide a predefined list of categories.
+ */
+object CategoryIconHelper {
+
+    private val iconColors = mapOf(
+        "green_light" to Color(0xFFA5D6A7),
+        "blue_light" to Color(0xFF90CAF9),
+        "purple_light" to Color(0xFFCE93D8),
+        "orange_light" to Color(0xFFFFCC80),
+        "red_light" to Color(0xFFEF9A9A),
+        "teal_light" to Color(0xFF80CBC4),
+        "pink_light" to Color(0xFFF48FB1),
+        "brown_light" to Color(0xFFBCAAA4),
+        "cyan_light" to Color(0xFF80DEEA),
+        "indigo_light" to Color(0xFF9FA8DA),
+        "deep_purple_light" to Color(0xFFB39DDB),
+        "yellow_light" to Color(0xFFFFF59D),
+        "gray_light" to Color(0xFFE0E0E0),
+    )
+
+    fun getIconBackgroundColor(colorKey: String): Color {
+        return iconColors[colorKey] ?: Color.LightGray
+    }
+
+    fun getAllIconColors(): Map<String, Color> {
+        return iconColors
+    }
+
+    // --- UPDATED: Each category now has a fixed, explicit ID ---
+    val predefinedCategories = listOf(
+        Category(id = 1, name = "Bills", iconKey = "receipt_long", colorKey = "green_light"),
+        Category(id = 2, name = "EMI", iconKey = "trending_up", colorKey = "blue_light"),
+        Category(id = 3, name = "Entertainment", iconKey = "star", colorKey = "purple_light"),
+        Category(id = 4, name = "Food & Drinks", iconKey = "restaurant", colorKey = "orange_light"),
+        Category(id = 5, name = "Fuel", iconKey = "local_gas_station", colorKey = "red_light"),
+        Category(id = 6, name = "Groceries", iconKey = "shopping_cart", colorKey = "teal_light"),
+        Category(id = 7, name = "Health", iconKey = "favorite", colorKey = "pink_light"),
+        Category(id = 8, name = "Investment", iconKey = "business", colorKey = "brown_light"),
+        Category(id = 9, name = "Shopping", iconKey = "shopping_bag", colorKey = "cyan_light"),
+        Category(id = 10, name = "Transfer", iconKey = "swap_horiz", colorKey = "indigo_light"),
+        Category(id = 11, name = "Travel", iconKey = "travel_explore", colorKey = "deep_purple_light"),
+        Category(id = 12, name = "Salary", iconKey = "account_balance", colorKey = "yellow_light"),
+        Category(id = 13, name = "Other", iconKey = "more_horiz", colorKey = "gray_light"),
+    )
+
+    fun getIcon(iconKey: String): ImageVector {
+        return when (iconKey) {
+            "receipt_long" -> Icons.AutoMirrored.Filled.ReceiptLong
+            "trending_up" -> Icons.AutoMirrored.Filled.TrendingUp
+            "star" -> Icons.Default.Star
+            "restaurant" -> Icons.Default.Restaurant
+            "local_gas_station" -> Icons.Default.LocalGasStation
+            "shopping_cart" -> Icons.Default.ShoppingCart
+            "favorite" -> Icons.Default.Favorite
+            "business" -> Icons.Default.Business
+            "shopping_bag" -> Icons.Default.ShoppingBag
+            "swap_horiz" -> Icons.Default.SwapHoriz
+            "travel_explore" -> Icons.Default.TravelExplore
+            "account_balance" -> Icons.Default.AccountBalance
+            "more_horiz" -> Icons.Default.MoreHoriz
+            "card_giftcard" -> Icons.Default.CardGiftcard
+            "school" -> Icons.Default.School
+            "pets" -> Icons.Default.Pets
+            "fastfood" -> Icons.Default.Fastfood
+            "directions_car" -> Icons.Default.DirectionsCar
+            else -> Icons.Default.Category
+        }
+    }
+
+    fun getAllIcons(): Map<String, ImageVector> {
+        return mapOf(
+            "receipt_long" to Icons.AutoMirrored.Filled.ReceiptLong,
+            "trending_up" to Icons.AutoMirrored.Filled.TrendingUp,
+            "star" to Icons.Default.Star,
+            "restaurant" to Icons.Default.Restaurant,
+            "local_gas_station" to Icons.Default.LocalGasStation,
+            "shopping_cart" to Icons.Default.ShoppingCart,
+            "favorite" to Icons.Default.Favorite,
+            "business" to Icons.Default.Business,
+            "shopping_bag" to Icons.Default.ShoppingBag,
+            "swap_horiz" to Icons.Default.SwapHoriz,
+            "travel_explore" to Icons.Default.TravelExplore,
+            "account_balance" to Icons.Default.AccountBalance,
+            "more_horiz" to Icons.Default.MoreHoriz,
+            "card_giftcard" to Icons.Default.CardGiftcard,
+            "school" to Icons.Default.School,
+            "pets" to Icons.Default.Pets,
+            "fastfood" to Icons.Default.Fastfood,
+            "directions_car" to Icons.Default.DirectionsCar,
+            "category" to Icons.Default.Category
+        )
+    }
+}

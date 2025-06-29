@@ -19,10 +19,10 @@ import java.util.Calendar
         Budget::class,
         MerchantMapping::class,
         RecurringTransaction::class,
-        Tag::class, // <-- NEW
-        TransactionTagCrossRef::class // <-- NEW
+        Tag::class,
+        TransactionTagCrossRef::class
     ],
-    version = 8, // <-- CRITICAL: Version number is incremented to 8
+    version = 10,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,13 +32,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun budgetDao(): BudgetDao
     abstract fun merchantMappingDao(): MerchantMappingDao
     abstract fun recurringTransactionDao(): RecurringTransactionDao
-    abstract fun tagDao(): TagDao // <-- NEW DAO Interface
+    abstract fun tagDao(): TagDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        // --- Migrations 1-5 remain the same ---
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN transactionType TEXT NOT NULL DEFAULT 'expense'")
@@ -48,15 +47,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `merchant_mappings` (
-                        `smsSender` TEXT NOT NULL, 
-                        `merchantName` TEXT NOT NULL, 
-                        PRIMARY KEY(`smsSender`)
-                    )
-                    """.trimIndent(),
-                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_mappings` (`smsSender` TEXT NOT NULL, `merchantName` TEXT NOT NULL, PRIMARY KEY(`smsSender`))")
             }
         }
         val MIGRATION_3_4 = object : Migration(3, 4) {
@@ -66,58 +57,16 @@ abstract class AppDatabase : RoomDatabase() {
         }
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `recurring_transactions` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `description` TEXT NOT NULL, 
-                        `amount` REAL NOT NULL, 
-                        `transactionType` TEXT NOT NULL, 
-                        `recurrenceInterval` TEXT NOT NULL, 
-                        `startDate` INTEGER NOT NULL, 
-                        `accountId` INTEGER NOT NULL, 
-                        `categoryId` INTEGER, 
-                        FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, 
-                        FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
-                    )
-                    """.trimIndent(),
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_recurring_transactions_accountId` ON `recurring_transactions` (`accountId`)",
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_recurring_transactions_categoryId` ON `recurring_transactions` (`categoryId`)",
-                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `recurring_transactions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `description` TEXT NOT NULL, `amount` REAL NOT NULL, `transactionType` TEXT NOT NULL, `recurrenceInterval` TEXT NOT NULL, `startDate` INTEGER NOT NULL, `accountId` INTEGER NOT NULL, `categoryId` INTEGER, FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_transactions_accountId` ON `recurring_transactions` (`accountId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_transactions_categoryId` ON `recurring_transactions` (`categoryId`)")
             }
         }
-
-        // --- CRITICAL: Migration from 5 to 6 to add Tags and the relationship table ---
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Create the new 'tags' table
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `tags` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `name` TEXT NOT NULL
-                    )
-                    """.trimIndent()
-                )
-                // Add an index to ensure tag names are unique
+                db.execSQL("CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_name` ON `tags` (`name`)")
-
-                // Create the new 'transaction_tag_cross_ref' table for the many-to-many relationship
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `transaction_tag_cross_ref` (
-                        `transactionId` INTEGER NOT NULL, 
-                        `tagId` INTEGER NOT NULL, 
-                        PRIMARY KEY(`transactionId`, `tagId`),
-                        FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE,
-                        FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `transaction_tag_cross_ref` (`transactionId` INTEGER NOT NULL, `tagId` INTEGER NOT NULL, PRIMARY KEY(`transactionId`, `tagId`), FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE, FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) ON DELETE CASCADE)")
             }
         }
         val MIGRATION_6_7 = object : Migration(6, 7) {
@@ -125,25 +74,28 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN sourceSmsHash TEXT")
             }
         }
-
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN source TEXT NOT NULL DEFAULT 'Manual Entry'")
                 db.execSQL("UPDATE transactions SET source = 'Reviewed Import' WHERE sourceSmsId IS NOT NULL")
             }
         }
-
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE categories ADD COLUMN iconKey TEXT NOT NULL DEFAULT 'category'")
+            }
+        }
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE categories ADD COLUMN colorKey TEXT NOT NULL DEFAULT 'gray_light'")
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
-                    Room.databaseBuilder(
-                        context.applicationContext,
-                        AppDatabase::class.java,
-                        "finance_database",
-                    )
-                        // --- CRITICAL: Added the new MIGRATION_5_6 ---
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -163,16 +115,13 @@ abstract class AppDatabase : RoomDatabase() {
                 val accountDao = db.accountDao()
                 val categoryDao = db.categoryDao()
                 val transactionDao = db.transactionDao()
-                // --- NEW: Get Budget DAO ---
                 val budgetDao = db.budgetDao()
 
-                // Clear out any existing data
                 transactionDao.deleteAll()
-                budgetDao.deleteAll() // Assuming you add this
+                budgetDao.deleteAll()
                 categoryDao.deleteAll()
                 accountDao.deleteAll()
 
-                // --- 1. Populate Accounts ---
                 accountDao.insertAll(
                     listOf(
                         Account(id = 1, name = "SBI", type = "Savings"),
@@ -181,37 +130,22 @@ abstract class AppDatabase : RoomDatabase() {
                     ),
                 )
 
-                // --- 2. Populate Categories ---
-                categoryDao.insertAll(
-                    listOf(
-                        Category(id = 1, name = "Salary"),
-                        Category(id = 2, name = "Groceries"),
-                        Category(id = 3, name = "Rent"),
-                        Category(id = 4, name = "Food"),
-                        Category(id = 5, name = "Transportation"),
-                        Category(id = 6, name = "Utilities"),
-                    ),
-                )
+                categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
 
-                // --- 3. Populate Transactions (with corrected dates) ---
                 val calendar = Calendar.getInstance()
-
-                // Set to the start of the current month for an income transaction
                 calendar.set(Calendar.DAY_OF_MONTH, 5)
                 val incomeDate = calendar.timeInMillis
-
-                // Set to a few days ago within the current month for expenses
                 calendar.set(Calendar.DAY_OF_MONTH, 10)
                 val expenseDate1 = calendar.timeInMillis
-
                 calendar.set(Calendar.DAY_OF_MONTH, 15)
                 val expenseDate2 = calendar.timeInMillis
 
+                // --- FIXED: Use the correct, hardcoded IDs from the predefined list ---
                 transactionDao.insertAll(
                     listOf(
                         Transaction(
                             description = "Monthly Salary",
-                            categoryId = 1,
+                            categoryId = 12, // Corresponds to "Salary"
                             amount = 75000.0,
                             date = incomeDate,
                             accountId = 1,
@@ -220,7 +154,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Grocery Shopping",
-                            categoryId = 2,
+                            categoryId = 6, // Corresponds to "Groceries"
                             amount = 4500.0,
                             date = expenseDate1,
                             accountId = 2,
@@ -229,62 +163,24 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Dinner with friends",
-                            categoryId = 4,
+                            categoryId = 4, // Corresponds to "Food & Drinks"
                             amount = 1200.0,
                             date = expenseDate2,
                             accountId = 2,
                             notes = null,
                             transactionType = "expense",
-                        ),
-                        // A transaction from last month to test reports
-                        Transaction(
-                            description = "Apartment Rent",
-                            categoryId = 3,
-                            amount = 25000.0,
-                            date =
-                                Calendar.getInstance().apply {
-                                    add(Calendar.MONTH, -1)
-                                }.timeInMillis,
-                            accountId = 1,
-                            notes = "Monthly rent payment",
-                            transactionType = "expense",
-                        ),
-                        Transaction(
-                            description = "Bus",
-                            categoryId = 5,
-                            amount = 150.0,
-                            date =
-                                Calendar.getInstance().apply {
-                                    add(Calendar.DAY_OF_MONTH, -2)
-                                }.timeInMillis,
-                            accountId = 1,
-                            notes = "Travel",
-                            transactionType = "expense",
-                        ),
-                        Transaction(
-                            description = "Electricity Bill",
-                            categoryId = 6,
-                            amount = 850.0,
-                            date =
-                                Calendar.getInstance().apply {
-                                    add(Calendar.DAY_OF_MONTH, -1)
-                                }.timeInMillis,
-                            accountId = 3,
-                            notes = "Power bill",
-                            transactionType = "expense",
-                        ),
-                    ),
+                        )
+                    )
                 )
 
-                // --- 4. Populate Budgets for the current month ---
-                val month = calendar.get(Calendar.MONTH) + 1 // Calendar.MONTH is 0-based
+                val month = calendar.get(Calendar.MONTH) + 1
                 val year = calendar.get(Calendar.YEAR)
 
                 budgetDao.insertAll(
                     listOf(
                         Budget(categoryName = "Groceries", amount = 10000.0, month = month, year = year),
-                        Budget(categoryName = "Food", amount = 5000.0, month = month, year = year),
-                        Budget(categoryName = "Utilities", amount = 2000.0, month = month, year = year),
+                        Budget(categoryName = "Food & Drinks", amount = 5000.0, month = month, year = year),
+                        Budget(categoryName = "Bills", amount = 2000.0, month = month, year = year),
                     ),
                 )
             }
