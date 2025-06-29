@@ -14,7 +14,11 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Expose the new limited query for the dashboard ---
+    // --- NEW: Expose the DAO method to get a single transaction's details ---
+    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+        return transactionDao.getTransactionDetailsById(id)
+    }
+
     val recentTransactions: Flow<List<TransactionDetails>> = transactionDao.getRecentTransactionDetails()
 
     fun getAllSmsHashes(): Flow<List<String>> {

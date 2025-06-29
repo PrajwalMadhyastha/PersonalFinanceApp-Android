@@ -13,15 +13,12 @@ import io.pm.finlight.ui.components.TransactionList
 fun TransactionListScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
-    // --- NEW: Accept an optional filter type ---
     filterType: String?
 ) {
-    // --- NEW: Apply the filter when the screen is composed ---
     LaunchedEffect(filterType) {
         viewModel.setTransactionTypeFilter(filterType)
     }
 
-    // --- NEW: Reset the filter when the user navigates away ---
     DisposableEffect(Unit) {
         onDispose {
             viewModel.setTransactionTypeFilter(null)
@@ -31,6 +28,7 @@ fun TransactionListScreen(
     val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
     TransactionList(
         transactions = transactions,
-        navController = navController,
+        navController = navController
+        // --- FIX: Removed the 'modifier' parameter that was causing the compile error ---
     )
 }

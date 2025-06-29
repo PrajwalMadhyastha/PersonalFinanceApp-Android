@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Updated the NavHost to include the new "edit_profile" screen route,
-// making it accessible from the rest of the application.
+// REASON: Fixed the double TopAppBar issue by conditionally hiding the main app bar
+// when navigating to the new Transaction Detail screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -197,7 +197,7 @@ fun MainAppScreen() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentRoute = currentDestination?.route
-    val baseCurrentRoute = currentRoute?.substringBefore("?")
+    val baseCurrentRoute = currentRoute?.split("/")?.firstOrNull()
 
     val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
         "Hi, $userName!"
@@ -215,39 +215,45 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
+    // --- FIX: Logic to conditionally show the main TopAppBar ---
+    val showMainTopBar = baseCurrentRoute != "transaction_detail"
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(currentTitle) },
-                navigationIcon = {
-                    if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
-                        AsyncImage(
-                            model = profilePictureUri,
-                            contentDescription = "User Profile Picture",
-                            placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                            error = painterResource(id = R.drawable.ic_launcher_foreground),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .padding(start = 16.dp)
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { navController.navigate(BottomNavItem.Profile.route) }
-                        )
-                    } else if (!showBottomBar) {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            // --- FIX: Only show the main app bar if we are NOT on the detail screen ---
+            if (showMainTopBar) {
+                TopAppBar(
+                    title = { Text(currentTitle) },
+                    navigationIcon = {
+                        if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
+                            AsyncImage(
+                                model = profilePictureUri,
+                                contentDescription = "User Profile Picture",
+                                placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                                error = painterResource(id = R.drawable.ic_launcher_foreground),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(start = 16.dp)
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { navController.navigate(BottomNavItem.Profile.route) }
+                            )
+                        } else if (!showBottomBar) {
+                            IconButton(onClick = { navController.popBackStack() }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
+                        }
+                    },
+                    actions = {
+                        if (currentRoute == BottomNavItem.Dashboard.route) {
+                            IconButton(onClick = { navController.navigate("search_screen") }) {
+                                Icon(Icons.Default.Search, contentDescription = "Search")
+                            }
                         }
                     }
-                },
-                actions = {
-                    if (currentRoute == BottomNavItem.Dashboard.route) {
-                        IconButton(onClick = { navController.navigate("search_screen") }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
-                        }
-                    }
-                }
-            )
+                )
+            }
         },
         bottomBar = {
             if (showBottomBar) {
@@ -335,7 +341,6 @@ fun AppNavHost(
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
         composable(BottomNavItem.Profile.route) { ProfileScreen(navController, profileViewModel) }
-        // --- NEW: Add the composable for the Edit Profile screen ---
         composable("edit_profile") { EditProfileScreen(navController, profileViewModel) }
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
@@ -364,6 +369,15 @@ fun AppNavHost(
         }
 
         composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
+
+        composable(
+            route = "transaction_detail/{transactionId}",
+            arguments = listOf(navArgument("transactionId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
+            TransactionDetailScreen(navController, transactionId, transactionViewModel)
+        }
+
         composable(
             route = "edit_transaction/{transactionId}",
             arguments = listOf(

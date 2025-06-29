@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -19,6 +20,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _transactionTypeFilter = MutableStateFlow<String?>(null)
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     val allTransactions: StateFlow<List<TransactionDetails>> =
         _transactionTypeFilter.flatMapLatest { filterType ->
             transactionRepository.allTransactions.map { list ->
@@ -99,6 +101,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _selectedTags.value = emptySet()
     }
 
+    // --- NEW: Function to get full details for a single transaction ---
+    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+        return transactionRepository.getTransactionDetailsById(id)
+    }
 
     fun getTransactionById(id: Int): Flow<Transaction?> {
         return transactionRepository.getTransactionById(id)
@@ -139,7 +145,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     transactionType = potentialTxn.transactionType,
                     sourceSmsId = potentialTxn.sourceSmsId,
                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                    // --- UPDATED: Set the source for reviewed imports ---
                     source = "Reviewed Import"
                 )
 
@@ -188,7 +193,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 transactionType = transactionType,
                 sourceSmsId = sourceSmsId,
                 sourceSmsHash = sourceSmsHash,
-                source = "Manual Entry" // Default source
+                source = "Manual Entry"
             )
         viewModelScope.launch {
             transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)
@@ -209,7 +214,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch {
-            // The source field is preserved on update
             transactionRepository.updateTransactionWithTags(transaction, _selectedTags.value)
         }
         return true

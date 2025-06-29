@@ -6,8 +6,25 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Highly efficient query for the dashboard's "Recent Transactions" card ---
-    // This fetches only the top 5 transactions directly from the database.
+    // --- NEW: Query to get the full details for a single transaction by its ID ---
+    @Query("""
+        SELECT
+            T.*,
+            A.name as accountName,
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
+        FROM
+            transactions AS T
+        LEFT JOIN
+            accounts AS A ON T.accountId = A.id
+        LEFT JOIN
+            categories AS C ON T.categoryId = C.id
+        WHERE T.id = :id
+    """)
+    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?>
+
+
     @Query(
         """
         SELECT

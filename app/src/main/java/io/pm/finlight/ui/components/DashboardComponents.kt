@@ -82,11 +82,9 @@ fun StatCard(
     amount: Float,
     modifier: Modifier = Modifier,
     isPerDay: Boolean = false,
-    // --- NEW: Add an onClick parameter to make the card interactive ---
     onClick: () -> Unit = {}
 ) {
     Card(
-        // --- NEW: Apply the clickable modifier ---
         modifier = modifier.clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
@@ -119,7 +117,6 @@ fun OverallBudgetCard(
     navController: NavController
 ) {
     Card(
-        // --- NEW: Make the entire card clickable to navigate to the budget screen ---
         modifier = Modifier
             .fillMaxWidth()
             .clickable { navController.navigate("budget_screen") },
@@ -134,8 +131,6 @@ fun OverallBudgetCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
-                // The "Edit" button is now redundant since the whole card is clickable,
-                // but we can leave it for user clarity.
                 if (totalBudget > 0) {
                     TextButton(onClick = { navController.navigate("budget_screen") }) {
                         Text("Edit")
@@ -374,9 +369,13 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
                 Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 transactions.forEach { details ->
-                    TransactionItem(transactionDetails = details) {
-                        navController.navigate("edit_transaction/${details.transaction.id}")
-                    }
+                    TransactionItem(
+                        transactionDetails = details,
+                        // --- UPDATED: Navigate to the new detail screen ---
+                        onClick = {
+                            navController.navigate("transaction_detail/${details.transaction.id}")
+                        }
+                    )
                 }
             }
         }
