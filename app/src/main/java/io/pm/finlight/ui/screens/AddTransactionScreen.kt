@@ -1,73 +1,50 @@
 package io.pm.finlight.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material3.Button
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.filled.Notes
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import io.pm.finlight.Account
-import io.pm.finlight.Category
-import io.pm.finlight.CategoryIconHelper
-import io.pm.finlight.TransactionViewModel
+import coil.compose.AsyncImage
+import io.pm.finlight.*
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
+import java.util.*
+
+private sealed class AddSheetContent {
+    object Account : AddSheetContent()
+    object Category : AddSheetContent()
+    object Tags : AddSheetContent()
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -78,18 +55,14 @@ fun AddTransactionScreen(
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
-    var newTagName by remember { mutableStateOf("") }
 
     var transactionType by remember { mutableStateOf("expense") }
-    val transactionTypes = listOf("Expense", "Income")
 
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
-    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
 
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -97,6 +70,19 @@ fun AddTransactionScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
+
+    // --- NEW: State for attachments ---
+    var attachedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        attachedImageUris = attachedImageUris + uris
+    }
+
+
+    // --- NEW: State for bottom sheets ---
+    var activeSheetContent by remember { mutableStateOf<AddSheetContent?>(null) }
+    val sheetState = rememberModalBottomSheetState()
 
     val isExpense = transactionType == "expense"
     val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && (!isExpense || selectedCategory != null))
@@ -106,112 +92,534 @@ fun AddTransactionScreen(
 
     DisposableEffect(Unit) { onDispose { viewModel.clearSelectedTags() } }
 
-    LaunchedEffect(validationError) { validationError?.let { snackbarHostState.showSnackbar(it) } }
+    LaunchedEffect(validationError) { validationError?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() } }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             item {
-                TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
-                    transactionTypes.forEachIndexed { index, title ->
-                        Tab(selected = (if (isExpense) 0 else 1) == index, onClick = { transactionType = if (index == 0) "expense" else "income"; if (transactionType == "income") selectedCategory = null }, text = { Text(title) })
-                    }
-                }
-            }
-            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
-            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
-                        Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
-                    }
-                    Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
-                        Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
-                    }
-                }
-            }
-            item {
-                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
-                    OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {}, readOnly = true, label = { Text("Account") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                    ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
-                        accounts.forEach { account ->
-                            DropdownMenuItem(text = { Text(account.name) }, onClick = { selectedAccount = account; isAccountDropdownExpanded = false })
+                SegmentedButton(
+                    options = listOf("Expense", "Income"),
+                    selectedOption = transactionType.replaceFirstChar { it.uppercase() },
+                    onOptionSelected = {
+                        transactionType = it.lowercase(Locale.getDefault())
+                        if (transactionType == "income") {
+                            selectedCategory = null
                         }
                     }
-                }
+                )
             }
-            if (isExpense) {
+
+            item {
+                PrimaryInfoCard(
+                    amount = amount,
+                    onAmountChange = { amount = it },
+                    description = description,
+                    onDescriptionChange = { description = it }
+                )
+            }
+
+            item {
+                DetailsCard(
+                    selectedAccount = selectedAccount,
+                    onAccountClick = { activeSheetContent = AddSheetContent.Account },
+                    selectedCategory = selectedCategory,
+                    onCategoryClick = { activeSheetContent = AddSheetContent.Category },
+                    isCategoryVisible = isExpense,
+                    selectedDate = selectedDateTime.time,
+                    onDateClick = { showDatePicker = true },
+                    tags = selectedTags,
+                    onTagsClick = { activeSheetContent = AddSheetContent.Tags },
+                    notes = notes,
+                    onNotesChange = { notes = it },
+                    attachmentsCount = attachedImageUris.size,
+                    onAttachmentsClick = { imagePickerLauncher.launch("image/*") }
+                )
+            }
+
+            if (attachedImageUris.isNotEmpty()) {
                 item {
-                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
-                        OutlinedTextField(
-                            value = selectedCategory?.name ?: "Select Category",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Category") },
-                            leadingIcon = selectedCategory?.let { { CategoryIcon(it) } },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
-                        )
-                        ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                            categories.forEach { category ->
-                                DropdownMenuItem(
-                                    text = { CategoryDropdownItem(category = category) },
-                                    onClick = { selectedCategory = category; isCategoryDropdownExpanded = false }
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(attachedImageUris) { uri ->
+                            Box {
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = "Selected image",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .clip(RoundedCornerShape(8.dp))
                                 )
+                                IconButton(
+                                    onClick = { attachedImageUris = attachedImageUris - uri },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp)
+                                        .size(24.dp)
+                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove attachment",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
+
+
             item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    allTags.forEach { tag -> FilterChip(selected = tag in selectedTags, onClick = { viewModel.onTagSelected(tag) }, label = { Text(tag.name) }) }
-                }
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = newTagName, onValueChange = { newTagName = it }, label = { Text("New Tag") }, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { viewModel.addTagOnTheGo(newTagName); newTagName = "" }, enabled = newTagName.isNotBlank()) { Icon(Icons.Default.Add, contentDescription = "Add New Tag") }
-                }
-            }
-            item {
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
                     Button(
                         onClick = {
-                            val success = viewModel.addTransaction(description = description, categoryId = selectedCategory?.id, amountStr = amount, accountId = selectedAccount!!.id, notes = notes.takeIf { it.isNotBlank() }, date = selectedDateTime.timeInMillis, transactionType = transactionType, sourceSmsId = null, sourceSmsHash = null)
+                            val success = viewModel.addTransaction(
+                                description = description,
+                                categoryId = selectedCategory?.id,
+                                amountStr = amount,
+                                accountId = selectedAccount!!.id,
+                                notes = notes.takeIf { it.isNotBlank() },
+                                date = selectedDateTime.timeInMillis,
+                                transactionType = transactionType,
+                                sourceSmsId = null,
+                                sourceSmsHash = null,
+                                imageUris = attachedImageUris
+                            )
                             if (success) navController.popBackStack()
                         },
-                        modifier = Modifier.weight(1f), enabled = isSaveEnabled
-                    ) { Text("Save Transaction") }
+                        modifier = Modifier.weight(1f),
+                        enabled = isSaveEnabled
+                    ) {
+                        Text("Save")
+                    }
                 }
             }
         }
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
+
+
+    // --- Bottom Sheet Logic ---
+    if (activeSheetContent != null) {
+        ModalBottomSheet(
+            onDismissRequest = { activeSheetContent = null },
+            sheetState = sheetState
+        ) {
+            when (activeSheetContent) {
+                is AddSheetContent.Account -> AddAccountPickerSheet(
+                    items = accounts,
+                    onItemSelected = { selectedAccount = it; activeSheetContent = null },
+                    onDismiss = { activeSheetContent = null }
+                )
+                is AddSheetContent.Category -> AddCategoryPickerSheet(
+                    items = categories,
+                    onItemSelected = { selectedCategory = it; activeSheetContent = null },
+                    onDismiss = { activeSheetContent = null }
+                )
+                is AddSheetContent.Tags -> AddTagPickerSheet(
+                    allTags = allTags,
+                    selectedTags = selectedTags,
+                    onTagSelected = viewModel::onTagSelected,
+                    onAddNewTag = viewModel::addTagOnTheGo,
+                    onConfirm = { activeSheetContent = null },
+                    onDismiss = { activeSheetContent = null }
+                )
+                else -> {}
+            }
+        }
+    }
+
+
+    // --- Dialogs for Date/Time ---
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
-        DatePickerDialog(onDismissRequest = { showDatePicker = false }, confirmButton = { TextButton(onClick = { datePickerState.selectedDateMillis?.let { val cal = Calendar.getInstance().apply { timeInMillis = it }; selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR)); selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH)); selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH)) }; showDatePicker = false }) { Text("OK") } }, dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }) { DatePicker(state = datePickerState) }
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let {
+                        val cal = Calendar.getInstance().apply { timeInMillis = it }
+                        selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR))
+                        selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH))
+                        selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH))
+                    }
+                    showDatePicker = false
+                    showTimePicker = true
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
+        ) { DatePicker(state = datePickerState) }
     }
+
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(Calendar.MINUTE))
-        TimePickerDialog(onDismissRequest = { showTimePicker = false }, onConfirm = { selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour); selectedDateTime.set(Calendar.MINUTE, timePickerState.minute); showTimePicker = false }) { TimePicker(state = timePickerState) }
+        val timePickerState = rememberTimePickerState(
+            initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
+            initialMinute = selectedDateTime.get(Calendar.MINUTE)
+        )
+        TimePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            onConfirm = {
+                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
+                showTimePicker = false
+            }
+        ) { TimePicker(state = timePickerState) }
     }
 }
 
 @Composable
-private fun CategoryDropdownItem(category: Category) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        CategoryIcon(category = category, modifier = Modifier.size(24.dp))
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(category.name)
+fun PrimaryInfoCard(
+    amount: String,
+    onAmountChange: (String) -> Unit,
+    description: String,
+    onDescriptionChange: (String) -> Unit
+) {
+    Card(elevation = CardDefaults.cardElevation(2.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            BasicTextField(
+                value = amount,
+                onValueChange = onAmountChange,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                textStyle = MaterialTheme.typography.displayMedium.copy(
+                    textAlign = TextAlign.End,
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                decorationBox = { innerTextField ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "₹",
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (amount.isEmpty()) {
+                                Text(
+                                    "0.00",
+                                    style = MaterialTheme.typography.displayMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.End
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                }
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+            OutlinedTextField(
+                value = description,
+                onValueChange = onDescriptionChange,
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedBorderColor = Color.Transparent
+                ),
+                placeholder = { Text("What did you spend on?") }
+            )
+        }
     }
 }
+
+@Composable
+fun DetailsCard(
+    selectedAccount: Account?,
+    onAccountClick: () -> Unit,
+    selectedCategory: Category?,
+    onCategoryClick: () -> Unit,
+    isCategoryVisible: Boolean,
+    selectedDate: Date,
+    onDateClick: () -> Unit,
+    tags: Set<Tag>,
+    onTagsClick: () -> Unit,
+    notes: String,
+    onNotesChange: (String) -> Unit,
+    attachmentsCount: Int,
+    onAttachmentsClick: () -> Unit
+) {
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()) }
+
+    Card(elevation = CardDefaults.cardElevation(2.dp)) {
+        Column {
+            DetailRow(
+                icon = Icons.Default.AccountBalanceWallet,
+                label = "Account",
+                value = selectedAccount?.name ?: "Select account",
+                onClick = onAccountClick,
+                valueColor = if (selectedAccount == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            )
+            if (isCategoryVisible) {
+                HorizontalDivider()
+                DetailRow(
+                    icon = Icons.Default.Category,
+                    label = "Category",
+                    value = selectedCategory?.name ?: "Select category",
+                    onClick = onCategoryClick,
+                    valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
+                )
+            }
+            HorizontalDivider()
+            DetailRow(
+                icon = Icons.Default.DateRange,
+                label = "Date",
+                value = dateFormatter.format(selectedDate),
+                onClick = onDateClick
+            )
+            HorizontalDivider()
+            DetailRow(
+                icon = Icons.Default.NewLabel,
+                label = "Tags",
+                value = if (tags.isEmpty()) "Add tags" else tags.joinToString { it.name },
+                onClick = onTagsClick
+            )
+            HorizontalDivider()
+            DetailRow(
+                icon = Icons.Default.Attachment,
+                label = "Attach Photo",
+                value = if (attachmentsCount > 0) "$attachmentsCount image(s)" else "Add receipt",
+                onClick = onAttachmentsClick
+            )
+            HorizontalDivider()
+            // Notes field directly inside the card
+            OutlinedTextField(
+                value = notes,
+                onValueChange = onNotesChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Add notes...") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = "Notes") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedBorderColor = Color.Transparent,
+                )
+            )
+        }
+    }
+}
+
+
+@Composable
+private fun DetailRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    leadingIcon: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (leadingIcon != null) {
+            leadingIcon()
+        } else {
+            Icon(icon, contentDescription = label)
+        }
+        Spacer(Modifier.width(16.dp))
+        Text(label, modifier = Modifier.weight(1f))
+        Text(value, color = valueColor, fontWeight = FontWeight.SemiBold)
+        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+
+@Composable
+private fun SegmentedButton(
+    options: List<String>,
+    selectedOption: String,
+    onOptionSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(4.dp)
+    ) {
+        options.forEach { option ->
+            Button(
+                onClick = { onOptionSelected(option) },
+                modifier = Modifier.weight(1f),
+                shape = CircleShape,
+                colors = if (option == selectedOption) {
+                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                } else {
+                    ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface)
+                },
+                elevation = if (option == selectedOption) ButtonDefaults.buttonElevation(defaultElevation = 2.dp) else null
+            ) {
+                Text(option)
+            }
+        }
+    }
+}
+
+
+// --- Bottom Sheet Composables for Add Screen ---
+
+@Composable
+private fun AddAccountPickerSheet(
+    items: List<Account>,
+    onItemSelected: (Account) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            "Select Account",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+        LazyColumn {
+            items(items) { item ->
+                ListItem(
+                    headlineContent = { Text(item.name) },
+                    modifier = Modifier.clickable { onItemSelected(item) }
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun AddCategoryPickerSheet(
+    items: List<Category>,
+    onItemSelected: (Category) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            "Select Category",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 100.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(items) { category ->
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onItemSelected(category) }
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CategoryIcon(category, Modifier.size(48.dp))
+                    Text(category.name, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AddTagPickerSheet(
+    allTags: List<Tag>,
+    selectedTags: Set<Tag>,
+    onTagSelected: (Tag) -> Unit,
+    onAddNewTag: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var newTagName by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("Manage Tags", style = MaterialTheme.typography.titleLarge)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            allTags.forEach { tag ->
+                FilterChip(
+                    selected = tag in selectedTags,
+                    onClick = { onTagSelected(tag) },
+                    label = { Text(tag.name) }
+                )
+            }
+        }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = newTagName,
+                onValueChange = { newTagName = it },
+                label = { Text("New Tag Name") },
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = {
+                    onAddNewTag(newTagName)
+                    newTagName = ""
+                },
+                enabled = newTagName.isNotBlank()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                if (newTagName.isNotBlank()) {
+                    onAddNewTag(newTagName)
+                }
+                onConfirm() // This just dismisses the sheet now
+            }) { Text("Done") }
+        }
+    }
+}
+
 
 @Composable
 private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
@@ -225,14 +633,15 @@ private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
             Text(
                 text = category.name.firstOrNull()?.uppercase() ?: "?",
                 fontWeight = FontWeight.Bold,
-                color = Color.Black
+                color = Color.Black,
+                fontSize = 22.sp
             )
         } else {
             Icon(
                 imageVector = CategoryIconHelper.getIcon(category.iconKey),
                 contentDescription = null,
                 tint = Color.Black,
-                modifier = Modifier.padding(4.dp)
+                modifier = Modifier.padding(12.dp)
             )
         }
     }

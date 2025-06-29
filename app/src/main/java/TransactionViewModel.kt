@@ -295,7 +295,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         date: Long,
         transactionType: String,
         sourceSmsId: Long?,
-        sourceSmsHash: String?
+        sourceSmsHash: String?,
+        imageUris: List<Uri>
     ): Boolean {
         _validationError.value = null
 
@@ -323,7 +324,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 source = "Manual Entry"
             )
         viewModelScope.launch {
-            transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)
+            // --- FIX: Save images to internal storage first and get their permanent paths ---
+            val savedImagePaths = imageUris.mapNotNull { uri ->
+                saveImageToInternalStorage(uri)
+            }
+
+            val newTransactionId = transactionRepository.insertTransactionWithTagsAndImages(
+                newTransaction,
+                _selectedTags.value,
+                savedImagePaths // Pass the list of permanent file paths
+            )
+            Log.d(TAG, "Transaction created with ID: $newTransactionId")
         }
         return true
     }

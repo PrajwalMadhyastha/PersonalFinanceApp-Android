@@ -1,5 +1,6 @@
 package io.pm.finlight
 
+import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
@@ -131,6 +132,34 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
             }
             transactionDao.addTagsToTransaction(crossRefs)
         }
+    }
+
+    // --- FIX: Changed parameter from List<Uri> to List<String> to accept permanent paths ---
+    suspend fun insertTransactionWithTagsAndImages(
+        transaction: Transaction,
+        tags: Set<Tag>,
+        imagePaths: List<String> // Changed from imageUris
+    ): Long {
+        // First, insert the main transaction to get its ID
+        val newTransactionId = transactionDao.insert(transaction)
+
+        // Then, use the new ID to associate tags
+        if (tags.isNotEmpty()) {
+            val crossRefs = tags.map { tag ->
+                TransactionTagCrossRef(transactionId = newTransactionId.toInt(), tagId = tag.id)
+            }
+            transactionDao.addTagsToTransaction(crossRefs)
+        }
+
+        // Finally, use the ID to associate images with their permanent paths
+        imagePaths.forEach { path ->
+            val imageEntity = TransactionImage(
+                transactionId = newTransactionId.toInt(),
+                imageUri = path // Save the permanent file path
+            )
+            transactionDao.insertImage(imageEntity)
+        }
+        return newTransactionId
     }
 
     suspend fun insert(transaction: Transaction) {
