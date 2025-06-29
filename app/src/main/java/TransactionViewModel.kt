@@ -1,6 +1,7 @@
 package io.pm.finlight
 
 import android.app.Application
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 
 private const val TAG = "TransactionViewModel"
 
@@ -16,10 +19,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val accountRepository: AccountRepository
     val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
+    private val context = application
 
     private val db = AppDatabase.getInstance(application)
-
-    // A flag to prevent re-loading tags and overwriting user selections.
     private var areTagsLoadedForCurrentTxn = false
     private var currentTxnIdForTags: Int? = null
 
@@ -50,6 +52,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedTags = MutableStateFlow<Set<Tag>>(emptySet())
     val selectedTags = _selectedTags.asStateFlow()
 
+    private val _transactionImages = MutableStateFlow<List<TransactionImage>>(emptyList())
+    val transactionImages = _transactionImages.asStateFlow()
+
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
@@ -72,6 +77,58 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             initialValue = emptyList()
         )
     }
+
+    fun attachPhotoToTransaction(transactionId: Int, sourceUri: Uri) {
+        viewModelScope.launch {
+            val localPath = saveImageToInternalStorage(sourceUri)
+            if (localPath != null) {
+                transactionRepository.addImageToTransaction(transactionId, localPath)
+            }
+        }
+    }
+
+    fun deleteTransactionImage(image: TransactionImage) {
+        viewModelScope.launch {
+            transactionRepository.deleteImage(image)
+            withContext(Dispatchers.IO) {
+                try {
+                    File(image.imageUri).delete()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to delete image file: ${image.imageUri}", e)
+                }
+            }
+        }
+    }
+
+    fun loadImagesForTransaction(transactionId: Int) {
+        viewModelScope.launch {
+            transactionRepository.getImagesForTransaction(transactionId).collect {
+                _transactionImages.value = it
+            }
+        }
+    }
+
+
+    private suspend fun saveImageToInternalStorage(sourceUri: Uri): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(sourceUri)
+                val fileName = "txn_attach_${System.currentTimeMillis()}.jpg"
+                val file = File(context.filesDir, fileName)
+                val outputStream = FileOutputStream(file)
+                inputStream?.use { input ->
+                    outputStream.use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                file.absolutePath
+            } catch (e: Exception) {
+                Log.e("TransactionViewModel", "Error saving image to internal storage", e)
+                null
+            }
+        }
+    }
+
 
     fun updateTransactionDescription(id: Int, description: String) = viewModelScope.launch {
         if (description.isNotBlank()) {
@@ -150,10 +207,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun loadTagsForTransaction(transactionId: Int) {
-        // --- BUG FIX ---
-        // Add a guard to ensure we only load from the database ONCE for a given transactionId.
-        // This prevents a race condition where the Flow from the DB overwrites the user's
-        // in-memory tag selections. The flag is reset in `clearSelectedTags`.
         if (currentTxnIdForTags == transactionId && areTagsLoadedForCurrentTxn) {
             Log.d(TAG, "loadTagsForTransaction: Skipped DB fetch for txn ID $transactionId, tags already loaded.")
             return
@@ -171,8 +224,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun clearSelectedTags() {
         _selectedTags.value = emptySet()
-        // --- BUG FIX ---
-        // Reset the guard flag when the screen is disposed.
         areTagsLoadedForCurrentTxn = false
         currentTxnIdForTags = null
         Log.d(TAG, "clearSelectedTags: Cleared selected tags and reset loading flag.")

@@ -14,6 +14,20 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
+    // --- NEW: Methods for image attachments ---
+    suspend fun addImageToTransaction(transactionId: Int, imageUri: String) {
+        val transactionImage = TransactionImage(transactionId = transactionId, imageUri = imageUri)
+        transactionDao.insertImage(transactionImage)
+    }
+
+    suspend fun deleteImage(transactionImage: TransactionImage) {
+        transactionDao.deleteImage(transactionImage)
+    }
+
+    fun getImagesForTransaction(transactionId: Int): Flow<List<TransactionImage>> {
+        return transactionDao.getImagesForTransaction(transactionId)
+    }
+
     suspend fun updateDescription(id: Int, description: String) = transactionDao.updateDescription(id, description)
     suspend fun updateAmount(id: Int, amount: Double) = transactionDao.updateAmount(id, amount)
     suspend fun updateNotes(id: Int, notes: String?) = transactionDao.updateNotes(id, notes)
@@ -88,7 +102,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.getTagsForTransaction(transactionId)
     }
 
-    // --- NEW: Function to update only the tags for a transaction ---
     suspend fun updateTagsForTransaction(transactionId: Int, tags: Set<Tag>) {
         transactionDao.clearTagsForTransaction(transactionId)
         if (tags.isNotEmpty()) {

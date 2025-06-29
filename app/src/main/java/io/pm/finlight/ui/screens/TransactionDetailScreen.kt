@@ -1,15 +1,13 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: Improved the UX of the TagPickerDialog. The main "Save" button will
-// now automatically create a tag from the input field before saving, so the
-// user doesn't have to press the '+' icon separately.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -18,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,15 +25,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.TimePickerDialog
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -50,6 +54,7 @@ fun TransactionDetailScreen(
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
+    val attachedImages by viewModel.transactionImages.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -62,9 +67,21 @@ fun TransactionDetailScreen(
     var showAccountPicker by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showTagPicker by remember { mutableStateOf(false) }
+    var showImageViewer by remember { mutableStateOf<Uri?>(null) }
+    var showImageDeleteDialog by remember { mutableStateOf<TransactionImage?>(null) }
+
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            viewModel.attachPhotoToTransaction(transactionId, it)
+        }
+    }
 
     LaunchedEffect(transactionId) {
         viewModel.loadTagsForTransaction(transactionId)
+        viewModel.loadImagesForTransaction(transactionId)
     }
 
     DisposableEffect(Unit) {
@@ -117,59 +134,113 @@ fun TransactionDetailScreen(
             Column(
                 modifier = Modifier
                     .padding(innerPadding)
-                    .padding(16.dp)
-                    .fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 16.dp)
+                    .fillMaxSize()
             ) {
-                TransactionHeaderCard(
-                    details = details,
-                    onDescriptionClick = { showDescriptionDialog = true },
-                    onAmountClick = { showAmountDialog = true },
-                    onCategoryClick = { showCategoryPicker = true },
-                    onDateTimeClick = { showDatePicker = true }
-                )
-                InfoCard(
-                    icon = Icons.Default.AccountBalanceWallet,
-                    label = "Account",
-                    value = details.accountName ?: "N/A",
-                    onClick = { showAccountPicker = true }
-                )
-                InfoCard(
-                    icon = Icons.Default.Notes,
-                    label = "Notes",
-                    value = details.transaction.notes ?: "Tap to add",
-                    onClick = { showNotesDialog = true }
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(2.dp),
-                    onClick = { showTagPicker = true }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (selectedTags.isEmpty()) {
-                                Text("Tap to add tags")
-                            } else {
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    selectedTags.forEach { tag ->
-                                        AssistChip(onClick = {}, label = { Text(tag.name) })
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(vertical=16.dp)){
+                    item {
+                        TransactionHeaderCard(
+                            details = details,
+                            onDescriptionClick = { showDescriptionDialog = true },
+                            onAmountClick = { showAmountDialog = true },
+                            onCategoryClick = { showCategoryPicker = true },
+                            onDateTimeClick = { showDatePicker = true }
+                        )
+                    }
+                    item {
+                        InfoCard(
+                            icon = Icons.Default.AccountBalanceWallet,
+                            label = "Account",
+                            value = details.accountName ?: "N/A",
+                            onClick = { showAccountPicker = true }
+                        )
+                    }
+                    item {
+                        InfoCard(
+                            icon = Icons.AutoMirrored.Filled.Notes,
+                            label = "Notes",
+                            value = details.transaction.notes ?: "Tap to add",
+                            onClick = { showNotesDialog = true }
+                        )
+                    }
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            elevation = CardDefaults.cardElevation(2.dp),
+                            onClick = { showTagPicker = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (selectedTags.isEmpty()) {
+                                        Text("Tap to add tags")
+                                    } else {
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            selectedTags.forEach { tag ->
+                                                AssistChip(onClick = {}, label = { Text(tag.name) })
+                                            }
+                                        }
+                                    }
+                                }
+                                Icon(Icons.Default.Add, contentDescription = "Add Tag")
+                            }
+                        }
+                    }
+
+                    item {
+                        InfoCard(
+                            icon = Icons.Default.Attachment,
+                            label = "Attachments",
+                            value = if(attachedImages.isEmpty()) "Tap to add a receipt or photo" else "${attachedImages.size} image(s) attached",
+                            onClick = { imagePickerLauncher.launch("image/*") }
+                        )
+                    }
+
+                    if (attachedImages.isNotEmpty()) {
+                        item {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(attachedImages) { image ->
+                                    Box {
+                                        AsyncImage(
+                                            model = File(image.imageUri),
+                                            contentDescription = "Transaction Attachment",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(80.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable { showImageViewer = File(image.imageUri).toUri() }
+                                        )
+                                        IconButton(
+                                            onClick = { showImageDeleteDialog = image },
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(4.dp)
+                                                .size(24.dp)
+                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Delete Attachment",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
-                        Icon(Icons.Default.Add, contentDescription = "Add Tag")
                     }
                 }
             }
+
 
             if (showTagPicker) {
                 TagPickerDialog(
@@ -273,6 +344,37 @@ fun TransactionDetailScreen(
                 )
             }
 
+            if(showImageViewer != null){
+                Dialog(onDismissRequest = { showImageViewer = null }) {
+                    AsyncImage(
+                        model = showImageViewer,
+                        contentDescription = "Full screen image",
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    )
+                }
+            }
+
+            if (showImageDeleteDialog != null) {
+                AlertDialog(
+                    onDismissRequest = { showImageDeleteDialog = null },
+                    title = { Text("Delete Attachment?") },
+                    text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.deleteTransactionImage(showImageDeleteDialog!!)
+                                showImageDeleteDialog = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showImageDeleteDialog = null }) { Text("Cancel") }
+                    }
+                )
+            }
+
+
         } ?: run {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -296,7 +398,7 @@ private fun TransactionHeaderCard(
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .background(
                     brush = Brush.verticalGradient(
@@ -306,41 +408,62 @@ private fun TransactionHeaderCard(
                         )
                     )
                 )
-                .padding(24.dp)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
+            Text(
+                text = details.transaction.description,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.clickable(onClick = onDescriptionClick)
+            )
+
+            Text(
+                text = "₹${"%,.2f".format(details.transaction.amount)}",
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.clickable(onClick = onAmountClick)
+            )
+
+            ChipWithIcon(
+                text = details.categoryName ?: "Uncategorized",
+                icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
+                colorKey = details.categoryColorKey ?: "gray_light",
+                onClick = onCategoryClick
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = details.transaction.description,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.clickable(onClick = onDescriptionClick)
-                )
-
-                Text(
-                    text = "₹${"%,.2f".format(details.transaction.amount)}",
-                    fontSize = 48.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.clickable(onClick = onAmountClick)
-                )
-
-                ChipWithIcon(
-                    text = details.categoryName ?: "Uncategorized",
-                    icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
-                    colorKey = details.categoryColorKey ?: "gray_light",
-                    onClick = onCategoryClick
-                )
-
                 Text(
                     text = dateFormatter.format(Date(details.transaction.date)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.clickable(onClick = onDateTimeClick)
                 )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Transaction Source",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = details.transaction.source,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -387,7 +510,8 @@ fun InfoCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(2.dp),
-        onClick = onClick
+        onClick = onClick,
+        enabled = onClick != {}
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -467,7 +591,7 @@ private fun <T> Picker_Dialog(
     )
 }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagPickerDialog(
     allTags: List<Tag>,
@@ -523,12 +647,9 @@ private fun TagPickerDialog(
         },
         confirmButton = {
             Button(onClick = {
-                // --- UX FIX ---
-                // First, if there's text for a new tag, add it.
                 if (newTagName.isNotBlank()) {
                     onAddNewTag(newTagName)
                 }
-                // Then, confirm all selections.
                 onConfirm()
             }) { Text("Save") }
         },

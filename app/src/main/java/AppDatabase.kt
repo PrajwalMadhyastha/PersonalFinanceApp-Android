@@ -20,9 +20,10 @@ import java.util.Calendar
         MerchantMapping::class,
         RecurringTransaction::class,
         Tag::class,
-        TransactionTagCrossRef::class
+        TransactionTagCrossRef::class,
+        TransactionImage::class // --- NEW: Add the new entity ---
     ],
-    version = 10,
+    version = 11, // --- NEW: Increment the version number ---
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -91,11 +92,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration for the transaction_images table ---
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `transaction_images` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `transactionId` INTEGER NOT NULL,
+                        `imageUri` TEXT NOT NULL,
+                        FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_transaction_images_transactionId` ON `transaction_images` (`transactionId`)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -140,12 +156,11 @@ abstract class AppDatabase : RoomDatabase() {
                 calendar.set(Calendar.DAY_OF_MONTH, 15)
                 val expenseDate2 = calendar.timeInMillis
 
-                // --- FIXED: Use the correct, hardcoded IDs from the predefined list ---
                 transactionDao.insertAll(
                     listOf(
                         Transaction(
                             description = "Monthly Salary",
-                            categoryId = 12, // Corresponds to "Salary"
+                            categoryId = 12,
                             amount = 75000.0,
                             date = incomeDate,
                             accountId = 1,
@@ -154,7 +169,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Grocery Shopping",
-                            categoryId = 6, // Corresponds to "Groceries"
+                            categoryId = 6,
                             amount = 4500.0,
                             date = expenseDate1,
                             accountId = 2,
@@ -163,7 +178,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Dinner with friends",
-                            categoryId = 4, // Corresponds to "Food & Drinks"
+                            categoryId = 4,
                             amount = 1200.0,
                             date = expenseDate2,
                             accountId = 2,

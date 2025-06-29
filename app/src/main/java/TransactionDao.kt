@@ -6,7 +6,17 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Methods for partial updates ---
+    // --- NEW: Methods for image attachments ---
+    @Insert
+    suspend fun insertImage(transactionImage: TransactionImage)
+
+    @Delete
+    suspend fun deleteImage(transactionImage: TransactionImage)
+
+    @Query("SELECT * FROM transaction_images WHERE transactionId = :transactionId")
+    fun getImagesForTransaction(transactionId: Int): Flow<List<TransactionImage>>
+
+
     @Query("UPDATE transactions SET description = :description WHERE id = :id")
     suspend fun updateDescription(id: Int, description: String)
 

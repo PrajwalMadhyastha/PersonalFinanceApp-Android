@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sun Jun 29 15:54:23 IST 2025
+Generated on: Sun Jun 29 17:37:06 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -555,15 +555,10 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 
 
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: Fixed a bug where creating a new tag on the detail screen did not
-// automatically select it. The `addTagOnTheGo` function now correctly uses the returned
-// ID from the database to add the new tag to the `selectedTags` state.
-// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -571,14 +566,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+
+private const val TAG = "TransactionViewModel"
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
     val accountRepository: AccountRepository
     val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
+    private val context = application
 
     private val db = AppDatabase.getInstance(application)
+    private var areTagsLoadedForCurrentTxn = false
+    private var currentTxnIdForTags: Int? = null
 
     private val _transactionTypeFilter = MutableStateFlow<String?>(null)
 
@@ -607,6 +609,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedTags = MutableStateFlow<Set<Tag>>(emptySet())
     val selectedTags = _selectedTags.asStateFlow()
 
+    private val _transactionImages = MutableStateFlow<List<TransactionImage>>(emptyList())
+    val transactionImages = _transactionImages.asStateFlow()
+
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
@@ -621,12 +626,66 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
         allCategories = categoryRepository.allCategories
 
-        allTags = tagRepository.allTags.stateIn(
+        allTags = tagRepository.allTags.onEach {
+            Log.d(TAG, "allTags flow collected new data. Count: ${it.size}")
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
     }
+
+    fun attachPhotoToTransaction(transactionId: Int, sourceUri: Uri) {
+        viewModelScope.launch {
+            val localPath = saveImageToInternalStorage(sourceUri)
+            if (localPath != null) {
+                transactionRepository.addImageToTransaction(transactionId, localPath)
+            }
+        }
+    }
+
+    fun deleteTransactionImage(image: TransactionImage) {
+        viewModelScope.launch {
+            transactionRepository.deleteImage(image)
+            withContext(Dispatchers.IO) {
+                try {
+                    File(image.imageUri).delete()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to delete image file: ${image.imageUri}", e)
+                }
+            }
+        }
+    }
+
+    fun loadImagesForTransaction(transactionId: Int) {
+        viewModelScope.launch {
+            transactionRepository.getImagesForTransaction(transactionId).collect {
+                _transactionImages.value = it
+            }
+        }
+    }
+
+
+    private suspend fun saveImageToInternalStorage(sourceUri: Uri): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(sourceUri)
+                val fileName = "txn_attach_${System.currentTimeMillis()}.jpg"
+                val file = File(context.filesDir, fileName)
+                val outputStream = FileOutputStream(file)
+                inputStream?.use { input ->
+                    outputStream.use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                file.absolutePath
+            } catch (e: Exception) {
+                Log.e("TransactionViewModel", "Error saving image to internal storage", e)
+                null
+            }
+        }
+    }
+
 
     fun updateTransactionDescription(id: Int, description: String) = viewModelScope.launch {
         if (description.isNotBlank()) {
@@ -659,6 +718,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun updateTagsForTransaction(transactionId: Int) = viewModelScope.launch {
+        Log.d(TAG, "updateTagsForTransaction: Saving tags for txn ID $transactionId. Tags: ${_selectedTags.value.map { it.name }}")
         transactionRepository.updateTagsForTransaction(transactionId, _selectedTags.value)
     }
 
@@ -668,47 +728,62 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun onTagSelected(tag: Tag) {
+        Log.d(TAG, "onTagSelected: Toggled tag '${tag.name}' (ID: ${tag.id})")
         _selectedTags.update { currentTags ->
-            if (tag in currentTags) {
+            val newSet = if (tag in currentTags) {
                 currentTags - tag
             } else {
                 currentTags + tag
             }
+            Log.d(TAG, "onTagSelected: New selected tags: ${newSet.map { it.name }}")
+            newSet
         }
     }
 
-    /**
-     * Called from transaction detail/edit screens. Inserts a new tag and
-     * immediately adds it to the current transaction's selected tags.
-     */
     fun addTagOnTheGo(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
+                Log.d(TAG, "addTagOnTheGo: Attempting to add tag '$tagName'")
                 val newTag = Tag(name = tagName)
-                // Insert the new tag and get its database-generated ID back
+                Log.d(TAG, "addTagOnTheGo: Current selected tags before insert: ${_selectedTags.value.map { it.name }}")
+
                 val newId = tagRepository.insert(newTag)
-                // If the insert was successful (i.e., not a duplicate)
+                Log.d(TAG, "addTagOnTheGo: Inserted tag '$tagName', got new ID: $newId")
+
                 if (newId != -1L) {
-                    // Update the local state to include the new tag, now with its correct ID.
-                    // This will make it appear selected in the UI.
                     _selectedTags.update { currentTags ->
-                        currentTags + newTag.copy(id = newId.toInt())
+                        val updatedTags = currentTags + newTag.copy(id = newId.toInt())
+                        Log.d(TAG, "addTagOnTheGo: Updating selected tags. New set: ${updatedTags.map { it.name }}")
+                        updatedTags
                     }
+                } else {
+                    Log.w(TAG, "addTagOnTheGo: Failed to insert tag '$tagName', it might already exist.")
                 }
             }
         }
     }
 
     fun loadTagsForTransaction(transactionId: Int) {
+        if (currentTxnIdForTags == transactionId && areTagsLoadedForCurrentTxn) {
+            Log.d(TAG, "loadTagsForTransaction: Skipped DB fetch for txn ID $transactionId, tags already loaded.")
+            return
+        }
+
         viewModelScope.launch {
-            transactionRepository.getTagsForTransaction(transactionId).collect { tags ->
-                _selectedTags.value = tags.toSet()
-            }
+            Log.d(TAG, "loadTagsForTransaction: Loading initial tags for txn ID $transactionId")
+            val initialTags = transactionRepository.getTagsForTransaction(transactionId).first()
+            _selectedTags.value = initialTags.toSet()
+            areTagsLoadedForCurrentTxn = true
+            currentTxnIdForTags = transactionId
+            Log.d(TAG, "loadTagsForTransaction: Loaded initial tags: ${initialTags.map { it.name }}. Flag set to true.")
         }
     }
 
     fun clearSelectedTags() {
         _selectedTags.value = emptySet()
+        areTagsLoadedForCurrentTxn = false
+        currentTxnIdForTags = null
+        Log.d(TAG, "clearSelectedTags: Cleared selected tags and reset loading flag.")
     }
 
     fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
@@ -844,18 +919,18 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 package io.pm.finlight
 
 import androidx.room.Embedded
+import androidx.room.Relation
 
-/**
- * A data class to hold the combined result of a database query.
- * It includes the full Transaction object, plus the names, icon, and color
- * of the linked Account and Category for easy display in the UI.
- */
 data class TransactionDetails(
     @Embedded
     val transaction: Transaction,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "transactionId"
+    )
+    val images: List<TransactionImage>, // --- NEW: Add relation to images ---
     val accountName: String?,
     val categoryName: String?,
-    // --- NEW: Add fields for category icon and color ---
     val categoryIconKey: String?,
     val categoryColorKey: String?
 )
@@ -4064,17 +4139,16 @@ fun TransactionListScreen(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: Fixed a runtime crash caused by an invalid date format string.
-// The illegal pattern "ราย" was replaced with "yyyy".
-// =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -4083,6 +4157,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -4091,15 +4166,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.TimePickerDialog
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -4115,6 +4195,7 @@ fun TransactionDetailScreen(
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
+    val attachedImages by viewModel.transactionImages.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -4127,9 +4208,21 @@ fun TransactionDetailScreen(
     var showAccountPicker by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showTagPicker by remember { mutableStateOf(false) }
+    var showImageViewer by remember { mutableStateOf<Uri?>(null) }
+    var showImageDeleteDialog by remember { mutableStateOf<TransactionImage?>(null) }
+
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            viewModel.attachPhotoToTransaction(transactionId, it)
+        }
+    }
 
     LaunchedEffect(transactionId) {
         viewModel.loadTagsForTransaction(transactionId)
+        viewModel.loadImagesForTransaction(transactionId)
     }
 
     DisposableEffect(Unit) {
@@ -4182,59 +4275,113 @@ fun TransactionDetailScreen(
             Column(
                 modifier = Modifier
                     .padding(innerPadding)
-                    .padding(16.dp)
-                    .fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 16.dp)
+                    .fillMaxSize()
             ) {
-                TransactionHeaderCard(
-                    details = details,
-                    onDescriptionClick = { showDescriptionDialog = true },
-                    onAmountClick = { showAmountDialog = true },
-                    onCategoryClick = { showCategoryPicker = true },
-                    onDateTimeClick = { showDatePicker = true }
-                )
-                InfoCard(
-                    icon = Icons.Default.AccountBalanceWallet,
-                    label = "Account",
-                    value = details.accountName ?: "N/A",
-                    onClick = { showAccountPicker = true }
-                )
-                InfoCard(
-                    icon = Icons.Default.Notes,
-                    label = "Notes",
-                    value = details.transaction.notes ?: "Tap to add",
-                    onClick = { showNotesDialog = true }
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(2.dp),
-                    onClick = { showTagPicker = true }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (selectedTags.isEmpty()) {
-                                Text("Tap to add tags")
-                            } else {
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    selectedTags.forEach { tag ->
-                                        AssistChip(onClick = {}, label = { Text(tag.name) })
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(vertical=16.dp)){
+                    item {
+                        TransactionHeaderCard(
+                            details = details,
+                            onDescriptionClick = { showDescriptionDialog = true },
+                            onAmountClick = { showAmountDialog = true },
+                            onCategoryClick = { showCategoryPicker = true },
+                            onDateTimeClick = { showDatePicker = true }
+                        )
+                    }
+                    item {
+                        InfoCard(
+                            icon = Icons.Default.AccountBalanceWallet,
+                            label = "Account",
+                            value = details.accountName ?: "N/A",
+                            onClick = { showAccountPicker = true }
+                        )
+                    }
+                    item {
+                        InfoCard(
+                            icon = Icons.AutoMirrored.Filled.Notes,
+                            label = "Notes",
+                            value = details.transaction.notes ?: "Tap to add",
+                            onClick = { showNotesDialog = true }
+                        )
+                    }
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            elevation = CardDefaults.cardElevation(2.dp),
+                            onClick = { showTagPicker = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (selectedTags.isEmpty()) {
+                                        Text("Tap to add tags")
+                                    } else {
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            selectedTags.forEach { tag ->
+                                                AssistChip(onClick = {}, label = { Text(tag.name) })
+                                            }
+                                        }
+                                    }
+                                }
+                                Icon(Icons.Default.Add, contentDescription = "Add Tag")
+                            }
+                        }
+                    }
+
+                    item {
+                        InfoCard(
+                            icon = Icons.Default.Attachment,
+                            label = "Attachments",
+                            value = if(attachedImages.isEmpty()) "Tap to add a receipt or photo" else "${attachedImages.size} image(s) attached",
+                            onClick = { imagePickerLauncher.launch("image/*") }
+                        )
+                    }
+
+                    if (attachedImages.isNotEmpty()) {
+                        item {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(attachedImages) { image ->
+                                    Box {
+                                        AsyncImage(
+                                            model = File(image.imageUri),
+                                            contentDescription = "Transaction Attachment",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(80.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable { showImageViewer = File(image.imageUri).toUri() }
+                                        )
+                                        IconButton(
+                                            onClick = { showImageDeleteDialog = image },
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(4.dp)
+                                                .size(24.dp)
+                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Delete Attachment",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
-                        Icon(Icons.Default.Add, contentDescription = "Add Tag")
                     }
                 }
             }
+
 
             if (showTagPicker) {
                 TagPickerDialog(
@@ -4338,6 +4485,37 @@ fun TransactionDetailScreen(
                 )
             }
 
+            if(showImageViewer != null){
+                Dialog(onDismissRequest = { showImageViewer = null }) {
+                    AsyncImage(
+                        model = showImageViewer,
+                        contentDescription = "Full screen image",
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    )
+                }
+            }
+
+            if (showImageDeleteDialog != null) {
+                AlertDialog(
+                    onDismissRequest = { showImageDeleteDialog = null },
+                    title = { Text("Delete Attachment?") },
+                    text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.deleteTransactionImage(showImageDeleteDialog!!)
+                                showImageDeleteDialog = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showImageDeleteDialog = null }) { Text("Cancel") }
+                    }
+                )
+            }
+
+
         } ?: run {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -4354,7 +4532,6 @@ private fun TransactionHeaderCard(
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit,
 ) {
-    // --- FIX: Corrected the date format string ---
     val dateFormatter = remember { SimpleDateFormat("EEE, dd MMM yyyy, h:mm a", Locale.getDefault()) }
 
     Card(
@@ -4362,7 +4539,7 @@ private fun TransactionHeaderCard(
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .background(
                     brush = Brush.verticalGradient(
@@ -4372,41 +4549,62 @@ private fun TransactionHeaderCard(
                         )
                     )
                 )
-                .padding(24.dp)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
+            Text(
+                text = details.transaction.description,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.clickable(onClick = onDescriptionClick)
+            )
+
+            Text(
+                text = "₹${"%,.2f".format(details.transaction.amount)}",
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.clickable(onClick = onAmountClick)
+            )
+
+            ChipWithIcon(
+                text = details.categoryName ?: "Uncategorized",
+                icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
+                colorKey = details.categoryColorKey ?: "gray_light",
+                onClick = onCategoryClick
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = details.transaction.description,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.clickable(onClick = onDescriptionClick)
-                )
-
-                Text(
-                    text = "₹${"%,.2f".format(details.transaction.amount)}",
-                    fontSize = 48.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.clickable(onClick = onAmountClick)
-                )
-
-                ChipWithIcon(
-                    text = details.categoryName ?: "Uncategorized",
-                    icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
-                    colorKey = details.categoryColorKey ?: "gray_light",
-                    onClick = onCategoryClick
-                )
-
                 Text(
                     text = dateFormatter.format(Date(details.transaction.date)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.clickable(onClick = onDateTimeClick)
                 )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Transaction Source",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = details.transaction.source,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -4453,7 +4651,8 @@ fun InfoCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(2.dp),
-        onClick = onClick
+        onClick = onClick,
+        enabled = onClick != {}
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -4533,7 +4732,7 @@ private fun <T> Picker_Dialog(
     )
 }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagPickerDialog(
     allTags: List<Tag>,
@@ -4588,7 +4787,12 @@ private fun TagPickerDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("Save") }
+            Button(onClick = {
+                if (newTagName.isNotBlank()) {
+                    onAddNewTag(newTagName)
+                }
+                onConfirm()
+            }) { Text("Save") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
@@ -8464,9 +8668,10 @@ import java.util.Calendar
         MerchantMapping::class,
         RecurringTransaction::class,
         Tag::class,
-        TransactionTagCrossRef::class
+        TransactionTagCrossRef::class,
+        TransactionImage::class // --- NEW: Add the new entity ---
     ],
-    version = 10,
+    version = 11, // --- NEW: Increment the version number ---
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -8535,11 +8740,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration for the transaction_images table ---
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `transaction_images` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `transactionId` INTEGER NOT NULL,
+                        `imageUri` TEXT NOT NULL,
+                        FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_transaction_images_transactionId` ON `transaction_images` (`transactionId`)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -8584,12 +8804,11 @@ abstract class AppDatabase : RoomDatabase() {
                 calendar.set(Calendar.DAY_OF_MONTH, 15)
                 val expenseDate2 = calendar.timeInMillis
 
-                // --- FIXED: Use the correct, hardcoded IDs from the predefined list ---
                 transactionDao.insertAll(
                     listOf(
                         Transaction(
                             description = "Monthly Salary",
-                            categoryId = 12, // Corresponds to "Salary"
+                            categoryId = 12,
                             amount = 75000.0,
                             date = incomeDate,
                             accountId = 1,
@@ -8598,7 +8817,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Grocery Shopping",
-                            categoryId = 6, // Corresponds to "Groceries"
+                            categoryId = 6,
                             amount = 4500.0,
                             date = expenseDate1,
                             accountId = 2,
@@ -8607,7 +8826,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Dinner with friends",
-                            categoryId = 4, // Corresponds to "Food & Drinks"
+                            categoryId = 4,
                             amount = 1200.0,
                             date = expenseDate2,
                             accountId = 2,
@@ -9694,6 +9913,36 @@ data class PotentialTransaction(
 -e 
 
 
+================== FILE: ./app/src/main/java/TransactionImage.kt ==================
+package io.pm.finlight
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+@Entity(
+    tableName = "transaction_images",
+    foreignKeys = [
+        ForeignKey(
+            entity = Transaction::class,
+            parentColumns = ["id"],
+            childColumns = ["transactionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    // --- FIX: Explicitly declare the index that Room creates for the foreign key ---
+    indices = [Index(value = ["transactionId"])]
+)
+data class TransactionImage(
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+    val transactionId: Int,
+    val imageUri: String // Stores the URI of the image in the app's internal storage
+)
+-e 
+
+
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 package io.pm.finlight
 
@@ -9703,7 +9952,17 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Methods for partial updates ---
+    // --- NEW: Methods for image attachments ---
+    @Insert
+    suspend fun insertImage(transactionImage: TransactionImage)
+
+    @Delete
+    suspend fun deleteImage(transactionImage: TransactionImage)
+
+    @Query("SELECT * FROM transaction_images WHERE transactionId = :transactionId")
+    fun getImagesForTransaction(transactionId: Int): Flow<List<TransactionImage>>
+
+
     @Query("UPDATE transactions SET description = :description WHERE id = :id")
     suspend fun updateDescription(id: Int, description: String)
 
@@ -10850,6 +11109,20 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
+    // --- NEW: Methods for image attachments ---
+    suspend fun addImageToTransaction(transactionId: Int, imageUri: String) {
+        val transactionImage = TransactionImage(transactionId = transactionId, imageUri = imageUri)
+        transactionDao.insertImage(transactionImage)
+    }
+
+    suspend fun deleteImage(transactionImage: TransactionImage) {
+        transactionDao.deleteImage(transactionImage)
+    }
+
+    fun getImagesForTransaction(transactionId: Int): Flow<List<TransactionImage>> {
+        return transactionDao.getImagesForTransaction(transactionId)
+    }
+
     suspend fun updateDescription(id: Int, description: String) = transactionDao.updateDescription(id, description)
     suspend fun updateAmount(id: Int, amount: Double) = transactionDao.updateAmount(id, amount)
     suspend fun updateNotes(id: Int, notes: String?) = transactionDao.updateNotes(id, notes)
@@ -10924,7 +11197,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.getTagsForTransaction(transactionId)
     }
 
-    // --- NEW: Function to update only the tags for a transaction ---
     suspend fun updateTagsForTransaction(transactionId: Int, tags: Set<Tag>) {
         transactionDao.clearTagsForTransaction(transactionId)
         if (tags.isNotEmpty()) {
