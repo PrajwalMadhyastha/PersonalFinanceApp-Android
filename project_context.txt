@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jun 28 22:25:44 IST 2025
+Generated on: Sun Jun 29 12:55:38 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -186,6 +186,9 @@ dependencies {
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- The camera permission is required by the cropper library if you want to take a new picture -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
 
     <application
         android:name=".MainApplication"
@@ -231,6 +234,15 @@ dependencies {
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+
+        <!--
+         NEW: Explicitly declare the CropImageActivity from the image cropper library.
+         Applying Theme.AppCompat ensures it has an ActionBar where the 'Done' checkmark can appear.
+        -->
+        <activity
+            android:name="com.canhub.cropper.CropImageActivity"
+            android:theme="@style/Theme.AppCompat.DayNight"
+            />
 
     </application>
 
@@ -3281,27 +3293,132 @@ fun AccountListScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/BudgetScreen.kt ==================
 package io.pm.finlight.ui.screens
 
-import android.widget.Toast
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.Budget
 import io.pm.finlight.BudgetViewModel
+import kotlin.math.cos
+import kotlin.math.sin
 
+@Composable
+fun GaugeChart(progress: Float) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 1000)
+    )
+
+    Canvas(modifier = Modifier.size(150.dp)) {
+        val arcSize = size.width
+        val arcRadius = arcSize / 2
+        val strokeWidth = 20f
+
+        drawArc(
+            color = Color.LightGray.copy(alpha = 0.3f),
+            startAngle = 135f,
+            sweepAngle = 270f,
+            useCenter = false,
+            topLeft = Offset.Zero,
+            size = Size(arcSize, arcSize),
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+
+        drawArc(
+            brush = Brush.horizontalGradient(
+                colors = listOf(Color(0xFF00E5FF), Color(0xFF18A0FF), Color(0xFF0052D4))
+            ),
+            startAngle = 135f,
+            sweepAngle = 270 * animatedProgress,
+            useCenter = false,
+            topLeft = Offset.Zero,
+            size = Size(arcSize, arcSize),
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+
+        val angle = (135 + 270 * animatedProgress).coerceIn(135f, 405f)
+        val angleInRadians = Math.toRadians(angle.toDouble())
+        val lineStart = center
+        val lineEnd = Offset(
+            x = center.x + (arcRadius * 0.8f) * cos(angleInRadians).toFloat(),
+            y = center.y + (arcRadius * 0.8f) * sin(angleInRadians).toFloat()
+        )
+        drawLine(
+            color = Color.White,
+            start = lineStart,
+            end = lineEnd,
+            strokeWidth = 8f,
+            cap = StrokeCap.Round
+        )
+        drawCircle(color = Color.White, radius = 15f, center = center)
+        drawCircle(color = Color.Black, radius = 10f, center = center)
+
+        // --- NEW: Draw the stars ---
+        for (i in 0..4) {
+            val starProgress = i / 4f
+            val starAngle = 135f + (270f * starProgress)
+            val starAngleRad = Math.toRadians(starAngle.toDouble())
+            val starRadius = arcRadius * 0.9f
+            val starCenter = Offset(
+                center.x + starRadius * cos(starAngleRad).toFloat(),
+                center.y + starRadius * sin(starAngleRad).toFloat()
+            )
+            val starColor = if(animatedProgress >= starProgress) Color(0xFF81D4FA) else Color.Gray.copy(alpha = 0.5f)
+
+            rotate(degrees = starAngle - 90, pivot = starCenter) {
+                val path = Path().apply {
+                    val outerR = 12f
+                    val innerR = 5f
+                    moveTo(starCenter.x, starCenter.y - outerR)
+                    for (j in 1..4) {
+                        val outerAngle = j * (360.0 / 5.0) + -90.0
+                        val innerAngle = outerAngle + (360.0 / 10.0)
+                        lineTo(
+                            starCenter.x + (innerR * cos(Math.toRadians(innerAngle))).toFloat(),
+                            starCenter.y + (innerR * sin(Math.toRadians(innerAngle))).toFloat()
+                        )
+                        lineTo(
+                            starCenter.x + (outerR * cos(Math.toRadians(outerAngle + 360.0/5.0))).toFloat(),
+                            starCenter.y + (outerR * sin(Math.toRadians(outerAngle + 360.0/5.0))).toFloat()
+                        )
+                    }
+                    close()
+                }
+                drawPath(path, color = starColor)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BudgetScreen(
     navController: NavController,
@@ -3309,91 +3426,110 @@ fun BudgetScreen(
 ) {
     val categoryBudgets by viewModel.budgetsForCurrentMonth.collectAsState(initial = emptyList())
     val overallBudget by viewModel.overallBudget.collectAsState()
-    val monthYear = viewModel.getCurrentMonthYearString()
-    val context = LocalContext.current
-
-    var overallBudgetInput by remember(overallBudget) {
-        mutableStateOf(if (overallBudget > 0) "%.0f".format(overallBudget) else "")
-    }
+    val totalSpending by viewModel.totalSpending.collectAsState()
 
     var showDeleteDialog by remember { mutableStateOf(false) }
     var budgetToDelete by remember { mutableStateOf<Budget?>(null) }
+    var showOverallBudgetDialog by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // --- FIX: Removed the Scaffold and its bottomBar ---
+    Column(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
+            modifier = Modifier.weight(1f), // Use weight to fill available space
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                Card(elevation = CardDefaults.cardElevation(2.dp)) {
-                    Column(
-                        modifier =
-                            Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                    ) {
-                        Text("Overall Monthly Budget", style = MaterialTheme.typography.titleLarge)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = overallBudgetInput,
-                            onValueChange = { overallBudgetInput = it },
-                            label = { Text("Total Budget Amount") },
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            leadingIcon = { Text("₹") },
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Set monthly budget", style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            "Setting a budget reduces expenditures about 10% on an average.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = {
-                                viewModel.saveOverallBudget(overallBudgetInput)
-                                Toast.makeText(context, "Overall Budget Saved!", Toast.LENGTH_SHORT).show()
-                                navController.popBackStack()
-                            },
-                            modifier = Modifier.align(Alignment.End),
-                        ) {
-                            Text("Save Overall Budget")
-                        }
+                    }
+                    GaugeChart(progress = if (overallBudget > 0) (totalSpending.toFloat() / overallBudget) else 0f)
+                }
+            }
+
+            item {
+                // --- FIX: This card is now clickable to open the dialog ---
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { showOverallBudgetDialog = true },
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MonetizationOn,
+                            contentDescription = "Overall Budget",
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            "Overall budget",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            "₹${"%,.0f".format(overallBudget)}",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
 
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Category Budgets", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Category wise budget",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
                     IconButton(onClick = { navController.navigate("add_budget") }) {
                         Icon(Icons.Default.Add, contentDescription = "Add Category Budget")
                     }
                 }
-                HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
             }
 
             if (categoryBudgets.isEmpty()) {
                 item {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("No category budgets set. Tap the '+' button to add one.")
-                    }
+                    Text(
+                        "No category budgets set. Tap the '+' icon to add one.",
+                        modifier = Modifier.padding(16.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = Color.Gray
+                    )
                 }
             } else {
                 items(categoryBudgets) { budget ->
-                    SimpleBudgetItem(
+                    CategoryBudgetItem(
                         budget = budget,
+                        viewModel = viewModel,
                         onEdit = { navController.navigate("edit_budget/${budget.id}") },
                         onDelete = {
                             budgetToDelete = budget
                             showDeleteDialog = true
-                        },
+                        }
                     )
                 }
             }
         }
     }
+
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -3414,37 +3550,109 @@ fun BudgetScreen(
             },
         )
     }
+
+    if (showOverallBudgetDialog) {
+        EditOverallBudgetDialog(
+            currentBudget = overallBudget,
+            onDismiss = { showOverallBudgetDialog = false },
+            onConfirm = { newAmount ->
+                viewModel.saveOverallBudget(newAmount)
+                showOverallBudgetDialog = false
+            }
+        )
+    }
 }
 
 @Composable
-fun SimpleBudgetItem(
-    budget: Budget,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
+fun EditOverallBudgetDialog(
+    currentBudget: Float,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
 ) {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(budget.categoryName, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = "Budget: ₹${"%.0f".format(budget.amount)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    var budgetInput by remember { mutableStateOf(if (currentBudget > 0) "%.0f".format(currentBudget) else "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Overall Budget") },
+        text = {
+            OutlinedTextField(
+                value = budgetInput,
+                onValueChange = { budgetInput = it.filter { char -> char.isDigit() } },
+                label = { Text("Total Monthly Budget Amount") },
+                leadingIcon = { Text("₹") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true
             )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(budgetInput) },
+                enabled = budgetInput.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
         }
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Default.Edit, contentDescription = "Edit Budget")
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete Budget", tint = MaterialTheme.colorScheme.error)
+    )
+}
+
+
+@Composable
+fun CategoryBudgetItem(
+    budget: Budget,
+    viewModel: BudgetViewModel,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val spending by viewModel.getActualSpending(budget.categoryName)
+        .collectAsState(initial = 0.0)
+    val progress = if (budget.amount > 0) (spending / budget.amount).toFloat() else 0f
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Category,
+                contentDescription = budget.categoryName,
+                modifier = Modifier.size(40.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(budget.categoryName, style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { progress.coerceIn(0f,1f) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "₹${"%,.0f".format(spending)} of ₹${"%,.0f".format(budget.amount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit")
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete")
+            }
         }
     }
-    HorizontalDivider()
 }
 -e 
 
@@ -4362,7 +4570,7 @@ fun DashboardScreen(
                     onClick = { navController.navigate("budget_screen") }
                 )
                 StatCard(
-                    label = "Monthly Expenses",
+                    label = "Safe To Spend",
                     amount = monthlyExpenses.toFloat(),
                     modifier = Modifier.weight(1f),
                     onClick = {
@@ -5481,37 +5689,33 @@ fun PageIndicator(pageCount: Int, currentPage: Int) {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
+// REASON: Updated to provide an explicit "Save" button after cropping an image,
+// improving the user experience and making the action clearer.
+// FIX: Added explicit theming to the CropImageOptions to ensure the cropper's
+// toolbar icons (like the checkmark) are always visible.
+// FIX 4: Corrected @Composable invocation error by moving all theme color access
+// to the top-level composable scope, outside the clickable lambda.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -5532,59 +5736,104 @@ fun ProfileScreen(
     viewModel: ProfileViewModel = viewModel()
 ) {
     val userName by viewModel.userName.collectAsState()
-    val profilePictureUri by viewModel.profilePictureUri.collectAsState()
+    val savedProfilePictureUri by viewModel.profilePictureUri.collectAsState()
     val context = LocalContext.current
+
+    // --- FIX 4: Resolve all colors from the theme in the correct composable scope ---
+    val toolbarColor = MaterialTheme.colorScheme.primary.toArgb()
+    val toolbarTintColor = MaterialTheme.colorScheme.onPrimary.toArgb()
+    val activityBackgroundColor = MaterialTheme.colorScheme.background.toArgb()
+    val cropperLabelTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
+
+
+    // --- NEW: State to hold the newly cropped (but not yet saved) image URI ---
+    var tempCroppedUri by remember { mutableStateOf<Uri?>(null) }
 
     val imageCropper = rememberLauncherForActivityResult(CropImageContract()) { result ->
         if (result.isSuccessful) {
-            viewModel.saveProfilePictureUri(result.uriContent)
+            // --- UPDATED: Don't save immediately. Store in temporary state. ---
+            tempCroppedUri = result.uriContent
         } else {
             val exception = result.error
             Toast.makeText(context, "Image cropping failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
+    // --- NEW: Determine which URI to display ---
+    val displayUri = tempCroppedUri ?: savedProfilePictureUri
+
     Column(modifier = Modifier.padding(16.dp)) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(4.dp)
         ) {
-            Row(
+            Column(
                 modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalAlignment = Alignment.CenterHorizontally // Center the content
             ) {
-                AsyncImage(
-                    model = profilePictureUri,
-                    contentDescription = "User Profile Picture",
-                    placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                    error = painterResource(id = R.drawable.ic_launcher_foreground),
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                        .clickable {
-                            val cropOptions = CropImageContractOptions(
-                                uri = null,
-                                cropImageOptions = CropImageOptions(
-                                    cropShape = CropImageView.CropShape.OVAL,
-                                    aspectRatioX = 1,
-                                    aspectRatioY = 1,
-                                    fixAspectRatio = true,
-                                    outputCompressQuality = 70,
-                                    imageSourceIncludeGallery = true,
-                                    imageSourceIncludeCamera = true
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = displayUri,
+                        contentDescription = "User Profile Picture",
+                        placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                        error = painterResource(id = R.drawable.ic_launcher_foreground),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                            .clickable {
+                                // Now we use the pre-resolved color values
+                                val cropOptions = CropImageContractOptions(
+                                    uri = null,
+                                    cropImageOptions = CropImageOptions(
+                                        cropShape = CropImageView.CropShape.OVAL,
+                                        aspectRatioX = 1,
+                                        aspectRatioY = 1,
+                                        fixAspectRatio = true,
+                                        outputCompressQuality = 70,
+                                        imageSourceIncludeGallery = true,
+                                        imageSourceIncludeCamera = true,
+                                        activityTitle = "Crop Profile Picture",
+                                        activityMenuIconColor = toolbarTintColor,
+                                        toolbarColor = toolbarColor,
+                                        toolbarBackButtonColor = toolbarTintColor,
+                                        activityBackgroundColor = activityBackgroundColor,
+                                        cropperLabelTextColor = cropperLabelTextColor
+                                    )
                                 )
-                            )
-                            imageCropper.launch(cropOptions)
-                        }
-                )
+                                imageCropper.launch(cropOptions)
+                            }
+                    )
 
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text(userName, style = MaterialTheme.typography.titleLarge)
-                    Text("user.email@pm.com", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(userName, style = MaterialTheme.typography.titleLarge)
+                        Text("user.email@pm.com", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+
+                // --- NEW: Show Save/Cancel buttons only when there's a new image ---
+                if (tempCroppedUri != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+                    ) {
+                        OutlinedButton(onClick = { tempCroppedUri = null }) {
+                            Text("Cancel")
+                        }
+                        Button(onClick = {
+                            viewModel.saveProfilePictureUri(tempCroppedUri)
+                            tempCroppedUri = null // Reset the temp state
+                            Toast.makeText(context, "Profile picture saved!", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Text("Save Image")
+                        }
+                    }
                 }
             }
         }
@@ -6807,6 +7056,11 @@ val Typography = Typography(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
+// REASON: Updated to hide the Floating Action Button (FAB) on the budget screen
+// to avoid redundant UI elements.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -6820,7 +7074,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -6828,8 +7086,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -6843,6 +7104,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.ui.screens.*
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
@@ -6979,10 +7241,9 @@ fun LockScreen(onUnlock: () -> Unit) {
 @Composable
 fun MainAppScreen() {
     val navController = rememberNavController()
-    // --- NEW: Get an instance of the DashboardViewModel ---
     val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application))
-    // --- NEW: Collect the user name state ---
     val userName by dashboardViewModel.userName.collectAsState()
+    val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
 
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
@@ -6996,29 +7257,43 @@ fun MainAppScreen() {
     val currentRoute = currentDestination?.route
     val baseCurrentRoute = currentRoute?.substringBefore("?")
 
-    // --- UPDATED: Title logic is now dynamic ---
     val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
-        "Hi, $userName!" // Show greeting on dashboard
+        "Hi, $userName!"
     } else {
         screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
     }
 
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
+
+    // --- FIX: The list of routes that should show the FAB no longer includes budget_screen ---
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
-        baseCurrentRoute,
+        BottomNavItem.Transactions.route,
         "account_list",
-        "budget_screen",
         "recurring_transactions"
     )
-    val showFab = currentRoute in fabRoutes || baseCurrentRoute in fabRoutes
+    val showFab = baseCurrentRoute in fabRoutes
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(currentTitle) },
                 navigationIcon = {
-                    if (!showBottomBar) {
+                    if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
+                        AsyncImage(
+                            model = profilePictureUri,
+                            contentDescription = "User Profile Picture",
+                            placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                            error = painterResource(id = R.drawable.ic_launcher_foreground),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .padding(start = 16.dp)
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { navController.navigate(BottomNavItem.Profile.route) }
+                        )
+                    } else if (!showBottomBar) {
                         IconButton(onClick = { navController.popBackStack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
@@ -7064,9 +7339,6 @@ fun MainAppScreen() {
                         "account_list" -> {
                             navController.navigate("add_account")
                         }
-                        "budget_screen" -> {
-                            navController.navigate("add_budget")
-                        }
                         "recurring_transactions" -> {
                             navController.navigate("add_recurring_transaction")
                         }
@@ -7080,7 +7352,6 @@ fun MainAppScreen() {
         AppNavHost(
             navController = navController,
             modifier = Modifier.padding(innerPadding),
-            // --- NEW: Pass the ViewModel instance to the NavHost ---
             dashboardViewModel = dashboardViewModel
         )
     }
@@ -7126,8 +7397,6 @@ fun AppNavHost(
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
         composable("search_screen") { SearchScreen(navController) }
-
-        // --- RESTORED: Routes for the manual SMS review flow ---
         composable(
             route = "review_sms_screen",
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
@@ -7157,7 +7426,6 @@ fun AppNavHost(
             arguments = listOf(
                 navArgument("transactionId") { type = NavType.IntType }
             ),
-            // --- UPDATED: Add deep link to handle notifications for auto-saved transactions ---
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/edit_transaction/{transactionId}" })
         ) { backStackEntry ->
             val arguments = requireNotNull(backStackEntry.arguments)
@@ -7395,17 +7663,28 @@ class MerchantMappingRepository(private val merchantMappingDao: MerchantMappingD
 
 
 ================== FILE: ./app/src/main/java/ProfileViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ProfileViewModel.kt
+// REASON: Fixed a SecurityException crash when saving a cropped profile picture.
+// FIX: Instead of trying to persist permissions for a temporary URI from the
+// cropper, the ViewModel now copies the image into the app's private internal
+// storage and saves the path to that new, permanent file.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
-import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 
 class ProfileViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -7419,7 +7698,6 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
             initialValue = "User"
         )
 
-    // --- NEW: Expose the profile picture URI as a StateFlow ---
     val profilePictureUri: StateFlow<String?> = settingsRepository.getProfilePictureUri()
         .stateIn(
             scope = viewModelScope,
@@ -7427,18 +7705,53 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
             initialValue = null
         )
 
-    // --- NEW: Function to save the selected image URI ---
-    fun saveProfilePictureUri(uri: Uri?) {
+    /**
+     * Saves the cropped image from the source URI to internal storage and persists its path.
+     */
+    fun saveProfilePictureUri(sourceUri: Uri?) {
         viewModelScope.launch {
-            val uriString = uri?.toString()
-            // Persist read permissions for the content URI
-            uri?.let {
-                context.contentResolver.takePersistableUriPermission(
-                    it,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+            if (sourceUri == null) {
+                settingsRepository.saveProfilePictureUri(null)
+                return@launch
             }
-            settingsRepository.saveProfilePictureUri(uriString)
+            // Copy the file to internal storage and get the new path
+            val localPath = saveImageToInternalStorage(sourceUri)
+            // Save the path to our new local file
+            settingsRepository.saveProfilePictureUri(localPath)
+        }
+    }
+
+    /**
+     * Copies a file from a given content URI to the app's private internal storage.
+     * @param sourceUri The temporary URI of the file to copy (e.g., from the image cropper).
+     * @return The absolute path to the newly created file, or null if an error occurred.
+     */
+    private suspend fun saveImageToInternalStorage(sourceUri: Uri): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Open an input stream from the source URI provided by the cropper
+                val inputStream = context.contentResolver.openInputStream(sourceUri)
+
+                // Create a destination file in the app's private 'files' directory
+                val fileName = "profile_${System.currentTimeMillis()}.jpg"
+                val file = File(context.filesDir, fileName)
+
+                // Open an output stream to the destination file
+                val outputStream = FileOutputStream(file)
+
+                // Copy the bytes from the input stream to the output stream
+                inputStream?.use { input ->
+                    outputStream.use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                // Return the path of the file we just created
+                file.absolutePath
+            } catch (e: Exception) {
+                Log.e("ProfileViewModel", "Error saving image to internal storage", e)
+                null
+            }
         }
     }
 }
@@ -7619,8 +7932,10 @@ class SmsRepository(private val context: Context) {
 ================== FILE: ./app/src/main/java/BudgetViewModel.kt ==================
 // =================================================================================
 // FILE: /app/src/main/java/com/pm/finlight/BudgetViewModel.kt
-// PURPOSE: Handles all business logic for the Budgets screens.
-// NOTE: Corrected to properly expose the `allCategories` flow.
+// REASON: Fixed a @Composable invocation error by moving the total spending calculation
+// from the UI layer into the ViewModel.
+// FIX: Added a new `totalSpending` StateFlow that combines the spending from all
+// category budgets into a single, observable value.
 // =================================================================================
 package io.pm.finlight
 
@@ -7643,10 +7958,9 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 
     val budgetsForCurrentMonth: Flow<List<Budget>>
     val overallBudget: StateFlow<Float>
-
-    // --- CORRECTED: This flow is now a public property of the ViewModel ---
     val allCategories: Flow<List<Category>>
     val availableCategoriesForNewBudget: Flow<List<Category>>
+    val totalSpending: StateFlow<Double>
 
     init {
         val db = AppDatabase.getInstance(application)
@@ -7658,7 +7972,6 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         currentYear = calendar.get(Calendar.YEAR)
 
         budgetsForCurrentMonth = budgetRepository.getBudgetsForMonth(currentMonth, currentYear)
-        // --- CORRECTED: Initialize the public property ---
         allCategories = categoryRepository.allCategories
 
         overallBudget =
@@ -7672,9 +7985,28 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         availableCategoriesForNewBudget =
             combine(allCategories, budgetsForCurrentMonth) { categories, budgets ->
                 val budgetedCategoryNames = budgets.map { it.categoryName }.toSet()
-                val available = categories.filter { category -> category.name !in budgetedCategoryNames }
-                available
+                categories.filter { category -> category.name !in budgetedCategoryNames }
             }
+
+        // NEW: Calculate total spending from all category budgets
+        totalSpending = budgetsForCurrentMonth.flatMapLatest { budgets ->
+            if (budgets.isEmpty()) {
+                flowOf(0.0) // Emit 0 if there are no budgets
+            } else {
+                // Create a list of spending flows for each budget
+                val spendingFlows = budgets.map { budget ->
+                    getActualSpending(budget.categoryName)
+                }
+                // Combine them to get the sum
+                combine(spendingFlows) { amounts ->
+                    amounts.sum()
+                }
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 0.0
+        )
     }
 
     fun getActualSpending(categoryName: String): Flow<Double> {

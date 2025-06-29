@@ -13,6 +13,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,8 +26,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // --- UPDATED: Page count is now 7 to include the new name page ---
-    val pagerState = rememberPagerState { 7 }
+    // Page count is 8 to include the new SMS info page
+    val pagerState = rememberPagerState { 8 }
     val scope = rememberCoroutineScope()
 
     val onNextClicked: () -> Unit = {
@@ -38,6 +40,7 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
         bottomBar = {
             OnboardingBottomBar(
                 pagerState = pagerState,
+                viewModel = viewModel, // Pass ViewModel to control button state
                 onNextClicked = onNextClicked,
                 onFinishClicked = {
                     viewModel.finishOnboarding()
@@ -51,17 +54,17 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            userScrollEnabled = false
+            userScrollEnabled = false // Prevent swiping to enforce button logic
         ) { page ->
-            // --- UPDATED: Added UserNamePage at index 1 ---
             when (page) {
                 0 -> WelcomePage()
                 1 -> UserNamePage(viewModel)
                 2 -> CategorySetupPage(viewModel)
                 3 -> BudgetSetupPage(viewModel)
                 4 -> SmsPermissionPage(onPermissionResult = onNextClicked)
-                5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
-                6 -> CompletionPage()
+                5 -> SmsScanningInfoPage()
+                6 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
+                7 -> CompletionPage()
             }
         }
     }
@@ -71,9 +74,12 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
 @Composable
 fun OnboardingBottomBar(
     pagerState: PagerState,
+    viewModel: OnboardingViewModel, // ViewModel is needed to check the user's name
     onNextClicked: () -> Unit,
     onFinishClicked: () -> Unit
 ) {
+    val userName by viewModel.userName.collectAsState()
+
     Surface(shadowElevation = 8.dp) {
         Row(
             modifier = Modifier
@@ -84,15 +90,31 @@ fun OnboardingBottomBar(
         ) {
             PageIndicator(pageCount = pagerState.pageCount, currentPage = pagerState.currentPage)
 
-            if (pagerState.currentPage < pagerState.pageCount - 1) {
-                Button(onClick = onNextClicked) {
+            val isNextButtonVisible = pagerState.currentPage < pagerState.pageCount - 1 &&
+                    pagerState.currentPage != 4 && // Hide on SMS Permission Page
+                    pagerState.currentPage != 6    // Hide on Notification Permission Page
+
+            // --- UPDATED: Check if the user is on the name page and if the name is blank ---
+            val isNextEnabled = if (pagerState.currentPage == 1) {
+                userName.isNotBlank()
+            } else {
+                true
+            }
+
+            if (isNextButtonVisible) {
+                Button(
+                    onClick = onNextClicked,
+                    enabled = isNextEnabled // Button is disabled if name is blank on the name page
+                ) {
                     Text("Next")
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Page")
                 }
-            } else {
+            } else if (pagerState.currentPage == pagerState.pageCount - 1) {
                 Button(onClick = onFinishClicked) {
                     Text("Finish Setup")
                 }
+            } else {
+                Spacer(modifier = Modifier.width(0.dp))
             }
         }
     }

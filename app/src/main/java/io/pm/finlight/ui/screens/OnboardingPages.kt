@@ -78,7 +78,6 @@ fun WelcomePage() {
     }
 }
 
-// --- NEW: A page to ask for the user's name ---
 @Composable
 fun UserNamePage(viewModel: OnboardingViewModel) {
     val name by viewModel.userName.collectAsState()
@@ -231,6 +230,47 @@ fun SmsPermissionPage(onPermissionResult: () -> Unit) {
         }
     }
 }
+
+@Composable
+fun SmsScanningInfoPage() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = "Magic Wand Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("Supercharge Your Setup", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            buildAnnotatedString {
+                append("After setup, you can visit the ")
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                    append("Settings")
+                }
+                append(" screen at any time to import existing transactions from your SMS inbox.\n\nYou'll have two options:\n\n")
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                    append("• Quick Scan:")
+                }
+                append(" A fast scan of recent messages. This defaults to the last 30 days, but you can pick any start date you like!\n\n")
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                    append("• Full Scan:")
+                }
+                append(" A complete scan of your entire inbox.")
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
 
 @Composable
 fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
