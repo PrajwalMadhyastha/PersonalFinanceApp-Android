@@ -16,10 +16,13 @@ interface BudgetDao {
     // It is much more efficient than fetching all transactions and all budgets into memory and combining them in the ViewModel.
     // It joins Budgets with an aggregate sum from Transactions for a given month and year.
     // --- FIX: The @Transaction annotation was removed as it's illegal on a @Query that returns a Flow. ---
-    @Query("""
+    @Query(
+        """
         SELECT
             B.*,
-            IFNULL(TxSums.totalSpent, 0.0) as spent
+            IFNULL(TxSums.totalSpent, 0.0) as spent,
+            Cat.iconKey as iconKey,
+            Cat.colorKey as colorKey
         FROM
             budgets AS B
         LEFT JOIN
@@ -31,8 +34,10 @@ interface BudgetDao {
              WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch') = :yearMonth
              GROUP BY C.name) AS TxSums
         ON B.categoryName = TxSums.categoryName
+        LEFT JOIN categories AS Cat ON B.categoryName = Cat.name
         WHERE B.month = :month AND B.year = :year
-    """)
+    """
+    )
     fun getBudgetsWithSpendingForMonth(yearMonth: String, month: Int, year: Int): Flow<List<BudgetWithSpending>>
 
 

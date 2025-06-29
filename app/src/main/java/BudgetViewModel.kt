@@ -1,10 +1,3 @@
-// =================================================================================
-// FILE: /app/src/main/java/com/pm/finlight/BudgetViewModel.kt
-// REASON: Fixed a @Composable invocation error by moving the total spending calculation
-// from the UI layer into the ViewModel.
-// FIX: Added a new `totalSpending` StateFlow that combines the spending from all
-// category budgets into a single, observable value.
-// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -24,7 +17,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
     private val currentMonth: Int
     private val currentYear: Int
 
-    val budgetsForCurrentMonth: Flow<List<Budget>>
+    val budgetsForCurrentMonth: StateFlow<List<BudgetWithSpending>>
     val overallBudget: StateFlow<Float>
     val allCategories: Flow<List<Category>>
     val availableCategoriesForNewBudget: Flow<List<Category>>
@@ -39,7 +32,14 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         currentMonth = calendar.get(Calendar.MONTH) + 1
         currentYear = calendar.get(Calendar.YEAR)
 
-        budgetsForCurrentMonth = budgetRepository.getBudgetsForMonth(currentMonth, currentYear)
+        val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
+        budgetsForCurrentMonth = budgetRepository.getBudgetsForMonthWithSpending(yearMonthString, currentMonth, currentYear)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+
         allCategories = categoryRepository.allCategories
 
         overallBudget =
@@ -52,20 +52,17 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 
         availableCategoriesForNewBudget =
             combine(allCategories, budgetsForCurrentMonth) { categories, budgets ->
-                val budgetedCategoryNames = budgets.map { it.categoryName }.toSet()
+                val budgetedCategoryNames = budgets.map { it.budget.categoryName }.toSet()
                 categories.filter { category -> category.name !in budgetedCategoryNames }
             }
 
-        // NEW: Calculate total spending from all category budgets
         totalSpending = budgetsForCurrentMonth.flatMapLatest { budgets ->
             if (budgets.isEmpty()) {
-                flowOf(0.0) // Emit 0 if there are no budgets
+                flowOf(0.0)
             } else {
-                // Create a list of spending flows for each budget
-                val spendingFlows = budgets.map { budget ->
-                    getActualSpending(budget.categoryName)
+                val spendingFlows = budgets.map {
+                    getActualSpending(it.budget.categoryName)
                 }
-                // Combine them to get the sum
                 combine(spendingFlows) { amounts ->
                     amounts.sum()
                 }

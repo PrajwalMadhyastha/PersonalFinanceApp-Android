@@ -1,5 +1,6 @@
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -11,8 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
@@ -51,11 +54,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.Account
 import io.pm.finlight.Category
+import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
@@ -92,72 +98,27 @@ fun AddTransactionScreen(
     val validationError by viewModel.validationError.collectAsState()
 
     val isExpense = transactionType == "expense"
-    val isSaveEnabled = (
-            description.isNotBlank() &&
-                    amount.isNotBlank() &&
-                    selectedAccount != null &&
-                    (!isExpense || selectedCategory != null)
-            )
+    val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && (!isExpense || selectedCategory != null))
 
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
 
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModel.clearSelectedTags()
-        }
-    }
+    DisposableEffect(Unit) { onDispose { viewModel.clearSelectedTags() } }
 
-    LaunchedEffect(validationError) {
-        validationError?.let {
-            snackbarHostState.showSnackbar(it)
-        }
-    }
+    LaunchedEffect(validationError) { validationError?.let { snackbarHostState.showSnackbar(it) } }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             item {
                 TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
                     transactionTypes.forEachIndexed { index, title ->
-                        Tab(
-                            selected = (if (isExpense) 0 else 1) == index,
-                            onClick = {
-                                transactionType = if (index == 0) "expense" else "income"
-                                if (transactionType == "income") {
-                                    selectedCategory = null
-                                }
-                            },
-                            text = { Text(title) },
-                        )
+                        Tab(selected = (if (isExpense) 0 else 1) == index, onClick = { transactionType = if (index == 0) "expense" else "income"; if (transactionType == "income") selectedCategory = null }, text = { Text(title) })
                     }
                 }
             }
-            item {
-                OutlinedTextField(value = description, onValueChange = {
-                    description = it
-                }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-            }
-            item {
-                OutlinedTextField(value = amount, onValueChange = {
-                    amount = it
-                }, label = {
-                    Text("Amount")
-                }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            }
-            item {
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes (Optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
+            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
+            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
@@ -173,165 +134,95 @@ fun AddTransactionScreen(
                 }
             }
             item {
-                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = {
-                    isAccountDropdownExpanded = !isAccountDropdownExpanded
-                }) {
-                    OutlinedTextField(
-                        value = selectedAccount?.name ?: "Select Account",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Account") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    )
+                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
+                    OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {}, readOnly = true, label = { Text("Account") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
                     ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
                         accounts.forEach { account ->
-                            DropdownMenuItem(text = { Text(account.name) }, onClick = {
-                                selectedAccount = account
-                                isAccountDropdownExpanded = false
-                            })
+                            DropdownMenuItem(text = { Text(account.name) }, onClick = { selectedAccount = account; isAccountDropdownExpanded = false })
                         }
                     }
                 }
             }
             if (isExpense) {
                 item {
-                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                        isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-                    }) {
+                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
                         OutlinedTextField(
-                            value = selectedCategory?.name ?: "",
+                            value = selectedCategory?.name ?: "Select Category",
                             onValueChange = {},
                             readOnly = true,
                             label = { Text("Category") },
+                            leadingIcon = selectedCategory?.let { { CategoryIcon(it) } },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
                         )
                         ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
                             categories.forEach { category ->
-                                DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                    selectedCategory = category
-                                    isCategoryDropdownExpanded = false
-                                })
+                                DropdownMenuItem(
+                                    text = { CategoryDropdownItem(category = category) },
+                                    onClick = { selectedCategory = category; isCategoryDropdownExpanded = false }
+                                )
                             }
                         }
                     }
                 }
             }
-
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    allTags.forEach { tag ->
-                        FilterChip(
-                            selected = tag in selectedTags,
-                            onClick = { viewModel.onTagSelected(tag) },
-                            label = { Text(tag.name) }
-                        )
-                    }
+                FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    allTags.forEach { tag -> FilterChip(selected = tag in selectedTags, onClick = { viewModel.onTagSelected(tag) }, label = { Text(tag.name) }) }
                 }
-                // --- NEW: UI to add a new tag on the fly ---
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = newTagName,
-                        onValueChange = { newTagName = it },
-                        label = { Text("New Tag") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = {
-                            viewModel.addTagOnTheGo(newTagName)
-                            newTagName = "" // Clear input
-                        },
-                        enabled = newTagName.isNotBlank()
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add New Tag")
-                    }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = newTagName, onValueChange = { newTagName = it }, label = { Text("New Tag") }, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { viewModel.addTagOnTheGo(newTagName); newTagName = "" }, enabled = newTagName.isNotBlank()) { Icon(Icons.Default.Add, contentDescription = "Add New Tag") }
                 }
             }
-
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
-                        Text("Cancel")
-                    }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) { Text("Cancel") }
                     Button(
                         onClick = {
-                            val success =
-                                viewModel.addTransaction(
-                                    description = description,
-                                    categoryId = selectedCategory?.id,
-                                    amountStr = amount,
-                                    accountId = selectedAccount!!.id,
-                                    notes = notes.takeIf { it.isNotBlank() },
-                                    date = selectedDateTime.timeInMillis,
-                                    transactionType = transactionType,
-                                    sourceSmsId = null,
-                                    // --- FIX: Pass null for the new hash parameter ---
-                                    sourceSmsHash = null
-                                )
-                            if (success) {
-                                navController.popBackStack()
-                            }
+                            val success = viewModel.addTransaction(description = description, categoryId = selectedCategory?.id, amountStr = amount, accountId = selectedAccount!!.id, notes = notes.takeIf { it.isNotBlank() }, date = selectedDateTime.timeInMillis, transactionType = transactionType, sourceSmsId = null, sourceSmsHash = null)
+                            if (success) navController.popBackStack()
                         },
-                        modifier = Modifier.weight(1f),
-                        enabled = isSaveEnabled,
-                    ) {
-                        Text("Save Transaction")
-                    }
+                        modifier = Modifier.weight(1f), enabled = isSaveEnabled
+                    ) { Text("Save Transaction") }
                 }
             }
         }
         SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
-
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let {
-                            val newCalendar = Calendar.getInstance().apply { timeInMillis = it }
-                            selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
-                            selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
-                            selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
-                        }
-                        showDatePicker = false
-                    },
-                ) { Text("OK") }
-            },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } },
-        ) { DatePicker(state = datePickerState) }
+        DatePickerDialog(onDismissRequest = { showDatePicker = false }, confirmButton = { TextButton(onClick = { datePickerState.selectedDateMillis?.let { val cal = Calendar.getInstance().apply { timeInMillis = it }; selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR)); selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH)); selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH)) }; showDatePicker = false }) { Text("OK") } }, dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }) { DatePicker(state = datePickerState) }
     }
-
     if (showTimePicker) {
-        val timePickerState =
-            rememberTimePickerState(
-                initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
-                initialMinute = selectedDateTime.get(Calendar.MINUTE),
-            )
-        TimePickerDialog(
-            onDismissRequest = { showTimePicker = false },
-            onConfirm = {
-                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
-                showTimePicker = false
-            },
-        ) { TimePicker(state = timePickerState) }
+        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(Calendar.MINUTE))
+        TimePickerDialog(onDismissRequest = { showTimePicker = false }, onConfirm = { selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour); selectedDateTime.set(Calendar.MINUTE, timePickerState.minute); showTimePicker = false }) { TimePicker(state = timePickerState) }
+    }
+}
+
+@Composable
+private fun CategoryDropdownItem(category: Category) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CategoryIcon(category = category, modifier = Modifier.size(24.dp))
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(category.name)
+    }
+}
+
+@Composable
+private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = CategoryIconHelper.getIcon(category.iconKey),
+            contentDescription = null,
+            tint = Color.Black,
+            modifier = Modifier.padding(4.dp)
+        )
     }
 }

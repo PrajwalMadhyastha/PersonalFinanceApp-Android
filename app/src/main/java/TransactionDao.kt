@@ -13,7 +13,9 @@ interface TransactionDao {
         SELECT
             T.*,
             A.name as accountName,
-            C.name as categoryName
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
         FROM
             transactions AS T
         LEFT JOIN
@@ -32,7 +34,9 @@ interface TransactionDao {
         SELECT
             T.*,
             A.name as accountName,
-            C.name as categoryName
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
         FROM
             transactions AS T
         LEFT JOIN
@@ -53,7 +57,9 @@ interface TransactionDao {
         SELECT
             T.*,
             A.name as accountName,
-            C.name as categoryName
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
         FROM
             transactions AS T
         LEFT JOIN
@@ -74,7 +80,9 @@ interface TransactionDao {
         """
         SELECT T.*,
                A.name as accountName,
-               C.name as categoryName
+               C.name as categoryName,
+               C.iconKey as categoryIconKey,
+               C.colorKey as categoryColorKey
         FROM transactions AS T
         LEFT JOIN accounts AS A ON T.accountId = A.id
         LEFT JOIN categories AS C ON T.categoryId = C.id
@@ -114,7 +122,11 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT C.name as categoryName, SUM(T.amount) as totalAmount
+        SELECT 
+            C.name as categoryName, 
+            SUM(T.amount) as totalAmount,
+            C.iconKey as iconKey,
+            C.colorKey as colorKey
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
@@ -143,7 +155,7 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT t.*, a.name as accountName, c.name as categoryName
+        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
         FROM transactions t
         LEFT JOIN accounts a ON t.accountId = a.id
         LEFT JOIN categories c ON t.categoryId = c.id

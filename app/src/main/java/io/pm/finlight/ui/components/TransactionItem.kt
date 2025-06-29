@@ -1,5 +1,6 @@
 package io.pm.finlight.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
@@ -23,11 +25,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -47,30 +51,27 @@ fun TransactionItem(
         onClick = onClick,
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
+                    contentDescription = transactionDetails.categoryName,
+                    tint = Color.Black
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = transactionDetails.transaction.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
-                )
+                Text(text = transactionDetails.transaction.description, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
                 if (!transactionDetails.transaction.notes.isNullOrBlank()) {
-                    Text(
-                        text = transactionDetails.transaction.notes!!,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text(text = transactionDetails.transaction.notes!!, style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(
-                    text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-                Text(
-                    text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                Text(text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             val isIncome = transactionDetails.transaction.transactionType == "income"
@@ -78,19 +79,9 @@ fun TransactionItem(
             val icon = if (isIncome) Icons.Default.SouthWest else Icons.Default.NorthEast
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = amountColor,
-                )
+                Text(text = "₹${"%.2f".format(transactionDetails.transaction.amount)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = amountColor)
                 Spacer(modifier = Modifier.width(4.dp))
-                Icon(
-                    imageVector = icon,
-                    contentDescription = transactionDetails.transaction.transactionType,
-                    tint = amountColor,
-                    modifier = Modifier.size(20.dp),
-                )
+                Icon(imageVector = icon, contentDescription = transactionDetails.transaction.transactionType, tint = amountColor, modifier = Modifier.size(20.dp))
             }
         }
     }

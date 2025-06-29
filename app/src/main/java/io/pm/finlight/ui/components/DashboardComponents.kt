@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Assessment
@@ -41,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -59,6 +63,7 @@ import io.pm.finlight.BottomNavItem
 import io.pm.finlight.Budget
 import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
+import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
 import kotlinx.coroutines.flow.map
 import kotlin.math.sin
@@ -386,26 +391,16 @@ fun BudgetWatchCard(
 ) {
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = { navController.navigate("add_budget") }) {
-                    Text("+ Add Category Budget")
-                }
+                TextButton(onClick = { navController.navigate("add_budget") }) { Text("+ Add Category Budget") }
             }
             Spacer(modifier = Modifier.height(8.dp))
             if (budgetStatus.isEmpty()) {
-                Text(
-                    "No category-specific budgets set for this month.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(vertical = 16.dp)
-                )
+                Text("No category-specific budgets set for this month.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 budgetStatus.forEach { budgetWithSpendingItem ->
-                    BudgetItem(budget = budgetWithSpendingItem.budget, viewModel = viewModel)
+                    BudgetItem(budgetWithSpending = budgetWithSpendingItem)
                 }
             }
         }
@@ -414,17 +409,11 @@ fun BudgetWatchCard(
 
 
 @Composable
-fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
-    val spendingFlow = remember(budget.categoryName) {
-        viewModel.getActualSpending(budget.categoryName).map { spending ->
-            Math.abs(spending ?: 0.0)
-        }
-    }
-    val actualSpending by spendingFlow.collectAsState(initial = 0.0)
-
+fun BudgetItem(budgetWithSpending: BudgetWithSpending) {
+    val budget = budgetWithSpending.budget
+    val actualSpending = budgetWithSpending.spent
     val progress = if (budget.amount > 0) (actualSpending / budget.amount).toFloat() else 0f
     val amountRemaining = budget.amount - actualSpending
-
     val progressColor = when {
         progress > 1f -> MaterialTheme.colorScheme.error
         progress > 0.8f -> Color(0xFFFBC02D) // Amber
@@ -433,34 +422,26 @@ fun BudgetItem(budget: Budget, viewModel: BudgetViewModel) {
 
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = budget.categoryName,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = "₹${"%.0f".format(budget.amount)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary
-            )
+            Box(
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(budgetWithSpending.colorKey ?: "gray_light")),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
+                    contentDescription = budget.categoryName,
+                    tint = Color.Black
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(text = budget.categoryName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(text = "₹${"%.0f".format(budget.amount)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
         }
         Spacer(modifier = Modifier.height(8.dp))
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.fillMaxWidth().height(8.dp),
-            color = progressColor
-        )
+        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp), color = progressColor)
         Spacer(modifier = Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                text = "Spent: ₹${"%.2f".format(actualSpending)}",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Text(
-                text = "Remaining: ₹${"%.2f".format(amountRemaining)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (amountRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-            )
+            Text(text = "Spent: ₹${"%.2f".format(actualSpending)}", style = MaterialTheme.typography.bodySmall)
+            Text(text = "Remaining: ₹${"%.2f".format(amountRemaining)}", style = MaterialTheme.typography.bodySmall, color = if (amountRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
         }
     }
 }

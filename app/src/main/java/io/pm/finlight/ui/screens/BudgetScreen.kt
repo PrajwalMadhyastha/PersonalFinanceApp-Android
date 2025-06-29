@@ -3,10 +3,12 @@ package io.pm.finlight.ui.screens
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -18,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -28,12 +31,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.Budget
 import io.pm.finlight.BudgetViewModel
+import io.pm.finlight.CategoryIconHelper
+import io.pm.finlight.BudgetWithSpending
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -131,142 +137,68 @@ fun BudgetScreen(
     navController: NavController,
     viewModel: BudgetViewModel = viewModel(),
 ) {
-    val categoryBudgets by viewModel.budgetsForCurrentMonth.collectAsState(initial = emptyList())
+    val categoryBudgets by viewModel.budgetsForCurrentMonth.collectAsState()
     val overallBudget by viewModel.overallBudget.collectAsState()
     val totalSpending by viewModel.totalSpending.collectAsState()
-
     var showDeleteDialog by remember { mutableStateOf(false) }
     var budgetToDelete by remember { mutableStateOf<Budget?>(null) }
     var showOverallBudgetDialog by remember { mutableStateOf(false) }
 
-    // --- FIX: Removed the Scaffold and its bottomBar ---
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.weight(1f), // Use weight to fill available space
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+        LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Set monthly budget", style = MaterialTheme.typography.headlineSmall)
-                        Text(
-                            "Setting a budget reduces expenditures about 10% on an average.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
+                        Text("Setting a budget reduces expenditures about 10% on an average.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     }
                     GaugeChart(progress = if (overallBudget > 0) (totalSpending.toFloat() / overallBudget) else 0f)
                 }
             }
-
             item {
-                // --- FIX: This card is now clickable to open the dialog ---
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable { showOverallBudgetDialog = true },
-                    elevation = CardDefaults.cardElevation(2.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MonetizationOn,
-                            contentDescription = "Overall Budget",
-                            modifier = Modifier.size(40.dp)
-                        )
+                Card(modifier = Modifier.fillMaxWidth().clickable { showOverallBudgetDialog = true }, elevation = CardDefaults.cardElevation(2.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.MonetizationOn, contentDescription = "Overall Budget", modifier = Modifier.size(40.dp))
                         Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            "Overall budget",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            "₹${"%,.0f".format(overallBudget)}",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text("Overall budget", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Text("₹${"%,.0f".format(overallBudget)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
                 }
             }
-
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Category wise budget",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = 16.dp)
-                    )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Category wise budget", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
                     IconButton(onClick = { navController.navigate("add_budget") }) {
                         Icon(Icons.Default.Add, contentDescription = "Add Category Budget")
                     }
                 }
             }
-
             if (categoryBudgets.isEmpty()) {
                 item {
-                    Text(
-                        "No category budgets set. Tap the '+' icon to add one.",
-                        modifier = Modifier.padding(16.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        color = Color.Gray
-                    )
+                    Text("No category budgets set. Tap the '+' icon to add one.", modifier = Modifier.padding(16.dp), textAlign = TextAlign.Center, color = Color.Gray)
                 }
             } else {
-                items(categoryBudgets) { budget ->
+                items(categoryBudgets) { budgetWithSpending ->
                     CategoryBudgetItem(
-                        budget = budget,
-                        viewModel = viewModel,
-                        onEdit = { navController.navigate("edit_budget/${budget.id}") },
-                        onDelete = {
-                            budgetToDelete = budget
-                            showDeleteDialog = true
-                        }
+                        budgetWithSpending = budgetWithSpending,
+                        onEdit = { navController.navigate("edit_budget/${budgetWithSpending.budget.id}") },
+                        onDelete = { budgetToDelete = budgetWithSpending.budget; showDeleteDialog = true }
                     )
                 }
             }
         }
     }
-
-
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete Budget?") },
             text = { Text("Are you sure you want to delete the budget for '${budgetToDelete?.categoryName}'?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        budgetToDelete?.let { viewModel.deleteBudget(it) }
-                        showDeleteDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
-            },
+            confirmButton = { Button(onClick = { budgetToDelete?.let { viewModel.deleteBudget(it) }; showDeleteDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } },
         )
     }
-
     if (showOverallBudgetDialog) {
-        EditOverallBudgetDialog(
-            currentBudget = overallBudget,
-            onDismiss = { showOverallBudgetDialog = false },
-            onConfirm = { newAmount ->
-                viewModel.saveOverallBudget(newAmount)
-                showOverallBudgetDialog = false
-            }
-        )
+        EditOverallBudgetDialog(currentBudget = overallBudget, onDismiss = { showOverallBudgetDialog = false }, onConfirm = { newAmount -> viewModel.saveOverallBudget(newAmount); showOverallBudgetDialog = false })
     }
 }
 
@@ -277,87 +209,46 @@ fun EditOverallBudgetDialog(
     onConfirm: (String) -> Unit
 ) {
     var budgetInput by remember { mutableStateOf(if (currentBudget > 0) "%.0f".format(currentBudget) else "") }
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Set Overall Budget") },
-        text = {
-            OutlinedTextField(
-                value = budgetInput,
-                onValueChange = { budgetInput = it.filter { char -> char.isDigit() } },
-                label = { Text("Total Monthly Budget Amount") },
-                leadingIcon = { Text("₹") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(budgetInput) },
-                enabled = budgetInput.isNotBlank()
-            ) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
+        text = { OutlinedTextField(value = budgetInput, onValueChange = { budgetInput = it.filter { char -> char.isDigit() } }, label = { Text("Total Monthly Budget Amount") }, leadingIcon = { Text("₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true) },
+        confirmButton = { Button(onClick = { onConfirm(budgetInput) }, enabled = budgetInput.isNotBlank()) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
 
 @Composable
 fun CategoryBudgetItem(
-    budget: Budget,
-    viewModel: BudgetViewModel,
+    budgetWithSpending: BudgetWithSpending,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val spending by viewModel.getActualSpending(budget.categoryName)
-        .collectAsState(initial = 0.0)
-    val progress = if (budget.amount > 0) (spending / budget.amount).toFloat() else 0f
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Category,
-                contentDescription = budget.categoryName,
-                modifier = Modifier.size(40.dp)
-            )
+    val progress = if (budgetWithSpending.budget.amount > 0) (budgetWithSpending.spent / budgetWithSpending.budget.amount).toFloat() else 0f
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), elevation = CardDefaults.cardElevation(2.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(budgetWithSpending.colorKey ?: "gray_light")),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
+                    contentDescription = budgetWithSpending.budget.categoryName,
+                    tint = Color.Black
+                )
+            }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(budget.categoryName, style = MaterialTheme.typography.titleMedium)
+                Text(budgetWithSpending.budget.categoryName, style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { progress.coerceIn(0f,1f) },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "₹${"%,.0f".format(spending)} of ₹${"%,.0f".format(budget.amount)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
+                Text("₹${"%,.0f".format(budgetWithSpending.spent)} of ₹${"%,.0f".format(budgetWithSpending.budget.amount)}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
             Spacer(modifier = Modifier.width(16.dp))
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit")
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete")
-            }
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit") }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Delete") }
         }
     }
 }

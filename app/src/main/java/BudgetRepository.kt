@@ -10,7 +10,10 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
         return budgetDao.getBudgetsForMonth(month, year)
     }
 
-    // Expose the more efficient query to the ViewModel
+    fun getBudgetsForMonthWithSpending(yearMonth: String, month: Int, year: Int): Flow<List<BudgetWithSpending>> {
+        return budgetDao.getBudgetsWithSpendingForMonth(yearMonth, month, year)
+    }
+
     fun getActualSpendingForCategory(
         categoryName: String,
         month: Int,
