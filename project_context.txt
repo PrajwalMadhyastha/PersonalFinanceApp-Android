@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sun Jun 29 14:40:28 IST 2025
+Generated on: Sun Jun 29 15:54:23 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -555,6 +555,12 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 
 
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
+// REASON: Fixed a bug where creating a new tag on the detail screen did not
+// automatically select it. The `addTagOnTheGo` function now correctly uses the returned
+// ID from the database to add the new tag to the `selectedTags` state.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -568,8 +574,8 @@ import kotlinx.coroutines.withContext
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
-    private val accountRepository: AccountRepository
-    private val categoryRepository: CategoryRepository
+    val accountRepository: AccountRepository
+    val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
 
     private val db = AppDatabase.getInstance(application)
@@ -622,6 +628,41 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
+    fun updateTransactionDescription(id: Int, description: String) = viewModelScope.launch {
+        if (description.isNotBlank()) {
+            transactionRepository.updateDescription(id, description)
+        }
+    }
+
+    fun updateTransactionAmount(id: Int, amountStr: String) = viewModelScope.launch {
+        amountStr.toDoubleOrNull()?.let {
+            if (it > 0) {
+                transactionRepository.updateAmount(id, it)
+            }
+        }
+    }
+
+    fun updateTransactionNotes(id: Int, notes: String) = viewModelScope.launch {
+        transactionRepository.updateNotes(id, notes.takeIf { it.isNotBlank() })
+    }
+
+    fun updateTransactionCategory(id: Int, categoryId: Int) = viewModelScope.launch {
+        transactionRepository.updateCategoryId(id, categoryId)
+    }
+
+    fun updateTransactionAccount(id: Int, accountId: Int) = viewModelScope.launch {
+        transactionRepository.updateAccountId(id, accountId)
+    }
+
+    fun updateTransactionDate(id: Int, date: Long) = viewModelScope.launch {
+        transactionRepository.updateDate(id, date)
+    }
+
+    fun updateTagsForTransaction(transactionId: Int) = viewModelScope.launch {
+        transactionRepository.updateTagsForTransaction(transactionId, _selectedTags.value)
+    }
+
+
     fun setTransactionTypeFilter(type: String?) {
         _transactionTypeFilter.value = type
     }
@@ -636,10 +677,24 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    /**
+     * Called from transaction detail/edit screens. Inserts a new tag and
+     * immediately adds it to the current transaction's selected tags.
+     */
     fun addTagOnTheGo(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
-                tagRepository.insert(Tag(name = tagName))
+                val newTag = Tag(name = tagName)
+                // Insert the new tag and get its database-generated ID back
+                val newId = tagRepository.insert(newTag)
+                // If the insert was successful (i.e., not a duplicate)
+                if (newId != -1L) {
+                    // Update the local state to include the new tag, now with its correct ID.
+                    // This will make it appear selected in the UI.
+                    _selectedTags.update { currentTags ->
+                        currentTags + newTag.copy(id = newId.toInt())
+                    }
+                }
             }
         }
     }
@@ -656,6 +711,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _selectedTags.value = emptySet()
     }
 
+    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+        return transactionRepository.getTransactionDetailsById(id)
+    }
 
     fun getTransactionById(id: Int): Flow<Transaction?> {
         return transactionRepository.getTransactionById(id)
@@ -696,7 +754,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     transactionType = potentialTxn.transactionType,
                     sourceSmsId = potentialTxn.sourceSmsId,
                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                    // --- UPDATED: Set the source for reviewed imports ---
                     source = "Reviewed Import"
                 )
 
@@ -745,7 +802,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 transactionType = transactionType,
                 sourceSmsId = sourceSmsId,
                 sourceSmsHash = sourceSmsHash,
-                source = "Manual Entry" // Default source
+                source = "Manual Entry"
             )
         viewModelScope.launch {
             transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)
@@ -766,7 +823,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch {
-            // The source field is preserved on update
             transactionRepository.updateTransactionWithTags(transaction, _selectedTags.value)
         }
         return true
@@ -882,8 +938,11 @@ val screenTitles = mapOf(
     "search_screen" to "Search",
     "review_sms_screen" to "Review SMS Transactions",
     "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
-    "tag_management" to "Manage Tags"
-)-e 
+    "tag_management" to "Manage Tags",
+    // --- NEW: Add the title for the new Edit Profile screen ---
+    "edit_profile" to "Edit Profile"
+)
+-e 
 
 
 ================== FILE: ./app/src/main/java/WeeklySummaryWorker.kt ==================
@@ -3982,15 +4041,12 @@ import io.pm.finlight.ui.components.TransactionList
 fun TransactionListScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
-    // --- NEW: Accept an optional filter type ---
     filterType: String?
 ) {
-    // --- NEW: Apply the filter when the screen is composed ---
     LaunchedEffect(filterType) {
         viewModel.setTransactionTypeFilter(filterType)
     }
 
-    // --- NEW: Reset the filter when the user navigates away ---
     DisposableEffect(Unit) {
         onDispose {
             viewModel.setTransactionTypeFilter(null)
@@ -4000,7 +4056,543 @@ fun TransactionListScreen(
     val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
     TransactionList(
         transactions = transactions,
-        navController = navController,
+        navController = navController
+        // --- FIX: Removed the 'modifier' parameter that was causing the compile error ---
+    )
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
+// REASON: Fixed a runtime crash caused by an invalid date format string.
+// The illegal pattern "ราย" was replaced with "yyyy".
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import io.pm.finlight.*
+import io.pm.finlight.ui.components.TimePickerDialog
+import java.text.SimpleDateFormat
+import java.util.*
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun TransactionDetailScreen(
+    navController: NavController,
+    transactionId: Int,
+    viewModel: TransactionViewModel = viewModel()
+) {
+    val transactionDetails by viewModel.getTransactionDetailsById(transactionId).collectAsState(initial = null)
+    val accounts by viewModel.allAccounts.collectAsState()
+    val categories by viewModel.allCategories.collectAsState(initial = emptyList())
+    val allTags by viewModel.allTags.collectAsState()
+    val selectedTags by viewModel.selectedTags.collectAsState()
+
+    var showMenu by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    var showDescriptionDialog by remember { mutableStateOf(false) }
+    var showAmountDialog by remember { mutableStateOf(false) }
+    var showNotesDialog by remember { mutableStateOf(false) }
+    var showAccountPicker by remember { mutableStateOf(false) }
+    var showCategoryPicker by remember { mutableStateOf(false) }
+    var showTagPicker by remember { mutableStateOf(false) }
+
+    LaunchedEffect(transactionId) {
+        viewModel.loadTagsForTransaction(transactionId)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearSelectedTags()
+        }
+    }
+
+    val title = when (transactionDetails?.transaction?.transactionType) {
+        "expense" -> "Debit transaction"
+        "income" -> "Credit transaction"
+        else -> "Transaction Details"
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            onClick = {
+                                showMenu = false
+                                showDeleteDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete") }
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) { innerPadding ->
+        transactionDetails?.let { details ->
+            val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
+
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .padding(16.dp)
+                    .fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                TransactionHeaderCard(
+                    details = details,
+                    onDescriptionClick = { showDescriptionDialog = true },
+                    onAmountClick = { showAmountDialog = true },
+                    onCategoryClick = { showCategoryPicker = true },
+                    onDateTimeClick = { showDatePicker = true }
+                )
+                InfoCard(
+                    icon = Icons.Default.AccountBalanceWallet,
+                    label = "Account",
+                    value = details.accountName ?: "N/A",
+                    onClick = { showAccountPicker = true }
+                )
+                InfoCard(
+                    icon = Icons.Default.Notes,
+                    label = "Notes",
+                    value = details.transaction.notes ?: "Tap to add",
+                    onClick = { showNotesDialog = true }
+                )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    onClick = { showTagPicker = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (selectedTags.isEmpty()) {
+                                Text("Tap to add tags")
+                            } else {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    selectedTags.forEach { tag ->
+                                        AssistChip(onClick = {}, label = { Text(tag.name) })
+                                    }
+                                }
+                            }
+                        }
+                        Icon(Icons.Default.Add, contentDescription = "Add Tag")
+                    }
+                }
+            }
+
+            if (showTagPicker) {
+                TagPickerDialog(
+                    allTags = allTags,
+                    selectedTags = selectedTags,
+                    onDismiss = { showTagPicker = false },
+                    onTagSelected = viewModel::onTagSelected,
+                    onAddNewTag = viewModel::addTagOnTheGo,
+                    onConfirm = {
+                        viewModel.updateTagsForTransaction(transactionId)
+                        showTagPicker = false
+                    }
+                )
+            }
+            if (showDescriptionDialog) {
+                EditDialog(
+                    title = "Edit Description",
+                    initialValue = details.transaction.description,
+                    onDismiss = { showDescriptionDialog = false },
+                    onConfirm = { viewModel.updateTransactionDescription(transactionId, it) }
+                )
+            }
+            if (showAmountDialog) {
+                EditDialog(
+                    title = "Edit Amount",
+                    initialValue = "%.2f".format(details.transaction.amount),
+                    keyboardType = KeyboardType.Number,
+                    onDismiss = { showAmountDialog = false },
+                    onConfirm = { viewModel.updateTransactionAmount(transactionId, it) }
+                )
+            }
+            if (showNotesDialog) {
+                EditDialog(
+                    title = "Edit Notes",
+                    initialValue = details.transaction.notes ?: "",
+                    onDismiss = { showNotesDialog = false },
+                    onConfirm = { viewModel.updateTransactionNotes(transactionId, it) }
+                )
+            }
+            if (showAccountPicker) {
+                Picker_Dialog(
+                    title = "Select Account",
+                    items = accounts,
+                    onDismiss = { showAccountPicker = false },
+                    onItemSelected = { account -> viewModel.updateTransactionAccount(transactionId, (account as Account).id) },
+                    getItemName = { (it as Account).name }
+                )
+            }
+            if (showCategoryPicker) {
+                Picker_Dialog(
+                    title = "Select Category",
+                    items = categories,
+                    onDismiss = { showCategoryPicker = false },
+                    onItemSelected = { category -> viewModel.updateTransactionCategory(transactionId, (category as Category).id) },
+                    getItemName = { (it as Category).name }
+                )
+            }
+            if (showDatePicker) {
+                val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
+                DatePickerDialog(
+                    onDismissRequest = { showDatePicker = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            datePickerState.selectedDateMillis?.let {
+                                calendar.timeInMillis = it
+                            }
+                            showDatePicker = false
+                            showTimePicker = true
+                        }) { Text("OK") }
+                    }
+                ) { DatePicker(state = datePickerState) }
+            }
+            if (showTimePicker) {
+                val timePickerState = rememberTimePickerState(initialHour = calendar.get(Calendar.HOUR_OF_DAY), initialMinute = calendar.get(Calendar.MINUTE))
+                TimePickerDialog(
+                    onDismissRequest = { showTimePicker = false },
+                    onConfirm = {
+                        calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                        calendar.set(Calendar.MINUTE, timePickerState.minute)
+                        viewModel.updateTransactionDate(transactionId, calendar.timeInMillis)
+                        showTimePicker = false
+                    }
+                ) { TimePicker(state = timePickerState) }
+            }
+            if (showDeleteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteDialog = false },
+                    title = { Text("Delete Transaction?") },
+                    text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.deleteTransaction(details.transaction)
+                                showDeleteDialog = false
+                                navController.popBackStack()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete") }
+                    },
+                    dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
+                )
+            }
+
+        } ?: run {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransactionHeaderCard(
+    details: TransactionDetails,
+    onDescriptionClick: () -> Unit,
+    onAmountClick: () -> Unit,
+    onCategoryClick: () -> Unit,
+    onDateTimeClick: () -> Unit,
+) {
+    // --- FIX: Corrected the date format string ---
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMM yyyy, h:mm a", Locale.getDefault()) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                        )
+                    )
+                )
+                .padding(24.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = details.transaction.description,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.clickable(onClick = onDescriptionClick)
+                )
+
+                Text(
+                    text = "₹${"%,.2f".format(details.transaction.amount)}",
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.clickable(onClick = onAmountClick)
+                )
+
+                ChipWithIcon(
+                    text = details.categoryName ?: "Uncategorized",
+                    icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
+                    colorKey = details.categoryColorKey ?: "gray_light",
+                    onClick = onCategoryClick
+                )
+
+                Text(
+                    text = dateFormatter.format(Date(details.transaction.date)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable(onClick = onDateTimeClick)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChipWithIcon(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    colorKey: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .background(CategoryIconHelper.getIconBackgroundColor(colorKey).copy(alpha = 0.9f))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color.Black,
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = text,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.Black,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+@Composable
+fun InfoCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column {
+                Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditDialog(
+    title: String,
+    initialValue: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+    keyboardType: KeyboardType = KeyboardType.Text
+) {
+    var text by remember { mutableStateOf(initialValue) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Value") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = keyboardType,
+                    capitalization = if (keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None
+                ),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(onClick = {
+                onConfirm(text)
+                onDismiss()
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun <T> Picker_Dialog(
+    title: String,
+    items: List<T>,
+    onDismiss: () -> Unit,
+    onItemSelected: (T) -> Unit,
+    getItemName: (T) -> String
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            LazyColumn {
+                items(items) { item ->
+                    ListItem(
+                        headlineContent = { Text(getItemName(item)) },
+                        modifier = Modifier.clickable {
+                            onItemSelected(item)
+                            onDismiss()
+                        }
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun TagPickerDialog(
+    allTags: List<Tag>,
+    selectedTags: Set<Tag>,
+    onDismiss: () -> Unit,
+    onTagSelected: (Tag) -> Unit,
+    onAddNewTag: (String) -> Unit,
+    onConfirm: () -> Unit
+) {
+    var newTagName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Manage Tags") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    allTags.forEach { tag ->
+                        FilterChip(
+                            selected = tag in selectedTags,
+                            onClick = { onTagSelected(tag) },
+                            label = { Text(tag.name) }
+                        )
+                    }
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newTagName,
+                        onValueChange = { newTagName = it },
+                        label = { Text("New Tag Name") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            onAddNewTag(newTagName)
+                            newTagName = ""
+                        },
+                        enabled = newTagName.isNotBlank()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
     )
 }
 -e 
@@ -4378,6 +4970,150 @@ fun DashboardScreen(
                 viewModel = budgetViewModel,
                 navController = navController,
             )
+        }
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/EditProfileScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/EditProfileScreen.kt
+// REASON: New screen to allow users to update their profile information
+// (name and picture) after the initial onboarding.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import coil.compose.AsyncImage
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
+import com.canhub.cropper.CropImageView
+import io.pm.finlight.ProfileViewModel
+import io.pm.finlight.R
+
+@Composable
+fun EditProfileScreen(
+    navController: NavController,
+    viewModel: ProfileViewModel = viewModel()
+) {
+    val currentName by viewModel.userName.collectAsState()
+    val savedProfilePictureUri by viewModel.profilePictureUri.collectAsState()
+    val context = LocalContext.current
+
+    var editedName by remember(currentName) { mutableStateOf(currentName) }
+    var croppedImageUri by remember { mutableStateOf<Uri?>(null) }
+
+    val displayUri = croppedImageUri ?: savedProfilePictureUri?.let { Uri.parse(it) }
+
+    val toolbarColor = MaterialTheme.colorScheme.primary.toArgb()
+    val toolbarTintColor = MaterialTheme.colorScheme.onPrimary.toArgb()
+    val activityBackgroundColor = MaterialTheme.colorScheme.background.toArgb()
+
+    val imageCropper = rememberLauncherForActivityResult(CropImageContract()) { result ->
+        if (result.isSuccessful) {
+            croppedImageUri = result.uriContent
+        } else {
+            val exception = result.error
+            Toast.makeText(context, "Image cropping failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        AsyncImage(
+            model = displayUri,
+            contentDescription = "User Profile Picture",
+            placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+            error = painterResource(id = R.drawable.ic_launcher_foreground),
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(128.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                .clickable {
+                    val cropOptions = CropImageContractOptions(
+                        uri = null,
+                        cropImageOptions = CropImageOptions(
+                            cropShape = CropImageView.CropShape.OVAL,
+                            aspectRatioX = 1,
+                            aspectRatioY = 1,
+                            fixAspectRatio = true,
+                            outputCompressQuality = 70,
+                            imageSourceIncludeGallery = true,
+                            imageSourceIncludeCamera = true,
+                            activityTitle = "Crop Profile Picture",
+                            activityMenuIconColor = toolbarTintColor,
+                            toolbarColor = toolbarColor,
+                            toolbarBackButtonColor = toolbarTintColor,
+                            activityBackgroundColor = activityBackgroundColor
+                        )
+                    )
+                    imageCropper.launch(cropOptions)
+                }
+        )
+
+        OutlinedTextField(
+            value = editedName,
+            onValueChange = { editedName = it },
+            label = { Text("Your Name") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedButton(
+                onClick = { navController.popBackStack() },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Cancel")
+            }
+            Button(
+                onClick = {
+                    viewModel.updateUserName(editedName)
+                    croppedImageUri?.let { viewModel.saveProfilePictureUri(it) }
+                    Toast.makeText(context, "Profile updated!", Toast.LENGTH_SHORT).show()
+                    navController.popBackStack()
+                },
+                modifier = Modifier.weight(1f),
+                enabled = editedName.isNotBlank()
+            ) {
+                Text("Save")
+            }
         }
     }
 }
@@ -5465,42 +6201,31 @@ fun PageIndicator(pageCount: Int, currentPage: Int) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: Updated to provide an explicit "Save" button after cropping an image,
-// improving the user experience and making the action clearer.
-// FIX: Added explicit theming to the CropImageOptions to ensure the cropper's
-// toolbar icons (like the checkmark) are always visible.
-// FIX 4: Corrected @Composable invocation error by moving all theme color access
-// to the top-level composable scope, outside the clickable lambda.
+// REASON: Simplified the screen by removing direct editing functionality. The main
+// profile card is now clickable, navigating the user to a dedicated
+// "Edit Profile" screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.net.Uri
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.canhub.cropper.CropImageContract
-import com.canhub.cropper.CropImageContractOptions
-import com.canhub.cropper.CropImageOptions
-import com.canhub.cropper.CropImageView
 import io.pm.finlight.ProfileViewModel
 import io.pm.finlight.R
 
@@ -5511,45 +6236,21 @@ fun ProfileScreen(
 ) {
     val userName by viewModel.userName.collectAsState()
     val savedProfilePictureUri by viewModel.profilePictureUri.collectAsState()
-    val context = LocalContext.current
-
-    // --- FIX 4: Resolve all colors from the theme in the correct composable scope ---
-    val toolbarColor = MaterialTheme.colorScheme.primary.toArgb()
-    val toolbarTintColor = MaterialTheme.colorScheme.onPrimary.toArgb()
-    val activityBackgroundColor = MaterialTheme.colorScheme.background.toArgb()
-    val cropperLabelTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
-
-
-    // --- NEW: State to hold the newly cropped (but not yet saved) image URI ---
-    var tempCroppedUri by remember { mutableStateOf<Uri?>(null) }
-
-    val imageCropper = rememberLauncherForActivityResult(CropImageContract()) { result ->
-        if (result.isSuccessful) {
-            // --- UPDATED: Don't save immediately. Store in temporary state. ---
-            tempCroppedUri = result.uriContent
-        } else {
-            val exception = result.error
-            Toast.makeText(context, "Image cropping failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // --- NEW: Determine which URI to display ---
-    val displayUri = tempCroppedUri ?: savedProfilePictureUri
 
     Column(modifier = Modifier.padding(16.dp)) {
+        // --- UPDATED: The entire card is now clickable ---
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { navController.navigate("edit_profile") },
             elevation = CardDefaults.cardElevation(4.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally // Center the content
-            ) {
+            Box(modifier = Modifier.padding(16.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     AsyncImage(
-                        model = displayUri,
+                        model = savedProfilePictureUri,
                         contentDescription = "User Profile Picture",
                         placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
                         error = painterResource(id = R.drawable.ic_launcher_foreground),
@@ -5559,55 +6260,18 @@ fun ProfileScreen(
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceVariant)
                             .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                            .clickable {
-                                // Now we use the pre-resolved color values
-                                val cropOptions = CropImageContractOptions(
-                                    uri = null,
-                                    cropImageOptions = CropImageOptions(
-                                        cropShape = CropImageView.CropShape.OVAL,
-                                        aspectRatioX = 1,
-                                        aspectRatioY = 1,
-                                        fixAspectRatio = true,
-                                        outputCompressQuality = 70,
-                                        imageSourceIncludeGallery = true,
-                                        imageSourceIncludeCamera = true,
-                                        activityTitle = "Crop Profile Picture",
-                                        activityMenuIconColor = toolbarTintColor,
-                                        toolbarColor = toolbarColor,
-                                        toolbarBackButtonColor = toolbarTintColor,
-                                        activityBackgroundColor = activityBackgroundColor,
-                                        cropperLabelTextColor = cropperLabelTextColor
-                                    )
-                                )
-                                imageCropper.launch(cropOptions)
-                            }
                     )
 
                     Spacer(modifier = Modifier.width(16.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(userName, style = MaterialTheme.typography.titleLarge)
                         Text("user.email@pm.com", style = MaterialTheme.typography.bodyMedium)
                     }
-                }
-
-                // --- NEW: Show Save/Cancel buttons only when there's a new image ---
-                if (tempCroppedUri != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
-                    ) {
-                        OutlinedButton(onClick = { tempCroppedUri = null }) {
-                            Text("Cancel")
-                        }
-                        Button(onClick = {
-                            viewModel.saveProfilePictureUri(tempCroppedUri)
-                            tempCroppedUri = null // Reset the temp state
-                            Toast.makeText(context, "Profile picture saved!", Toast.LENGTH_SHORT).show()
-                        }) {
-                            Text("Save Image")
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Profile",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -5973,11 +6637,9 @@ fun StatCard(
     amount: Float,
     modifier: Modifier = Modifier,
     isPerDay: Boolean = false,
-    // --- NEW: Add an onClick parameter to make the card interactive ---
     onClick: () -> Unit = {}
 ) {
     Card(
-        // --- NEW: Apply the clickable modifier ---
         modifier = modifier.clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
@@ -6010,7 +6672,6 @@ fun OverallBudgetCard(
     navController: NavController
 ) {
     Card(
-        // --- NEW: Make the entire card clickable to navigate to the budget screen ---
         modifier = Modifier
             .fillMaxWidth()
             .clickable { navController.navigate("budget_screen") },
@@ -6025,8 +6686,6 @@ fun OverallBudgetCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
-                // The "Edit" button is now redundant since the whole card is clickable,
-                // but we can leave it for user clarity.
                 if (totalBudget > 0) {
                     TextButton(onClick = { navController.navigate("budget_screen") }) {
                         Text("Edit")
@@ -6265,9 +6924,13 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
                 Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 transactions.forEach { details ->
-                    TransactionItem(transactionDetails = details) {
-                        navController.navigate("edit_transaction/${details.transaction.id}")
-                    }
+                    TransactionItem(
+                        transactionDetails = details,
+                        // --- UPDATED: Navigate to the new detail screen ---
+                        onClick = {
+                            navController.navigate("transaction_detail/${details.transaction.id}")
+                        }
+                    )
                 }
             }
         }
@@ -6343,27 +7006,14 @@ fun BudgetItem(budgetWithSpending: BudgetWithSpending) {
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -6376,8 +7026,7 @@ import androidx.navigation.NavController
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -6461,24 +7110,29 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
 fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
-    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     if (transactions.isEmpty()) {
         Box(
-            modifier = Modifier.fillMaxSize().padding(contentPadding),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text("No transactions yet. Add one!")
         }
     } else {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(contentPadding),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            items(transactions) { details ->
-                TransactionItem(transactionDetails = details, onClick = {
-                    navController.navigate("edit_transaction/${details.transaction.id}")
-                })
+            items(transactions, key = { it.transaction.id }) { details ->
+                TransactionItem(
+                    transactionDetails = details,
+                    onClick = {
+                        // --- FIX: Ensure navigation is to the detail screen ---
+                        navController.navigate("transaction_detail/${details.transaction.id}")
+                    }
+                )
             }
         }
     }
@@ -6804,8 +7458,8 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Updated to hide the Floating Action Button (FAB) on the budget screen
-// to avoid redundant UI elements.
+// REASON: Fixed the double TopAppBar issue by conditionally hiding the main app bar
+// when navigating to the new Transaction Detail screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -7001,7 +7655,7 @@ fun MainAppScreen() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentRoute = currentDestination?.route
-    val baseCurrentRoute = currentRoute?.substringBefore("?")
+    val baseCurrentRoute = currentRoute?.split("/")?.firstOrNull()
 
     val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
         "Hi, $userName!"
@@ -7011,7 +7665,6 @@ fun MainAppScreen() {
 
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
 
-    // --- FIX: The list of routes that should show the FAB no longer includes budget_screen ---
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
         BottomNavItem.Transactions.route,
@@ -7020,39 +7673,45 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
+    // --- FIX: Logic to conditionally show the main TopAppBar ---
+    val showMainTopBar = baseCurrentRoute != "transaction_detail"
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(currentTitle) },
-                navigationIcon = {
-                    if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
-                        AsyncImage(
-                            model = profilePictureUri,
-                            contentDescription = "User Profile Picture",
-                            placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                            error = painterResource(id = R.drawable.ic_launcher_foreground),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .padding(start = 16.dp)
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { navController.navigate(BottomNavItem.Profile.route) }
-                        )
-                    } else if (!showBottomBar) {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            // --- FIX: Only show the main app bar if we are NOT on the detail screen ---
+            if (showMainTopBar) {
+                TopAppBar(
+                    title = { Text(currentTitle) },
+                    navigationIcon = {
+                        if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
+                            AsyncImage(
+                                model = profilePictureUri,
+                                contentDescription = "User Profile Picture",
+                                placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                                error = painterResource(id = R.drawable.ic_launcher_foreground),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(start = 16.dp)
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { navController.navigate(BottomNavItem.Profile.route) }
+                            )
+                        } else if (!showBottomBar) {
+                            IconButton(onClick = { navController.popBackStack() }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
+                        }
+                    },
+                    actions = {
+                        if (currentRoute == BottomNavItem.Dashboard.route) {
+                            IconButton(onClick = { navController.navigate("search_screen") }) {
+                                Icon(Icons.Default.Search, contentDescription = "Search")
+                            }
                         }
                     }
-                },
-                actions = {
-                    if (currentRoute == BottomNavItem.Dashboard.route) {
-                        IconButton(onClick = { navController.navigate("search_screen") }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
-                        }
-                    }
-                }
-            )
+                )
+            }
         },
         bottomBar = {
             if (showBottomBar) {
@@ -7140,6 +7799,7 @@ fun AppNavHost(
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
         composable(BottomNavItem.Profile.route) { ProfileScreen(navController, profileViewModel) }
+        composable("edit_profile") { EditProfileScreen(navController, profileViewModel) }
         composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
         composable("search_screen") { SearchScreen(navController) }
@@ -7167,6 +7827,15 @@ fun AppNavHost(
         }
 
         composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
+
+        composable(
+            route = "transaction_detail/{transactionId}",
+            arguments = listOf(navArgument("transactionId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
+            TransactionDetailScreen(navController, transactionId, transactionViewModel)
+        }
+
         composable(
             route = "edit_transaction/{transactionId}",
             arguments = listOf(
@@ -7254,8 +7923,6 @@ class OnboardingViewModelFactory(private val application: Application) : ViewMod
 
 
 ================== FILE: ./app/src/main/java/TagRepository.kt ==================
-// FILE: app/src/main/java/io/pm/finlight/TagRepository.kt
-
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
@@ -7266,27 +7933,24 @@ import kotlinx.coroutines.flow.Flow
  */
 class TagRepository(
     private val tagDao: TagDao,
-    // --- NEW: Add dependency for validation check ---
     private val transactionDao: TransactionDao
 ) {
 
     val allTags: Flow<List<Tag>> = tagDao.getAllTags()
 
-    suspend fun insert(tag: Tag) {
-        tagDao.insert(tag)
+    // --- FIX: Modified to return the new row's ID from the DAO ---
+    suspend fun insert(tag: Tag): Long {
+        return tagDao.insert(tag)
     }
 
-    // --- NEW: To update a tag ---
     suspend fun update(tag: Tag) {
         tagDao.update(tag)
     }
 
-    // --- NEW: To delete a tag ---
     suspend fun delete(tag: Tag) {
         tagDao.delete(tag)
     }
 
-    // --- NEW: To check if a tag is associated with any transactions ---
     suspend fun isTagInUse(tagId: Int): Boolean {
         return transactionDao.countTransactionsForTag(tagId) > 0
     }
@@ -7418,10 +8082,7 @@ class MerchantMappingRepository(private val merchantMappingDao: MerchantMappingD
 ================== FILE: ./app/src/main/java/ProfileViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ProfileViewModel.kt
-// REASON: Fixed a SecurityException crash when saving a cropped profile picture.
-// FIX: Instead of trying to persist permissions for a temporary URI from the
-// cropper, the ViewModel now copies the image into the app's private internal
-// storage and saves the path to that new, permanent file.
+// REASON: Added a function to handle updating the user's name in SharedPreferences.
 // =================================================================================
 package io.pm.finlight
 
@@ -7471,6 +8132,15 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
             val localPath = saveImageToInternalStorage(sourceUri)
             // Save the path to our new local file
             settingsRepository.saveProfilePictureUri(localPath)
+        }
+    }
+
+    // --- NEW: Function to save the updated user name ---
+    fun updateUserName(name: String) {
+        viewModelScope.launch {
+            if (name.isNotBlank()) {
+                settingsRepository.saveUserName(name)
+            }
         }
     }
 
@@ -8414,8 +9084,12 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
 
 ================== FILE: ./app/src/main/java/TagViewModel.kt ==================
-// FILE: app/src/main/java/io/pm/finlight/TagViewModel.kt
-
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TagViewModel.kt
+// REASON: Corrected the addTag function. This ViewModel is for the "Manage Tags"
+// screen, so it only needs to insert the tag. The UI will be updated
+// automatically by the Flow from the database.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -8430,8 +9104,6 @@ import kotlinx.coroutines.launch
 
 class TagViewModel(application: Application) : AndroidViewModel(application) {
     private val tagRepository: TagRepository
-
-    // --- NEW: Channel for sending one-time events (like Toasts/Snackbars) to the UI ---
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
 
@@ -8441,7 +9113,6 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
         val database = AppDatabase.getInstance(application)
         val tagDao = database.tagDao()
         val transactionDao = database.transactionDao()
-        // --- UPDATED: Pass both DAOs to the repository ---
         tagRepository = TagRepository(tagDao, transactionDao)
 
         allTags = tagRepository.allTags.stateIn(
@@ -8451,6 +9122,9 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    /**
+     * Called from the 'Manage Tags' screen. Inserts a new tag into the database.
+     */
     fun addTag(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
@@ -8459,7 +9133,6 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- NEW: Function to handle updating a tag ---
     fun updateTag(tag: Tag) {
         if (tag.name.isNotBlank()) {
             viewModelScope.launch {
@@ -8468,15 +9141,11 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- NEW: Function to handle deleting a tag with validation ---
     fun deleteTag(tag: Tag) {
         viewModelScope.launch {
-            // Check if the tag is in use before deleting.
             if (tagRepository.isTagInUse(tag.id)) {
-                // If it's in use, send an error message to the UI.
                 _uiEvent.send("Cannot delete '${tag.name}'. It is attached to one or more transactions.")
             } else {
-                // If it's not in use, delete it.
                 tagRepository.delete(tag)
                 _uiEvent.send("Tag '${tag.name}' deleted.")
             }
@@ -9034,8 +9703,44 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Highly efficient query for the dashboard's "Recent Transactions" card ---
-    // This fetches only the top 5 transactions directly from the database.
+    // --- NEW: Methods for partial updates ---
+    @Query("UPDATE transactions SET description = :description WHERE id = :id")
+    suspend fun updateDescription(id: Int, description: String)
+
+    @Query("UPDATE transactions SET amount = :amount WHERE id = :id")
+    suspend fun updateAmount(id: Int, amount: Double)
+
+    @Query("UPDATE transactions SET notes = :notes WHERE id = :id")
+    suspend fun updateNotes(id: Int, notes: String?)
+
+    @Query("UPDATE transactions SET categoryId = :categoryId WHERE id = :id")
+    suspend fun updateCategoryId(id: Int, categoryId: Int?)
+
+    @Query("UPDATE transactions SET accountId = :accountId WHERE id = :id")
+    suspend fun updateAccountId(id: Int, accountId: Int)
+
+    @Query("UPDATE transactions SET date = :date WHERE id = :id")
+    suspend fun updateDate(id: Int, date: Long)
+
+
+    @Query("""
+        SELECT
+            T.*,
+            A.name as accountName,
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
+        FROM
+            transactions AS T
+        LEFT JOIN
+            accounts AS A ON T.accountId = A.id
+        LEFT JOIN
+            categories AS C ON T.categoryId = C.id
+        WHERE T.id = :id
+    """)
+    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?>
+
+
     @Query(
         """
         SELECT
@@ -9675,20 +10380,20 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TagDao {
+    // --- FIX: Modified to return the new row's ID ---
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(tag: Tag)
+    suspend fun insert(tag: Tag): Long
 
     @Query("SELECT * FROM tags ORDER BY name ASC")
     fun getAllTags(): Flow<List<Tag>>
 
-    // --- NEW: To update a tag's name ---
     @Update
     suspend fun update(tag: Tag)
 
-    // --- NEW: To delete a tag from the database ---
     @Delete
     suspend fun delete(tag: Tag)
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/LoginResponse.kt ==================
@@ -10145,7 +10850,17 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Expose the new limited query for the dashboard ---
+    suspend fun updateDescription(id: Int, description: String) = transactionDao.updateDescription(id, description)
+    suspend fun updateAmount(id: Int, amount: Double) = transactionDao.updateAmount(id, amount)
+    suspend fun updateNotes(id: Int, notes: String?) = transactionDao.updateNotes(id, notes)
+    suspend fun updateCategoryId(id: Int, categoryId: Int?) = transactionDao.updateCategoryId(id, categoryId)
+    suspend fun updateAccountId(id: Int, accountId: Int) = transactionDao.updateAccountId(id, accountId)
+    suspend fun updateDate(id: Int, date: Long) = transactionDao.updateDate(id, date)
+
+    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+        return transactionDao.getTransactionDetailsById(id)
+    }
+
     val recentTransactions: Flow<List<TransactionDetails>> = transactionDao.getRecentTransactionDetails()
 
     fun getAllSmsHashes(): Flow<List<String>> {
@@ -10207,6 +10922,17 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
         return transactionDao.getTagsForTransaction(transactionId)
+    }
+
+    // --- NEW: Function to update only the tags for a transaction ---
+    suspend fun updateTagsForTransaction(transactionId: Int, tags: Set<Tag>) {
+        transactionDao.clearTagsForTransaction(transactionId)
+        if (tags.isNotEmpty()) {
+            val crossRefs = tags.map { tag ->
+                TransactionTagCrossRef(transactionId = transactionId, tagId = tag.id)
+            }
+            transactionDao.addTagsToTransaction(crossRefs)
+        }
     }
 
     suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {

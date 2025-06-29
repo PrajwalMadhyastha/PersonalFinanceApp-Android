@@ -1,5 +1,3 @@
-// FILE: app/src/main/java/io/pm/finlight/TagRepository.kt
-
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
@@ -10,27 +8,24 @@ import kotlinx.coroutines.flow.Flow
  */
 class TagRepository(
     private val tagDao: TagDao,
-    // --- NEW: Add dependency for validation check ---
     private val transactionDao: TransactionDao
 ) {
 
     val allTags: Flow<List<Tag>> = tagDao.getAllTags()
 
-    suspend fun insert(tag: Tag) {
-        tagDao.insert(tag)
+    // --- FIX: Modified to return the new row's ID from the DAO ---
+    suspend fun insert(tag: Tag): Long {
+        return tagDao.insert(tag)
     }
 
-    // --- NEW: To update a tag ---
     suspend fun update(tag: Tag) {
         tagDao.update(tag)
     }
 
-    // --- NEW: To delete a tag ---
     suspend fun delete(tag: Tag) {
         tagDao.delete(tag)
     }
 
-    // --- NEW: To check if a tag is associated with any transactions ---
     suspend fun isTagInUse(tagId: Int): Boolean {
         return transactionDao.countTransactionsForTag(tagId) > 0
     }

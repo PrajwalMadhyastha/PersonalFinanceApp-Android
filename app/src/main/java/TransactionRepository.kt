@@ -14,7 +14,13 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Expose the DAO method to get a single transaction's details ---
+    suspend fun updateDescription(id: Int, description: String) = transactionDao.updateDescription(id, description)
+    suspend fun updateAmount(id: Int, amount: Double) = transactionDao.updateAmount(id, amount)
+    suspend fun updateNotes(id: Int, notes: String?) = transactionDao.updateNotes(id, notes)
+    suspend fun updateCategoryId(id: Int, categoryId: Int?) = transactionDao.updateCategoryId(id, categoryId)
+    suspend fun updateAccountId(id: Int, accountId: Int) = transactionDao.updateAccountId(id, accountId)
+    suspend fun updateDate(id: Int, date: Long) = transactionDao.updateDate(id, date)
+
     fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
         return transactionDao.getTransactionDetailsById(id)
     }
@@ -80,6 +86,17 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
         return transactionDao.getTagsForTransaction(transactionId)
+    }
+
+    // --- NEW: Function to update only the tags for a transaction ---
+    suspend fun updateTagsForTransaction(transactionId: Int, tags: Set<Tag>) {
+        transactionDao.clearTagsForTransaction(transactionId)
+        if (tags.isNotEmpty()) {
+            val crossRefs = tags.map { tag ->
+                TransactionTagCrossRef(transactionId = transactionId, tagId = tag.id)
+            }
+            transactionDao.addTagsToTransaction(crossRefs)
+        }
     }
 
     suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {

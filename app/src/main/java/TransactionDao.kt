@@ -6,7 +6,26 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Query to get the full details for a single transaction by its ID ---
+    // --- NEW: Methods for partial updates ---
+    @Query("UPDATE transactions SET description = :description WHERE id = :id")
+    suspend fun updateDescription(id: Int, description: String)
+
+    @Query("UPDATE transactions SET amount = :amount WHERE id = :id")
+    suspend fun updateAmount(id: Int, amount: Double)
+
+    @Query("UPDATE transactions SET notes = :notes WHERE id = :id")
+    suspend fun updateNotes(id: Int, notes: String?)
+
+    @Query("UPDATE transactions SET categoryId = :categoryId WHERE id = :id")
+    suspend fun updateCategoryId(id: Int, categoryId: Int?)
+
+    @Query("UPDATE transactions SET accountId = :accountId WHERE id = :id")
+    suspend fun updateAccountId(id: Int, accountId: Int)
+
+    @Query("UPDATE transactions SET date = :date WHERE id = :id")
+    suspend fun updateDate(id: Int, date: Long)
+
+
     @Query("""
         SELECT
             T.*,

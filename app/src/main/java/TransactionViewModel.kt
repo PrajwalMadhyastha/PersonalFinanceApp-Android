@@ -5,22 +5,26 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private const val TAG = "TransactionViewModel"
+
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
-    private val accountRepository: AccountRepository
-    private val categoryRepository: CategoryRepository
+    val accountRepository: AccountRepository
+    val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
 
     private val db = AppDatabase.getInstance(application)
 
+    // A flag to prevent re-loading tags and overwriting user selections.
+    private var areTagsLoadedForCurrentTxn = false
+    private var currentTxnIdForTags: Int? = null
+
     private val _transactionTypeFilter = MutableStateFlow<String?>(null)
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     val allTransactions: StateFlow<List<TransactionDetails>> =
         _transactionTypeFilter.flatMapLatest { filterType ->
             transactionRepository.allTransactions.map { list ->
@@ -60,48 +64,120 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
         allCategories = categoryRepository.allCategories
 
-        allTags = tagRepository.allTags.stateIn(
+        allTags = tagRepository.allTags.onEach {
+            Log.d(TAG, "allTags flow collected new data. Count: ${it.size}")
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
     }
 
+    fun updateTransactionDescription(id: Int, description: String) = viewModelScope.launch {
+        if (description.isNotBlank()) {
+            transactionRepository.updateDescription(id, description)
+        }
+    }
+
+    fun updateTransactionAmount(id: Int, amountStr: String) = viewModelScope.launch {
+        amountStr.toDoubleOrNull()?.let {
+            if (it > 0) {
+                transactionRepository.updateAmount(id, it)
+            }
+        }
+    }
+
+    fun updateTransactionNotes(id: Int, notes: String) = viewModelScope.launch {
+        transactionRepository.updateNotes(id, notes.takeIf { it.isNotBlank() })
+    }
+
+    fun updateTransactionCategory(id: Int, categoryId: Int) = viewModelScope.launch {
+        transactionRepository.updateCategoryId(id, categoryId)
+    }
+
+    fun updateTransactionAccount(id: Int, accountId: Int) = viewModelScope.launch {
+        transactionRepository.updateAccountId(id, accountId)
+    }
+
+    fun updateTransactionDate(id: Int, date: Long) = viewModelScope.launch {
+        transactionRepository.updateDate(id, date)
+    }
+
+    fun updateTagsForTransaction(transactionId: Int) = viewModelScope.launch {
+        Log.d(TAG, "updateTagsForTransaction: Saving tags for txn ID $transactionId. Tags: ${_selectedTags.value.map { it.name }}")
+        transactionRepository.updateTagsForTransaction(transactionId, _selectedTags.value)
+    }
+
+
     fun setTransactionTypeFilter(type: String?) {
         _transactionTypeFilter.value = type
     }
 
     fun onTagSelected(tag: Tag) {
+        Log.d(TAG, "onTagSelected: Toggled tag '${tag.name}' (ID: ${tag.id})")
         _selectedTags.update { currentTags ->
-            if (tag in currentTags) {
+            val newSet = if (tag in currentTags) {
                 currentTags - tag
             } else {
                 currentTags + tag
             }
+            Log.d(TAG, "onTagSelected: New selected tags: ${newSet.map { it.name }}")
+            newSet
         }
     }
 
     fun addTagOnTheGo(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
-                tagRepository.insert(Tag(name = tagName))
+                Log.d(TAG, "addTagOnTheGo: Attempting to add tag '$tagName'")
+                val newTag = Tag(name = tagName)
+                Log.d(TAG, "addTagOnTheGo: Current selected tags before insert: ${_selectedTags.value.map { it.name }}")
+
+                val newId = tagRepository.insert(newTag)
+                Log.d(TAG, "addTagOnTheGo: Inserted tag '$tagName', got new ID: $newId")
+
+                if (newId != -1L) {
+                    _selectedTags.update { currentTags ->
+                        val updatedTags = currentTags + newTag.copy(id = newId.toInt())
+                        Log.d(TAG, "addTagOnTheGo: Updating selected tags. New set: ${updatedTags.map { it.name }}")
+                        updatedTags
+                    }
+                } else {
+                    Log.w(TAG, "addTagOnTheGo: Failed to insert tag '$tagName', it might already exist.")
+                }
             }
         }
     }
 
     fun loadTagsForTransaction(transactionId: Int) {
+        // --- BUG FIX ---
+        // Add a guard to ensure we only load from the database ONCE for a given transactionId.
+        // This prevents a race condition where the Flow from the DB overwrites the user's
+        // in-memory tag selections. The flag is reset in `clearSelectedTags`.
+        if (currentTxnIdForTags == transactionId && areTagsLoadedForCurrentTxn) {
+            Log.d(TAG, "loadTagsForTransaction: Skipped DB fetch for txn ID $transactionId, tags already loaded.")
+            return
+        }
+
         viewModelScope.launch {
-            transactionRepository.getTagsForTransaction(transactionId).collect { tags ->
-                _selectedTags.value = tags.toSet()
-            }
+            Log.d(TAG, "loadTagsForTransaction: Loading initial tags for txn ID $transactionId")
+            val initialTags = transactionRepository.getTagsForTransaction(transactionId).first()
+            _selectedTags.value = initialTags.toSet()
+            areTagsLoadedForCurrentTxn = true
+            currentTxnIdForTags = transactionId
+            Log.d(TAG, "loadTagsForTransaction: Loaded initial tags: ${initialTags.map { it.name }}. Flag set to true.")
         }
     }
 
     fun clearSelectedTags() {
         _selectedTags.value = emptySet()
+        // --- BUG FIX ---
+        // Reset the guard flag when the screen is disposed.
+        areTagsLoadedForCurrentTxn = false
+        currentTxnIdForTags = null
+        Log.d(TAG, "clearSelectedTags: Cleared selected tags and reset loading flag.")
     }
 
-    // --- NEW: Function to get full details for a single transaction ---
     fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
         return transactionRepository.getTransactionDetailsById(id)
     }
