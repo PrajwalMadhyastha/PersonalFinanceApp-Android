@@ -8,6 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -21,9 +22,9 @@ import java.util.Calendar
         RecurringTransaction::class,
         Tag::class,
         TransactionTagCrossRef::class,
-        TransactionImage::class // --- NEW: Add the new entity ---
+        TransactionImage::class
     ],
-    version = 11, // --- NEW: Increment the version number ---
+    version = 11,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -91,8 +92,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE categories ADD COLUMN colorKey TEXT NOT NULL DEFAULT 'gray_light'")
             }
         }
-
-        // --- NEW: Migration for the transaction_images table ---
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -127,17 +126,37 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                // This remains as a good failsafe check
+                CoroutineScope(Dispatchers.IO).launch {
+                    val database = getInstance(context)
+                    val categoryDao = database.categoryDao()
+                    val categories = categoryDao.getAllCategories().first()
+                    if (categories.isEmpty()) {
+                        categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
+                    }
+                }
+            }
+
+            // --- BUG FIX: Corrected the logic to populate the database in the right order ---
             suspend fun populateDatabase(db: AppDatabase) {
                 val accountDao = db.accountDao()
                 val categoryDao = db.categoryDao()
                 val transactionDao = db.transactionDao()
                 val budgetDao = db.budgetDao()
 
+                // 1. Clear all existing data
                 transactionDao.deleteAll()
                 budgetDao.deleteAll()
                 categoryDao.deleteAll()
                 accountDao.deleteAll()
 
+                // 2. Populate with defaults in the correct order
+                // FIRST, insert categories so they can be referenced by transactions/budgets.
+                categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
+
+                // SECOND, insert accounts.
                 accountDao.insertAll(
                     listOf(
                         Account(id = 1, name = "SBI", type = "Savings"),
@@ -146,8 +165,7 @@ abstract class AppDatabase : RoomDatabase() {
                     ),
                 )
 
-                categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
-
+                // THIRD, insert sample data that references the defaults.
                 val calendar = Calendar.getInstance()
                 calendar.set(Calendar.DAY_OF_MONTH, 5)
                 val incomeDate = calendar.timeInMillis
@@ -160,7 +178,7 @@ abstract class AppDatabase : RoomDatabase() {
                     listOf(
                         Transaction(
                             description = "Monthly Salary",
-                            categoryId = 12,
+                            categoryId = 12, // "Salary"
                             amount = 75000.0,
                             date = incomeDate,
                             accountId = 1,
@@ -169,7 +187,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Grocery Shopping",
-                            categoryId = 6,
+                            categoryId = 6, // "Groceries"
                             amount = 4500.0,
                             date = expenseDate1,
                             accountId = 2,
@@ -178,7 +196,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Dinner with friends",
-                            categoryId = 4,
+                            categoryId = 4, // "Food & Drinks"
                             amount = 1200.0,
                             date = expenseDate2,
                             accountId = 2,

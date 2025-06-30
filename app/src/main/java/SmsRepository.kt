@@ -37,12 +37,13 @@ class SmsRepository(private val context: Context) {
         }
 
         // Query the SMS inbox, sorting by date in descending order
+        // --- BUG FIX: Pass the selection and selectionArgs to the query ---
         val cursor =
             context.contentResolver.query(
                 Telephony.Sms.Inbox.CONTENT_URI,
                 projection,
-                null,
-                null,
+                selection, // Correctly pass the selection string
+                selectionArgs, // Correctly pass the selection arguments
                 "date DESC",
             )
 

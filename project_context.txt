@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Mon Jun 30 14:55:15 IST 2025
+Generated on: Mon Jun 30 19:40:23 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -275,6 +275,22 @@ class DashboardViewModelFactory(private val application: Application) : ViewMode
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+-e 
+
+
+================== FILE: ./app/src/main/java/MonthlySummaryItem.kt ==================
+package io.pm.finlight
+
+import java.util.Calendar
+
+/**
+ * A data class to hold a Calendar instance for a specific month
+ * and the total amount spent during that month.
+ *
+ * @param calendar The Calendar object representing the month.
+ * @param totalSpent The total expenses for that month.
+ */
+data class MonthlySummaryItem(val calendar: Calendar, val totalSpent: Double)
 -e 
 
 
@@ -569,7 +585,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 private const val TAG = "TransactionViewModel"
 
@@ -585,11 +604,60 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private var areTagsLoadedForCurrentTxn = false
     private var currentTxnIdForTags: Int? = null
 
-    // --- NEW: State for the currently selected month ---
+    // --- State for the currently selected month ---
     private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
     val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
 
-    // --- NEW: Flow that emits transactions only for the selected month ---
+    // --- Flow that provides a list of past months with their total spending ---
+    val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
+
+    // --- Flow for category spending in the selected month ---
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>> = _selectedMonth.flatMapLatest { calendar ->
+        val monthStart = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }.timeInMillis
+
+        val monthEnd = (calendar.clone() as Calendar).apply {
+            add(Calendar.MONTH, 1)
+            set(Calendar.DAY_OF_MONTH, 1)
+            add(Calendar.DAY_OF_MONTH, -1)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+        }.timeInMillis
+
+        transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- Flow for merchant spending in the selected month ---
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>> = _selectedMonth.flatMapLatest { calendar ->
+        val monthStart = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }.timeInMillis
+
+        val monthEnd = (calendar.clone() as Calendar).apply {
+            add(Calendar.MONTH, 1)
+            set(Calendar.DAY_OF_MONTH, 1)
+            add(Calendar.DAY_OF_MONTH, -1)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+        }.timeInMillis
+
+        transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+
+    // --- Flow that emits transactions only for the selected month ---
+    @OptIn(ExperimentalCoroutinesApi::class)
     val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>> = _selectedMonth.flatMapLatest { calendar ->
         val monthStart = (calendar.clone() as Calendar).apply {
             set(Calendar.DAY_OF_MONTH, 1)
@@ -610,29 +678,29 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // --- NEW: Flow for total income in the selected month ---
+    // --- Flow for total income in the selected month ---
     val monthlyIncome: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
         txns.filter { it.transaction.transactionType == "income" }.sumOf { it.transaction.amount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    // --- NEW: Flow for total expenses in the selected month ---
+    // --- Flow for total expenses in the selected month ---
     val monthlyExpenses: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
         txns.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    // --- NEW: Flow for the overall budget in the selected month ---
+    // --- Flow for the overall budget in the selected month ---
     @OptIn(ExperimentalCoroutinesApi::class)
     val overallMonthlyBudget: StateFlow<Float> = _selectedMonth.flatMapLatest {
         settingsRepository.getOverallBudgetForMonth(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-    // --- NEW: Flow for remaining budget amount ---
+    // --- Flow for remaining budget amount ---
     val amountRemaining: StateFlow<Float> =
         combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses ->
             budget - expenses.toFloat()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-    // --- NEW: Flow for the 'Safe to Spend' amount per day ---
+    // --- Flow for the 'Safe to Spend' amount per day ---
     val safeToSpendPerDay: StateFlow<Float> =
         combine(amountRemaining, _selectedMonth) { remaining, calendar ->
             val today = Calendar.getInstance()
@@ -665,7 +733,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val selectedTags = _selectedTags.asStateFlow()
 
     private val _transactionImages = MutableStateFlow<List<TransactionImage>>(emptyList())
-    val transactionImages = _transactionImages.asStateFlow()
+    val transactionImages: StateFlow<List<TransactionImage>> = _transactionImages.asStateFlow()
 
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
@@ -695,15 +763,32 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+        // --- NEW: Calculate monthly summaries ---
+        val twelveMonthsAgo = Calendar.getInstance().apply { add(Calendar.YEAR, -1) }.timeInMillis
+        monthlySummaries = transactionRepository.getMonthlyTrends(twelveMonthsAgo)
+            .map { trends ->
+                val dateFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+                val monthMap = trends.associate {
+                    val cal = Calendar.getInstance().apply {
+                        time = dateFormat.parse(it.monthYear) ?: Date()
+                    }
+                    (cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)) to it.totalExpenses
+                }
+
+                (0..11).map { i ->
+                    val cal = Calendar.getInstance().apply { add(Calendar.MONTH, -i) }
+                    val key = cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)
+                    val spent = monthMap[key] ?: 0.0
+                    MonthlySummaryItem(calendar = cal, totalSpent = spent)
+                }.reversed()
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     }
 
-    // --- NEW: Function to navigate between months ---
-    fun changeMonth(amount: Int) {
-        _selectedMonth.update {
-            val newCal = it.clone() as Calendar
-            newCal.add(Calendar.MONTH, amount)
-            newCal
-        }
+    // --- REFACTORED: Function to set the selected month directly ---
+    fun setSelectedMonth(calendar: Calendar) {
+        _selectedMonth.value = calendar
     }
 
 
@@ -777,7 +862,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.updateNotes(id, notes.takeIf { it.isNotBlank() })
     }
 
-    fun updateTransactionCategory(id: Int, categoryId: Int) = viewModelScope.launch {
+    fun updateTransactionCategory(id: Int, categoryId: Int?) = viewModelScope.launch {
         transactionRepository.updateCategoryId(id, categoryId)
     }
 
@@ -2544,6 +2629,73 @@ fun EditCategoryDialog(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt ==================
+package io.pm.finlight.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import io.pm.finlight.MerchantSpendingSummary
+
+@Composable
+fun MerchantSpendingScreen(merchantList: List<MerchantSpendingSummary>) {
+    if (merchantList.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("No merchant data for this month.")
+        }
+        return
+    }
+
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(merchantList) { merchant ->
+            MerchantSpendingCard(merchant = merchant)
+        }
+    }
+}
+
+@Composable
+fun MerchantSpendingCard(merchant: MerchantSpendingSummary) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(merchant.merchantName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                val visitText = if (merchant.transactionCount == 1) "1 visit" else "${merchant.transactionCount} visits"
+                Text(visitText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(
+                "₹${"%,.2f".format(merchant.totalAmount)}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditBudgetScreen.kt ==================
 package io.pm.finlight.ui.screens
 
@@ -3470,7 +3622,7 @@ fun DetailsCard(
     attachmentsCount: Int,
     onAttachmentsClick: () -> Unit
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy", Locale.getDefault()) }
 
     Card(elevation = CardDefaults.cardElevation(2.dp)) {
         Column {
@@ -4644,31 +4796,35 @@ private fun SettingsActionItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import io.pm.finlight.MonthlySummaryItem
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.TransactionList
 import kotlinx.coroutines.launch
@@ -4688,20 +4844,21 @@ fun TransactionListScreen(
 
     val transactions by viewModel.transactionsForSelectedMonth.collectAsState()
     val selectedMonth by viewModel.selectedMonth.collectAsState()
+    val monthlySummaries by viewModel.monthlySummaries.collectAsState()
+    val categorySpending by viewModel.categorySpendingForSelectedMonth.collectAsState()
+    val merchantSpending by viewModel.merchantSpendingForSelectedMonth.collectAsState()
     val totalSpent by viewModel.monthlyExpenses.collectAsState()
     val totalIncome by viewModel.monthlyIncome.collectAsState()
     val budget by viewModel.overallMonthlyBudget.collectAsState()
-    val safeToSpend by viewModel.safeToSpendPerDay.collectAsState()
-
 
     Column(modifier = Modifier.fillMaxSize()) {
         MonthlySummaryHeader(
             selectedMonth = selectedMonth,
+            monthlySummaries = monthlySummaries,
             totalSpent = totalSpent,
             totalIncome = totalIncome,
             budget = budget,
-            safeToSpend = safeToSpend,
-            onMonthChange = { viewModel.changeMonth(it) }
+            onMonthSelected = { viewModel.setSelectedMonth(it) }
         )
         TabRow(
             selectedTabIndex = pagerState.currentPage,
@@ -4732,8 +4889,8 @@ fun TransactionListScreen(
                 0 -> {
                     TransactionList(transactions = transactions, navController = navController)
                 }
-                1 -> PlaceholderTabContent(title = "Categories")
-                2 -> PlaceholderTabContent(title = "Merchants")
+                1 -> CategorySpendingScreen(spendingList = categorySpending)
+                2 -> MerchantSpendingScreen(merchantList = merchantSpending)
             }
         }
     }
@@ -4742,44 +4899,100 @@ fun TransactionListScreen(
 @Composable
 fun MonthlySummaryHeader(
     selectedMonth: Calendar,
+    monthlySummaries: List<MonthlySummaryItem>,
     totalSpent: Double,
     totalIncome: Double,
     budget: Float,
-    safeToSpend: Float,
-    onMonthChange: (Int) -> Unit
+    onMonthSelected: (Calendar) -> Unit
 ) {
-    val monthFormat = SimpleDateFormat("MMM yyyy", Locale.getDefault())
+    val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
+    // --- FIX: Corrected the illegal date format pattern ---
+    val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
+    var showMonthScroller by remember { mutableStateOf(false) }
+
+    val selectedTabIndex = monthlySummaries.indexOfFirst {
+        it.calendar.get(Calendar.MONTH) == selectedMonth.get(Calendar.MONTH) &&
+                it.calendar.get(Calendar.YEAR) == selectedMonth.get(Calendar.YEAR)
+    }.coerceAtLeast(0)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .padding(bottom = 8.dp)
     ) {
+        // Clickable header to toggle the month scroller
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showMonthScroller = !showMonthScroller }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { onMonthChange(-1) }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous Month")
-            }
-            Text(
-                text = monthFormat.format(selectedMonth.time),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-            IconButton(onClick = { onMonthChange(1) }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Month")
+            // This inner Row groups the Text and Icon together at the start
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = monthYearFormat.format(selectedMonth.time),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Icon(
+                    imageVector = if (showMonthScroller) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector"
+                )
             }
         }
-        Spacer(Modifier.height(16.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceAround
+
+        // Animated visibility for the horizontal month scroller
+        AnimatedVisibility(
+            visible = showMonthScroller,
+            enter = expandVertically(),
+            exit = shrinkVertically()
         ) {
-            SafeToSpendGauge(amount = safeToSpend)
-            Column(horizontalAlignment = Alignment.End) {
+            ScrollableTabRow(
+                selectedTabIndex = selectedTabIndex,
+                edgePadding = 16.dp,
+                indicator = {}, // No indicator needed
+                divider = {}
+            ) {
+                monthlySummaries.forEach { summaryItem ->
+                    val isSelected = summaryItem.calendar.get(Calendar.MONTH) == selectedMonth.get(Calendar.MONTH) &&
+                            summaryItem.calendar.get(Calendar.YEAR) == selectedMonth.get(Calendar.YEAR)
+                    Tab(
+                        selected = isSelected,
+                        onClick = {
+                            onMonthSelected(summaryItem.calendar)
+                            showMonthScroller = false // Hide after selection
+                        },
+                        text = {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = monthFormat.format(summaryItem.calendar.time),
+                                    style = if (isSelected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = formatAmountInLakhs(summaryItem.totalSpent),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+
+        Spacer(Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text("Total Spent", style = MaterialTheme.typography.labelMedium)
                 Text(
                     "₹${"%,.2f".format(totalSpent)}",
@@ -4787,7 +5000,8 @@ fun MonthlySummaryHeader(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
                 )
-                Spacer(Modifier.height(8.dp))
+            }
+            Column(horizontalAlignment = Alignment.End) {
                 Text("Total Income", style = MaterialTheme.typography.labelMedium)
                 Text(
                     "₹${"%,.2f".format(totalIncome)}",
@@ -4797,56 +5011,73 @@ fun MonthlySummaryHeader(
                 )
             }
         }
+
         Spacer(Modifier.height(12.dp))
-        val percentageSpent = if (budget > 0f) (totalSpent.toFloat() / budget) * 100f else 0f
-        Text(
-            text = "You have spent ${"%.0f".format(percentageSpent)}% of your ₹${"%,.0f".format(budget)} budget",
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
+
+        if (budget > 0) {
+            BudgetProgress(
+                spent = totalSpent.toFloat(),
+                budget = budget,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        } else {
+            Text(
+                text = "No budget set for this month.",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            )
+        }
     }
 }
+
+private fun formatAmountInLakhs(amount: Double): String {
+    if (amount < 1000) return "₹${"%,.0f".format(amount)}"
+    if (amount < 100000) return "₹${"%,.0f".format(amount / 1000)}K"
+    return "₹${"%.2f".format(amount / 100000.0)}L"
+}
+
 
 @Composable
-fun SafeToSpendGauge(amount: Float) {
-    val animatedAmount by animateFloatAsState(targetValue = amount, animationSpec = tween(1000), label = "SafeToSpendAnimation")
-    val strokeWidth = with(LocalDensity.current) { 12.dp.toPx() }
+fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
+    val progress = (spent / budget).coerceIn(0f, 1f)
+    val animatedProgress by animateFloatAsState(targetValue = progress, animationSpec = tween(1000), label = "")
 
-    // --- FIX: Read theme color outside of the Canvas block ---
-    val primaryColor = MaterialTheme.colorScheme.primary
+    val progressColor = when {
+        progress > 1f -> MaterialTheme.colorScheme.error
+        progress > 0.85f -> Color(0xFFFBC02D) // Amber
+        else -> MaterialTheme.colorScheme.primary
+    }
 
-    Box(
-        modifier = Modifier.size(120.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawArc(
-                color = Color.LightGray.copy(alpha = 0.3f),
-                startAngle = -90f,
-                sweepAngle = 360f,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-            )
-            drawArc(
-                color = primaryColor, // Use the variable here
-                startAngle = -90f,
-                sweepAngle = 360f,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-            )
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Safe to spend", style = MaterialTheme.typography.labelSmall)
+    Column(modifier = modifier.fillMaxWidth()) {
+        LinearProgressIndicator(
+            progress = { animatedProgress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(12.dp)
+                .clip(CircleShape),
+            color = progressColor,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            strokeCap = StrokeCap.Round
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
-                text = "₹${"%,.0f".format(animatedAmount)}",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                text = "Spent: ₹${"%,.0f".format(spent)}",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
             )
-            Text("per day", style = MaterialTheme.typography.labelSmall)
+            Text(
+                text = "Budget: ₹${"%,.0f".format(budget)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
+
 
 @Composable
 fun PlaceholderTabContent(title: String) {
@@ -4860,7 +5091,6 @@ fun PlaceholderTabContent(title: String) {
     }
 }
 
-// Simple non-composable lerp for Dp values
 private fun lerp(start: Dp, stop: Dp, fraction: Float): Dp {
     return Dp(start.value + (stop.value - start.value) * fraction)
 }
@@ -5582,7 +5812,7 @@ private fun TransactionHeaderCard(
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit,
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMM yyyy, h:mm a", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy, h:mm a", Locale.getDefault()) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -5860,6 +6090,167 @@ fun EditImportedTransactionScreen(
             }
         }
     }
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt ==================
+package io.pm.finlight.ui.screens
+
+import android.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.github.mikephil.charting.charts.PieChart
+import com.github.mikephil.charting.data.PieData
+import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.data.PieEntry
+import com.github.mikephil.charting.formatter.PercentFormatter
+import io.pm.finlight.CategoryIconHelper
+import io.pm.finlight.CategorySpending
+
+@Composable
+fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
+    if (spendingList.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("No spending data for this month.")
+        }
+        return
+    }
+
+    val totalSpending = spendingList.sumOf { it.totalAmount }
+    val pieData = createPieData(spendingList)
+
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Category Breakdown", style = MaterialTheme.typography.titleLarge)
+                    Spacer(Modifier.height(16.dp))
+                    AndroidView(
+                        factory = { context ->
+                            PieChart(context).apply {
+                                description.isEnabled = false
+                                isDrawHoleEnabled = true
+                                setHoleColor(Color.TRANSPARENT)
+                                setEntryLabelColor(Color.BLACK)
+                                setEntryLabelTextSize(12f)
+                                legend.isEnabled = false
+                                setUsePercentValues(true)
+                            }
+                        },
+                        update = { chart ->
+                            chart.data = pieData
+                            chart.invalidate()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(250.dp)
+                    )
+                }
+            }
+        }
+
+        items(spendingList) { categorySpending ->
+            CategorySpendingCard(
+                categorySpending = categorySpending,
+                totalSpending = totalSpending
+            )
+        }
+    }
+}
+
+@Composable
+fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Double) {
+    val percentage = (categorySpending.totalAmount / totalSpending * 100)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        CategoryIconHelper.getIconBackgroundColor(
+                            categorySpending.colorKey ?: "gray_light"
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = CategoryIconHelper.getIcon(categorySpending.iconKey ?: "category"),
+                    contentDescription = categorySpending.categoryName,
+                    tint = androidx.compose.ui.graphics.Color.Black,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(categorySpending.categoryName, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "${"%.1f".format(percentage)}% of total spending",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                "₹${"%,.2f".format(categorySpending.totalAmount)}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+// --- FIX: Removed 'private' modifier to make the function accessible from other files ---
+fun createPieData(spendingList: List<CategorySpending>): PieData {
+    val entries = spendingList.map {
+        PieEntry(it.totalAmount.toFloat(), it.categoryName)
+    }
+    val colors = spendingList.map {
+        (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
+    }
+    val dataSet = PieDataSet(entries, "Spending").apply {
+        this.colors = colors
+        valueFormatter = PercentFormatter()
+        valueTextSize = 12f
+        valueTextColor = Color.BLACK
+    }
+    return PieData(dataSet)
 }
 -e 
 
@@ -9515,7 +9906,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         currentYear = calendar.get(Calendar.YEAR)
 
         val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
-        budgetsForCurrentMonth = budgetRepository.getBudgetsWithSpendingForMonth(yearMonthString, currentMonth, currentYear)
+
+        // --- FIX: Corrected the method name from getBudgetsWithSpendingForMonth to getBudgetsForMonthWithSpending ---
+        // This resolves the compilation error.
+        budgetsForCurrentMonth = budgetRepository.getBudgetsForMonthWithSpending(yearMonthString, currentMonth, currentYear)
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -9524,7 +9918,6 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 
         allCategories = categoryRepository.allCategories
 
-        // --- FIX: Use the correct repository method with parameters ---
         overallBudget =
             settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth)
                 .stateIn(
@@ -9543,8 +9936,6 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
             if (budgets.isEmpty()) {
                 flowOf(0.0)
             } else {
-                // This logic seems complex and could be simplified, but for now, we'll keep it.
-                // It recalculates total spending whenever the budget list changes.
                 val spendingFlows = budgets.map {
                     getActualSpending(it.budget.categoryName)
                 }
@@ -10910,7 +11301,21 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Methods for image attachments ---
+    // --- NEW: Query to get aggregated spending by merchant for a specific date range ---
+    @Query("""
+        SELECT
+            description as merchantName,
+            SUM(amount) as totalAmount,
+            COUNT(id) as transactionCount
+        FROM transactions
+        WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
+        GROUP BY description
+        ORDER BY totalAmount DESC
+    """)
+    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>>
+
+
+    // --- Methods for image attachments ---
     @Insert
     suspend fun insertImage(transactionImage: TransactionImage)
 
@@ -11636,6 +12041,24 @@ data class LoginResponse(
 -e 
 
 
+================== FILE: ./app/src/main/java/MerchantSpendingSummary.kt ==================
+package io.pm.finlight
+
+/**
+ * A data class to hold aggregated spending data for a specific merchant.
+ *
+ * @param merchantName The name of the merchant (from the transaction description).
+ * @param totalAmount The sum of all expenses for this merchant in a given period.
+ * @param transactionCount The number of transactions (visits) for this merchant.
+ */
+data class MerchantSpendingSummary(
+    val merchantName: String,
+    val totalAmount: Double,
+    val transactionCount: Int
+)
+-e 
+
+
 ================== FILE: ./app/src/main/java/BudgetWithSpending.kt ==================
 package io.pm.finlight
 
@@ -12081,7 +12504,12 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Methods for image attachments ---
+    // --- NEW: Expose the merchant spending data ---
+    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>> {
+        return transactionDao.getSpendingByMerchantForMonth(startDate, endDate)
+    }
+
+    // --- Methods for image attachments ---
     suspend fun addImageToTransaction(transactionId: Int, imageUri: String) {
         val transactionImage = TransactionImage(transactionId = transactionId, imageUri = imageUri)
         transactionDao.insertImage(transactionImage)

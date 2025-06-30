@@ -58,13 +58,14 @@ fun DashboardScreen(
     val budgetStatus by viewModel.budgetStatus.collectAsState()
     val recentTransactions by viewModel.recentTransactions.collectAsState()
     val accountsSummary by viewModel.accountsSummary.collectAsState()
+    // --- BUG FIX: Get the correct state for the card ---
+    val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
+
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // --- UPDATED: The profile picture in the TopAppBar is handled in MainActivity ---
-        // This item is now removed to avoid duplication. The greeting is now part of the TopAppBar.
         item {
             OverallBudgetCard(
                 totalBudget = overallBudget,
@@ -79,7 +80,7 @@ fun DashboardScreen(
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
                     onClick = {
-                        navController.navigate("${BottomNavItem.Transactions.route}?type=income") {
+                        navController.navigate(BottomNavItem.Transactions.route) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
                             }
@@ -94,19 +95,13 @@ fun DashboardScreen(
                     modifier = Modifier.weight(1f),
                     onClick = { navController.navigate("budget_screen") }
                 )
+                // --- BUG FIX: Removed onClick and corrected amount ---
                 StatCard(
                     label = "Safe To Spend",
-                    amount = monthlyExpenses.toFloat(),
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        navController.navigate("${BottomNavItem.Transactions.route}?type=expense") {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    amount = safeToSpendPerDay,
+                    isPerDay = true, // Add flag to show "/day" suffix
+                    modifier = Modifier.weight(1f)
+                    // No onClick handler, so the card is not clickable
                 )
             }
         }
