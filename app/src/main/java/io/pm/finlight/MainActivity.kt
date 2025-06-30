@@ -1,11 +1,13 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Fixed the double TopAppBar issue by conditionally hiding the main app bar
-// when navigating to the new Transaction Detail screen.
+// REASON: Implemented a splash/routing screen to handle deep links seamlessly.
+// This prevents the main dashboard from "flashing" before navigating to the
+// deep-linked content, improving the user experience.
 // =================================================================================
 package io.pm.finlight
 
 import android.Manifest
+import android.app.Activity
 import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -38,6 +40,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavDeepLinkRequest
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -46,6 +49,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import androidx.navigation.navOptions
 import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.ui.screens.*
@@ -215,8 +219,9 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
-    // --- FIX: Logic to conditionally show the main TopAppBar ---
-    val showMainTopBar = baseCurrentRoute != "transaction_detail" && baseCurrentRoute != "transaction_list"
+    val showMainTopBar = baseCurrentRoute != "transaction_detail" && baseCurrentRoute != "transaction_list" && baseCurrentRoute != "splash_screen"
+
+    val activity = LocalContext.current as AppCompatActivity
 
     Scaffold(
         topBar = {
@@ -298,7 +303,8 @@ fun MainAppScreen() {
         AppNavHost(
             navController = navController,
             modifier = Modifier.padding(innerPadding),
-            dashboardViewModel = dashboardViewModel
+            dashboardViewModel = dashboardViewModel,
+            activity = activity
         )
     }
 }
@@ -308,7 +314,8 @@ fun MainAppScreen() {
 fun AppNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
-    dashboardViewModel: DashboardViewModel
+    dashboardViewModel: DashboardViewModel,
+    activity: AppCompatActivity
 ) {
     val settingsViewModel: SettingsViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
@@ -319,9 +326,13 @@ fun AppNavHost(
 
     NavHost(
         navController = navController,
-        startDestination = BottomNavItem.Dashboard.route,
+        startDestination = "splash_screen",
         modifier = modifier
     ) {
+        composable("splash_screen") {
+            SplashScreen(navController = navController, activity = activity)
+        }
+
         composable(BottomNavItem.Dashboard.route) {
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }
@@ -366,7 +377,8 @@ fun AppNavHost(
 
         composable(
             route = "transaction_detail/{transactionId}",
-            arguments = listOf(navArgument("transactionId") { type = NavType.IntType })
+            arguments = listOf(navArgument("transactionId") { type = NavType.IntType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/transaction_detail/{transactionId}" })
         ) { backStackEntry ->
             val transactionId = backStackEntry.arguments!!.getInt("transactionId")
             TransactionDetailScreen(navController, transactionId, transactionViewModel)
@@ -406,5 +418,43 @@ fun AppNavHost(
         composable("tag_management") { TagManagementScreen() }
         composable("recurring_transactions") { RecurringTransactionScreen(navController) }
         composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
+    }
+}
+
+/**
+ * A new composable that acts as a routing screen. It checks the intent
+ * for a deep link and navigates accordingly, preventing the dashboard from
+ * flashing on screen during a deep link launch.
+ */
+@Composable
+fun SplashScreen(navController: NavHostController, activity: Activity) {
+    LaunchedEffect(key1 = Unit) {
+        val deepLinkUri = activity.intent?.data
+        if (deepLinkUri != null) {
+            // --- BUG FIX: Manually build the back stack for a seamless experience ---
+            // First, navigate to the main screen of the app.
+            navController.navigate(BottomNavItem.Dashboard.route) {
+                // Pop the splash screen off the stack to prevent going back to it.
+                popUpTo("splash_screen") { inclusive = true }
+            }
+            // Then, navigate to the specific deep-linked content.
+            // This places the dashboard on the back stack before the detail screen.
+            navController.navigate(deepLinkUri)
+            // Clear the intent data so it's not reused on process recreation.
+            activity.intent.data = null
+        } else {
+            // It's a normal launch, go to the dashboard
+            navController.navigate(BottomNavItem.Dashboard.route) {
+                popUpTo("splash_screen") { inclusive = true }
+            }
+        }
+    }
+
+    // Show a loading indicator while the navigation logic runs
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator()
     }
 }

@@ -42,60 +42,66 @@ fun ReportsScreen(
     val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
 
 
-        LazyColumn() {
-            // --- Pie Chart Card (Unchanged) ---
-            item {
-                Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
-                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Spending by Category for ${viewModel.monthYear}", style = MaterialTheme.typography.titleLarge)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        if (pieData == null || pieData?.entryCount == 0) {
-                            Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
-                                Text("No expense data for this month.")
-                            }
-                        } else {
-                            AndroidView(
-                                factory = { context ->
-                                    PieChart(context).apply {
-                                        description.isEnabled = false
-                                        isDrawHoleEnabled = true
-                                        setHoleColor(
-                                            Color.TRANSPARENT,
-                                        )
-                                        setEntryLabelColor(Color.BLACK)
-                                        setEntryLabelTextSize(12f)
-                                        legend.isEnabled = false
-                                    }
-                                },
-                                update = { chart ->
-                                    chart.data = pieData
-                                    chart.invalidate()
-                                },
-                                modifier = Modifier.fillMaxWidth().height(300.dp),
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            ChartLegend(pieData)
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // --- Pie Chart Card ---
+        item {
+            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
+                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Spending by Category for ${viewModel.monthYear}", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    if (pieData == null || pieData?.entryCount == 0) {
+                        Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+                            Text("No expense data for this month.")
                         }
+                    } else {
+                        AndroidView(
+                            factory = { context ->
+                                PieChart(context).apply {
+                                    description.isEnabled = false
+                                    isDrawHoleEnabled = true
+                                    setHoleColor(
+                                        Color.TRANSPARENT,
+                                    )
+                                    setEntryLabelColor(Color.BLACK)
+                                    setEntryLabelTextSize(12f)
+                                    legend.isEnabled = false
+                                }
+                            },
+                            update = { chart ->
+                                chart.data = pieData
+                                // --- BUG FIX: Explicitly notify the chart that the data has changed ---
+                                // This forces a full redraw, ensuring that all properties of the
+                                // new dataset, including the custom colors, are applied correctly.
+                                chart.notifyDataSetChanged()
+                                chart.invalidate()
+                            },
+                            modifier = Modifier.fillMaxWidth().height(300.dp),
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        pieData?.let { ChartLegend(it) }
                     }
                 }
             }
+        }
 
-            // --- Bar Chart Card (REFINED) ---
-            item {
-                Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
-                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Income vs. Expense Trend", style = MaterialTheme.typography.titleLarge)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
-                            // This is the refined BarChart implementation
-                            GroupedBarChart(trendDataPair!!)
-                        } else {
-                            Box(modifier = Modifier.fillMaxWidth().height(250.dp), contentAlignment = Alignment.Center) {
-                                Text("Not enough data for trend analysis.")
-                            }
+        // --- Bar Chart Card ---
+        item {
+            Card(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), elevation = CardDefaults.cardElevation(4.dp)) {
+                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Income vs. Expense Trend", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
+                        GroupedBarChart(trendDataPair!!)
+                    } else {
+                        Box(modifier = Modifier.fillMaxWidth().height(250.dp), contentAlignment = Alignment.Center) {
+                            Text("Not enough data for trend analysis.")
                         }
                     }
                 }
             }
         }
     }
+}

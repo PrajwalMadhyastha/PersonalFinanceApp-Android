@@ -8,16 +8,15 @@ import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.TaskStackBuilder
 import androidx.core.net.toUri
 import com.google.gson.Gson
 import java.net.URLEncoder
 
 object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
-    // --- NEW: A deep link to directly edit a transaction ---
-    private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/edit_transaction"
+    private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
 
-    // --- NEW: Informational notification for auto-saved transactions ---
     fun showAutoSaveConfirmationNotification(
         context: Context,
         transaction: Transaction
@@ -26,17 +25,26 @@ object NotificationHelper {
             return
         }
 
-        val editUri = "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri()
-        val intent = Intent(Intent.ACTION_VIEW, editUri).apply {
-            `package` = context.packageName
+        // --- BUG FIX: Correctly build the back stack to avoid double-back-press issue ---
+        // This ensures a clean navigation path: Notification -> Detail Screen -> Dashboard.
+
+        // Create the Intent for the deep link. This is the only Intent we need to provide.
+        val detailIntent = Intent(
+            Intent.ACTION_VIEW,
+            "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri(),
+            context,
+            MainActivity::class.java
+        )
+
+        // TaskStackBuilder will use this single intent to create the full, correct back stack
+        // by looking at the parent activity defined in the manifest.
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            // This correctly adds the parent (MainActivity) and then the detailIntent on top.
+            addNextIntentWithParentStack(detailIntent)
+            // Get the PendingIntent containing the entire back stack.
+            getPendingIntent(transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            transaction.id, // Use transaction ID for unique pending intent
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -52,7 +60,6 @@ object NotificationHelper {
         }
     }
 
-    // --- RETAINED: Notification for manual review flow ---
     fun showTransactionNotification(
         context: Context,
         potentialTransaction: PotentialTransaction,

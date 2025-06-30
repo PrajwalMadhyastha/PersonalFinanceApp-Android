@@ -4,22 +4,32 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.Notes
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -27,6 +37,13 @@ import com.google.gson.Gson
 import io.pm.finlight.*
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
+
+// --- NEW: Sealed class to manage bottom sheet content ---
+private sealed class ApproveSheetContent {
+    object Category : ApproveSheetContent()
+    object Tags : ApproveSheetContent()
+}
+
 
 @Composable
 fun ReviewSmsScreen(
@@ -149,20 +166,22 @@ fun ApproveTransactionScreen(
 ) {
     var description by remember { mutableStateOf(potentialTxn.merchantName ?: "") }
     var notes by remember { mutableStateOf("") }
-    var newTagName by remember { mutableStateOf("") }
     var selectedTransactionType by remember(potentialTxn.transactionType) { mutableStateOf(potentialTxn.transactionType) }
-    val transactionTypes = listOf("Expense", "Income")
     val scope = rememberCoroutineScope()
 
     val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
     val allTags by transactionViewModel.allTags.collectAsState()
     val selectedTags by transactionViewModel.selectedTags.collectAsState()
 
+    // --- NEW: State for bottom sheets ---
+    var activeSheetContent by remember { mutableStateOf<ApproveSheetContent?>(null) }
+    val sheetState = rememberModalBottomSheetState()
+
+
     val isExpense = selectedTransactionType == "expense"
-    val isSaveEnabled = !isExpense || selectedCategory != null
+    val isSaveEnabled = description.isNotBlank() && (!isExpense || selectedCategory != null)
 
     DisposableEffect(Unit) {
         onDispose {
@@ -170,132 +189,308 @@ fun ApproveTransactionScreen(
         }
     }
 
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            OutlinedTextField(value = description, onValueChange = {
-                description = it
-            }, label = { Text("Description / Merchant") }, modifier = Modifier.fillMaxWidth())
-        }
-        item {
-            OutlinedTextField(value = potentialTxn.amount.toString(), onValueChange = {
-            }, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth())
-        }
-        item {
-            OutlinedTextField(
-                value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Account") },
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        item {
-            TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
-                transactionTypes.forEachIndexed { index, title ->
-                    Tab(selected = (if (isExpense) 0 else 1) == index, onClick = {
-                        selectedTransactionType = if (index == 0) "expense" else "income"
-                    }, text = { Text(title) })
-                }
-            }
-        }
-        if (isExpense) {
+    Scaffold { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             item {
-                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                    isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-                }) {
-                    OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {
-                    }, readOnly = true, label = {
-                        Text("Category")
-                    }, trailingIcon = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded)
-                    }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                        categories.forEach { category ->
-                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                selectedCategory = category
-                                isCategoryDropdownExpanded = false
-                            })
-                        }
+                // --- REFACTORED: Primary Info Card ---
+                Card(elevation = CardDefaults.cardElevation(2.dp)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            "₹${"%,.2f".format(potentialTxn.amount)}",
+                            style = MaterialTheme.typography.displaySmall,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.End,
+                            fontWeight = FontWeight.Bold
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it },
+                            label = { Text("Description / Merchant") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = Color.Transparent
+                            ),
+                            placeholder = { Text("What was this for?") }
+                        )
                     }
                 }
             }
-        }
-        item {
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Notes (Optional)") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        item {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                allTags.forEach { tag ->
-                    FilterChip(
-                        selected = tag in selectedTags,
-                        onClick = { transactionViewModel.onTagSelected(tag) },
-                        label = { Text(tag.name) }
-                    )
+            item {
+                TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
+                    listOf("Expense", "Income").forEachIndexed { index, title ->
+                        Tab(selected = (if (isExpense) 0 else 1) == index, onClick = {
+                            selectedTransactionType = if (index == 0) "expense" else "income"
+                        }, text = { Text(title) })
+                    }
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = newTagName,
-                    onValueChange = { newTagName = it },
-                    label = { Text("New Tag") },
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = {
-                        transactionViewModel.addTagOnTheGo(newTagName)
-                        newTagName = ""
-                    },
-                    enabled = newTagName.isNotBlank()
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add New Tag")
-                }
-            }
-        }
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
-                    Text("Cancel")
-                }
-                Button(
-                    onClick = {
-                        scope.launch {
-                            val success = transactionViewModel.approveSmsTransaction(
-                                potentialTxn = potentialTxn,
-                                description = description,
-                                categoryId = selectedCategory?.id,
-                                notes = notes.takeIf { it.isNotBlank() },
-                                tags = selectedTags
+
+            item {
+                // --- REFACTORED: Details Card ---
+                Card(elevation = CardDefaults.cardElevation(2.dp)) {
+                    Column {
+                        DetailRow(
+                            icon = Icons.Default.AccountBalanceWallet,
+                            label = "Account",
+                            value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
+                            onClick = null // Not editable
+                        )
+                        if (isExpense) {
+                            HorizontalDivider()
+                            DetailRow(
+                                icon = Icons.Default.Category,
+                                label = "Category",
+                                value = selectedCategory?.name ?: "Select category",
+                                onClick = { activeSheetContent = ApproveSheetContent.Category },
+                                valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
                             )
-                            if (success) {
-                                settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
-                                settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
-                                navController.popBackStack()
-                            }
                         }
-                    },
-                    modifier = Modifier.weight(1f),
-                    enabled = isSaveEnabled,
-                ) { Text("Save Transaction") }
+                        HorizontalDivider()
+                        DetailRow(
+                            icon = Icons.Default.NewLabel,
+                            label = "Tags",
+                            value = if (selectedTags.isEmpty()) "Add tags" else selectedTags.joinToString { it.name },
+                            onClick = { activeSheetContent = ApproveSheetContent.Tags }
+                        )
+                        HorizontalDivider()
+                        OutlinedTextField(
+                            value = notes,
+                            onValueChange = { notes = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("Add notes...") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = "Notes") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = Color.Transparent,
+                            )
+                        )
+                    }
+                }
             }
+            item {
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val success = transactionViewModel.approveSmsTransaction(
+                                    potentialTxn = potentialTxn,
+                                    description = description,
+                                    categoryId = selectedCategory?.id,
+                                    notes = notes.takeIf { it.isNotBlank() },
+                                    tags = selectedTags
+                                )
+                                if (success) {
+                                    settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
+                                    settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
+                                    navController.popBackStack()
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = isSaveEnabled,
+                    ) { Text("Save Transaction") }
+                }
+            }
+        }
+    }
+
+    // --- NEW: Bottom Sheet Logic ---
+    if (activeSheetContent != null) {
+        ModalBottomSheet(
+            onDismissRequest = { activeSheetContent = null },
+            sheetState = sheetState
+        ) {
+            when (activeSheetContent) {
+                is ApproveSheetContent.Category -> ApproveCategoryPickerSheet(
+                    items = categories,
+                    onItemSelected = { selectedCategory = it; activeSheetContent = null }
+                )
+                is ApproveSheetContent.Tags -> ApproveTagPickerSheet(
+                    allTags = allTags,
+                    selectedTags = selectedTags,
+                    onTagSelected = transactionViewModel::onTagSelected,
+                    onAddNewTag = transactionViewModel::addTagOnTheGo,
+                    onConfirm = { activeSheetContent = null }
+                )
+                else -> {}
+            }
+        }
+    }
+}
+
+
+// --- NEW: Helper composables adapted from AddTransactionScreen ---
+
+@Composable
+private fun DetailRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    onClick: (() -> Unit)?,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    leadingIcon: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (leadingIcon != null) {
+            leadingIcon()
+        } else {
+            Icon(icon, contentDescription = label)
+        }
+        Spacer(Modifier.width(16.dp))
+        Text(label, modifier = Modifier.weight(1f))
+        Text(value, color = valueColor, fontWeight = FontWeight.SemiBold)
+        if (onClick != null) {
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ApproveCategoryPickerSheet(
+    items: List<Category>,
+    onItemSelected: (Category) -> Unit
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            "Select Category",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 100.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(items) { category ->
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onItemSelected(category) }
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CategoryIcon(category, Modifier.size(48.dp))
+                    Text(category.name, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ApproveTagPickerSheet(
+    allTags: List<Tag>,
+    selectedTags: Set<Tag>,
+    onTagSelected: (Tag) -> Unit,
+    onAddNewTag: (String) -> Unit,
+    onConfirm: () -> Unit
+) {
+    var newTagName by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("Manage Tags", style = MaterialTheme.typography.titleLarge)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            allTags.forEach { tag ->
+                FilterChip(
+                    selected = tag in selectedTags,
+                    onClick = { onTagSelected(tag) },
+                    label = { Text(tag.name) }
+                )
+            }
+        }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = newTagName,
+                onValueChange = { newTagName = it },
+                label = { Text("New Tag Name") },
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = {
+                    onAddNewTag(newTagName)
+                    newTagName = ""
+                },
+                enabled = newTagName.isNotBlank()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onConfirm) { Text("Cancel") }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                if (newTagName.isNotBlank()) {
+                    onAddNewTag(newTagName)
+                }
+                onConfirm()
+            }) { Text("Done") }
+        }
+    }
+}
+
+@Composable
+private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+                fontSize = 22.sp
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.padding(12.dp)
+            )
         }
     }
 }
