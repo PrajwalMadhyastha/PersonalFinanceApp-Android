@@ -155,12 +155,8 @@ class SettingsRepository(context: Context) {
         return prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
     }
 
-    fun getOverallBudgetForCurrentMonth(): Flow<Float> {
-        val calendar = Calendar.getInstance()
-        val year = calendar.get(Calendar.YEAR)
-        val month = calendar.get(Calendar.MONTH) + 1
+    fun getOverallBudgetForMonth(year: Int, month: Int): Flow<Float> {
         val key = getBudgetKey(year, month)
-
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
                 if (changedKey == key) {
@@ -174,6 +170,7 @@ class SettingsRepository(context: Context) {
             }
         }
     }
+
     fun saveWeeklySummaryEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_WEEKLY_SUMMARY_ENABLED, isEnabled).apply()
     }

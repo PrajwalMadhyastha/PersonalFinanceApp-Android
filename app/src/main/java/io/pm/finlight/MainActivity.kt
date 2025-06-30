@@ -216,11 +216,10 @@ fun MainAppScreen() {
     val showFab = baseCurrentRoute in fabRoutes
 
     // --- FIX: Logic to conditionally show the main TopAppBar ---
-    val showMainTopBar = baseCurrentRoute != "transaction_detail"
+    val showMainTopBar = baseCurrentRoute != "transaction_detail" && baseCurrentRoute != "transaction_list"
 
     Scaffold(
         topBar = {
-            // --- FIX: Only show the main app bar if we are NOT on the detail screen ---
             if (showMainTopBar) {
                 TopAppBar(
                     title = { Text(currentTitle) },
@@ -327,16 +326,11 @@ fun AppNavHost(
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }
         composable(
-            route = "${BottomNavItem.Transactions.route}?type={type}",
-            arguments = listOf(navArgument("type") {
-                type = NavType.StringType
-                nullable = true
-            })
-        ) { backStackEntry ->
+            route = BottomNavItem.Transactions.route
+        ) {
             TransactionListScreen(
                 navController = navController,
-                viewModel = transactionViewModel,
-                filterType = backStackEntry.arguments?.getString("type")
+                viewModel = transactionViewModel
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }

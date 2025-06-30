@@ -39,12 +39,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
 
-    val overallBudget: StateFlow<Float> =
-        settingsRepository.getOverallBudgetForCurrentMonth().stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = 0f,
-        )
+    val overallBudget: StateFlow<Float>
 
     val dailyReportEnabled: StateFlow<Boolean> =
         settingsRepository.getDailyReportEnabled().stateIn(
@@ -74,7 +69,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = true,
         )
 
-    // --- NEW: StateFlow for the backup setting ---
     val backupEnabled: StateFlow<Boolean> =
         settingsRepository.getBackupEnabled().stateIn(
             scope = viewModelScope,
@@ -96,20 +90,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = 0L,
                 )
+
+        val calendar = Calendar.getInstance()
+        val currentYear = calendar.get(Calendar.YEAR)
+        val currentMonth = calendar.get(Calendar.MONTH) + 1
+
+        // --- FIX: Use the correct repository method with parameters ---
+        overallBudget =
+            settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth).stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = 0f,
+            )
     }
 
-    // --- NEW: Function to handle changes to the backup setting ---
     fun setBackupEnabled(enabled: Boolean) {
-        // Save the user's preference.
         settingsRepository.saveBackupEnabled(enabled)
-
-        // IMPORTANT: Android's Auto Backup feature (to Google Drive) cannot be programmatically
-        // disabled by an app at runtime. The `android:allowBackup` flag in the Manifest
-        // is read at install time. This setting provides the user with an in-app choice,
-        // and we can notify the BackupManager that our app's data has changed, which
-        // may influence the timing of the next backup. However, this does NOT guarantee
-        // that backups will stop if the user toggles this off.
-        // The primary way for a user to disable this is in the system settings.
         val backupManager = BackupManager(context)
         backupManager.dataChanged()
     }

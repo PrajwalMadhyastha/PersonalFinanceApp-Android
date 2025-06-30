@@ -678,7 +678,7 @@ private fun TransactionHeaderCard(
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit,
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMM yyyy, h:mm a", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy, h:mm a", Locale.getDefault()) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),

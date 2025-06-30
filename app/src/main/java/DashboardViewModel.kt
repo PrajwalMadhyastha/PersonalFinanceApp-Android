@@ -47,7 +47,7 @@ class DashboardViewModel(
 
         val calendar = Calendar.getInstance()
         val monthStart =
-            calendar.apply {
+            (calendar.clone() as Calendar).apply {
                 set(Calendar.DAY_OF_MONTH, 1)
                 set(Calendar.HOUR_OF_DAY, 0)
                 set(Calendar.MINUTE, 0)
@@ -55,7 +55,7 @@ class DashboardViewModel(
                 set(Calendar.MILLISECOND, 0)
             }.timeInMillis
         val monthEnd =
-            calendar.apply {
+            (calendar.clone() as Calendar).apply {
                 add(Calendar.MONTH, 1)
                 set(Calendar.DAY_OF_MONTH, 1)
                 add(Calendar.DAY_OF_MONTH, -1)
@@ -82,8 +82,12 @@ class DashboardViewModel(
                     .sumOf { it.transaction.amount }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
+        val currentYear = calendar.get(Calendar.YEAR)
+        val currentMonth = calendar.get(Calendar.MONTH) + 1
+
+        // --- FIX: Use the correct repository method with parameters ---
         overallMonthlyBudget =
-            settingsRepository.getOverallBudgetForCurrentMonth()
+            settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth)
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
         amountRemaining =
@@ -109,8 +113,6 @@ class DashboardViewModel(
             transactionRepository.recentTransactions
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        val currentMonth = calendar.get(Calendar.MONTH) + 1
-        val currentYear = calendar.get(Calendar.YEAR)
         val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
         budgetStatus = budgetDao.getBudgetsWithSpendingForMonth(yearMonthString, currentMonth, currentYear)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

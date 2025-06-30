@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sun Jun 29 17:37:06 IST 2025
+Generated on: Mon Jun 30 14:55:15 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -563,11 +563,13 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Calendar
 
 private const val TAG = "TransactionViewModel"
 
@@ -576,29 +578,82 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val accountRepository: AccountRepository
     val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
+    private val settingsRepository: SettingsRepository
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
     private var areTagsLoadedForCurrentTxn = false
     private var currentTxnIdForTags: Int? = null
 
-    private val _transactionTypeFilter = MutableStateFlow<String?>(null)
+    // --- NEW: State for the currently selected month ---
+    private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
+    val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
 
-    val allTransactions: StateFlow<List<TransactionDetails>> =
-        _transactionTypeFilter.flatMapLatest { filterType ->
-            transactionRepository.allTransactions.map { list ->
-                if (filterType == null) {
-                    list
-                } else {
-                    list.filter { it.transaction.transactionType == filterType }
-                }
+    // --- NEW: Flow that emits transactions only for the selected month ---
+    val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>> = _selectedMonth.flatMapLatest { calendar ->
+        val monthStart = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }.timeInMillis
+
+        val monthEnd = (calendar.clone() as Calendar).apply {
+            add(Calendar.MONTH, 1)
+            set(Calendar.DAY_OF_MONTH, 1)
+            add(Calendar.DAY_OF_MONTH, -1)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+        }.timeInMillis
+
+        transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- NEW: Flow for total income in the selected month ---
+    val monthlyIncome: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
+        txns.filter { it.transaction.transactionType == "income" }.sumOf { it.transaction.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // --- NEW: Flow for total expenses in the selected month ---
+    val monthlyExpenses: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
+        txns.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // --- NEW: Flow for the overall budget in the selected month ---
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val overallMonthlyBudget: StateFlow<Float> = _selectedMonth.flatMapLatest {
+        settingsRepository.getOverallBudgetForMonth(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+    // --- NEW: Flow for remaining budget amount ---
+    val amountRemaining: StateFlow<Float> =
+        combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses ->
+            budget - expenses.toFloat()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+    // --- NEW: Flow for the 'Safe to Spend' amount per day ---
+    val safeToSpendPerDay: StateFlow<Float> =
+        combine(amountRemaining, _selectedMonth) { remaining, calendar ->
+            val today = Calendar.getInstance()
+            val lastDayOfMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+            val remainingDays = if (
+                today.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) &&
+                today.get(Calendar.MONTH) == calendar.get(Calendar.MONTH)
+            ) {
+                (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1)
+            } else if (calendar.after(today)) {
+                lastDayOfMonth
+            } else {
+                1
             }
-        }.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
 
+            if (remaining > 0) remaining / remainingDays else 0f
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+
+    val allTransactions: StateFlow<List<TransactionDetails>>
     val allAccounts: StateFlow<List<Account>>
     val allCategories: Flow<List<Category>>
     val allTags: StateFlow<List<Tag>>
@@ -617,6 +672,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         accountRepository = AccountRepository(db.accountDao())
         categoryRepository = CategoryRepository(db.categoryDao())
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
+        settingsRepository = SettingsRepository(application)
+
+        allTransactions = transactionRepository.allTransactions.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
         allAccounts = accountRepository.allAccounts.stateIn(
             scope = viewModelScope,
@@ -634,6 +696,16 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             initialValue = emptyList()
         )
     }
+
+    // --- NEW: Function to navigate between months ---
+    fun changeMonth(amount: Int) {
+        _selectedMonth.update {
+            val newCal = it.clone() as Calendar
+            newCal.add(Calendar.MONTH, amount)
+            newCal
+        }
+    }
+
 
     fun attachPhotoToTransaction(transactionId: Int, sourceUri: Uri) {
         viewModelScope.launch {
@@ -720,11 +792,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun updateTagsForTransaction(transactionId: Int) = viewModelScope.launch {
         Log.d(TAG, "updateTagsForTransaction: Saving tags for txn ID $transactionId. Tags: ${_selectedTags.value.map { it.name }}")
         transactionRepository.updateTagsForTransaction(transactionId, _selectedTags.value)
-    }
-
-
-    fun setTransactionTypeFilter(type: String?) {
-        _transactionTypeFilter.value = type
     }
 
     fun onTagSelected(tag: Tag) {
@@ -852,7 +919,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         date: Long,
         transactionType: String,
         sourceSmsId: Long?,
-        sourceSmsHash: String?
+        sourceSmsHash: String?,
+        imageUris: List<Uri>
     ): Boolean {
         _validationError.value = null
 
@@ -880,7 +948,16 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 source = "Manual Entry"
             )
         viewModelScope.launch {
-            transactionRepository.insertTransactionWithTags(newTransaction, _selectedTags.value)
+            val savedImagePaths = imageUris.mapNotNull { uri ->
+                saveImageToInternalStorage(uri)
+            }
+
+            val newTransactionId = transactionRepository.insertTransactionWithTagsAndImages(
+                newTransaction,
+                _selectedTags.value,
+                savedImagePaths
+            )
+            Log.d(TAG, "Transaction created with ID: $newTransactionId")
         }
         return true
     }
@@ -1368,7 +1445,21 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
 
     fun addCategory(name: String, iconKey: String, colorKey: String) =
         viewModelScope.launch {
-            categoryRepository.insert(Category(name = name, iconKey = iconKey, colorKey = colorKey))
+            // --- NEW: Logic to assign a better default icon and color ---
+            val usedColorKeys = allCategories.firstOrNull()?.map { it.colorKey } ?: emptyList()
+
+            // If the default icon was passed, use our special "letter" key.
+            // The UI will know how to render this.
+            val finalIconKey = if (iconKey == "category") "letter_default" else iconKey
+
+            // If the default color was passed, find the next available color.
+            val finalColorKey = if (colorKey == "gray_light") {
+                CategoryIconHelper.getNextAvailableColor(usedColorKeys)
+            } else {
+                colorKey
+            }
+
+            categoryRepository.insert(Category(name = name, iconKey = finalIconKey, colorKey = finalColorKey))
         }
 
     fun updateCategory(category: Category) =
@@ -2233,7 +2324,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.Category
 import io.pm.finlight.CategoryIconHelper
@@ -2282,6 +2375,7 @@ fun CategoryListScreen(
                 ListItem(
                     headlineContent = { Text(category.name) },
                     leadingContent = {
+                        // --- UPDATED: To handle letter-based icons ---
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
@@ -2289,11 +2383,21 @@ fun CategoryListScreen(
                                 .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = CategoryIconHelper.getIcon(category.iconKey),
-                                contentDescription = category.name,
-                                tint = Color.Black // Assuming a light background color
-                            )
+                            if (category.iconKey == "letter_default") {
+                                Text(
+                                    text = category.name.firstOrNull()?.uppercase() ?: "?",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = Color.Black
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                                    contentDescription = category.name,
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     },
                     trailingContent = {
@@ -3003,73 +3107,51 @@ fun EditAccountScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 package io.pm.finlight.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material3.Button
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.filled.Notes
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import io.pm.finlight.Account
-import io.pm.finlight.Category
-import io.pm.finlight.CategoryIconHelper
-import io.pm.finlight.TransactionViewModel
+import coil.compose.AsyncImage
+import io.pm.finlight.*
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
+import java.util.*
+
+private sealed class AddSheetContent {
+    object Account : AddSheetContent()
+    object Category : AddSheetContent()
+    object Tags : AddSheetContent()
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -3080,18 +3162,14 @@ fun AddTransactionScreen(
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
-    var newTagName by remember { mutableStateOf("") }
 
     var transactionType by remember { mutableStateOf("expense") }
-    val transactionTypes = listOf("Expense", "Income")
 
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
-    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
 
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -3099,6 +3177,19 @@ fun AddTransactionScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
+
+    // --- NEW: State for attachments ---
+    var attachedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        attachedImageUris = attachedImageUris + uris
+    }
+
+
+    // --- NEW: State for bottom sheets ---
+    var activeSheetContent by remember { mutableStateOf<AddSheetContent?>(null) }
+    val sheetState = rememberModalBottomSheetState()
 
     val isExpense = transactionType == "expense"
     val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && (!isExpense || selectedCategory != null))
@@ -3108,125 +3199,558 @@ fun AddTransactionScreen(
 
     DisposableEffect(Unit) { onDispose { viewModel.clearSelectedTags() } }
 
-    LaunchedEffect(validationError) { validationError?.let { snackbarHostState.showSnackbar(it) } }
+    LaunchedEffect(validationError) { validationError?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() } }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             item {
-                TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
-                    transactionTypes.forEachIndexed { index, title ->
-                        Tab(selected = (if (isExpense) 0 else 1) == index, onClick = { transactionType = if (index == 0) "expense" else "income"; if (transactionType == "income") selectedCategory = null }, text = { Text(title) })
-                    }
-                }
-            }
-            item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
-            item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (Optional)") }, modifier = Modifier.fillMaxWidth()) }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
-                        Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
-                    }
-                    Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
-                        Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
-                    }
-                }
-            }
-            item {
-                ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = { isAccountDropdownExpanded = !isAccountDropdownExpanded }) {
-                    OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {}, readOnly = true, label = { Text("Account") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                    ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
-                        accounts.forEach { account ->
-                            DropdownMenuItem(text = { Text(account.name) }, onClick = { selectedAccount = account; isAccountDropdownExpanded = false })
+                SegmentedButton(
+                    options = listOf("Expense", "Income"),
+                    selectedOption = transactionType.replaceFirstChar { it.uppercase() },
+                    onOptionSelected = {
+                        transactionType = it.lowercase(Locale.getDefault())
+                        if (transactionType == "income") {
+                            selectedCategory = null
                         }
                     }
-                }
+                )
             }
-            if (isExpense) {
+
+            item {
+                PrimaryInfoCard(
+                    amount = amount,
+                    onAmountChange = { amount = it },
+                    description = description,
+                    onDescriptionChange = { description = it }
+                )
+            }
+
+            item {
+                DetailsCard(
+                    selectedAccount = selectedAccount,
+                    onAccountClick = { activeSheetContent = AddSheetContent.Account },
+                    selectedCategory = selectedCategory,
+                    onCategoryClick = { activeSheetContent = AddSheetContent.Category },
+                    isCategoryVisible = isExpense,
+                    selectedDate = selectedDateTime.time,
+                    onDateClick = { showDatePicker = true },
+                    tags = selectedTags,
+                    onTagsClick = { activeSheetContent = AddSheetContent.Tags },
+                    notes = notes,
+                    onNotesChange = { notes = it },
+                    attachmentsCount = attachedImageUris.size,
+                    onAttachmentsClick = { imagePickerLauncher.launch("image/*") }
+                )
+            }
+
+            if (attachedImageUris.isNotEmpty()) {
                 item {
-                    ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded }) {
-                        OutlinedTextField(
-                            value = selectedCategory?.name ?: "Select Category",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Category") },
-                            leadingIcon = selectedCategory?.let { { CategoryIcon(it) } },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
-                        )
-                        ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                            categories.forEach { category ->
-                                DropdownMenuItem(
-                                    text = { CategoryDropdownItem(category = category) },
-                                    onClick = { selectedCategory = category; isCategoryDropdownExpanded = false }
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(attachedImageUris) { uri ->
+                            Box {
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = "Selected image",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .clip(RoundedCornerShape(8.dp))
                                 )
+                                IconButton(
+                                    onClick = { attachedImageUris = attachedImageUris - uri },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp)
+                                        .size(24.dp)
+                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove attachment",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
+
+
             item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    allTags.forEach { tag -> FilterChip(selected = tag in selectedTags, onClick = { viewModel.onTagSelected(tag) }, label = { Text(tag.name) }) }
-                }
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = newTagName, onValueChange = { newTagName = it }, label = { Text("New Tag") }, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { viewModel.addTagOnTheGo(newTagName); newTagName = "" }, enabled = newTagName.isNotBlank()) { Icon(Icons.Default.Add, contentDescription = "Add New Tag") }
-                }
-            }
-            item {
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
                     Button(
                         onClick = {
-                            val success = viewModel.addTransaction(description = description, categoryId = selectedCategory?.id, amountStr = amount, accountId = selectedAccount!!.id, notes = notes.takeIf { it.isNotBlank() }, date = selectedDateTime.timeInMillis, transactionType = transactionType, sourceSmsId = null, sourceSmsHash = null)
+                            val success = viewModel.addTransaction(
+                                description = description,
+                                categoryId = selectedCategory?.id,
+                                amountStr = amount,
+                                accountId = selectedAccount!!.id,
+                                notes = notes.takeIf { it.isNotBlank() },
+                                date = selectedDateTime.timeInMillis,
+                                transactionType = transactionType,
+                                sourceSmsId = null,
+                                sourceSmsHash = null,
+                                imageUris = attachedImageUris
+                            )
                             if (success) navController.popBackStack()
                         },
-                        modifier = Modifier.weight(1f), enabled = isSaveEnabled
-                    ) { Text("Save Transaction") }
+                        modifier = Modifier.weight(1f),
+                        enabled = isSaveEnabled
+                    ) {
+                        Text("Save")
+                    }
                 }
             }
         }
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
+
+
+    // --- Bottom Sheet Logic ---
+    if (activeSheetContent != null) {
+        ModalBottomSheet(
+            onDismissRequest = { activeSheetContent = null },
+            sheetState = sheetState
+        ) {
+            when (activeSheetContent) {
+                is AddSheetContent.Account -> AddAccountPickerSheet(
+                    items = accounts,
+                    onItemSelected = { selectedAccount = it; activeSheetContent = null },
+                    onDismiss = { activeSheetContent = null }
+                )
+                is AddSheetContent.Category -> AddCategoryPickerSheet(
+                    items = categories,
+                    onItemSelected = { selectedCategory = it; activeSheetContent = null },
+                    onDismiss = { activeSheetContent = null }
+                )
+                is AddSheetContent.Tags -> AddTagPickerSheet(
+                    allTags = allTags,
+                    selectedTags = selectedTags,
+                    onTagSelected = viewModel::onTagSelected,
+                    onAddNewTag = viewModel::addTagOnTheGo,
+                    onConfirm = { activeSheetContent = null },
+                    onDismiss = { activeSheetContent = null }
+                )
+                else -> {}
+            }
+        }
+    }
+
+
+    // --- Dialogs for Date/Time ---
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
-        DatePickerDialog(onDismissRequest = { showDatePicker = false }, confirmButton = { TextButton(onClick = { datePickerState.selectedDateMillis?.let { val cal = Calendar.getInstance().apply { timeInMillis = it }; selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR)); selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH)); selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH)) }; showDatePicker = false }) { Text("OK") } }, dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }) { DatePicker(state = datePickerState) }
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let {
+                        val cal = Calendar.getInstance().apply { timeInMillis = it }
+                        selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR))
+                        selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH))
+                        selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH))
+                    }
+                    showDatePicker = false
+                    showTimePicker = true
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
+        ) { DatePicker(state = datePickerState) }
     }
+
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY), initialMinute = selectedDateTime.get(Calendar.MINUTE))
-        TimePickerDialog(onDismissRequest = { showTimePicker = false }, onConfirm = { selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour); selectedDateTime.set(Calendar.MINUTE, timePickerState.minute); showTimePicker = false }) { TimePicker(state = timePickerState) }
+        val timePickerState = rememberTimePickerState(
+            initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
+            initialMinute = selectedDateTime.get(Calendar.MINUTE)
+        )
+        TimePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            onConfirm = {
+                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
+                showTimePicker = false
+            }
+        ) { TimePicker(state = timePickerState) }
     }
 }
 
 @Composable
-private fun CategoryDropdownItem(category: Category) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        CategoryIcon(category = category, modifier = Modifier.size(24.dp))
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(category.name)
+fun PrimaryInfoCard(
+    amount: String,
+    onAmountChange: (String) -> Unit,
+    description: String,
+    onDescriptionChange: (String) -> Unit
+) {
+    Card(elevation = CardDefaults.cardElevation(2.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            BasicTextField(
+                value = amount,
+                onValueChange = onAmountChange,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                textStyle = MaterialTheme.typography.displayMedium.copy(
+                    textAlign = TextAlign.End,
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                decorationBox = { innerTextField ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "₹",
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (amount.isEmpty()) {
+                                Text(
+                                    "0.00",
+                                    style = MaterialTheme.typography.displayMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.End
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                }
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+            OutlinedTextField(
+                value = description,
+                onValueChange = onDescriptionChange,
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedBorderColor = Color.Transparent
+                ),
+                placeholder = { Text("What did you spend on?") }
+            )
+        }
     }
 }
+
+@Composable
+fun DetailsCard(
+    selectedAccount: Account?,
+    onAccountClick: () -> Unit,
+    selectedCategory: Category?,
+    onCategoryClick: () -> Unit,
+    isCategoryVisible: Boolean,
+    selectedDate: Date,
+    onDateClick: () -> Unit,
+    tags: Set<Tag>,
+    onTagsClick: () -> Unit,
+    notes: String,
+    onNotesChange: (String) -> Unit,
+    attachmentsCount: Int,
+    onAttachmentsClick: () -> Unit
+) {
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()) }
+
+    Card(elevation = CardDefaults.cardElevation(2.dp)) {
+        Column {
+            DetailRow(
+                icon = Icons.Default.AccountBalanceWallet,
+                label = "Account",
+                value = selectedAccount?.name ?: "Select account",
+                onClick = onAccountClick,
+                valueColor = if (selectedAccount == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            )
+            if (isCategoryVisible) {
+                HorizontalDivider()
+                DetailRow(
+                    icon = Icons.Default.Category,
+                    label = "Category",
+                    value = selectedCategory?.name ?: "Select category",
+                    onClick = onCategoryClick,
+                    valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
+                )
+            }
+            HorizontalDivider()
+            DetailRow(
+                icon = Icons.Default.DateRange,
+                label = "Date",
+                value = dateFormatter.format(selectedDate),
+                onClick = onDateClick
+            )
+            HorizontalDivider()
+            DetailRow(
+                icon = Icons.Default.NewLabel,
+                label = "Tags",
+                value = if (tags.isEmpty()) "Add tags" else tags.joinToString { it.name },
+                onClick = onTagsClick
+            )
+            HorizontalDivider()
+            DetailRow(
+                icon = Icons.Default.Attachment,
+                label = "Attach Photo",
+                value = if (attachmentsCount > 0) "$attachmentsCount image(s)" else "Add receipt",
+                onClick = onAttachmentsClick
+            )
+            HorizontalDivider()
+            // Notes field directly inside the card
+            OutlinedTextField(
+                value = notes,
+                onValueChange = onNotesChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Add notes...") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = "Notes") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedBorderColor = Color.Transparent,
+                )
+            )
+        }
+    }
+}
+
+
+@Composable
+private fun DetailRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    leadingIcon: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (leadingIcon != null) {
+            leadingIcon()
+        } else {
+            Icon(icon, contentDescription = label)
+        }
+        Spacer(Modifier.width(16.dp))
+        Text(label, modifier = Modifier.weight(1f))
+        Text(value, color = valueColor, fontWeight = FontWeight.SemiBold)
+        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+
+@Composable
+private fun SegmentedButton(
+    options: List<String>,
+    selectedOption: String,
+    onOptionSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(4.dp)
+    ) {
+        options.forEach { option ->
+            Button(
+                onClick = { onOptionSelected(option) },
+                modifier = Modifier.weight(1f),
+                shape = CircleShape,
+                colors = if (option == selectedOption) {
+                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                } else {
+                    ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface)
+                },
+                elevation = if (option == selectedOption) ButtonDefaults.buttonElevation(defaultElevation = 2.dp) else null
+            ) {
+                Text(option)
+            }
+        }
+    }
+}
+
+
+// --- Bottom Sheet Composables for Add Screen ---
+
+@Composable
+private fun AddAccountPickerSheet(
+    items: List<Account>,
+    onItemSelected: (Account) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            "Select Account",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+        LazyColumn {
+            items(items) { item ->
+                ListItem(
+                    headlineContent = { Text(item.name) },
+                    modifier = Modifier.clickable { onItemSelected(item) }
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun AddCategoryPickerSheet(
+    items: List<Category>,
+    onItemSelected: (Category) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            "Select Category",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 100.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(items) { category ->
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onItemSelected(category) }
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CategoryIcon(category, Modifier.size(48.dp))
+                    Text(category.name, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AddTagPickerSheet(
+    allTags: List<Tag>,
+    selectedTags: Set<Tag>,
+    onTagSelected: (Tag) -> Unit,
+    onAddNewTag: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var newTagName by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("Manage Tags", style = MaterialTheme.typography.titleLarge)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            allTags.forEach { tag ->
+                FilterChip(
+                    selected = tag in selectedTags,
+                    onClick = { onTagSelected(tag) },
+                    label = { Text(tag.name) }
+                )
+            }
+        }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = newTagName,
+                onValueChange = { newTagName = it },
+                label = { Text("New Tag Name") },
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = {
+                    onAddNewTag(newTagName)
+                    newTagName = ""
+                },
+                enabled = newTagName.isNotBlank()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                if (newTagName.isNotBlank()) {
+                    onAddNewTag(newTagName)
+                }
+                onConfirm() // This just dismisses the sheet now
+            }) { Text("Done") }
+        }
+    }
+}
+
 
 @Composable
 private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        modifier = modifier
+            .clip(CircleShape)
+            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = CategoryIconHelper.getIcon(category.iconKey),
-            contentDescription = null,
-            tint = Color.Black,
-            modifier = Modifier.padding(4.dp)
-        )
+        if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+                fontSize = 22.sp
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.padding(12.dp)
+            )
+        }
     }
 }
 -e 
@@ -3508,14 +4032,31 @@ fun CategoryBudgetItem(
     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), elevation = CardDefaults.cardElevation(2.dp)) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                modifier = Modifier.size(40.dp).clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(budgetWithSpending.colorKey ?: "gray_light")),
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        CategoryIconHelper.getIconBackgroundColor(
+                            budgetWithSpending.colorKey ?: "gray_light"
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
-                    contentDescription = budgetWithSpending.budget.categoryName,
-                    tint = Color.Black
-                )
+                if (budgetWithSpending.iconKey == "letter_default") {
+                    Text(
+                        text = budgetWithSpending.budget.categoryName.firstOrNull()?.uppercase() ?: "?",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.Black
+                    )
+                } else {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
+                        contentDescription = budgetWithSpending.budget.categoryName,
+                        tint = Color.Black,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -4103,42 +4644,270 @@ private fun SettingsActionItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 package io.pm.finlight.ui.screens
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.TransactionList
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
+import kotlin.math.absoluteValue
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransactionListScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
-    filterType: String?
 ) {
-    LaunchedEffect(filterType) {
-        viewModel.setTransactionTypeFilter(filterType)
-    }
+    val tabs = listOf("Transactions", "Categories", "Merchants")
+    val pagerState = rememberPagerState { tabs.size }
+    val scope = rememberCoroutineScope()
 
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModel.setTransactionTypeFilter(null)
+    val transactions by viewModel.transactionsForSelectedMonth.collectAsState()
+    val selectedMonth by viewModel.selectedMonth.collectAsState()
+    val totalSpent by viewModel.monthlyExpenses.collectAsState()
+    val totalIncome by viewModel.monthlyIncome.collectAsState()
+    val budget by viewModel.overallMonthlyBudget.collectAsState()
+    val safeToSpend by viewModel.safeToSpendPerDay.collectAsState()
+
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        MonthlySummaryHeader(
+            selectedMonth = selectedMonth,
+            totalSpent = totalSpent,
+            totalIncome = totalIncome,
+            budget = budget,
+            safeToSpend = safeToSpend,
+            onMonthChange = { viewModel.changeMonth(it) }
+        )
+        TabRow(
+            selectedTabIndex = pagerState.currentPage,
+            indicator = { tabPositions ->
+                TabRowDefaults.SecondaryIndicator(
+                    Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
+                )
+            }
+        ) {
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = {
+                        scope.launch {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    },
+                    text = { Text(title) }
+                )
+            }
+        }
+
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f)
+        ) { page ->
+            when (page) {
+                0 -> {
+                    TransactionList(transactions = transactions, navController = navController)
+                }
+                1 -> PlaceholderTabContent(title = "Categories")
+                2 -> PlaceholderTabContent(title = "Merchants")
+            }
         }
     }
+}
 
-    val transactions by viewModel.allTransactions.collectAsState(initial = emptyList())
-    TransactionList(
-        transactions = transactions,
-        navController = navController
-        // --- FIX: Removed the 'modifier' parameter that was causing the compile error ---
-    )
+@Composable
+fun MonthlySummaryHeader(
+    selectedMonth: Calendar,
+    totalSpent: Double,
+    totalIncome: Double,
+    budget: Float,
+    safeToSpend: Float,
+    onMonthChange: (Int) -> Unit
+) {
+    val monthFormat = SimpleDateFormat("MMM yyyy", Locale.getDefault())
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            IconButton(onClick = { onMonthChange(-1) }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous Month")
+            }
+            Text(
+                text = monthFormat.format(selectedMonth.time),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            IconButton(onClick = { onMonthChange(1) }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Month")
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            SafeToSpendGauge(amount = safeToSpend)
+            Column(horizontalAlignment = Alignment.End) {
+                Text("Total Spent", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "₹${"%,.2f".format(totalSpent)}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("Total Income", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "₹${"%,.2f".format(totalIncome)}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        val percentageSpent = if (budget > 0f) (totalSpent.toFloat() / budget) * 100f else 0f
+        Text(
+            text = "You have spent ${"%.0f".format(percentageSpent)}% of your ₹${"%,.0f".format(budget)} budget",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+fun SafeToSpendGauge(amount: Float) {
+    val animatedAmount by animateFloatAsState(targetValue = amount, animationSpec = tween(1000), label = "SafeToSpendAnimation")
+    val strokeWidth = with(LocalDensity.current) { 12.dp.toPx() }
+
+    // --- FIX: Read theme color outside of the Canvas block ---
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Box(
+        modifier = Modifier.size(120.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawArc(
+                color = Color.LightGray.copy(alpha = 0.3f),
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = primaryColor, // Use the variable here
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Safe to spend", style = MaterialTheme.typography.labelSmall)
+            Text(
+                text = "₹${"%,.0f".format(animatedAmount)}",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text("per day", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+fun PlaceholderTabContent(title: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text("Content for $title", style = MaterialTheme.typography.headlineMedium)
+    }
+}
+
+// Simple non-composable lerp for Dp values
+private fun lerp(start: Dp, stop: Dp, fraction: Float): Dp {
+    return Dp(start.value + (stop.value - start.value) * fraction)
+}
+
+
+@OptIn(ExperimentalFoundationApi::class)
+fun Modifier.pagerTabIndicatorOffset(
+    pagerState: PagerState,
+    tabPositions: List<TabPosition>,
+): Modifier = composed {
+    if (tabPositions.isEmpty()) {
+        this
+    } else {
+        val currentPage = pagerState.currentPage
+        val fraction = pagerState.currentPageOffsetFraction.absoluteValue
+
+        val currentTab = tabPositions[currentPage]
+        val nextTab = tabPositions.getOrNull(currentPage + 1)
+
+        val targetIndicatorOffset = if (nextTab != null) {
+            lerp(currentTab.left, nextTab.left, fraction)
+        } else {
+            currentTab.left
+        }
+
+        val indicatorWidth = if (nextTab != null) {
+            lerp(currentTab.width, nextTab.width, fraction)
+        } else {
+            currentTab.width
+        }
+
+        this.fillMaxWidth()
+            .wrapContentSize(Alignment.BottomStart)
+            .offset(x = targetIndicatorOffset)
+            .width(indicatorWidth)
+    }
 }
 -e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
+// REASON: REFACTORED - Replaced all editing dialogs with standardized ModalBottomSheets
+// for a more consistent and modern user experience. Added an enhanced category
+// picker with icons inside its bottom sheet.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.net.Uri
@@ -4149,12 +4918,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Notes
@@ -4183,6 +4953,20 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
+/**
+ * A sealed class to define the content type for the modal bottom sheet.
+ * This allows for a type-safe way to determine which editor to display.
+ */
+private sealed class SheetContent {
+    object Description : SheetContent()
+    object Amount : SheetContent()
+    object Notes : SheetContent()
+    object Account : SheetContent()
+    object Category : SheetContent()
+    object Tags : SheetContent()
+}
+
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TransactionDetailScreen(
@@ -4201,15 +4985,12 @@ fun TransactionDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
-
-    var showDescriptionDialog by remember { mutableStateOf(false) }
-    var showAmountDialog by remember { mutableStateOf(false) }
-    var showNotesDialog by remember { mutableStateOf(false) }
-    var showAccountPicker by remember { mutableStateOf(false) }
-    var showCategoryPicker by remember { mutableStateOf(false) }
-    var showTagPicker by remember { mutableStateOf(false) }
     var showImageViewer by remember { mutableStateOf<Uri?>(null) }
     var showImageDeleteDialog by remember { mutableStateOf<TransactionImage?>(null) }
+
+    // --- REFACTORED: State to manage the bottom sheet content ---
+    var activeSheetContent by remember { mutableStateOf<SheetContent?>(null) }
+    val sheetState = rememberModalBottomSheetState()
 
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -4272,108 +5053,107 @@ fun TransactionDetailScreen(
         transactionDetails?.let { details ->
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
 
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .padding(innerPadding)
-                    .padding(horizontal = 16.dp)
-                    .fillMaxSize()
+                    .fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
             ) {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(vertical=16.dp)){
-                    item {
-                        TransactionHeaderCard(
-                            details = details,
-                            onDescriptionClick = { showDescriptionDialog = true },
-                            onAmountClick = { showAmountDialog = true },
-                            onCategoryClick = { showCategoryPicker = true },
-                            onDateTimeClick = { showDatePicker = true }
-                        )
-                    }
-                    item {
-                        InfoCard(
-                            icon = Icons.Default.AccountBalanceWallet,
-                            label = "Account",
-                            value = details.accountName ?: "N/A",
-                            onClick = { showAccountPicker = true }
-                        )
-                    }
-                    item {
-                        InfoCard(
-                            icon = Icons.AutoMirrored.Filled.Notes,
-                            label = "Notes",
-                            value = details.transaction.notes ?: "Tap to add",
-                            onClick = { showNotesDialog = true }
-                        )
-                    }
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            elevation = CardDefaults.cardElevation(2.dp),
-                            onClick = { showTagPicker = true }
+                item {
+                    TransactionHeaderCard(
+                        details = details,
+                        onDescriptionClick = { activeSheetContent = SheetContent.Description },
+                        onAmountClick = { activeSheetContent = SheetContent.Amount },
+                        onCategoryClick = { activeSheetContent = SheetContent.Category },
+                        onDateTimeClick = { showDatePicker = true }
+                    )
+                }
+                item {
+                    InfoCard(
+                        icon = Icons.Default.AccountBalanceWallet,
+                        label = "Account",
+                        value = details.accountName ?: "N/A",
+                        onClick = { activeSheetContent = SheetContent.Account }
+                    )
+                }
+                item {
+                    InfoCard(
+                        icon = Icons.AutoMirrored.Filled.Notes,
+                        label = "Notes",
+                        value = details.transaction.notes ?: "Tap to add",
+                        onClick = { activeSheetContent = SheetContent.Notes }
+                    )
+                }
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.cardElevation(2.dp),
+                        onClick = { activeSheetContent = SheetContent.Tags }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    if (selectedTags.isEmpty()) {
-                                        Text("Tap to add tags")
-                                    } else {
-                                        FlowRow(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            selectedTags.forEach { tag ->
-                                                AssistChip(onClick = {}, label = { Text(tag.name) })
-                                            }
+                            Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (selectedTags.isEmpty()) {
+                                    Text("Tap to add tags")
+                                } else {
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        selectedTags.forEach { tag ->
+                                            AssistChip(onClick = {}, label = { Text(tag.name) })
                                         }
                                     }
                                 }
-                                Icon(Icons.Default.Add, contentDescription = "Add Tag")
                             }
+                            Icon(Icons.Default.Add, contentDescription = "Add Tag")
                         }
                     }
+                }
 
+                item {
+                    InfoCard(
+                        icon = Icons.Default.Attachment,
+                        label = "Attachments",
+                        value = if (attachedImages.isEmpty()) "Tap to add a receipt or photo" else "${attachedImages.size} image(s) attached",
+                        onClick = { imagePickerLauncher.launch("image/*") }
+                    )
+                }
+
+                if (attachedImages.isNotEmpty()) {
                     item {
-                        InfoCard(
-                            icon = Icons.Default.Attachment,
-                            label = "Attachments",
-                            value = if(attachedImages.isEmpty()) "Tap to add a receipt or photo" else "${attachedImages.size} image(s) attached",
-                            onClick = { imagePickerLauncher.launch("image/*") }
-                        )
-                    }
-
-                    if (attachedImages.isNotEmpty()) {
-                        item {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(attachedImages) { image ->
-                                    Box {
-                                        AsyncImage(
-                                            model = File(image.imageUri),
-                                            contentDescription = "Transaction Attachment",
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier
-                                                .size(80.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .clickable { showImageViewer = File(image.imageUri).toUri() }
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(attachedImages) { image ->
+                                Box {
+                                    AsyncImage(
+                                        model = File(image.imageUri),
+                                        contentDescription = "Transaction Attachment",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(80.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { showImageViewer = File(image.imageUri).toUri() }
+                                    )
+                                    IconButton(
+                                        onClick = { showImageDeleteDialog = image },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(4.dp)
+                                            .size(24.dp)
+                                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Delete Attachment",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp)
                                         )
-                                        IconButton(
-                                            onClick = { showImageDeleteDialog = image },
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(4.dp)
-                                                .size(24.dp)
-                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Close,
-                                                contentDescription = "Delete Attachment",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -4382,63 +5162,27 @@ fun TransactionDetailScreen(
                 }
             }
 
+            // --- REFACTORED: Modal Bottom Sheet for editing ---
+            if (activeSheetContent != null) {
+                ModalBottomSheet(
+                    onDismissRequest = { activeSheetContent = null },
+                    sheetState = sheetState
+                ) {
+                    TransactionEditSheetContent(
+                        sheetContent = activeSheetContent!!,
+                        details = details,
+                        viewModel = viewModel,
+                        accounts = accounts,
+                        categories = categories,
+                        allTags = allTags,
+                        selectedTags = selectedTags,
+                        onDismiss = { activeSheetContent = null }
+                    )
+                }
+            }
 
-            if (showTagPicker) {
-                TagPickerDialog(
-                    allTags = allTags,
-                    selectedTags = selectedTags,
-                    onDismiss = { showTagPicker = false },
-                    onTagSelected = viewModel::onTagSelected,
-                    onAddNewTag = viewModel::addTagOnTheGo,
-                    onConfirm = {
-                        viewModel.updateTagsForTransaction(transactionId)
-                        showTagPicker = false
-                    }
-                )
-            }
-            if (showDescriptionDialog) {
-                EditDialog(
-                    title = "Edit Description",
-                    initialValue = details.transaction.description,
-                    onDismiss = { showDescriptionDialog = false },
-                    onConfirm = { viewModel.updateTransactionDescription(transactionId, it) }
-                )
-            }
-            if (showAmountDialog) {
-                EditDialog(
-                    title = "Edit Amount",
-                    initialValue = "%.2f".format(details.transaction.amount),
-                    keyboardType = KeyboardType.Number,
-                    onDismiss = { showAmountDialog = false },
-                    onConfirm = { viewModel.updateTransactionAmount(transactionId, it) }
-                )
-            }
-            if (showNotesDialog) {
-                EditDialog(
-                    title = "Edit Notes",
-                    initialValue = details.transaction.notes ?: "",
-                    onDismiss = { showNotesDialog = false },
-                    onConfirm = { viewModel.updateTransactionNotes(transactionId, it) }
-                )
-            }
-            if (showAccountPicker) {
-                Picker_Dialog(
-                    title = "Select Account",
-                    items = accounts,
-                    onDismiss = { showAccountPicker = false },
-                    onItemSelected = { account -> viewModel.updateTransactionAccount(transactionId, (account as Account).id) },
-                    getItemName = { (it as Account).name }
-                )
-            }
-            if (showCategoryPicker) {
-                Picker_Dialog(
-                    title = "Select Category",
-                    items = categories,
-                    onDismiss = { showCategoryPicker = false },
-                    onItemSelected = { category -> viewModel.updateTransactionCategory(transactionId, (category as Category).id) },
-                    getItemName = { (it as Category).name }
-                )
-            }
+
+            // --- Date/Time Pickers (remain as dialogs) ---
             if (showDatePicker) {
                 val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
                 DatePickerDialog(
@@ -4466,6 +5210,8 @@ fun TransactionDetailScreen(
                     }
                 ) { TimePicker(state = timePickerState) }
             }
+
+            // --- Confirmation/Viewer Dialogs (remain as is) ---
             if (showDeleteDialog) {
                 AlertDialog(
                     onDismissRequest = { showDeleteDialog = false },
@@ -4485,12 +5231,14 @@ fun TransactionDetailScreen(
                 )
             }
 
-            if(showImageViewer != null){
+            if (showImageViewer != null) {
                 Dialog(onDismissRequest = { showImageViewer = null }) {
                     AsyncImage(
                         model = showImageViewer,
                         contentDescription = "Full screen image",
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
                     )
                 }
             }
@@ -4523,6 +5271,308 @@ fun TransactionDetailScreen(
         }
     }
 }
+
+/**
+ * A composable that renders the appropriate editor inside the modal bottom sheet
+ * based on the [SheetContent] type.
+ */
+@Composable
+private fun TransactionEditSheetContent(
+    sheetContent: SheetContent,
+    details: TransactionDetails,
+    viewModel: TransactionViewModel,
+    accounts: List<Account>,
+    categories: List<Category>,
+    allTags: List<Tag>,
+    selectedTags: Set<Tag>,
+    onDismiss: () -> Unit
+) {
+    val transactionId = details.transaction.id
+
+    when (sheetContent) {
+        is SheetContent.Description -> {
+            EditTextFieldSheet(
+                title = "Edit Description",
+                initialValue = details.transaction.description,
+                onConfirm = { viewModel.updateTransactionDescription(transactionId, it) },
+                onDismiss = onDismiss
+            )
+        }
+        is SheetContent.Amount -> {
+            EditTextFieldSheet(
+                title = "Edit Amount",
+                initialValue = "%.2f".format(details.transaction.amount),
+                keyboardType = KeyboardType.Number,
+                onConfirm = { viewModel.updateTransactionAmount(transactionId, it) },
+                onDismiss = onDismiss
+            )
+        }
+        is SheetContent.Notes -> {
+            EditTextFieldSheet(
+                title = "Edit Notes",
+                initialValue = details.transaction.notes ?: "",
+                onConfirm = { viewModel.updateTransactionNotes(transactionId, it) },
+                onDismiss = onDismiss
+            )
+        }
+        is SheetContent.Account -> {
+            PickerSheet(
+                title = "Select Account",
+                items = accounts,
+                getItemName = { (it as Account).name },
+                onItemSelected = { viewModel.updateTransactionAccount(transactionId, (it as Account).id) },
+                onDismiss = onDismiss
+            )
+        }
+        is SheetContent.Category -> {
+            CategoryPickerSheet(
+                title = "Select Category",
+                items = categories,
+                onItemSelected = { viewModel.updateTransactionCategory(transactionId, it.id) },
+                onDismiss = onDismiss
+            )
+        }
+        is SheetContent.Tags -> {
+            TagPickerSheet(
+                allTags = allTags,
+                selectedTags = selectedTags,
+                onTagSelected = viewModel::onTagSelected,
+                onAddNewTag = viewModel::addTagOnTheGo,
+                onConfirm = {
+                    viewModel.updateTagsForTransaction(transactionId)
+                    onDismiss()
+                },
+                onDismiss = onDismiss
+            )
+        }
+    }
+}
+
+
+/**
+ * A generic bottom sheet for editing a simple text field.
+ */
+@Composable
+private fun EditTextFieldSheet(
+    title: String,
+    initialValue: String,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initialValue) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            label = { Text("Value") },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = keyboardType,
+                capitalization = if (keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None
+            ),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                onConfirm(text)
+                onDismiss()
+            }) { Text("Save") }
+        }
+    }
+}
+
+/**
+ * A generic bottom sheet for picking an item from a list.
+ */
+@Composable
+private fun <T> PickerSheet(
+    title: String,
+    items: List<T>,
+    getItemName: (T) -> String,
+    onItemSelected: (T) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+        LazyColumn {
+            items(items) { item ->
+                ListItem(
+                    headlineContent = { Text(getItemName(item)) },
+                    modifier = Modifier.clickable {
+                        onItemSelected(item)
+                        onDismiss()
+                    }
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+/**
+ * An enhanced category picker bottom sheet that shows category icons in a grid.
+ */
+@Composable
+private fun CategoryPickerSheet(
+    title: String,
+    items: List<Category>,
+    onItemSelected: (Category) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 100.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(items) { category ->
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            onItemSelected(category)
+                            onDismiss()
+                        }
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CategoryIconDisplay(category)
+                    Text(category.name, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+/**
+ * A bottom sheet for selecting and creating tags.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TagPickerSheet(
+    allTags: List<Tag>,
+    selectedTags: Set<Tag>,
+    onTagSelected: (Tag) -> Unit,
+    onAddNewTag: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var newTagName by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("Manage Tags", style = MaterialTheme.typography.titleLarge)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            allTags.forEach { tag ->
+                FilterChip(
+                    selected = tag in selectedTags,
+                    onClick = { onTagSelected(tag) },
+                    label = { Text(tag.name) }
+                )
+            }
+        }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = newTagName,
+                onValueChange = { newTagName = it },
+                label = { Text("New Tag Name") },
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = {
+                    onAddNewTag(newTagName)
+                    newTagName = ""
+                },
+                enabled = newTagName.isNotBlank()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                if (newTagName.isNotBlank()) {
+                    onAddNewTag(newTagName)
+                }
+                onConfirm()
+            }) { Text("Save") }
+        }
+    }
+}
+
+// --- Helper Composables (mostly unchanged, but kept for context) ---
+
+@Composable
+private fun CategoryIconDisplay(category: Category) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                color = Color.Black,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                contentDescription = category.name,
+                tint = Color.Black,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    }
+}
+
 
 @Composable
 private fun TransactionHeaderCard(
@@ -4572,7 +5622,8 @@ private fun TransactionHeaderCard(
                 text = details.categoryName ?: "Uncategorized",
                 icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
                 colorKey = details.categoryColorKey ?: "gray_light",
-                onClick = onCategoryClick
+                onClick = onCategoryClick,
+                category = details.toCategory()
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -4610,12 +5661,23 @@ private fun TransactionHeaderCard(
     }
 }
 
+// Extension function to convert TransactionDetails to a Category object
+private fun TransactionDetails.toCategory(): Category {
+    return Category(
+        id = this.transaction.categoryId ?: 0,
+        name = this.categoryName ?: "Uncategorized",
+        iconKey = this.categoryIconKey ?: "category",
+        colorKey = this.categoryColorKey ?: "gray_light"
+    )
+}
+
 @Composable
 private fun ChipWithIcon(
     text: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     colorKey: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    category: Category
 ) {
     Row(
         modifier = Modifier
@@ -4626,12 +5688,21 @@ private fun ChipWithIcon(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Color.Black,
-            modifier = Modifier.size(20.dp)
-        )
+        if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                color = Color.Black,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.size(20.dp)
+            )
+        }
         Text(
             text = text,
             fontWeight = FontWeight.SemiBold,
@@ -4660,144 +5731,13 @@ fun InfoCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(value, style = MaterialTheme.typography.bodyLarge)
             }
+            Icon(Icons.Default.Edit, contentDescription = "Edit")
         }
     }
-}
-
-@Composable
-private fun EditDialog(
-    title: String,
-    initialValue: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-    keyboardType: KeyboardType = KeyboardType.Text
-) {
-    var text by remember { mutableStateOf(initialValue) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Value") },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = keyboardType,
-                    capitalization = if (keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None
-                ),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = {
-            Button(onClick = {
-                onConfirm(text)
-                onDismiss()
-            }) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-@Composable
-private fun <T> Picker_Dialog(
-    title: String,
-    items: List<T>,
-    onDismiss: () -> Unit,
-    onItemSelected: (T) -> Unit,
-    getItemName: (T) -> String
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            LazyColumn {
-                items(items) { item ->
-                    ListItem(
-                        headlineContent = { Text(getItemName(item)) },
-                        modifier = Modifier.clickable {
-                            onItemSelected(item)
-                            onDismiss()
-                        }
-                    )
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TagPickerDialog(
-    allTags: List<Tag>,
-    selectedTags: Set<Tag>,
-    onDismiss: () -> Unit,
-    onTagSelected: (Tag) -> Unit,
-    onAddNewTag: (String) -> Unit,
-    onConfirm: () -> Unit
-) {
-    var newTagName by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Manage Tags") },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    allTags.forEach { tag ->
-                        FilterChip(
-                            selected = tag in selectedTags,
-                            onClick = { onTagSelected(tag) },
-                            label = { Text(tag.name) }
-                        )
-                    }
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = newTagName,
-                        onValueChange = { newTagName = it },
-                        label = { Text("New Tag Name") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = {
-                            onAddNewTag(newTagName)
-                            newTagName = ""
-                        },
-                        enabled = newTagName.isNotBlank()
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add New Tag")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                if (newTagName.isNotBlank()) {
-                    onAddNewTag(newTagName)
-                }
-                onConfirm()
-            }) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
 }
 -e 
 
@@ -7181,14 +8121,31 @@ fun BudgetItem(budgetWithSpending: BudgetWithSpending) {
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                modifier = Modifier.size(40.dp).clip(CircleShape).background(CategoryIconHelper.getIconBackgroundColor(budgetWithSpending.colorKey ?: "gray_light")),
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        CategoryIconHelper.getIconBackgroundColor(
+                            budgetWithSpending.colorKey ?: "gray_light"
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
-                    contentDescription = budget.categoryName,
-                    tint = Color.Black
-                )
+                if (budgetWithSpending.iconKey == "letter_default") {
+                    Text(
+                        text = budgetWithSpending.budget.categoryName.firstOrNull()?.uppercase() ?: "?",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.Black
+                    )
+                } else {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
+                        contentDescription = budgetWithSpending.budget.categoryName,
+                        tint = Color.Black,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(16.dp))
             Text(text = budget.categoryName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -7226,6 +8183,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
@@ -7253,11 +8211,21 @@ fun TransactionItem(
                     .background(CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
-                    contentDescription = transactionDetails.categoryName,
-                    tint = Color.Black
-                )
+                if (transactionDetails.categoryIconKey == "letter_default") {
+                    Text(
+                        text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.Black
+                    )
+                } else {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
+                        contentDescription = transactionDetails.categoryName,
+                        tint = Color.Black,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -7878,11 +8846,10 @@ fun MainAppScreen() {
     val showFab = baseCurrentRoute in fabRoutes
 
     // --- FIX: Logic to conditionally show the main TopAppBar ---
-    val showMainTopBar = baseCurrentRoute != "transaction_detail"
+    val showMainTopBar = baseCurrentRoute != "transaction_detail" && baseCurrentRoute != "transaction_list"
 
     Scaffold(
         topBar = {
-            // --- FIX: Only show the main app bar if we are NOT on the detail screen ---
             if (showMainTopBar) {
                 TopAppBar(
                     title = { Text(currentTitle) },
@@ -7989,16 +8956,11 @@ fun AppNavHost(
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }
         composable(
-            route = "${BottomNavItem.Transactions.route}?type={type}",
-            arguments = listOf(navArgument("type") {
-                type = NavType.StringType
-                nullable = true
-            })
-        ) { backStackEntry ->
+            route = BottomNavItem.Transactions.route
+        ) {
             TransactionListScreen(
                 navController = navController,
-                viewModel = transactionViewModel,
-                filterType = backStackEntry.arguments?.getString("type")
+                viewModel = transactionViewModel
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
@@ -8553,7 +9515,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         currentYear = calendar.get(Calendar.YEAR)
 
         val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
-        budgetsForCurrentMonth = budgetRepository.getBudgetsForMonthWithSpending(yearMonthString, currentMonth, currentYear)
+        budgetsForCurrentMonth = budgetRepository.getBudgetsWithSpendingForMonth(yearMonthString, currentMonth, currentYear)
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -8562,8 +9524,9 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 
         allCategories = categoryRepository.allCategories
 
+        // --- FIX: Use the correct repository method with parameters ---
         overallBudget =
-            settingsRepository.getOverallBudgetForCurrentMonth()
+            settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth)
                 .stateIn(
                     scope = viewModelScope,
                     started = SharingStarted.WhileSubscribed(5000),
@@ -8580,6 +9543,8 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
             if (budgets.isEmpty()) {
                 flowOf(0.0)
             } else {
+                // This logic seems complex and could be simplified, but for now, we'll keep it.
+                // It recalculates total spending whenever the budget list changes.
                 val spendingFlows = budgets.map {
                     getActualSpending(it.budget.categoryName)
                 }
@@ -9157,12 +10122,8 @@ class SettingsRepository(context: Context) {
         return prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
     }
 
-    fun getOverallBudgetForCurrentMonth(): Flow<Float> {
-        val calendar = Calendar.getInstance()
-        val year = calendar.get(Calendar.YEAR)
-        val month = calendar.get(Calendar.MONTH) + 1
+    fun getOverallBudgetForMonth(year: Int, month: Int): Flow<Float> {
         val key = getBudgetKey(year, month)
-
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
                 if (changedKey == key) {
@@ -9176,6 +10137,7 @@ class SettingsRepository(context: Context) {
             }
         }
     }
+
     fun saveWeeklySummaryEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_WEEKLY_SUMMARY_ENABLED, isEnabled).apply()
     }
@@ -9416,12 +10378,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
 
-    val overallBudget: StateFlow<Float> =
-        settingsRepository.getOverallBudgetForCurrentMonth().stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = 0f,
-        )
+    val overallBudget: StateFlow<Float>
 
     val dailyReportEnabled: StateFlow<Boolean> =
         settingsRepository.getDailyReportEnabled().stateIn(
@@ -9451,7 +10408,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = true,
         )
 
-    // --- NEW: StateFlow for the backup setting ---
     val backupEnabled: StateFlow<Boolean> =
         settingsRepository.getBackupEnabled().stateIn(
             scope = viewModelScope,
@@ -9473,20 +10429,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = 0L,
                 )
+
+        val calendar = Calendar.getInstance()
+        val currentYear = calendar.get(Calendar.YEAR)
+        val currentMonth = calendar.get(Calendar.MONTH) + 1
+
+        // --- FIX: Use the correct repository method with parameters ---
+        overallBudget =
+            settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth).stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = 0f,
+            )
     }
 
-    // --- NEW: Function to handle changes to the backup setting ---
     fun setBackupEnabled(enabled: Boolean) {
-        // Save the user's preference.
         settingsRepository.saveBackupEnabled(enabled)
-
-        // IMPORTANT: Android's Auto Backup feature (to Google Drive) cannot be programmatically
-        // disabled by an app at runtime. The `android:allowBackup` flag in the Manifest
-        // is read at install time. This setting provides the user with an in-app choice,
-        // and we can notify the BackupManager that our app's data has changed, which
-        // may influence the timing of the next backup. However, this does NOT guarantee
-        // that backups will stop if the user toggles this off.
-        // The primary way for a user to disable this is in the system settings.
         val backupManager = BackupManager(context)
         backupManager.dataChanged()
     }
@@ -10304,6 +11262,19 @@ object CategoryIconHelper {
         return iconColors
     }
 
+    /**
+     * NEW: Finds the first available color key that is not in the provided list of used keys.
+     * This ensures new categories get a unique color by default.
+     */
+    fun getNextAvailableColor(usedColorKeys: List<String>): String {
+        // Find the first color key from our predefined list that isn't already used.
+        return iconColors.keys.firstOrNull { it !in usedColorKeys }
+        // If all colors are used, cycle back and return the first one.
+            ?: iconColors.keys.firstOrNull()
+            // As a final fallback, return a default key.
+            ?: "gray_light"
+    }
+
     // --- UPDATED: Each category now has a fixed, explicit ID ---
     val predefinedCategories = listOf(
         Category(id = 1, name = "Bills", iconKey = "receipt_long", colorKey = "green_light"),
@@ -11095,6 +12066,7 @@ object NotificationHelper {
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================
 package io.pm.finlight
 
+import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
@@ -11228,6 +12200,34 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         }
     }
 
+    // --- FIX: Changed parameter from List<Uri> to List<String> to accept permanent paths ---
+    suspend fun insertTransactionWithTagsAndImages(
+        transaction: Transaction,
+        tags: Set<Tag>,
+        imagePaths: List<String> // Changed from imageUris
+    ): Long {
+        // First, insert the main transaction to get its ID
+        val newTransactionId = transactionDao.insert(transaction)
+
+        // Then, use the new ID to associate tags
+        if (tags.isNotEmpty()) {
+            val crossRefs = tags.map { tag ->
+                TransactionTagCrossRef(transactionId = newTransactionId.toInt(), tagId = tag.id)
+            }
+            transactionDao.addTagsToTransaction(crossRefs)
+        }
+
+        // Finally, use the ID to associate images with their permanent paths
+        imagePaths.forEach { path ->
+            val imageEntity = TransactionImage(
+                transactionId = newTransactionId.toInt(),
+                imageUri = path // Save the permanent file path
+            )
+            transactionDao.insertImage(imageEntity)
+        }
+        return newTransactionId
+    }
+
     suspend fun insert(transaction: Transaction) {
         transactionDao.insert(transaction)
     }
@@ -11293,7 +12293,7 @@ class DashboardViewModel(
 
         val calendar = Calendar.getInstance()
         val monthStart =
-            calendar.apply {
+            (calendar.clone() as Calendar).apply {
                 set(Calendar.DAY_OF_MONTH, 1)
                 set(Calendar.HOUR_OF_DAY, 0)
                 set(Calendar.MINUTE, 0)
@@ -11301,7 +12301,7 @@ class DashboardViewModel(
                 set(Calendar.MILLISECOND, 0)
             }.timeInMillis
         val monthEnd =
-            calendar.apply {
+            (calendar.clone() as Calendar).apply {
                 add(Calendar.MONTH, 1)
                 set(Calendar.DAY_OF_MONTH, 1)
                 add(Calendar.DAY_OF_MONTH, -1)
@@ -11328,8 +12328,12 @@ class DashboardViewModel(
                     .sumOf { it.transaction.amount }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
+        val currentYear = calendar.get(Calendar.YEAR)
+        val currentMonth = calendar.get(Calendar.MONTH) + 1
+
+        // --- FIX: Use the correct repository method with parameters ---
         overallMonthlyBudget =
-            settingsRepository.getOverallBudgetForCurrentMonth()
+            settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth)
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
         amountRemaining =
@@ -11355,8 +12359,6 @@ class DashboardViewModel(
             transactionRepository.recentTransactions
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        val currentMonth = calendar.get(Calendar.MONTH) + 1
-        val currentYear = calendar.get(Calendar.YEAR)
         val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
         budgetStatus = budgetDao.getBudgetsWithSpendingForMonth(yearMonthString, currentMonth, currentYear)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

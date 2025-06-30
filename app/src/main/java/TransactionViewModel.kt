@@ -6,11 +6,13 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Calendar
 
 private const val TAG = "TransactionViewModel"
 
@@ -19,29 +21,92 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val accountRepository: AccountRepository
     val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
+    private val settingsRepository: SettingsRepository
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
     private var areTagsLoadedForCurrentTxn = false
     private var currentTxnIdForTags: Int? = null
 
-    private val _transactionTypeFilter = MutableStateFlow<String?>(null)
+    // --- State for the currently selected month ---
+    private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
+    val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
 
-    val allTransactions: StateFlow<List<TransactionDetails>> =
-        _transactionTypeFilter.flatMapLatest { filterType ->
-            transactionRepository.allTransactions.map { list ->
-                if (filterType == null) {
-                    list
-                } else {
-                    list.filter { it.transaction.transactionType == filterType }
-                }
+    // --- NEW: State for the list of recent months for the picker ---
+    // --- FIX: Corrected the range to properly generate the last 12 months ---
+    val recentMonths: StateFlow<List<Calendar>> = MutableStateFlow(
+        (11 downTo 0).map {
+            Calendar.getInstance().apply { add(Calendar.MONTH, -it) }
+        }
+    ).asStateFlow()
+
+
+    // --- Flow that emits transactions only for the selected month ---
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>> = _selectedMonth.flatMapLatest { calendar ->
+        val monthStart = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }.timeInMillis
+
+        val monthEnd = (calendar.clone() as Calendar).apply {
+            add(Calendar.MONTH, 1)
+            set(Calendar.DAY_OF_MONTH, 1)
+            add(Calendar.DAY_OF_MONTH, -1)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+        }.timeInMillis
+
+        transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- Flow for total income in the selected month ---
+    val monthlyIncome: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
+        txns.filter { it.transaction.transactionType == "income" }.sumOf { it.transaction.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // --- Flow for total expenses in the selected month ---
+    val monthlyExpenses: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
+        txns.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // --- Flow for the overall budget in the selected month ---
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val overallMonthlyBudget: StateFlow<Float> = _selectedMonth.flatMapLatest {
+        settingsRepository.getOverallBudgetForMonth(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+    // --- Flow for remaining budget amount ---
+    val amountRemaining: StateFlow<Float> =
+        combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses ->
+            budget - expenses.toFloat()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+    // --- Flow for the 'Safe to Spend' amount per day ---
+    val safeToSpendPerDay: StateFlow<Float> =
+        combine(amountRemaining, _selectedMonth) { remaining, calendar ->
+            val today = Calendar.getInstance()
+            val lastDayOfMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+            val remainingDays = if (
+                today.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) &&
+                today.get(Calendar.MONTH) == calendar.get(Calendar.MONTH)
+            ) {
+                (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1)
+            } else if (calendar.after(today)) {
+                lastDayOfMonth
+            } else {
+                1
             }
-        }.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
 
+            if (remaining > 0) remaining / remainingDays else 0f
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+
+    val allTransactions: StateFlow<List<TransactionDetails>>
     val allAccounts: StateFlow<List<Account>>
     val allCategories: Flow<List<Category>>
     val allTags: StateFlow<List<Tag>>
@@ -53,13 +118,21 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val selectedTags = _selectedTags.asStateFlow()
 
     private val _transactionImages = MutableStateFlow<List<TransactionImage>>(emptyList())
-    val transactionImages = _transactionImages.asStateFlow()
+    // --- FIX: Expose the StateFlow directly. `collectAsState` should only be used in Composables. ---
+    val transactionImages: StateFlow<List<TransactionImage>> = _transactionImages.asStateFlow()
 
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
         categoryRepository = CategoryRepository(db.categoryDao())
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
+        settingsRepository = SettingsRepository(application)
+
+        allTransactions = transactionRepository.allTransactions.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
         allAccounts = accountRepository.allAccounts.stateIn(
             scope = viewModelScope,
@@ -77,6 +150,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             initialValue = emptyList()
         )
     }
+
+    // --- REFACTORED: Function to set the selected month directly ---
+    fun setSelectedMonth(calendar: Calendar) {
+        _selectedMonth.value = calendar
+    }
+
 
     fun attachPhotoToTransaction(transactionId: Int, sourceUri: Uri) {
         viewModelScope.launch {
@@ -163,11 +242,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun updateTagsForTransaction(transactionId: Int) = viewModelScope.launch {
         Log.d(TAG, "updateTagsForTransaction: Saving tags for txn ID $transactionId. Tags: ${_selectedTags.value.map { it.name }}")
         transactionRepository.updateTagsForTransaction(transactionId, _selectedTags.value)
-    }
-
-
-    fun setTransactionTypeFilter(type: String?) {
-        _transactionTypeFilter.value = type
     }
 
     fun onTagSelected(tag: Tag) {
@@ -324,7 +398,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 source = "Manual Entry"
             )
         viewModelScope.launch {
-            // --- FIX: Save images to internal storage first and get their permanent paths ---
             val savedImagePaths = imageUris.mapNotNull { uri ->
                 saveImageToInternalStorage(uri)
             }
@@ -332,7 +405,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val newTransactionId = transactionRepository.insertTransactionWithTagsAndImages(
                 newTransaction,
                 _selectedTags.value,
-                savedImagePaths // Pass the list of permanent file paths
+                savedImagePaths
             )
             Log.d(TAG, "Transaction created with ID: $newTransactionId")
         }

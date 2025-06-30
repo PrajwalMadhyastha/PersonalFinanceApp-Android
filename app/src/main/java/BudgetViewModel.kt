@@ -33,6 +33,9 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         currentYear = calendar.get(Calendar.YEAR)
 
         val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
+
+        // --- FIX: Corrected the method name from getBudgetsWithSpendingForMonth to getBudgetsForMonthWithSpending ---
+        // This resolves the compilation error.
         budgetsForCurrentMonth = budgetRepository.getBudgetsForMonthWithSpending(yearMonthString, currentMonth, currentYear)
             .stateIn(
                 scope = viewModelScope,
@@ -43,7 +46,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         allCategories = categoryRepository.allCategories
 
         overallBudget =
-            settingsRepository.getOverallBudgetForCurrentMonth()
+            settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth)
                 .stateIn(
                     scope = viewModelScope,
                     started = SharingStarted.WhileSubscribed(5000),

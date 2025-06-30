@@ -363,7 +363,7 @@ fun DetailsCard(
     attachmentsCount: Int,
     onAttachmentsClick: () -> Unit
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy", Locale.getDefault()) }
 
     Card(elevation = CardDefaults.cardElevation(2.dp)) {
         Column {
