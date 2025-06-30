@@ -35,10 +35,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
     val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
 
-    // --- NEW: Flow that provides a list of past months with their total spending ---
+    // --- Flow that provides a list of past months with their total spending ---
     val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
 
-    // --- NEW: Flow for category spending in the selected month ---
+    // --- Flow for category spending in the selected month ---
     @OptIn(ExperimentalCoroutinesApi::class)
     val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>> = _selectedMonth.flatMapLatest { calendar ->
         val monthStart = (calendar.clone() as Calendar).apply {
@@ -58,6 +58,28 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }.timeInMillis
 
         transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- Flow for merchant spending in the selected month ---
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>> = _selectedMonth.flatMapLatest { calendar ->
+        val monthStart = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }.timeInMillis
+
+        val monthEnd = (calendar.clone() as Calendar).apply {
+            add(Calendar.MONTH, 1)
+            set(Calendar.DAY_OF_MONTH, 1)
+            add(Calendar.DAY_OF_MONTH, -1)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+        }.timeInMillis
+
+        transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
 
@@ -267,7 +289,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.updateNotes(id, notes.takeIf { it.isNotBlank() })
     }
 
-    fun updateTransactionCategory(id: Int, categoryId: Int) = viewModelScope.launch {
+    fun updateTransactionCategory(id: Int, categoryId: Int?) = viewModelScope.launch {
         transactionRepository.updateCategoryId(id, categoryId)
     }
 

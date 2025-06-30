@@ -6,7 +6,21 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Methods for image attachments ---
+    // --- NEW: Query to get aggregated spending by merchant for a specific date range ---
+    @Query("""
+        SELECT
+            description as merchantName,
+            SUM(amount) as totalAmount,
+            COUNT(id) as transactionCount
+        FROM transactions
+        WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
+        GROUP BY description
+        ORDER BY totalAmount DESC
+    """)
+    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>>
+
+
+    // --- Methods for image attachments ---
     @Insert
     suspend fun insertImage(transactionImage: TransactionImage)
 

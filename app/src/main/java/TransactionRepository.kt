@@ -15,7 +15,12 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Methods for image attachments ---
+    // --- NEW: Expose the merchant spending data ---
+    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>> {
+        return transactionDao.getSpendingByMerchantForMonth(startDate, endDate)
+    }
+
+    // --- Methods for image attachments ---
     suspend fun addImageToTransaction(transactionId: Int, imageUri: String) {
         val transactionImage = TransactionImage(transactionId = transactionId, imageUri = imageUri)
         transactionDao.insertImage(transactionImage)
