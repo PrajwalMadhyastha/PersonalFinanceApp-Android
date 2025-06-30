@@ -5,15 +5,20 @@
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -34,6 +40,7 @@ import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import io.pm.finlight.ProfileViewModel
 import io.pm.finlight.R
+import java.io.File
 
 @Composable
 fun EditProfileScreen(
@@ -46,6 +53,8 @@ fun EditProfileScreen(
 
     var editedName by remember(currentName) { mutableStateOf(currentName) }
     var croppedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var tempCameraImageUri by remember { mutableStateOf<Uri?>(null) }
+    var showImageSourceDialog by remember { mutableStateOf(false) }
 
     val displayUri = croppedImageUri ?: savedProfilePictureUri?.let { Uri.parse(it) }
 
@@ -60,6 +69,67 @@ fun EditProfileScreen(
             val exception = result.error
             Toast.makeText(context, "Image cropping failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            tempCameraImageUri?.let { uri ->
+                val cropOptions = CropImageContractOptions(
+                    uri = uri,
+                    cropImageOptions = createCropOptions(toolbarColor, toolbarTintColor, activityBackgroundColor)
+                )
+                imageCropper.launch(cropOptions)
+            }
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            val cropOptions = CropImageContractOptions(
+                uri = it,
+                cropImageOptions = createCropOptions(toolbarColor, toolbarTintColor, activityBackgroundColor)
+            )
+            imageCropper.launch(cropOptions)
+        }
+    }
+
+    if (showImageSourceDialog) {
+        AlertDialog(
+            onDismissRequest = { showImageSourceDialog = false },
+            title = { Text("Change Profile Picture") },
+            text = { Text("Choose a source for your new image.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showImageSourceDialog = false
+                        val tempFile = createTempImageFile(context)
+                        val newTempUri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.provider",
+                            tempFile
+                        )
+                        tempCameraImageUri = newTempUri
+                        cameraLauncher.launch(newTempUri)
+                    }
+                ) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Camera")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showImageSourceDialog = false
+                        galleryLauncher.launch("image/*")
+                    }
+                ) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Gallery")
+                }
+            }
+        )
     }
 
     Column(
@@ -81,24 +151,7 @@ fun EditProfileScreen(
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                 .clickable {
-                    val cropOptions = CropImageContractOptions(
-                        uri = null,
-                        cropImageOptions = CropImageOptions(
-                            cropShape = CropImageView.CropShape.OVAL,
-                            aspectRatioX = 1,
-                            aspectRatioY = 1,
-                            fixAspectRatio = true,
-                            outputCompressQuality = 70,
-                            imageSourceIncludeGallery = true,
-                            imageSourceIncludeCamera = true,
-                            activityTitle = "Crop Profile Picture",
-                            activityMenuIconColor = toolbarTintColor,
-                            toolbarColor = toolbarColor,
-                            toolbarBackButtonColor = toolbarTintColor,
-                            activityBackgroundColor = activityBackgroundColor
-                        )
-                    )
-                    imageCropper.launch(cropOptions)
+                    showImageSourceDialog = true
                 }
         )
 
@@ -137,4 +190,37 @@ fun EditProfileScreen(
             }
         }
     }
+}
+
+/**
+ * Helper function to create the crop options for the image cropper.
+ */
+private fun createCropOptions(toolbarColor: Int, toolbarTintColor: Int, activityBackgroundColor: Int): CropImageOptions {
+    return CropImageOptions(
+        cropShape = CropImageView.CropShape.OVAL,
+        aspectRatioX = 1,
+        aspectRatioY = 1,
+        fixAspectRatio = true,
+        outputCompressQuality = 70,
+        imageSourceIncludeGallery = false, // We handle this ourselves now
+        imageSourceIncludeCamera = false, // We handle this ourselves now
+        activityTitle = "Crop Profile Picture",
+        activityMenuIconColor = toolbarTintColor,
+        toolbarColor = toolbarColor,
+        toolbarBackButtonColor = toolbarTintColor,
+        activityBackgroundColor = activityBackgroundColor
+    )
+}
+
+/**
+ * Helper function to create a temporary image file in the app's cache directory.
+ */
+private fun createTempImageFile(context: Context): File {
+    // --- BUG FIX: Use the cache directory for temporary files ---
+    val storageDir: File = context.cacheDir
+    return File.createTempFile(
+        "JPEG_${System.currentTimeMillis()}_",
+        ".jpg",
+        storageDir
+    )
 }
