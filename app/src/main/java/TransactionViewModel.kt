@@ -12,7 +12,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 private const val TAG = "TransactionViewModel"
 
@@ -32,14 +35,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
     val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
 
-    // --- NEW: State for the list of recent months for the picker ---
-    // --- FIX: Corrected the range to properly generate the last 12 months ---
-    val recentMonths: StateFlow<List<Calendar>> = MutableStateFlow(
-        (11 downTo 0).map {
-            Calendar.getInstance().apply { add(Calendar.MONTH, -it) }
-        }
-    ).asStateFlow()
-
+    // --- NEW: Flow that provides a list of past months with their total spending ---
+    val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
 
     // --- Flow that emits transactions only for the selected month ---
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -118,7 +115,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val selectedTags = _selectedTags.asStateFlow()
 
     private val _transactionImages = MutableStateFlow<List<TransactionImage>>(emptyList())
-    // --- FIX: Expose the StateFlow directly. `collectAsState` should only be used in Composables. ---
     val transactionImages: StateFlow<List<TransactionImage>> = _transactionImages.asStateFlow()
 
     init {
@@ -149,6 +145,27 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+        // --- NEW: Calculate monthly summaries ---
+        val twelveMonthsAgo = Calendar.getInstance().apply { add(Calendar.YEAR, -1) }.timeInMillis
+        monthlySummaries = transactionRepository.getMonthlyTrends(twelveMonthsAgo)
+            .map { trends ->
+                val dateFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+                val monthMap = trends.associate {
+                    val cal = Calendar.getInstance().apply {
+                        time = dateFormat.parse(it.monthYear) ?: Date()
+                    }
+                    (cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)) to it.totalExpenses
+                }
+
+                (0..11).map { i ->
+                    val cal = Calendar.getInstance().apply { add(Calendar.MONTH, -i) }
+                    val key = cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)
+                    val spent = monthMap[key] ?: 0.0
+                    MonthlySummaryItem(calendar = cal, totalSpent = spent)
+                }.reversed()
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     }
 
     // --- REFACTORED: Function to set the selected month directly ---

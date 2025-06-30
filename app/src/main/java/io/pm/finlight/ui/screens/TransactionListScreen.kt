@@ -1,14 +1,20 @@
 package io.pm.finlight.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import io.pm.finlight.MonthlySummaryItem
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.TransactionList
 import kotlinx.coroutines.launch
@@ -41,7 +48,7 @@ fun TransactionListScreen(
 
     val transactions by viewModel.transactionsForSelectedMonth.collectAsState()
     val selectedMonth by viewModel.selectedMonth.collectAsState()
-    val recentMonths by viewModel.recentMonths.collectAsState()
+    val monthlySummaries by viewModel.monthlySummaries.collectAsState()
     val totalSpent by viewModel.monthlyExpenses.collectAsState()
     val totalIncome by viewModel.monthlyIncome.collectAsState()
     val budget by viewModel.overallMonthlyBudget.collectAsState()
@@ -49,7 +56,7 @@ fun TransactionListScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         MonthlySummaryHeader(
             selectedMonth = selectedMonth,
-            recentMonths = recentMonths,
+            monthlySummaries = monthlySummaries,
             totalSpent = totalSpent,
             totalIncome = totalIncome,
             budget = budget,
@@ -94,18 +101,19 @@ fun TransactionListScreen(
 @Composable
 fun MonthlySummaryHeader(
     selectedMonth: Calendar,
-    recentMonths: List<Calendar>,
+    monthlySummaries: List<MonthlySummaryItem>,
     totalSpent: Double,
     totalIncome: Double,
     budget: Float,
     onMonthSelected: (Calendar) -> Unit
 ) {
-    val monthYearFormat = SimpleDateFormat("MMM yy", Locale.getDefault())
-    val monthDayFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
+    val monthFormat = SimpleDateFormat("MMM", Locale.getDefault())
+    val monthYearFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+    var showMonthScroller by remember { mutableStateOf(false) }
 
-    val selectedTabIndex = recentMonths.indexOfFirst {
-        it.get(Calendar.MONTH) == selectedMonth.get(Calendar.MONTH) &&
-                it.get(Calendar.YEAR) == selectedMonth.get(Calendar.YEAR)
+    val selectedTabIndex = monthlySummaries.indexOfFirst {
+        it.calendar.get(Calendar.MONTH) == selectedMonth.get(Calendar.MONTH) &&
+                it.calendar.get(Calendar.YEAR) == selectedMonth.get(Calendar.YEAR)
     }.coerceAtLeast(0)
 
     Column(
@@ -113,32 +121,75 @@ fun MonthlySummaryHeader(
             .fillMaxWidth()
             .padding(bottom = 8.dp)
     ) {
-        ScrollableTabRow(
-            selectedTabIndex = selectedTabIndex,
-            edgePadding = 16.dp,
-            indicator = {}, // No indicator needed
-            divider = {}
+        // Clickable header to toggle the month scroller
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showMonthScroller = !showMonthScroller }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            recentMonths.forEach { month ->
-                val isSelected = month.get(Calendar.MONTH) == selectedMonth.get(Calendar.MONTH) &&
-                        month.get(Calendar.YEAR) == selectedMonth.get(Calendar.YEAR)
-                Tab(
-                    selected = isSelected,
-                    onClick = { onMonthSelected(month) },
-                    text = {
-                        Text(
-                            text = monthYearFormat.format(month.time),
-                            style = if (isSelected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall
-                        )
-                    }
+            // This inner Row groups the Text and Icon together at the start
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = monthYearFormat.format(selectedMonth.time),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Icon(
+                    imageVector = if (showMonthScroller) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector"
                 )
             }
         }
 
+        // Animated visibility for the horizontal month scroller
+        AnimatedVisibility(
+            visible = showMonthScroller,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            ScrollableTabRow(
+                selectedTabIndex = selectedTabIndex,
+                edgePadding = 16.dp,
+                indicator = {}, // No indicator needed
+                divider = {}
+            ) {
+                monthlySummaries.forEach { summaryItem ->
+                    val isSelected = summaryItem.calendar.get(Calendar.MONTH) == selectedMonth.get(Calendar.MONTH) &&
+                            summaryItem.calendar.get(Calendar.YEAR) == selectedMonth.get(Calendar.YEAR)
+                    Tab(
+                        selected = isSelected,
+                        onClick = {
+                            onMonthSelected(summaryItem.calendar)
+                            showMonthScroller = false // Hide after selection
+                        },
+                        text = {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = monthFormat.format(summaryItem.calendar.time),
+                                    style = if (isSelected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = formatAmountInLakhs(summaryItem.totalSpent),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+
         Spacer(Modifier.height(16.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -175,10 +226,18 @@ fun MonthlySummaryHeader(
                 text = "No budget set for this month.",
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
             )
         }
     }
+}
+
+private fun formatAmountInLakhs(amount: Double): String {
+    if (amount < 1000) return "₹${"%,.0f".format(amount)}"
+    if (amount < 100000) return "₹${"%,.0f".format(amount / 1000)}K"
+    return "₹${"%.2f".format(amount / 100000.0)}L"
 }
 
 
@@ -233,7 +292,6 @@ fun PlaceholderTabContent(title: String) {
     }
 }
 
-// Simple non-composable lerp for Dp values
 private fun lerp(start: Dp, stop: Dp, fraction: Float): Dp {
     return Dp(start.value + (stop.value - start.value) * fraction)
 }
