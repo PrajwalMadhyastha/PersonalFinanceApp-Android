@@ -49,6 +49,7 @@ fun TransactionListScreen(
     val transactions by viewModel.transactionsForSelectedMonth.collectAsState()
     val selectedMonth by viewModel.selectedMonth.collectAsState()
     val monthlySummaries by viewModel.monthlySummaries.collectAsState()
+    val categorySpending by viewModel.categorySpendingForSelectedMonth.collectAsState()
     val totalSpent by viewModel.monthlyExpenses.collectAsState()
     val totalIncome by viewModel.monthlyIncome.collectAsState()
     val budget by viewModel.overallMonthlyBudget.collectAsState()
@@ -91,7 +92,7 @@ fun TransactionListScreen(
                 0 -> {
                     TransactionList(transactions = transactions, navController = navController)
                 }
-                1 -> PlaceholderTabContent(title = "Categories")
+                1 -> CategorySpendingScreen(spendingList = categorySpending)
                 2 -> PlaceholderTabContent(title = "Merchants")
             }
         }
@@ -107,8 +108,9 @@ fun MonthlySummaryHeader(
     budget: Float,
     onMonthSelected: (Calendar) -> Unit
 ) {
-    val monthFormat = SimpleDateFormat("MMM", Locale.getDefault())
-    val monthYearFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+    // --- FIX: Using LLLL/LLL for standalone month names to avoid locale issues ---
+    val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
+    val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
     var showMonthScroller by remember { mutableStateOf(false) }
 
     val selectedTabIndex = monthlySummaries.indexOfFirst {

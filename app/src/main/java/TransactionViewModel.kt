@@ -38,6 +38,29 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     // --- NEW: Flow that provides a list of past months with their total spending ---
     val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
 
+    // --- NEW: Flow for category spending in the selected month ---
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>> = _selectedMonth.flatMapLatest { calendar ->
+        val monthStart = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }.timeInMillis
+
+        val monthEnd = (calendar.clone() as Calendar).apply {
+            add(Calendar.MONTH, 1)
+            set(Calendar.DAY_OF_MONTH, 1)
+            add(Calendar.DAY_OF_MONTH, -1)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+        }.timeInMillis
+
+        transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+
     // --- Flow that emits transactions only for the selected month ---
     @OptIn(ExperimentalCoroutinesApi::class)
     val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>> = _selectedMonth.flatMapLatest { calendar ->
