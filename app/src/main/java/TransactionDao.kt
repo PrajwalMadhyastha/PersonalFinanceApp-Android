@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
+// REASON: Added two new queries to specifically fetch and aggregate income-only
+// transactions for the new Income screen.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -6,7 +11,41 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Query to get aggregated spending by merchant for a specific date range ---
+    // --- NEW: Query to get all income transactions for a specific date range ---
+    @Query("""
+        SELECT
+            T.*,
+            A.name as accountName,
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
+        FROM
+            transactions AS T
+        LEFT JOIN
+            accounts AS A ON T.accountId = A.id
+        LEFT JOIN
+            categories AS C ON T.categoryId = C.id
+        WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
+        ORDER BY
+            T.date DESC
+    """)
+    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
+
+    // --- NEW: Query to get aggregated income by category for a specific date range ---
+    @Query("""
+        SELECT 
+            C.name as categoryName, 
+            SUM(T.amount) as totalAmount,
+            C.iconKey as iconKey,
+            C.colorKey as colorKey
+        FROM transactions AS T
+        INNER JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
+        GROUP BY C.name
+        ORDER BY totalAmount DESC
+    """)
+    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long): Flow<List<CategorySpending>>
+
     @Query("""
         SELECT
             description as merchantName,
@@ -20,7 +59,6 @@ interface TransactionDao {
     fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>>
 
 
-    // --- Methods for image attachments ---
     @Insert
     suspend fun insertImage(transactionImage: TransactionImage)
 

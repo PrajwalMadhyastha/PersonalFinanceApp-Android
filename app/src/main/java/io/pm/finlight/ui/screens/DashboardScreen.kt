@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
+// REASON: Updated the onClick handler for the "Monthly Income" card to navigate
+// to the new, dedicated "income_screen".
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
@@ -58,7 +63,6 @@ fun DashboardScreen(
     val budgetStatus by viewModel.budgetStatus.collectAsState()
     val recentTransactions by viewModel.recentTransactions.collectAsState()
     val accountsSummary by viewModel.accountsSummary.collectAsState()
-    // --- BUG FIX: Get the correct state for the card ---
     val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
 
 
@@ -79,14 +83,9 @@ fun DashboardScreen(
                     label = "Monthly Income",
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
+                    // --- FIX: Navigate to the new income_screen ---
                     onClick = {
-                        navController.navigate(BottomNavItem.Transactions.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                        navController.navigate("income_screen")
                     }
                 )
                 StatCard(
@@ -95,13 +94,11 @@ fun DashboardScreen(
                     modifier = Modifier.weight(1f),
                     onClick = { navController.navigate("budget_screen") }
                 )
-                // --- BUG FIX: Removed onClick and corrected amount ---
                 StatCard(
                     label = "Safe To Spend",
                     amount = safeToSpendPerDay,
-                    isPerDay = true, // Add flag to show "/day" suffix
+                    isPerDay = true,
                     modifier = Modifier.weight(1f)
-                    // No onClick handler, so the card is not clickable
                 )
             }
         }

@@ -1,8 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Implemented a splash/routing screen to handle deep links seamlessly.
-// This prevents the main dashboard from "flashing" before navigating to the
-// deep-linked content, improving the user experience.
+// REASON: Added the new "income_screen" route to the AppNavHost to make it
+// accessible within the app's navigation graph.
 // =================================================================================
 package io.pm.finlight
 
@@ -324,6 +323,8 @@ fun AppNavHost(
     val categoryViewModel: CategoryViewModel = viewModel()
     val budgetViewModel: BudgetViewModel = viewModel()
     val profileViewModel: ProfileViewModel = viewModel()
+    // --- NEW: Instantiate the IncomeViewModel ---
+    val incomeViewModel: IncomeViewModel = viewModel()
 
     NavHost(
         navController = navController,
@@ -356,6 +357,11 @@ fun AppNavHost(
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
         ) { ReviewSmsScreen(navController, settingsViewModel) }
 
+        // --- NEW: Add the composable for the income screen ---
+        composable("income_screen") {
+            IncomeScreen(navController, incomeViewModel)
+        }
+
         composable(
             route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
             arguments = listOf(
@@ -374,7 +380,6 @@ fun AppNavHost(
             )
         }
 
-        // --- UPDATED: Route now accepts optional arguments for editing a CSV row ---
         composable(
             "add_transaction?isCsvEdit={isCsvEdit}&csvLineNumber={csvLineNumber}&initialDataJson={initialDataJson}",
             arguments = listOf(
@@ -439,36 +444,23 @@ fun AppNavHost(
     }
 }
 
-/**
- * A new composable that acts as a routing screen. It checks the intent
- * for a deep link and navigates accordingly, preventing the dashboard from
- * flashing on screen during a deep link launch.
- */
 @Composable
 fun SplashScreen(navController: NavHostController, activity: Activity) {
     LaunchedEffect(key1 = Unit) {
         val deepLinkUri = activity.intent?.data
         if (deepLinkUri != null) {
-            // --- BUG FIX: Manually build the back stack for a seamless experience ---
-            // First, navigate to the main screen of the app.
             navController.navigate(BottomNavItem.Dashboard.route) {
-                // Pop the splash screen off the stack to prevent going back to it.
                 popUpTo("splash_screen") { inclusive = true }
             }
-            // Then, navigate to the specific deep-linked content.
-            // This places the dashboard on the back stack before the detail screen.
             navController.navigate(deepLinkUri)
-            // Clear the intent data so it's not reused on process recreation.
             activity.intent.data = null
         } else {
-            // It's a normal launch, go to the dashboard
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }
         }
     }
 
-    // Show a loading indicator while the navigation logic runs
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center

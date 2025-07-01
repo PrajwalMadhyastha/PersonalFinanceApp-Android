@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
+// REASON: Added functions to expose the new DAO queries for fetching and
+// aggregating income-only transactions.
+// =================================================================================
 package io.pm.finlight
 
 import android.net.Uri
@@ -15,12 +20,20 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Expose the merchant spending data ---
+    // --- NEW: Expose the income-only transaction list ---
+    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>> {
+        return transactionDao.getIncomeTransactionsForRange(startDate, endDate)
+    }
+
+    // --- NEW: Expose the income-by-category data ---
+    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long): Flow<List<CategorySpending>> {
+        return transactionDao.getIncomeByCategoryForMonth(startDate, endDate)
+    }
+
     fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>> {
         return transactionDao.getSpendingByMerchantForMonth(startDate, endDate)
     }
 
-    // --- Methods for image attachments ---
     suspend fun addImageToTransaction(transactionId: Int, imageUri: String) {
         val transactionImage = TransactionImage(transactionId = transactionId, imageUri = imageUri)
         transactionDao.insertImage(transactionImage)
@@ -139,28 +152,22 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         }
     }
 
-    // --- FIX: Changed parameter from List<Uri> to List<String> to accept permanent paths ---
     suspend fun insertTransactionWithTagsAndImages(
         transaction: Transaction,
         tags: Set<Tag>,
-        imagePaths: List<String> // Changed from imageUris
+        imagePaths: List<String>
     ): Long {
-        // First, insert the main transaction to get its ID
         val newTransactionId = transactionDao.insert(transaction)
-
-        // Then, use the new ID to associate tags
         if (tags.isNotEmpty()) {
             val crossRefs = tags.map { tag ->
                 TransactionTagCrossRef(transactionId = newTransactionId.toInt(), tagId = tag.id)
             }
             transactionDao.addTagsToTransaction(crossRefs)
         }
-
-        // Finally, use the ID to associate images with their permanent paths
         imagePaths.forEach { path ->
             val imageEntity = TransactionImage(
                 transactionId = newTransactionId.toInt(),
-                imageUri = path // Save the permanent file path
+                imageUri = path
             )
             transactionDao.insertImage(imageEntity)
         }

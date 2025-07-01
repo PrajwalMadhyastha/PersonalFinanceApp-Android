@@ -1,14 +1,14 @@
 // =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: Removed the local definition of pagerTabIndicatorOffset and imported
-// it from the new PagerUtils.kt file to resolve potential compilation errors
-// and avoid code duplication.
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
+// REASON: NEW FILE - This is the main UI for the dedicated income details screen.
+// UPDATE: The UI has been completely overhauled to match the look and feel of the
+// main transaction list, including a detailed header with a month selector.
+// BUG FIX: Removed the local definition of pagerTabIndicatorOffset and imported
+// it from the new PagerUtils.kt file to resolve compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -16,7 +16,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
@@ -24,15 +23,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import io.pm.finlight.IncomeViewModel
 import io.pm.finlight.MonthlySummaryItem
-import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.TransactionList
 import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import kotlinx.coroutines.launch
@@ -41,32 +37,28 @@ import java.util.*
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TransactionListScreen(
+fun IncomeScreen(
     navController: NavController,
-    viewModel: TransactionViewModel,
+    viewModel: IncomeViewModel = viewModel(),
 ) {
-    val tabs = listOf("Transactions", "Categories", "Merchants")
+    val tabs = listOf("Credits", "Categories")
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
 
-    val transactions by viewModel.transactionsForSelectedMonth.collectAsState()
+    val incomeTransactions by viewModel.incomeTransactionsForSelectedMonth.collectAsState()
+    val incomeByCategory by viewModel.incomeByCategoryForSelectedMonth.collectAsState()
+    val totalIncome by viewModel.totalIncomeForSelectedMonth.collectAsState()
     val selectedMonth by viewModel.selectedMonth.collectAsState()
     val monthlySummaries by viewModel.monthlySummaries.collectAsState()
-    val categorySpending by viewModel.categorySpendingForSelectedMonth.collectAsState()
-    val merchantSpending by viewModel.merchantSpendingForSelectedMonth.collectAsState()
-    val totalSpent by viewModel.monthlyExpenses.collectAsState()
-    val totalIncome by viewModel.monthlyIncome.collectAsState()
-    val budget by viewModel.overallMonthlyBudget.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        MonthlySummaryHeader(
+        IncomeHeader(
+            totalIncome = totalIncome,
             selectedMonth = selectedMonth,
             monthlySummaries = monthlySummaries,
-            totalSpent = totalSpent,
-            totalIncome = totalIncome,
-            budget = budget,
             onMonthSelected = { viewModel.setSelectedMonth(it) }
         )
+
         TabRow(
             selectedTabIndex = pagerState.currentPage,
             indicator = { tabPositions ->
@@ -93,23 +85,18 @@ fun TransactionListScreen(
             modifier = Modifier.weight(1f)
         ) { page ->
             when (page) {
-                0 -> {
-                    TransactionList(transactions = transactions, navController = navController)
-                }
-                1 -> CategorySpendingScreen(spendingList = categorySpending)
-                2 -> MerchantSpendingScreen(merchantList = merchantSpending)
+                0 -> TransactionList(transactions = incomeTransactions, navController = navController)
+                1 -> CategorySpendingScreen(spendingList = incomeByCategory)
             }
         }
     }
 }
 
 @Composable
-fun MonthlySummaryHeader(
+fun IncomeHeader(
     selectedMonth: Calendar,
     monthlySummaries: List<MonthlySummaryItem>,
-    totalSpent: Double,
     totalIncome: Double,
-    budget: Float,
     onMonthSelected: (Calendar) -> Unit
 ) {
     val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
@@ -174,7 +161,7 @@ fun MonthlySummaryHeader(
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                                 Text(
-                                    text = formatAmountInLakhs(summaryItem.totalSpent),
+                                    text = "₹${"%,.0f".format(summaryItem.totalSpent)}", // Note: totalSpent holds income here
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -185,26 +172,18 @@ fun MonthlySummaryHeader(
             }
         }
 
-
         Spacer(Modifier.height(16.dp))
 
-        Row(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            elevation = CardDefaults.cardElevation(2.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Total Spent", style = MaterialTheme.typography.labelMedium)
-                Text(
-                    "₹${"%,.2f".format(totalSpent)}",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.Start
+            ) {
                 Text("Total Income", style = MaterialTheme.typography.labelMedium)
                 Text(
                     "₹${"%,.2f".format(totalIncome)}",
@@ -214,82 +193,5 @@ fun MonthlySummaryHeader(
                 )
             }
         }
-
-        Spacer(Modifier.height(12.dp))
-
-        if (budget > 0) {
-            BudgetProgress(
-                spent = totalSpent.toFloat(),
-                budget = budget,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-        } else {
-            Text(
-                text = "No budget set for this month.",
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            )
-        }
-    }
-}
-
-private fun formatAmountInLakhs(amount: Double): String {
-    if (amount < 1000) return "₹${"%,.0f".format(amount)}"
-    if (amount < 100000) return "₹${"%,.0f".format(amount / 1000)}K"
-    return "₹${"%.2f".format(amount / 100000.0)}L"
-}
-
-
-@Composable
-fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
-    val progress = (spent / budget).coerceIn(0f, 1f)
-    val animatedProgress by animateFloatAsState(targetValue = progress, animationSpec = tween(1000), label = "")
-
-    val progressColor = when {
-        progress > 1f -> MaterialTheme.colorScheme.error
-        progress > 0.85f -> Color(0xFFFBC02D) // Amber
-        else -> MaterialTheme.colorScheme.primary
-    }
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        LinearProgressIndicator(
-            progress = { animatedProgress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-                .clip(CircleShape),
-            color = progressColor,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            strokeCap = StrokeCap.Round
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                text = "Spent: ₹${"%,.0f".format(spent)}",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = "Budget: ₹${"%,.0f".format(budget)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-
-@Composable
-fun PlaceholderTabContent(title: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("Content for $title", style = MaterialTheme.typography.headlineMedium)
     }
 }

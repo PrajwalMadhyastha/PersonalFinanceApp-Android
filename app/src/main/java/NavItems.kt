@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
+// REASON: Added the new "income_screen" route and its corresponding title to the
+// screen titles map for the top app bar.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.compose.material.icons.Icons
@@ -20,9 +25,7 @@ val screenTitles = mapOf(
     BottomNavItem.Profile.route to "Profile",
     "settings_screen" to "App Settings",
     "add_transaction" to "Add Transaction",
-    // --- DELETED: Removed route for the obsolete EditTransactionScreen ---
-    // "edit_transaction/{transactionId}" to "Edit Transaction",
-    "transaction_detail/{transactionId}" to "Edit Transaction", // The detail screen is now the edit screen
+    "transaction_detail/{transactionId}" to "Edit Transaction",
     "account_list" to "Your Accounts",
     "add_account" to "Add New Account",
     "edit_account/{accountId}" to "Edit Account",
@@ -37,5 +40,7 @@ val screenTitles = mapOf(
     "review_sms_screen" to "Review SMS Transactions",
     "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
     "tag_management" to "Manage Tags",
-    "edit_profile" to "Edit Profile"
+    "edit_profile" to "Edit Profile",
+    // --- NEW: Add route for the income screen ---
+    "income_screen" to "Income"
 )
