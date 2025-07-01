@@ -446,6 +446,16 @@ fun AppNavHost(
         composable("tag_management") { TagManagementScreen() }
         composable("recurring_transactions") { RecurringTransactionScreen(navController) }
         composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
+
+        // --- NEW: Route for the Rule Creation Screen ---
+        composable(
+            "rule_creation_screen/{smsText}",
+            arguments = listOf(navArgument("smsText") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val encodedSmsText = backStackEntry.arguments?.getString("smsText") ?: ""
+            val smsText = URLDecoder.decode(encodedSmsText, "UTF-8")
+            RuleCreationScreen(navController = navController, smsText = smsText)
+        }
     }
 }
 

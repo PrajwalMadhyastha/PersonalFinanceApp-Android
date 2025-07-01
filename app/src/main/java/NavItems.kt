@@ -42,5 +42,7 @@ val screenTitles = mapOf(
     "tag_management" to "Manage Tags",
     "edit_profile" to "Edit Profile",
     // --- NEW: Add route for the income screen ---
-    "income_screen" to "Income"
+    "income_screen" to "Income",
+    // --- NEW: Add route for the rule creation screen ---
+    "rule_creation_screen/{smsText}" to "Create Parsing Rule"
 )
