@@ -44,14 +44,19 @@ class TransactionCrudTests {
             composeTestRule.onAllNodesWithText("Monthly Budget").fetchSemanticsNodes().isNotEmpty()
         }
         composeTestRule.onNodeWithContentDescription("Add").performClick()
-        composeTestRule.onNodeWithText("Add Transaction").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Description").performTextInput(uniqueDescription)
-        composeTestRule.onNodeWithText("Amount").performTextInput("100.0")
-        composeTestRule.onNodeWithText("Select Account").performClick()
+
+        // Wait for AddTransactionScreen to appear and fill the form
+        composeTestRule.waitUntil(timeoutMillis = 5000) {
+            composeTestRule.onAllNodesWithTag("description_input").fetchSemanticsNodes().isNotEmpty()
+        }
+        // --- FIX: Use onNodeWithTag to reliably find the text field ---
+        composeTestRule.onNodeWithTag("description_input").performTextInput(uniqueDescription)
+        composeTestRule.onNodeWithText("0.00").performTextInput("100.0")
+        composeTestRule.onNodeWithText("Select account").performClick()
         composeTestRule.onNodeWithText("SBI").performClick()
-        composeTestRule.onNodeWithText("Select Category").performClick()
-        composeTestRule.onNodeWithText("Food").performClick()
-        composeTestRule.onNodeWithText("Save Transaction").performClick()
+        composeTestRule.onNodeWithText("Select category").performClick()
+        composeTestRule.onNodeWithText("Food & Drinks").performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
 
         // Wait to return to the dashboard and confirm the new item is there.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
@@ -80,26 +85,34 @@ class TransactionCrudTests {
         val originalDescription = addTransactionForTest()
         val updatedDescription = "Updated UI Test Dinner"
 
-        // 1. Find the transaction and click to edit it.
+        // 1. Find the transaction on the dashboard and click to open the detail screen.
         composeTestRule.onNodeWithText(originalDescription, useUnmergedTree = true)
             .performScrollTo()
             .performClick()
 
-        // 2. On the edit screen, change the description.
-        // --- FIXED: Wait for the edit screen to fully load before proceeding ---
+        // 2. On the detail screen, wait for it to load, then click the description to open the bottom sheet.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
-            composeTestRule.onAllNodesWithText("Update Transaction").fetchSemanticsNodes().isNotEmpty()
+            composeTestRule.onAllNodesWithText(originalDescription).fetchSemanticsNodes().isNotEmpty()
         }
-        composeTestRule.onNodeWithText("Description").performTextClearance()
-        composeTestRule.onNodeWithText("Description").performTextInput(updatedDescription)
-        composeTestRule.onNodeWithText("Update Transaction").performClick()
+        composeTestRule.onNodeWithText(originalDescription).performClick()
 
-        // 3. Wait to navigate back to the dashboard.
+        // 3. In the bottom sheet, edit the text field and save.
+        // --- FIX: Use onNodeWithTag to reliably find the text field ---
+        composeTestRule.onNodeWithTag("value_input").performTextClearance()
+        composeTestRule.onNodeWithTag("value_input").performTextInput(updatedDescription)
+        composeTestRule.onNodeWithText("Save").performClick()
+
+
+        // 4. Verify the description is updated on the detail screen.
+        composeTestRule.onNodeWithText(updatedDescription).assertIsDisplayed()
+
+        // 5. Navigate back to the dashboard.
+        composeTestRule.onNodeWithContentDescription("Back").performClick()
+
+        // 6. Assert that the old description is gone and the new one is displayed on the dashboard.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
             composeTestRule.onAllNodesWithText("Monthly Budget").fetchSemanticsNodes().isNotEmpty()
         }
-
-        // 4. Assert that the old description is gone and the new one is displayed.
         composeTestRule.onNodeWithText(originalDescription).assertDoesNotExist()
         composeTestRule.onNodeWithText(updatedDescription, useUnmergedTree = true)
             .performScrollTo()
@@ -107,30 +120,31 @@ class TransactionCrudTests {
     }
 
     /**
-     * Tests that a transaction can be successfully deleted.
+     * Tests that a transaction can be successfully deleted from the detail screen.
      */
     @Test
     fun test_deleteTransaction_removesFromList() {
         val description = addTransactionForTest()
 
-        // 1. Find the transaction and click to edit it.
+        // 1. Find the transaction on the dashboard and click to open the detail screen.
         composeTestRule.onNodeWithText(description, useUnmergedTree = true)
             .performScrollTo()
             .performClick()
 
-        // 2. On the edit screen, click the new delete button.
-        // --- FIXED: Wait for the edit screen to fully load before proceeding ---
+        // 2. On the detail screen, click the 'More' menu icon.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
-            composeTestRule.onAllNodesWithText("Update Transaction").fetchSemanticsNodes().isNotEmpty()
+            composeTestRule.onAllNodesWithContentDescription("More options").fetchSemanticsNodes().isNotEmpty()
         }
-        composeTestRule.onNodeWithText("Delete Transaction").performClick()
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
 
-        // 3. Confirm the deletion in the dialog.
-        composeTestRule.onNodeWithText("Confirm Deletion").assertIsDisplayed()
+        // 3. Click the 'Delete' option in the dropdown menu.
         composeTestRule.onNodeWithText("Delete").performClick()
 
+        // 4. Confirm the deletion in the dialog.
+        composeTestRule.onNodeWithText("Delete Transaction?").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Delete").performClick()
 
-        // 4. Wait to navigate back to the dashboard and assert the item is gone.
+        // 5. Wait to navigate back to the dashboard and assert the item is gone.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
             composeTestRule.onAllNodesWithText("Monthly Budget").fetchSemanticsNodes().isNotEmpty()
         }

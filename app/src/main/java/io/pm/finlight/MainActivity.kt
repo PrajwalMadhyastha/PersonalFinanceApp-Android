@@ -201,7 +201,8 @@ fun MainAppScreen() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentRoute = currentDestination?.route
-    val baseCurrentRoute = currentRoute?.split("/")?.firstOrNull()
+    val baseCurrentRoute = currentRoute?.split("?")?.firstOrNull()?.split("/")?.firstOrNull()
+
 
     val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
         "Hi, $userName!"
@@ -373,7 +374,38 @@ fun AppNavHost(
             )
         }
 
-        composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
+        // --- UPDATED: Route now accepts optional arguments for editing a CSV row ---
+        composable(
+            "add_transaction?isCsvEdit={isCsvEdit}&csvLineNumber={csvLineNumber}&initialDataJson={initialDataJson}",
+            arguments = listOf(
+                navArgument("isCsvEdit") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+                navArgument("csvLineNumber") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                },
+                navArgument("initialDataJson") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            val arguments = requireNotNull(backStackEntry.arguments)
+            val isCsvEdit = arguments.getBoolean("isCsvEdit")
+            val csvLineNumber = arguments.getInt("csvLineNumber")
+            val initialDataJson = arguments.getString("initialDataJson")
+
+            AddTransactionScreen(
+                navController = navController,
+                viewModel = transactionViewModel,
+                isCsvEdit = isCsvEdit,
+                csvLineNumber = csvLineNumber,
+                initialDataJson = initialDataJson?.let { URLDecoder.decode(it, "UTF-8") }
+            )
+        }
 
         composable(
             route = "transaction_detail/{transactionId}",
@@ -384,20 +416,6 @@ fun AppNavHost(
             TransactionDetailScreen(navController, transactionId, transactionViewModel)
         }
 
-        composable(
-            route = "edit_transaction/{transactionId}",
-            arguments = listOf(
-                navArgument("transactionId") { type = NavType.IntType }
-            ),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/edit_transaction/{transactionId}" })
-        ) { backStackEntry ->
-            val arguments = requireNotNull(backStackEntry.arguments)
-            EditTransactionScreen(
-                navController = navController,
-                viewModel = transactionViewModel,
-                transactionId = arguments.getInt("transactionId")
-            )
-        }
         composable("account_list") { AccountListScreen(navController, accountViewModel) }
         composable("add_account") { AddAccountScreen(navController, accountViewModel) }
         composable("edit_account/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->

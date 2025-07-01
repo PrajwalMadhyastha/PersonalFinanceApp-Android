@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -474,7 +475,8 @@ private fun EditTextFieldSheet(
                 capitalization = if (keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None
             ),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            // --- FIX: Add a testTag for reliable UI testing ---
+            modifier = Modifier.fillMaxWidth().testTag("value_input")
         )
         Row(
             modifier = Modifier.fillMaxWidth(),

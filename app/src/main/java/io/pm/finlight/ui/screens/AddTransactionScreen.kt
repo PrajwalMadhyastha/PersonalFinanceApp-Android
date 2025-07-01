@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -34,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
@@ -51,6 +54,9 @@ private sealed class AddSheetContent {
 fun AddTransactionScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
+    isCsvEdit: Boolean = false,
+    csvLineNumber: Int = -1,
+    initialDataJson: String? = null
 ) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
@@ -71,7 +77,6 @@ fun AddTransactionScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
 
-    // --- NEW: State for attachments ---
     var attachedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -79,8 +84,6 @@ fun AddTransactionScreen(
         attachedImageUris = attachedImageUris + uris
     }
 
-
-    // --- NEW: State for bottom sheets ---
     var activeSheetContent by remember { mutableStateOf<AddSheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
@@ -90,10 +93,38 @@ fun AddTransactionScreen(
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
 
+    // --- NEW: Logic to pre-fill the form when editing a CSV row ---
+    LaunchedEffect(initialDataJson, accounts, categories) {
+        if (isCsvEdit && initialDataJson != null) {
+            try {
+                val gson = Gson()
+                val initialData: List<String> = gson.fromJson(initialDataJson, object : TypeToken<List<String>>() {}.type)
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+                initialData.getOrNull(0)?.let {
+                    try {
+                        selectedDateTime.time = dateFormat.parse(it) ?: Date()
+                    } catch (e: Exception) { /* Keep default date on parse error */ }
+                }
+                description = initialData.getOrElse(1) { "" }
+                amount = initialData.getOrElse(2) { "" }
+                transactionType = initialData.getOrElse(3) { "expense" }
+                val categoryName = initialData.getOrElse(4) { "" }
+                val accountName = initialData.getOrElse(5) { "" }
+                notes = initialData.getOrElse(6) { "" }
+
+                selectedCategory = categories.find { it.name.equals(categoryName, ignoreCase = true) }
+                selectedAccount = accounts.find { it.name.equals(accountName, ignoreCase = true) }
+
+            } catch (e: Exception) {
+                // Log error or show a toast if JSON parsing fails
+            }
+        }
+    }
+
     DisposableEffect(Unit) { onDispose { viewModel.clearSelectedTags() } }
 
     LaunchedEffect(validationError) { validationError?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() } }
-
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -179,7 +210,6 @@ fun AddTransactionScreen(
                 }
             }
 
-
             item {
                 Row(
                     modifier = Modifier
@@ -192,32 +222,54 @@ fun AddTransactionScreen(
                     }
                     Button(
                         onClick = {
-                            val success = viewModel.addTransaction(
-                                description = description,
-                                categoryId = selectedCategory?.id,
-                                amountStr = amount,
-                                accountId = selectedAccount!!.id,
-                                notes = notes.takeIf { it.isNotBlank() },
-                                date = selectedDateTime.timeInMillis,
-                                transactionType = transactionType,
-                                sourceSmsId = null,
-                                sourceSmsHash = null,
-                                imageUris = attachedImageUris
-                            )
-                            if (success) navController.popBackStack()
+                            if (isCsvEdit) {
+                                // --- NEW: Logic for returning edited CSV data ---
+                                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                                val correctedData = listOf(
+                                    dateFormat.format(selectedDateTime.time),
+                                    description,
+                                    amount,
+                                    transactionType,
+                                    selectedCategory?.name ?: "",
+                                    selectedAccount?.name ?: "",
+                                    notes
+                                )
+                                val gson = Gson()
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("corrected_row", gson.toJson(correctedData))
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("corrected_row_line", csvLineNumber)
+                                navController.popBackStack()
+                            } else {
+                                // Original logic for adding a new transaction
+                                val success = viewModel.addTransaction(
+                                    description = description,
+                                    categoryId = selectedCategory?.id,
+                                    amountStr = amount,
+                                    accountId = selectedAccount!!.id,
+                                    notes = notes.takeIf { it.isNotBlank() },
+                                    date = selectedDateTime.timeInMillis,
+                                    transactionType = transactionType,
+                                    sourceSmsId = null,
+                                    sourceSmsHash = null,
+                                    imageUris = attachedImageUris
+                                )
+                                if (success) navController.popBackStack()
+                            }
                         },
                         modifier = Modifier.weight(1f),
                         enabled = isSaveEnabled
                     ) {
-                        Text("Save")
+                        // --- UPDATED: Button text is now dynamic ---
+                        Text(if (isCsvEdit) "Update Row" else "Save")
                     }
                 }
             }
         }
     }
 
-
-    // --- Bottom Sheet Logic ---
     if (activeSheetContent != null) {
         ModalBottomSheet(
             onDismissRequest = { activeSheetContent = null },
@@ -247,8 +299,6 @@ fun AddTransactionScreen(
         }
     }
 
-
-    // --- Dialogs for Date/Time ---
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
         DatePickerDialog(
@@ -336,7 +386,8 @@ fun PrimaryInfoCard(
                 value = description,
                 onValueChange = onDescriptionChange,
                 label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth(),
+                // --- FIX: Add a testTag for reliable UI testing ---
+                modifier = Modifier.fillMaxWidth().testTag("description_input"),
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedBorderColor = Color.Transparent,
                     focusedBorderColor = Color.Transparent

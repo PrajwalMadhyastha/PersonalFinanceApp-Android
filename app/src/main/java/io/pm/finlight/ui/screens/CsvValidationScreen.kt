@@ -66,10 +66,11 @@ fun CsvValidationScreen(
                     EditableRowItem(
                         row = row,
                         onEditClick = {
+                            // --- UPDATED: Navigate to the AddTransactionScreen in edit mode ---
                             val gson = Gson()
                             val rowDataJson = gson.toJson(row.rowData)
                             val encodedJson = URLEncoder.encode(rowDataJson, "UTF-8")
-                            navController.navigate("edit_transaction/-1?isFromCsv=true&lineNumber=${row.lineNumber}&rowDataJson=$encodedJson")
+                            navController.navigate("add_transaction?isCsvEdit=true&csvLineNumber=${row.lineNumber}&initialDataJson=$encodedJson")
                         },
                         onDeleteClick = {
                             viewModel.removeRowFromReport(row)
@@ -88,7 +89,6 @@ fun CsvValidationScreen(
                     onClick = {
                         scope.launch {
                             val rowsToImport = report?.reviewableRows?.filter { it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT }
-                            // --- BUG FIX: The null check is redundant because .filter always returns a list ---
                             if (!rowsToImport.isNullOrEmpty()) {
                                 viewModel.commitCsvImport(rowsToImport)
                                 Toast.makeText(context, "$importableRowCount transactions imported!", Toast.LENGTH_LONG).show()

@@ -20,7 +20,9 @@ val screenTitles = mapOf(
     BottomNavItem.Profile.route to "Profile",
     "settings_screen" to "App Settings",
     "add_transaction" to "Add Transaction",
-    "edit_transaction/{transactionId}" to "Edit Transaction",
+    // --- DELETED: Removed route for the obsolete EditTransactionScreen ---
+    // "edit_transaction/{transactionId}" to "Edit Transaction",
+    "transaction_detail/{transactionId}" to "Edit Transaction", // The detail screen is now the edit screen
     "account_list" to "Your Accounts",
     "add_account" to "Add New Account",
     "edit_account/{accountId}" to "Edit Account",
@@ -35,6 +37,5 @@ val screenTitles = mapOf(
     "review_sms_screen" to "Review SMS Transactions",
     "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
     "tag_management" to "Manage Tags",
-    // --- NEW: Add the title for the new Edit Profile screen ---
     "edit_profile" to "Edit Profile"
 )

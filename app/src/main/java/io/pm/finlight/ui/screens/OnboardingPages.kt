@@ -60,7 +60,7 @@ fun WelcomePage() {
                 withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
                     append("PRIORITY")
                 }
-                append(". All your financial data is ")
+                append(". All your data is ")
                 withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
                     append("STORED SECURELY")
                 }

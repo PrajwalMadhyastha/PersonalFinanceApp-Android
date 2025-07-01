@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Mon Jun 30 19:40:23 IST 2025
+Generated on: Tue Jul  1 09:17:27 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -193,7 +193,7 @@ dependencies {
         android:name=".MainApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
+        android:fullBackupContent="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -210,6 +210,7 @@ dependencies {
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.PersonalFinanceApp">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -238,6 +239,17 @@ dependencies {
             android:name="com.canhub.cropper.CropImageActivity"
             android:theme="@style/Theme.AppCompat.DayNight"
             />
+
+        <!-- BUG FIX: Declare the FileProvider to securely handle camera image URIs -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 
@@ -2138,7 +2150,7 @@ fun WelcomePage() {
                 withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
                     append("PRIORITY")
                 }
-                append(". All your financial data is ")
+                append(". All your data is ")
                 withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
                     append("STORED SECURELY")
                 }
@@ -2839,22 +2851,32 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.Notes
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -2862,6 +2884,13 @@ import com.google.gson.Gson
 import io.pm.finlight.*
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
+
+// --- NEW: Sealed class to manage bottom sheet content ---
+private sealed class ApproveSheetContent {
+    object Category : ApproveSheetContent()
+    object Tags : ApproveSheetContent()
+}
+
 
 @Composable
 fun ReviewSmsScreen(
@@ -2984,20 +3013,22 @@ fun ApproveTransactionScreen(
 ) {
     var description by remember { mutableStateOf(potentialTxn.merchantName ?: "") }
     var notes by remember { mutableStateOf("") }
-    var newTagName by remember { mutableStateOf("") }
     var selectedTransactionType by remember(potentialTxn.transactionType) { mutableStateOf(potentialTxn.transactionType) }
-    val transactionTypes = listOf("Expense", "Income")
     val scope = rememberCoroutineScope()
 
     val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
     val allTags by transactionViewModel.allTags.collectAsState()
     val selectedTags by transactionViewModel.selectedTags.collectAsState()
 
+    // --- NEW: State for bottom sheets ---
+    var activeSheetContent by remember { mutableStateOf<ApproveSheetContent?>(null) }
+    val sheetState = rememberModalBottomSheetState()
+
+
     val isExpense = selectedTransactionType == "expense"
-    val isSaveEnabled = !isExpense || selectedCategory != null
+    val isSaveEnabled = description.isNotBlank() && (!isExpense || selectedCategory != null)
 
     DisposableEffect(Unit) {
         onDispose {
@@ -3005,132 +3036,308 @@ fun ApproveTransactionScreen(
         }
     }
 
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            OutlinedTextField(value = description, onValueChange = {
-                description = it
-            }, label = { Text("Description / Merchant") }, modifier = Modifier.fillMaxWidth())
-        }
-        item {
-            OutlinedTextField(value = potentialTxn.amount.toString(), onValueChange = {
-            }, readOnly = true, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth())
-        }
-        item {
-            OutlinedTextField(
-                value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Account") },
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        item {
-            TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
-                transactionTypes.forEachIndexed { index, title ->
-                    Tab(selected = (if (isExpense) 0 else 1) == index, onClick = {
-                        selectedTransactionType = if (index == 0) "expense" else "income"
-                    }, text = { Text(title) })
-                }
-            }
-        }
-        if (isExpense) {
+    Scaffold { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             item {
-                ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                    isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-                }) {
-                    OutlinedTextField(value = selectedCategory?.name ?: "Select Category", onValueChange = {
-                    }, readOnly = true, label = {
-                        Text("Category")
-                    }, trailingIcon = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded)
-                    }, modifier = Modifier.fillMaxWidth().menuAnchor())
-                    ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                        categories.forEach { category ->
-                            DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                selectedCategory = category
-                                isCategoryDropdownExpanded = false
-                            })
-                        }
+                // --- REFACTORED: Primary Info Card ---
+                Card(elevation = CardDefaults.cardElevation(2.dp)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            "₹${"%,.2f".format(potentialTxn.amount)}",
+                            style = MaterialTheme.typography.displaySmall,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.End,
+                            fontWeight = FontWeight.Bold
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it },
+                            label = { Text("Description / Merchant") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = Color.Transparent
+                            ),
+                            placeholder = { Text("What was this for?") }
+                        )
                     }
                 }
             }
-        }
-        item {
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Notes (Optional)") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        item {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                allTags.forEach { tag ->
-                    FilterChip(
-                        selected = tag in selectedTags,
-                        onClick = { transactionViewModel.onTagSelected(tag) },
-                        label = { Text(tag.name) }
-                    )
+            item {
+                TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
+                    listOf("Expense", "Income").forEachIndexed { index, title ->
+                        Tab(selected = (if (isExpense) 0 else 1) == index, onClick = {
+                            selectedTransactionType = if (index == 0) "expense" else "income"
+                        }, text = { Text(title) })
+                    }
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = newTagName,
-                    onValueChange = { newTagName = it },
-                    label = { Text("New Tag") },
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = {
-                        transactionViewModel.addTagOnTheGo(newTagName)
-                        newTagName = ""
-                    },
-                    enabled = newTagName.isNotBlank()
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add New Tag")
-                }
-            }
-        }
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
-                    Text("Cancel")
-                }
-                Button(
-                    onClick = {
-                        scope.launch {
-                            val success = transactionViewModel.approveSmsTransaction(
-                                potentialTxn = potentialTxn,
-                                description = description,
-                                categoryId = selectedCategory?.id,
-                                notes = notes.takeIf { it.isNotBlank() },
-                                tags = selectedTags
+
+            item {
+                // --- REFACTORED: Details Card ---
+                Card(elevation = CardDefaults.cardElevation(2.dp)) {
+                    Column {
+                        DetailRow(
+                            icon = Icons.Default.AccountBalanceWallet,
+                            label = "Account",
+                            value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
+                            onClick = null // Not editable
+                        )
+                        if (isExpense) {
+                            HorizontalDivider()
+                            DetailRow(
+                                icon = Icons.Default.Category,
+                                label = "Category",
+                                value = selectedCategory?.name ?: "Select category",
+                                onClick = { activeSheetContent = ApproveSheetContent.Category },
+                                valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
                             )
-                            if (success) {
-                                settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
-                                settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
-                                navController.popBackStack()
-                            }
                         }
-                    },
-                    modifier = Modifier.weight(1f),
-                    enabled = isSaveEnabled,
-                ) { Text("Save Transaction") }
+                        HorizontalDivider()
+                        DetailRow(
+                            icon = Icons.Default.NewLabel,
+                            label = "Tags",
+                            value = if (selectedTags.isEmpty()) "Add tags" else selectedTags.joinToString { it.name },
+                            onClick = { activeSheetContent = ApproveSheetContent.Tags }
+                        )
+                        HorizontalDivider()
+                        OutlinedTextField(
+                            value = notes,
+                            onValueChange = { notes = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("Add notes...") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = "Notes") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = Color.Transparent,
+                            )
+                        )
+                    }
+                }
             }
+            item {
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val success = transactionViewModel.approveSmsTransaction(
+                                    potentialTxn = potentialTxn,
+                                    description = description,
+                                    categoryId = selectedCategory?.id,
+                                    notes = notes.takeIf { it.isNotBlank() },
+                                    tags = selectedTags
+                                )
+                                if (success) {
+                                    settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
+                                    settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
+                                    navController.popBackStack()
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = isSaveEnabled,
+                    ) { Text("Save Transaction") }
+                }
+            }
+        }
+    }
+
+    // --- NEW: Bottom Sheet Logic ---
+    if (activeSheetContent != null) {
+        ModalBottomSheet(
+            onDismissRequest = { activeSheetContent = null },
+            sheetState = sheetState
+        ) {
+            when (activeSheetContent) {
+                is ApproveSheetContent.Category -> ApproveCategoryPickerSheet(
+                    items = categories,
+                    onItemSelected = { selectedCategory = it; activeSheetContent = null }
+                )
+                is ApproveSheetContent.Tags -> ApproveTagPickerSheet(
+                    allTags = allTags,
+                    selectedTags = selectedTags,
+                    onTagSelected = transactionViewModel::onTagSelected,
+                    onAddNewTag = transactionViewModel::addTagOnTheGo,
+                    onConfirm = { activeSheetContent = null }
+                )
+                else -> {}
+            }
+        }
+    }
+}
+
+
+// --- NEW: Helper composables adapted from AddTransactionScreen ---
+
+@Composable
+private fun DetailRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    onClick: (() -> Unit)?,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    leadingIcon: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (leadingIcon != null) {
+            leadingIcon()
+        } else {
+            Icon(icon, contentDescription = label)
+        }
+        Spacer(Modifier.width(16.dp))
+        Text(label, modifier = Modifier.weight(1f))
+        Text(value, color = valueColor, fontWeight = FontWeight.SemiBold)
+        if (onClick != null) {
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ApproveCategoryPickerSheet(
+    items: List<Category>,
+    onItemSelected: (Category) -> Unit
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            "Select Category",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 100.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(items) { category ->
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onItemSelected(category) }
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CategoryIcon(category, Modifier.size(48.dp))
+                    Text(category.name, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ApproveTagPickerSheet(
+    allTags: List<Tag>,
+    selectedTags: Set<Tag>,
+    onTagSelected: (Tag) -> Unit,
+    onAddNewTag: (String) -> Unit,
+    onConfirm: () -> Unit
+) {
+    var newTagName by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("Manage Tags", style = MaterialTheme.typography.titleLarge)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            allTags.forEach { tag ->
+                FilterChip(
+                    selected = tag in selectedTags,
+                    onClick = { onTagSelected(tag) },
+                    label = { Text(tag.name) }
+                )
+            }
+        }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = newTagName,
+                onValueChange = { newTagName = it },
+                label = { Text("New Tag Name") },
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = {
+                    onAddNewTag(newTagName)
+                    newTagName = ""
+                },
+                enabled = newTagName.isNotBlank()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onConfirm) { Text("Cancel") }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                if (newTagName.isNotBlank()) {
+                    onAddNewTag(newTagName)
+                }
+                onConfirm()
+            }) { Text("Done") }
+        }
+    }
+}
+
+@Composable
+private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+                fontSize = 22.sp
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.padding(12.dp)
+            )
         }
     }
 }
@@ -6412,13 +6619,14 @@ fun DashboardScreen(
     val budgetStatus by viewModel.budgetStatus.collectAsState()
     val recentTransactions by viewModel.recentTransactions.collectAsState()
     val accountsSummary by viewModel.accountsSummary.collectAsState()
+    // --- BUG FIX: Get the correct state for the card ---
+    val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
+
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // --- UPDATED: The profile picture in the TopAppBar is handled in MainActivity ---
-        // This item is now removed to avoid duplication. The greeting is now part of the TopAppBar.
         item {
             OverallBudgetCard(
                 totalBudget = overallBudget,
@@ -6433,7 +6641,7 @@ fun DashboardScreen(
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
                     onClick = {
-                        navController.navigate("${BottomNavItem.Transactions.route}?type=income") {
+                        navController.navigate(BottomNavItem.Transactions.route) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
                             }
@@ -6448,19 +6656,13 @@ fun DashboardScreen(
                     modifier = Modifier.weight(1f),
                     onClick = { navController.navigate("budget_screen") }
                 )
+                // --- BUG FIX: Removed onClick and corrected amount ---
                 StatCard(
                     label = "Safe To Spend",
-                    amount = monthlyExpenses.toFloat(),
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        navController.navigate("${BottomNavItem.Transactions.route}?type=expense") {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    amount = safeToSpendPerDay,
+                    isPerDay = true, // Add flag to show "/day" suffix
+                    modifier = Modifier.weight(1f)
+                    // No onClick handler, so the card is not clickable
                 )
             }
         }
@@ -6519,15 +6721,20 @@ fun DashboardScreen(
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -6539,6 +6746,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -6548,6 +6756,7 @@ import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import io.pm.finlight.ProfileViewModel
 import io.pm.finlight.R
+import java.io.File
 
 @Composable
 fun EditProfileScreen(
@@ -6560,6 +6769,8 @@ fun EditProfileScreen(
 
     var editedName by remember(currentName) { mutableStateOf(currentName) }
     var croppedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var tempCameraImageUri by remember { mutableStateOf<Uri?>(null) }
+    var showImageSourceDialog by remember { mutableStateOf(false) }
 
     val displayUri = croppedImageUri ?: savedProfilePictureUri?.let { Uri.parse(it) }
 
@@ -6574,6 +6785,67 @@ fun EditProfileScreen(
             val exception = result.error
             Toast.makeText(context, "Image cropping failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            tempCameraImageUri?.let { uri ->
+                val cropOptions = CropImageContractOptions(
+                    uri = uri,
+                    cropImageOptions = createCropOptions(toolbarColor, toolbarTintColor, activityBackgroundColor)
+                )
+                imageCropper.launch(cropOptions)
+            }
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            val cropOptions = CropImageContractOptions(
+                uri = it,
+                cropImageOptions = createCropOptions(toolbarColor, toolbarTintColor, activityBackgroundColor)
+            )
+            imageCropper.launch(cropOptions)
+        }
+    }
+
+    if (showImageSourceDialog) {
+        AlertDialog(
+            onDismissRequest = { showImageSourceDialog = false },
+            title = { Text("Change Profile Picture") },
+            text = { Text("Choose a source for your new image.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showImageSourceDialog = false
+                        val tempFile = createTempImageFile(context)
+                        val newTempUri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.provider",
+                            tempFile
+                        )
+                        tempCameraImageUri = newTempUri
+                        cameraLauncher.launch(newTempUri)
+                    }
+                ) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Camera")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showImageSourceDialog = false
+                        galleryLauncher.launch("image/*")
+                    }
+                ) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Gallery")
+                }
+            }
+        )
     }
 
     Column(
@@ -6595,24 +6867,7 @@ fun EditProfileScreen(
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                 .clickable {
-                    val cropOptions = CropImageContractOptions(
-                        uri = null,
-                        cropImageOptions = CropImageOptions(
-                            cropShape = CropImageView.CropShape.OVAL,
-                            aspectRatioX = 1,
-                            aspectRatioY = 1,
-                            fixAspectRatio = true,
-                            outputCompressQuality = 70,
-                            imageSourceIncludeGallery = true,
-                            imageSourceIncludeCamera = true,
-                            activityTitle = "Crop Profile Picture",
-                            activityMenuIconColor = toolbarTintColor,
-                            toolbarColor = toolbarColor,
-                            toolbarBackButtonColor = toolbarTintColor,
-                            activityBackgroundColor = activityBackgroundColor
-                        )
-                    )
-                    imageCropper.launch(cropOptions)
+                    showImageSourceDialog = true
                 }
         )
 
@@ -6651,6 +6906,39 @@ fun EditProfileScreen(
             }
         }
     }
+}
+
+/**
+ * Helper function to create the crop options for the image cropper.
+ */
+private fun createCropOptions(toolbarColor: Int, toolbarTintColor: Int, activityBackgroundColor: Int): CropImageOptions {
+    return CropImageOptions(
+        cropShape = CropImageView.CropShape.OVAL,
+        aspectRatioX = 1,
+        aspectRatioY = 1,
+        fixAspectRatio = true,
+        outputCompressQuality = 70,
+        imageSourceIncludeGallery = false, // We handle this ourselves now
+        imageSourceIncludeCamera = false, // We handle this ourselves now
+        activityTitle = "Crop Profile Picture",
+        activityMenuIconColor = toolbarTintColor,
+        toolbarColor = toolbarColor,
+        toolbarBackButtonColor = toolbarTintColor,
+        activityBackgroundColor = activityBackgroundColor
+    )
+}
+
+/**
+ * Helper function to create a temporary image file in the app's cache directory.
+ */
+private fun createTempImageFile(context: Context): File {
+    // --- BUG FIX: Use the cache directory for temporary files ---
+    val storageDir: File = context.cacheDir
+    return File.createTempFile(
+        "JPEG_${System.currentTimeMillis()}_",
+        ".jpg",
+        storageDir
+    )
 }
 -e 
 
@@ -7877,63 +8165,69 @@ fun ReportsScreen(
     val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
 
 
-        LazyColumn() {
-            // --- Pie Chart Card (Unchanged) ---
-            item {
-                Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
-                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Spending by Category for ${viewModel.monthYear}", style = MaterialTheme.typography.titleLarge)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        if (pieData == null || pieData?.entryCount == 0) {
-                            Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
-                                Text("No expense data for this month.")
-                            }
-                        } else {
-                            AndroidView(
-                                factory = { context ->
-                                    PieChart(context).apply {
-                                        description.isEnabled = false
-                                        isDrawHoleEnabled = true
-                                        setHoleColor(
-                                            Color.TRANSPARENT,
-                                        )
-                                        setEntryLabelColor(Color.BLACK)
-                                        setEntryLabelTextSize(12f)
-                                        legend.isEnabled = false
-                                    }
-                                },
-                                update = { chart ->
-                                    chart.data = pieData
-                                    chart.invalidate()
-                                },
-                                modifier = Modifier.fillMaxWidth().height(300.dp),
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            ChartLegend(pieData)
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // --- Pie Chart Card ---
+        item {
+            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
+                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Spending by Category for ${viewModel.monthYear}", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    if (pieData == null || pieData?.entryCount == 0) {
+                        Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+                            Text("No expense data for this month.")
                         }
+                    } else {
+                        AndroidView(
+                            factory = { context ->
+                                PieChart(context).apply {
+                                    description.isEnabled = false
+                                    isDrawHoleEnabled = true
+                                    setHoleColor(
+                                        Color.TRANSPARENT,
+                                    )
+                                    setEntryLabelColor(Color.BLACK)
+                                    setEntryLabelTextSize(12f)
+                                    legend.isEnabled = false
+                                }
+                            },
+                            update = { chart ->
+                                chart.data = pieData
+                                // --- BUG FIX: Explicitly notify the chart that the data has changed ---
+                                // This forces a full redraw, ensuring that all properties of the
+                                // new dataset, including the custom colors, are applied correctly.
+                                chart.notifyDataSetChanged()
+                                chart.invalidate()
+                            },
+                            modifier = Modifier.fillMaxWidth().height(300.dp),
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        pieData?.let { ChartLegend(it) }
                     }
                 }
             }
+        }
 
-            // --- Bar Chart Card (REFINED) ---
-            item {
-                Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
-                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Income vs. Expense Trend", style = MaterialTheme.typography.titleLarge)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
-                            // This is the refined BarChart implementation
-                            GroupedBarChart(trendDataPair!!)
-                        } else {
-                            Box(modifier = Modifier.fillMaxWidth().height(250.dp), contentAlignment = Alignment.Center) {
-                                Text("Not enough data for trend analysis.")
-                            }
+        // --- Bar Chart Card ---
+        item {
+            Card(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), elevation = CardDefaults.cardElevation(4.dp)) {
+                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Income vs. Expense Trend", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
+                        GroupedBarChart(trendDataPair!!)
+                    } else {
+                        Box(modifier = Modifier.fillMaxWidth().height(250.dp), contentAlignment = Alignment.Center) {
+                            Text("Not enough data for trend analysis.")
                         }
                     }
                 }
             }
         }
     }
+}
 -e 
 
 
@@ -9021,12 +9315,14 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Fixed the double TopAppBar issue by conditionally hiding the main app bar
-// when navigating to the new Transaction Detail screen.
+// REASON: Implemented a splash/routing screen to handle deep links seamlessly.
+// This prevents the main dashboard from "flashing" before navigating to the
+// deep-linked content, improving the user experience.
 // =================================================================================
 package io.pm.finlight
 
 import android.Manifest
+import android.app.Activity
 import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -9059,6 +9355,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavDeepLinkRequest
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -9067,6 +9364,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import androidx.navigation.navOptions
 import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.ui.screens.*
@@ -9236,8 +9534,9 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
-    // --- FIX: Logic to conditionally show the main TopAppBar ---
-    val showMainTopBar = baseCurrentRoute != "transaction_detail" && baseCurrentRoute != "transaction_list"
+    val showMainTopBar = baseCurrentRoute != "transaction_detail" && baseCurrentRoute != "transaction_list" && baseCurrentRoute != "splash_screen"
+
+    val activity = LocalContext.current as AppCompatActivity
 
     Scaffold(
         topBar = {
@@ -9319,7 +9618,8 @@ fun MainAppScreen() {
         AppNavHost(
             navController = navController,
             modifier = Modifier.padding(innerPadding),
-            dashboardViewModel = dashboardViewModel
+            dashboardViewModel = dashboardViewModel,
+            activity = activity
         )
     }
 }
@@ -9329,7 +9629,8 @@ fun MainAppScreen() {
 fun AppNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
-    dashboardViewModel: DashboardViewModel
+    dashboardViewModel: DashboardViewModel,
+    activity: AppCompatActivity
 ) {
     val settingsViewModel: SettingsViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
@@ -9340,9 +9641,13 @@ fun AppNavHost(
 
     NavHost(
         navController = navController,
-        startDestination = BottomNavItem.Dashboard.route,
+        startDestination = "splash_screen",
         modifier = modifier
     ) {
+        composable("splash_screen") {
+            SplashScreen(navController = navController, activity = activity)
+        }
+
         composable(BottomNavItem.Dashboard.route) {
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }
@@ -9387,7 +9692,8 @@ fun AppNavHost(
 
         composable(
             route = "transaction_detail/{transactionId}",
-            arguments = listOf(navArgument("transactionId") { type = NavType.IntType })
+            arguments = listOf(navArgument("transactionId") { type = NavType.IntType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/transaction_detail/{transactionId}" })
         ) { backStackEntry ->
             val transactionId = backStackEntry.arguments!!.getInt("transactionId")
             TransactionDetailScreen(navController, transactionId, transactionViewModel)
@@ -9427,6 +9733,44 @@ fun AppNavHost(
         composable("tag_management") { TagManagementScreen() }
         composable("recurring_transactions") { RecurringTransactionScreen(navController) }
         composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
+    }
+}
+
+/**
+ * A new composable that acts as a routing screen. It checks the intent
+ * for a deep link and navigates accordingly, preventing the dashboard from
+ * flashing on screen during a deep link launch.
+ */
+@Composable
+fun SplashScreen(navController: NavHostController, activity: Activity) {
+    LaunchedEffect(key1 = Unit) {
+        val deepLinkUri = activity.intent?.data
+        if (deepLinkUri != null) {
+            // --- BUG FIX: Manually build the back stack for a seamless experience ---
+            // First, navigate to the main screen of the app.
+            navController.navigate(BottomNavItem.Dashboard.route) {
+                // Pop the splash screen off the stack to prevent going back to it.
+                popUpTo("splash_screen") { inclusive = true }
+            }
+            // Then, navigate to the specific deep-linked content.
+            // This places the dashboard on the back stack before the detail screen.
+            navController.navigate(deepLinkUri)
+            // Clear the intent data so it's not reused on process recreation.
+            activity.intent.data = null
+        } else {
+            // It's a normal launch, go to the dashboard
+            navController.navigate(BottomNavItem.Dashboard.route) {
+                popUpTo("splash_screen") { inclusive = true }
+            }
+        }
+    }
+
+    // Show a loading indicator while the navigation logic runs
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator()
     }
 }
 -e 
@@ -9784,7 +10128,9 @@ class OnboardingViewModel(
                 settingsRepository.saveUserName(_userName.value)
             }
 
-            // --- UPDATED: Insert all predefined categories by default ---
+            // --- BUG FIX: Ensure the full list of predefined categories is inserted ---
+            // This replaces any faulty logic that was creating a few default categories.
+            // It guarantees all users start with the complete, visually-rich category set.
             categoryRepository.insertAll(CategoryIconHelper.predefinedCategories)
 
             val budgetFloat = _monthlyBudget.value.toFloatOrNull() ?: 0f
@@ -9837,12 +10183,13 @@ class SmsRepository(private val context: Context) {
         }
 
         // Query the SMS inbox, sorting by date in descending order
+        // --- BUG FIX: Pass the selection and selectionArgs to the query ---
         val cursor =
             context.contentResolver.query(
                 Telephony.Sms.Inbox.CONTENT_URI,
                 projection,
-                null,
-                null,
+                selection, // Correctly pass the selection string
+                selectionArgs, // Correctly pass the selection arguments
                 "date DESC",
             )
 
@@ -10012,6 +10359,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -10025,9 +10373,9 @@ import java.util.Calendar
         RecurringTransaction::class,
         Tag::class,
         TransactionTagCrossRef::class,
-        TransactionImage::class // --- NEW: Add the new entity ---
+        TransactionImage::class
     ],
-    version = 11, // --- NEW: Increment the version number ---
+    version = 11,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -10095,8 +10443,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE categories ADD COLUMN colorKey TEXT NOT NULL DEFAULT 'gray_light'")
             }
         }
-
-        // --- NEW: Migration for the transaction_images table ---
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -10131,17 +10477,37 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                // This remains as a good failsafe check
+                CoroutineScope(Dispatchers.IO).launch {
+                    val database = getInstance(context)
+                    val categoryDao = database.categoryDao()
+                    val categories = categoryDao.getAllCategories().first()
+                    if (categories.isEmpty()) {
+                        categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
+                    }
+                }
+            }
+
+            // --- BUG FIX: Corrected the logic to populate the database in the right order ---
             suspend fun populateDatabase(db: AppDatabase) {
                 val accountDao = db.accountDao()
                 val categoryDao = db.categoryDao()
                 val transactionDao = db.transactionDao()
                 val budgetDao = db.budgetDao()
 
+                // 1. Clear all existing data
                 transactionDao.deleteAll()
                 budgetDao.deleteAll()
                 categoryDao.deleteAll()
                 accountDao.deleteAll()
 
+                // 2. Populate with defaults in the correct order
+                // FIRST, insert categories so they can be referenced by transactions/budgets.
+                categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
+
+                // SECOND, insert accounts.
                 accountDao.insertAll(
                     listOf(
                         Account(id = 1, name = "SBI", type = "Savings"),
@@ -10150,8 +10516,7 @@ abstract class AppDatabase : RoomDatabase() {
                     ),
                 )
 
-                categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
-
+                // THIRD, insert sample data that references the defaults.
                 val calendar = Calendar.getInstance()
                 calendar.set(Calendar.DAY_OF_MONTH, 5)
                 val incomeDate = calendar.timeInMillis
@@ -10164,7 +10529,7 @@ abstract class AppDatabase : RoomDatabase() {
                     listOf(
                         Transaction(
                             description = "Monthly Salary",
-                            categoryId = 12,
+                            categoryId = 12, // "Salary"
                             amount = 75000.0,
                             date = incomeDate,
                             accountId = 1,
@@ -10173,7 +10538,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Grocery Shopping",
-                            categoryId = 6,
+                            categoryId = 6, // "Groceries"
                             amount = 4500.0,
                             date = expenseDate1,
                             accountId = 2,
@@ -10182,7 +10547,7 @@ abstract class AppDatabase : RoomDatabase() {
                         ),
                         Transaction(
                             description = "Dinner with friends",
-                            categoryId = 4,
+                            categoryId = 4, // "Food & Drinks"
                             amount = 1200.0,
                             date = expenseDate2,
                             accountId = 2,
@@ -12330,16 +12695,15 @@ import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.TaskStackBuilder
 import androidx.core.net.toUri
 import com.google.gson.Gson
 import java.net.URLEncoder
 
 object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
-    // --- NEW: A deep link to directly edit a transaction ---
-    private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/edit_transaction"
+    private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
 
-    // --- NEW: Informational notification for auto-saved transactions ---
     fun showAutoSaveConfirmationNotification(
         context: Context,
         transaction: Transaction
@@ -12348,17 +12712,26 @@ object NotificationHelper {
             return
         }
 
-        val editUri = "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri()
-        val intent = Intent(Intent.ACTION_VIEW, editUri).apply {
-            `package` = context.packageName
+        // --- BUG FIX: Correctly build the back stack to avoid double-back-press issue ---
+        // This ensures a clean navigation path: Notification -> Detail Screen -> Dashboard.
+
+        // Create the Intent for the deep link. This is the only Intent we need to provide.
+        val detailIntent = Intent(
+            Intent.ACTION_VIEW,
+            "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri(),
+            context,
+            MainActivity::class.java
+        )
+
+        // TaskStackBuilder will use this single intent to create the full, correct back stack
+        // by looking at the parent activity defined in the manifest.
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            // This correctly adds the parent (MainActivity) and then the detailIntent on top.
+            addNextIntentWithParentStack(detailIntent)
+            // Get the PendingIntent containing the entire back stack.
+            getPendingIntent(transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            transaction.id, // Use transaction ID for unique pending intent
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -12374,7 +12747,6 @@ object NotificationHelper {
         }
     }
 
-    // --- RETAINED: Notification for manual review flow ---
     fun showTransactionNotification(
         context: Context,
         potentialTransaction: PotentialTransaction,
