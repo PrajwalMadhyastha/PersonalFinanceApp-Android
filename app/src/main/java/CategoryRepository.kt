@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CategoryRepository.kt
+// REASON: Updated the insert function to return the new category's ID (Long) and
+// added a function to get a category by its ID.
+// =================================================================================
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
@@ -12,10 +17,17 @@ class CategoryRepository(private val categoryDao: CategoryDao) {
     val allCategories: Flow<List<Category>> = categoryDao.getAllCategories()
 
     /**
+     * Retrieves a single category by its unique ID.
+     */
+    suspend fun getCategoryById(id: Int): Category? {
+        return categoryDao.getCategoryById(id)
+    }
+
+    /**
      * Inserts a category in a non-blocking way.
      */
-    suspend fun insert(category: Category) {
-        categoryDao.insert(category)
+    suspend fun insert(category: Category): Long {
+        return categoryDao.insert(category)
     }
 
     /**

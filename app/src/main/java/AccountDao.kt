@@ -1,3 +1,7 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/AccountDao.kt
+// REASON: Updated the insert function to return the new account's ID (Long).
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -11,11 +15,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AccountDao {
-    // --- PERFORMANCE OPTIMIZATION ---
-    // The original query ran a sub-query for every account, which is very inefficient (N+1 problem).
-    // This new query is significantly more performant. It calculates the balances for all accounts
-    // in a single pass using GROUP BY, and then LEFT JOINs the results back to the accounts table.
-    // This ensures that even with thousands of transactions and many accounts, the query remains fast.
     @Transaction
     @Query(
         """
@@ -52,8 +51,9 @@ interface AccountDao {
     @Query("DELETE FROM accounts")
     suspend fun deleteAll()
 
+    // --- UPDATED: Returns the new row ID ---
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(account: Account)
+    suspend fun insert(account: Account): Long
 
     @Update
     suspend fun update(account: Account)

@@ -1,10 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: REFACTORED - Replaced all editing dialogs with standardized ModalBottomSheets
-// for a more consistent and modern user experience. Added an enhanced category
-// picker with icons inside its bottom sheet.
-// BUG FIX: Corrected a recomposition loop when deleting a transaction opened
-// via a deep link by simplifying the screen's state management.
+// REASON: Implemented on-the-fly creation for Accounts and Categories within the
+// editing flow. The bottom sheets for selection now include a "+ Create New"
+// option, which launches a dialog. After creation, the transaction is
+// automatically updated with the new item.
+// BUG FIX: Removed local dialog definitions and imported them from the new
+// ui.components package to resolve compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -50,6 +51,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.CreateAccountDialog
+import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.io.File
 import java.text.SimpleDateFormat
@@ -57,10 +60,6 @@ import java.util.*
 
 private const val TAG = "DetailScreenDebug"
 
-/**
- * A sealed class to define the content type for the modal bottom sheet.
- * This allows for a type-safe way to determine which editor to display.
- */
 private sealed class SheetContent {
     object Description : SheetContent()
     object Amount : SheetContent()
@@ -70,12 +69,10 @@ private sealed class SheetContent {
     object Tags : SheetContent()
 }
 
-// --- BUG FIX: New sealed interface to represent the screen's state robustly ---
-// Renamed 'Deleted' to 'Exit' for clarity.
 private sealed interface DetailScreenState {
     object Loading : DetailScreenState
     data class Success(val details: TransactionDetails) : DetailScreenState
-    object Exit : DetailScreenState // Changed from Deleted
+    object Exit : DetailScreenState
 }
 
 
@@ -88,15 +85,11 @@ fun TransactionDetailScreen(
 ) {
     Log.d(TAG, "Composing TransactionDetailScreen for transactionId: $transactionId")
 
-    // --- BUG FIX: Use produceState with simplified and more robust state logic ---
     val screenState by produceState<DetailScreenState>(initialValue = DetailScreenState.Loading, transactionId) {
         viewModel.getTransactionDetailsById(transactionId).collect { details ->
             value = if (details != null) {
-                Log.d(TAG, "produceState: Received data. Emitting Success.")
                 DetailScreenState.Success(details)
             } else {
-                // ANYTIME we get null, it means the data isn't there. Time to leave.
-                Log.d(TAG, "produceState: Received null. Emitting Exit.")
                 DetailScreenState.Exit
             }
         }
@@ -118,6 +111,8 @@ fun TransactionDetailScreen(
     var activeSheetContent by remember { mutableStateOf<SheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
+    var showCreateAccountDialog by remember { mutableStateOf(false) }
+    var showCreateCategoryDialog by remember { mutableStateOf(false) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -140,26 +135,20 @@ fun TransactionDetailScreen(
         }
     }
 
-    // --- UI Rendering Logic based on the robust screenState ---
     when (val state = screenState) {
         is DetailScreenState.Loading -> {
-            Log.d(TAG, "Rendering Loading state.")
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         }
         is DetailScreenState.Exit -> {
-            Log.d(TAG, "Rendering Exit state. Navigating back.")
-            // This effect will run once when the state becomes Exit.
             LaunchedEffect(Unit) {
                 navController.popBackStack()
             }
-            // Show a blank screen while navigating away to prevent any flashing of old UI.
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         }
         is DetailScreenState.Success -> {
             val details = state.details
-            Log.d(TAG, "Rendering Success state for transaction: ${details.transaction.description}")
             val title = when (details.transaction.transactionType) {
                 "expense" -> "Debit transaction"
                 "income" -> "Credit transaction"
@@ -321,11 +310,42 @@ fun TransactionDetailScreen(
                             categories = categories,
                             allTags = allTags,
                             selectedTags = selectedTags,
-                            onDismiss = { activeSheetContent = null }
+                            onDismiss = { activeSheetContent = null },
+                            onAddNewAccount = {
+                                activeSheetContent = null
+                                showCreateAccountDialog = true
+                            },
+                            onAddNewCategory = {
+                                activeSheetContent = null
+                                showCreateCategoryDialog = true
+                            }
                         )
                     }
                 }
 
+                if (showCreateAccountDialog) {
+                    CreateAccountDialog(
+                        onDismiss = { showCreateAccountDialog = false },
+                        onConfirm = { name, type ->
+                            viewModel.createAccount(name, type) { newAccount ->
+                                viewModel.updateTransactionAccount(transactionId, newAccount.id)
+                            }
+                            showCreateAccountDialog = false
+                        }
+                    )
+                }
+
+                if (showCreateCategoryDialog) {
+                    CreateCategoryDialog(
+                        onDismiss = { showCreateCategoryDialog = false },
+                        onConfirm = { name, iconKey, colorKey ->
+                            viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
+                                viewModel.updateTransactionCategory(transactionId, newCategory.id)
+                            }
+                            showCreateCategoryDialog = false
+                        }
+                    )
+                }
 
                 if (showDatePicker) {
                     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
@@ -409,10 +429,6 @@ fun TransactionDetailScreen(
     }
 }
 
-/**
- * A composable that renders the appropriate editor inside the modal bottom sheet
- * based on the [SheetContent] type.
- */
 @Composable
 private fun TransactionEditSheetContent(
     sheetContent: SheetContent,
@@ -422,7 +438,9 @@ private fun TransactionEditSheetContent(
     categories: List<Category>,
     allTags: List<Tag>,
     selectedTags: Set<Tag>,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddNewAccount: () -> Unit,
+    onAddNewCategory: () -> Unit
 ) {
     val transactionId = details.transaction.id
 
@@ -458,7 +476,8 @@ private fun TransactionEditSheetContent(
                 items = accounts,
                 getItemName = { (it as Account).name },
                 onItemSelected = { viewModel.updateTransactionAccount(transactionId, (it as Account).id) },
-                onDismiss = onDismiss
+                onDismiss = onDismiss,
+                onAddNew = onAddNewAccount
             )
         }
         is SheetContent.Category -> {
@@ -466,7 +485,8 @@ private fun TransactionEditSheetContent(
                 title = "Select Category",
                 items = categories,
                 onItemSelected = { viewModel.updateTransactionCategory(transactionId, it.id) },
-                onDismiss = onDismiss
+                onDismiss = onDismiss,
+                onAddNew = onAddNewCategory
             )
         }
         is SheetContent.Tags -> {
@@ -485,10 +505,6 @@ private fun TransactionEditSheetContent(
     }
 }
 
-
-/**
- * A generic bottom sheet for editing a simple text field.
- */
 @Composable
 private fun EditTextFieldSheet(
     title: String,
@@ -532,16 +548,14 @@ private fun EditTextFieldSheet(
     }
 }
 
-/**
- * A generic bottom sheet for picking an item from a list.
- */
 @Composable
 private fun <T> PickerSheet(
     title: String,
     items: List<T>,
     getItemName: (T) -> String,
     onItemSelected: (T) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddNew: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.navigationBarsPadding()) {
         Text(
@@ -559,20 +573,27 @@ private fun <T> PickerSheet(
                     }
                 )
             }
+            if (onAddNew != null) {
+                item {
+                    ListItem(
+                        headlineContent = { Text("Create New") },
+                        leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New") },
+                        modifier = Modifier.clickable(onClick = onAddNew)
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(16.dp))
     }
 }
 
-/**
- * An enhanced category picker bottom sheet that shows category icons in a grid.
- */
 @Composable
 private fun CategoryPickerSheet(
     title: String,
     items: List<Category>,
     onItemSelected: (Category) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddNew: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.navigationBarsPadding()) {
         Text(
@@ -602,14 +623,27 @@ private fun CategoryPickerSheet(
                     Text(category.name, style = MaterialTheme.typography.bodyMedium)
                 }
             }
+            if (onAddNew != null) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(onClick = onAddNew)
+                            .padding(vertical = 12.dp)
+                            .height(80.dp), // Match height of other items
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.AddCircleOutline, contentDescription = "Create New", modifier = Modifier.size(48.dp))
+                        Text("New", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(16.dp))
     }
 }
 
-/**
- * A bottom sheet for selecting and creating tags.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagPickerSheet(
@@ -680,8 +714,6 @@ private fun TagPickerSheet(
         }
     }
 }
-
-// --- Helper Composables (mostly unchanged, but kept for context) ---
 
 @Composable
 private fun CategoryIconDisplay(category: Category) {
@@ -798,7 +830,6 @@ private fun TransactionHeaderCard(
     }
 }
 
-// Extension function to convert TransactionDetails to a Category object
 private fun TransactionDetails.toCategory(): Category {
     return Category(
         id = this.transaction.categoryId ?: 0,

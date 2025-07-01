@@ -1,3 +1,12 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
+// REASON: Implemented on-the-fly creation of Accounts and Categories. The selection
+// bottom sheets now include a "+ Create New" option, which launches a dialog
+// to add the new item without leaving the screen. The new item is then
+// automatically selected.
+// BUG FIX: Removed local dialog definitions and imported them from the new
+// ui.components package to resolve compilation errors.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.net.Uri
@@ -38,6 +47,8 @@ import coil.compose.AsyncImage
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.CreateAccountDialog
+import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
 import java.util.*
@@ -87,13 +98,15 @@ fun AddTransactionScreen(
     var activeSheetContent by remember { mutableStateOf<AddSheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
+    var showCreateAccountDialog by remember { mutableStateOf(false) }
+    var showCreateCategoryDialog by remember { mutableStateOf(false) }
+
     val isExpense = transactionType == "expense"
     val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && (!isExpense || selectedCategory != null))
 
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
 
-    // --- NEW: Logic to pre-fill the form when editing a CSV row ---
     LaunchedEffect(initialDataJson, accounts, categories) {
         if (isCsvEdit && initialDataJson != null) {
             try {
@@ -223,7 +236,6 @@ fun AddTransactionScreen(
                     Button(
                         onClick = {
                             if (isCsvEdit) {
-                                // --- NEW: Logic for returning edited CSV data ---
                                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                                 val correctedData = listOf(
                                     dateFormat.format(selectedDateTime.time),
@@ -243,7 +255,6 @@ fun AddTransactionScreen(
                                     ?.set("corrected_row_line", csvLineNumber)
                                 navController.popBackStack()
                             } else {
-                                // Original logic for adding a new transaction
                                 val success = viewModel.addTransaction(
                                     description = description,
                                     categoryId = selectedCategory?.id,
@@ -262,7 +273,6 @@ fun AddTransactionScreen(
                         modifier = Modifier.weight(1f),
                         enabled = isSaveEnabled
                     ) {
-                        // --- UPDATED: Button text is now dynamic ---
                         Text(if (isCsvEdit) "Update Row" else "Save")
                     }
                 }
@@ -279,11 +289,19 @@ fun AddTransactionScreen(
                 is AddSheetContent.Account -> AddAccountPickerSheet(
                     items = accounts,
                     onItemSelected = { selectedAccount = it; activeSheetContent = null },
+                    onAddNew = {
+                        activeSheetContent = null
+                        showCreateAccountDialog = true
+                    },
                     onDismiss = { activeSheetContent = null }
                 )
                 is AddSheetContent.Category -> AddCategoryPickerSheet(
                     items = categories,
                     onItemSelected = { selectedCategory = it; activeSheetContent = null },
+                    onAddNew = {
+                        activeSheetContent = null
+                        showCreateCategoryDialog = true
+                    },
                     onDismiss = { activeSheetContent = null }
                 )
                 is AddSheetContent.Tags -> AddTagPickerSheet(
@@ -298,6 +316,31 @@ fun AddTransactionScreen(
             }
         }
     }
+
+    if (showCreateAccountDialog) {
+        CreateAccountDialog(
+            onDismiss = { showCreateAccountDialog = false },
+            onConfirm = { name, type ->
+                viewModel.createAccount(name, type) { newAccount ->
+                    selectedAccount = newAccount
+                }
+                showCreateAccountDialog = false
+            }
+        )
+    }
+
+    if (showCreateCategoryDialog) {
+        CreateCategoryDialog(
+            onDismiss = { showCreateCategoryDialog = false },
+            onConfirm = { name, iconKey, colorKey ->
+                viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
+                    selectedCategory = newCategory
+                }
+                showCreateCategoryDialog = false
+            }
+        )
+    }
+
 
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
@@ -386,7 +429,6 @@ fun PrimaryInfoCard(
                 value = description,
                 onValueChange = onDescriptionChange,
                 label = { Text("Description") },
-                // --- FIX: Add a testTag for reliable UI testing ---
                 modifier = Modifier.fillMaxWidth().testTag("description_input"),
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedBorderColor = Color.Transparent,
@@ -458,7 +500,6 @@ fun DetailsCard(
                 onClick = onAttachmentsClick
             )
             HorizontalDivider()
-            // Notes field directly inside the card
             OutlinedTextField(
                 value = notes,
                 onValueChange = onNotesChange,
@@ -536,13 +577,11 @@ private fun SegmentedButton(
     }
 }
 
-
-// --- Bottom Sheet Composables for Add Screen ---
-
 @Composable
 private fun AddAccountPickerSheet(
     items: List<Account>,
     onItemSelected: (Account) -> Unit,
+    onAddNew: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Column(modifier = Modifier.navigationBarsPadding()) {
@@ -558,6 +597,13 @@ private fun AddAccountPickerSheet(
                     modifier = Modifier.clickable { onItemSelected(item) }
                 )
             }
+            item {
+                ListItem(
+                    headlineContent = { Text("+ Create New Account") },
+                    leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New Account") },
+                    modifier = Modifier.clickable(onClick = onAddNew)
+                )
+            }
         }
         Spacer(Modifier.height(16.dp))
     }
@@ -567,6 +613,7 @@ private fun AddAccountPickerSheet(
 private fun AddCategoryPickerSheet(
     items: List<Category>,
     onItemSelected: (Category) -> Unit,
+    onAddNew: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Column(modifier = Modifier.navigationBarsPadding()) {
@@ -592,6 +639,20 @@ private fun AddCategoryPickerSheet(
                 ) {
                     CategoryIcon(category, Modifier.size(48.dp))
                     Text(category.name, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                }
+            }
+            item {
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onAddNew)
+                        .padding(vertical = 12.dp)
+                        .height(76.dp), // Match height of other items
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.AddCircleOutline, contentDescription = "Create New", modifier = Modifier.size(48.dp))
+                    Text("New", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                 }
             }
         }
@@ -665,7 +726,7 @@ private fun AddTagPickerSheet(
                 if (newTagName.isNotBlank()) {
                     onAddNewTag(newTagName)
                 }
-                onConfirm() // This just dismisses the sheet now
+                onConfirm()
             }) { Text("Done") }
         }
     }

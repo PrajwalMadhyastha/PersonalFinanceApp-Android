@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CategoryDao.kt
+// REASON: Updated the insert function to return the new category's ID (Long) and
+// added a function to get a category by its ID.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -14,23 +19,22 @@ interface CategoryDao {
     @Query("SELECT * FROM categories ORDER BY name ASC")
     fun getAllCategories(): Flow<List<Category>>
 
+    // --- NEW: Function to get a single category by its ID ---
     @Query("SELECT * FROM categories WHERE id = :categoryId")
     suspend fun getCategoryById(categoryId: Int): Category?
 
-    // --- BUG FIX: Query the correct table ('categories') ---
     @Query("SELECT * FROM categories WHERE name = :name LIMIT 1")
     suspend fun findByName(name: String): Category?
 
-    // --- NEW: For data seeding ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(categories: List<Category>)
 
-    // --- NEW: For data seeding ---
     @Query("DELETE FROM categories")
     suspend fun deleteAll()
 
+    // --- UPDATED: Returns the new row ID ---
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(category: Category)
+    suspend fun insert(category: Category): Long
 
     @Update
     suspend fun update(category: Category)
