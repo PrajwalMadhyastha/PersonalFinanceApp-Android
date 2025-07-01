@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
+// REASON: Enhanced getOverallBudgetForMonth to automatically carry over the
+// previous month's budget if no budget is explicitly set for the current month.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -23,16 +28,13 @@ class SettingsRepository(context: Context) {
         private const val KEY_DAILY_REPORT_ENABLED = "daily_report_enabled"
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
-        // --- NEW: Key for storing the backup preference ---
         private const val KEY_BACKUP_ENABLED = "google_drive_backup_enabled"
     }
 
-    // --- NEW: Function to save the backup preference ---
     fun saveBackupEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_BACKUP_ENABLED, isEnabled).apply()
     }
 
-    // --- NEW: Flow to read the backup preference ---
     fun getBackupEnabled(): Flow<Boolean> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
@@ -41,7 +43,6 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Default to true, as backup is enabled by default in the manifest
             trySend(prefs.getBoolean(KEY_BACKUP_ENABLED, true))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
@@ -130,7 +131,7 @@ class SettingsRepository(context: Context) {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                 if (key == KEY_DAILY_REPORT_ENABLED) {
-                    trySend(prefs.getBoolean(key, false)) // Default to false
+                    trySend(prefs.getBoolean(key, false))
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -155,16 +156,42 @@ class SettingsRepository(context: Context) {
         return prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
     }
 
+    // --- UPDATED: Logic to carry over the previous month's budget ---
     fun getOverallBudgetForMonth(year: Int, month: Int): Flow<Float> {
-        val key = getBudgetKey(year, month)
         return callbackFlow {
+            val currentMonthKey = getBudgetKey(year, month)
+
+            val previousMonthCalendar = Calendar.getInstance().apply {
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month - 1) // Calendar month is 0-indexed
+                add(Calendar.MONTH, -1)
+            }
+            val previousMonthKey = getBudgetKey(
+                previousMonthCalendar.get(Calendar.YEAR),
+                previousMonthCalendar.get(Calendar.MONTH) + 1
+            )
+
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
-                if (changedKey == key) {
-                    trySend(sharedPreferences.getFloat(key, 0f))
+                if (changedKey == currentMonthKey) {
+                    // If current month's budget is set/changed, emit it.
+                    trySend(sharedPreferences.getFloat(currentMonthKey, 0f))
+                } else if (changedKey == previousMonthKey && !sharedPreferences.contains(currentMonthKey)) {
+                    // If previous month's budget changed AND current month has no budget,
+                    // emit the new carried-over value.
+                    trySend(sharedPreferences.getFloat(previousMonthKey, 0f))
                 }
             }
+
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            trySend(prefs.getFloat(key, 0f))
+
+            // Initial emission
+            val budget = if (prefs.contains(currentMonthKey)) {
+                prefs.getFloat(currentMonthKey, 0f)
+            } else {
+                prefs.getFloat(previousMonthKey, 0f)
+            }
+            trySend(budget)
+
             awaitClose {
                 prefs.unregisterOnSharedPreferenceChangeListener(listener)
             }
@@ -177,7 +204,7 @@ class SettingsRepository(context: Context) {
     fun getWeeklySummaryEnabled(): Flow<Boolean> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == KEY_WEEKLY_SUMMARY_ENABLED) { trySend(prefs.getBoolean(key, true)) } // Default to true
+                if (key == KEY_WEEKLY_SUMMARY_ENABLED) { trySend(prefs.getBoolean(key, true)) }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_WEEKLY_SUMMARY_ENABLED, true))
@@ -191,7 +218,7 @@ class SettingsRepository(context: Context) {
     fun getUnknownTransactionPopupEnabled(): Flow<Boolean> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED) { trySend(prefs.getBoolean(key, true)) } // Default to true
+                if (key == KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED) { trySend(prefs.getBoolean(key, true)) }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true))
