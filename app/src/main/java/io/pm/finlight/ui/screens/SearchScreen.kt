@@ -3,22 +3,30 @@
 // REASON: Modernized the UI by implementing auto-focus for the keyword field
 // and removing the now-obsolete "Apply Filter" button, creating a more
 // dynamic and responsive search experience.
-// BUG FIX: Added the missing import for SearchViewModelFactory.
+// UPDATE: Redesigned the layout to hide advanced filters in a collapsible
+// section, providing a cleaner initial view and an indicator for active filters.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -34,7 +42,6 @@ import java.util.*
 @Composable
 fun SearchScreen(navController: NavController) {
     val context = LocalContext.current
-    // --- FIX: The factory is now correctly referenced ---
     val factory = SearchViewModelFactory(context.applicationContext as Application)
     val viewModel: SearchViewModel = viewModel(factory = factory)
 
@@ -43,91 +50,130 @@ fun SearchScreen(navController: NavController) {
 
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
+    var showAdvancedFilters by remember { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
-
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
+    val areFiltersActive by remember(searchUiState) {
+        derivedStateOf {
+            searchUiState.selectedAccount != null ||
+                    searchUiState.selectedCategory != null ||
+                    searchUiState.transactionType != "All" ||
+                    searchUiState.startDate != null ||
+                    searchUiState.endDate != null
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.weight(1f),
-        ) {
-            item {
+        // Search Bar and Filter Toggle
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedTextField(
                     value = searchUiState.keyword,
                     onValueChange = { viewModel.onKeywordChange(it) },
                     label = { Text("Keyword (description, notes)") },
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .focusRequester(focusRequester),
                     singleLine = true
                 )
-            }
-
-            item {
-                SearchableDropdown(
-                    label = "Account",
-                    options = searchUiState.accounts,
-                    selectedOption = searchUiState.selectedAccount,
-                    onOptionSelected = { viewModel.onAccountChange(it) },
-                    getDisplayName = { it.name },
-                )
-            }
-
-            item {
-                SearchableDropdown(
-                    label = "Category",
-                    options = searchUiState.categories,
-                    selectedOption = searchUiState.selectedCategory,
-                    onOptionSelected = { viewModel.onCategoryChange(it) },
-                    getDisplayName = { it.name },
-                )
-            }
-
-            item {
-                SearchableDropdown(
-                    label = "Transaction Type",
-                    options = listOf("All", "Income", "Expense"),
-                    selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
-                    onOptionSelected = { viewModel.onTypeChange(it) },
-                    getDisplayName = { it },
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                BadgedBox(
+                    badge = {
+                        if (areFiltersActive) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                    }
                 ) {
-                    DateTextField(
-                        label = "Start Date",
-                        date = searchUiState.startDate,
-                        formatter = dateFormatter,
-                        onClick = { showStartDatePicker = true },
-                        onClear = { viewModel.onDateChange(start = null) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    DateTextField(
-                        label = "End Date",
-                        date = searchUiState.endDate,
-                        formatter = dateFormatter,
-                        onClick = { showEndDatePicker = true },
-                        onClear = { viewModel.onDateChange(end = null) },
-                        modifier = Modifier.weight(1f),
-                    )
+                    IconButton(onClick = { showAdvancedFilters = !showAdvancedFilters }) {
+                        Icon(Icons.Default.FilterList, contentDescription = "Toggle Advanced Filters")
+                    }
                 }
             }
 
-            if (searchResults.isNotEmpty()) {
+            // Collapsible Advanced Filters Section
+            AnimatedVisibility(
+                visible = showAdvancedFilters,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(
+                    modifier = Modifier.padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SearchableDropdown(
+                        label = "Account",
+                        options = searchUiState.accounts,
+                        selectedOption = searchUiState.selectedAccount,
+                        onOptionSelected = { viewModel.onAccountChange(it) },
+                        getDisplayName = { it.name },
+                    )
+                    SearchableDropdown(
+                        label = "Category",
+                        options = searchUiState.categories,
+                        selectedOption = searchUiState.selectedCategory,
+                        onOptionSelected = { viewModel.onCategoryChange(it) },
+                        getDisplayName = { it.name },
+                    )
+                    SearchableDropdown(
+                        label = "Transaction Type",
+                        options = listOf("All", "Income", "Expense"),
+                        selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
+                        onOptionSelected = { viewModel.onTypeChange(it) },
+                        getDisplayName = { it },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        DateTextField(
+                            label = "Start Date",
+                            date = searchUiState.startDate,
+                            formatter = dateFormatter,
+                            onClick = { showStartDatePicker = true },
+                            onClear = { viewModel.onDateChange(start = null) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        DateTextField(
+                            label = "End Date",
+                            date = searchUiState.endDate,
+                            formatter = dateFormatter,
+                            onClick = { showEndDatePicker = true },
+                            onClear = { viewModel.onDateChange(end = null) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.clearFilters() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Clear All Filters") }
+                }
+            }
+        }
+
+        HorizontalDivider()
+
+        // Search Results
+        if (searchResults.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(16.dp)
+            ) {
                 item {
                     Text(
                         text = "Results (${searchResults.size})",
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = 16.dp),
+                        modifier = Modifier.padding(bottom = 8.dp),
                     )
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 }
                 items(searchResults) { transactionDetails ->
                     TransactionItem(
@@ -135,26 +181,16 @@ fun SearchScreen(navController: NavController) {
                         onClick = { navController.navigate("transaction_detail/${transactionDetails.transaction.id}") },
                     )
                 }
-            } else if (searchUiState.hasSearched) {
-                item {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
-                        Text("No transactions match your criteria.")
-                    }
-                }
             }
-        }
-
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            OutlinedButton(
-                onClick = { viewModel.clearFilters() },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Clear All Filters") }
+        } else if (searchUiState.hasSearched) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No transactions match your criteria.")
+            }
         }
     }
 
