@@ -2,6 +2,7 @@ package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NewLabel
@@ -9,11 +10,22 @@ import androidx.compose.material.icons.filled.Pin
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import io.pm.finlight.RuleCreationViewModel
+import io.pm.finlight.RuleSelection
 
 /**
  * A screen where users can define custom parsing rules for SMS messages.
@@ -22,9 +34,17 @@ import androidx.navigation.NavController
  *
  * @param navController The NavController for handling navigation.
  * @param smsText The full body of the SMS message to create a rule for.
+ * @param viewModel The ViewModel to manage the state of the rule creation process.
  */
 @Composable
-fun RuleCreationScreen(navController: NavController, smsText: String) {
+fun RuleCreationScreen(
+    navController: NavController,
+    smsText: String,
+    viewModel: RuleCreationViewModel = viewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(smsText)) }
+
     Scaffold { innerPadding ->
         Column(
             modifier = Modifier
@@ -34,7 +54,7 @@ fun RuleCreationScreen(navController: NavController, smsText: String) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Section to display the full SMS text
+            // Section to display the full SMS text with selection enabled
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(2.dp)
@@ -46,24 +66,52 @@ fun RuleCreationScreen(navController: NavController, smsText: String) {
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text(smsText, style = MaterialTheme.typography.bodyLarge)
+                    // --- FIX: Using a read-only BasicTextField to reliably get selection ---
+                    BasicTextField(
+                        value = textFieldValue,
+                        onValueChange = { textFieldValue = it },
+                        readOnly = true, // Makes it behave like Text, but allows selection
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                    )
                 }
             }
 
-            // Section for action buttons
+            // Section for action buttons, enabled when text is selected
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(onClick = { /* TODO: Implement text selection logic */ }, enabled = false, modifier = Modifier.weight(1f)) {
+                val selection = textFieldValue.selection
+                val isSelectionActive = !selection.collapsed
+
+                Button(
+                    onClick = {
+                        val selectedText = textFieldValue.text.substring(selection.start, selection.end)
+                        val ruleSelection = RuleSelection(selectedText, selection.start, selection.end)
+                        viewModel.onMarkAsMerchant(ruleSelection)
+                    },
+                    enabled = isSelectionActive,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text("Mark as Merchant")
                 }
-                Button(onClick = { /* TODO: Implement text selection logic */ }, enabled = false, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = {
+                        val selectedText = textFieldValue.text.substring(selection.start, selection.end)
+                        val ruleSelection = RuleSelection(selectedText, selection.start, selection.end)
+                        viewModel.onMarkAsAmount(ruleSelection)
+                    },
+                    enabled = isSelectionActive,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text("Mark as Amount")
                 }
             }
 
-            // Placeholder for rule summary
+            // Dynamic rule summary
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(2.dp)
@@ -81,17 +129,17 @@ fun RuleCreationScreen(navController: NavController, smsText: String) {
                     RuleSummaryItem(
                         icon = Icons.Default.Title,
                         label = "Merchant",
-                        value = "Not set"
+                        value = uiState.merchantSelection.selectedText.ifBlank { "Not set" }
                     )
                     RuleSummaryItem(
                         icon = Icons.Default.Pin,
                         label = "Amount",
-                        value = "Not set"
+                        value = uiState.amountSelection.selectedText.ifBlank { "Not set" }
                     )
                     RuleSummaryItem(
                         icon = Icons.Default.NewLabel,
                         label = "Transaction Type",
-                        value = "Not set"
+                        value = uiState.transactionType ?: "Not set"
                     )
                 }
             }
