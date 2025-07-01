@@ -79,7 +79,7 @@ class SmsParserTest {
 
     @Test
     fun `test parses HDFC card message`() {
-        val smsBody = "[JD-HDFCBK-S] Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on2025-06-22:08:01:24.Not You> To Block+Reissue Call 1800232323232/SMS BLOCK CC 9922 to 123098123"
+        val smsBody = "[JD-HDFCBK-S] Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on2025-06-22:08:01:24.Not You> To Block+Reissue Call 18002323232/SMS BLOCK CC 9922 to 123098123"
         val mockSms = SmsMessage(id = 6L, sender = "JD-HDFCBK", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings)
 
@@ -94,16 +94,16 @@ class SmsParserTest {
 
     @Test
     fun `test parses Pluxee Meal Card message`() {
-        val smsBody = "[VD-PLUXEE-S] Rs.40.00 spent from Pluxee. Meal Card wallet, card no.xx7809 on 22-06-2025 14:46:11 at KITCHEN AFF . Avl bal Rs.3402.65. Not you call 213091823"
+        val smsBody = "Rs. 60.00 spent from Pluxee Meal Card wallet, card no.xx1345 on 30-06-2025 18:41:56 at KITCHEN AFF . Avl bal Rs.1824.65. Not you call 18002106919"
         val mockSms = SmsMessage(id = 7L, sender = "VD-PLUXEE", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings)
 
         assertNotNull(result)
-        assertEquals(40.00, result?.amount)
+        assertEquals(60.00, result?.amount)
         assertEquals("expense", result?.transactionType)
         assertEquals("KITCHEN AFF", result?.merchantName)
         assertNotNull(result?.potentialAccount)
-        assertEquals("Pluxee - xx7809", result?.potentialAccount?.formattedName)
+        assertEquals("Pluxee - xx1345", result?.potentialAccount?.formattedName)
         assertEquals("Meal Card wallet", result?.potentialAccount?.accountType)
     }
 
@@ -120,5 +120,46 @@ class SmsParserTest {
         assertNotNull(result?.potentialAccount)
         assertEquals("ICICI Bank - xx823", result?.potentialAccount?.formattedName)
         assertEquals("Savings Account", result?.potentialAccount?.accountType)
+    }
+
+    // --- NEW: Unit tests for the latest fixes ---
+
+    @Test
+    fun `test ignores invoice message`() {
+        val smsBody = "An Invoice of Rs.330.8 for A4 Block-108 is raised. Pay at https://nbhd.co/NBHood/g/szBBpng. Ignore if paid - NoBrokerHood"
+        val mockSms = SmsMessage(id = 9L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+        assertNull("Parser should ignore invoice messages", result)
+    }
+
+    @Test
+    fun `test ignores successful payment confirmation`() {
+        val smsBody = "Your payment of Rs.330.80 for A4-108 against Water Charges is successful. Regards NoBrokerHood"
+        val mockSms = SmsMessage(id = 10L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+        assertNull("Parser should ignore successful payment confirmations", result)
+    }
+
+    @Test
+    fun `test parses ICICI NEFT credit message`() {
+        val smsBody = "ICICI Bank Account XX823 credited:Rs. 1,133.00 on 01-Jul-25. Info NEFT-HDFCN5202507024345356218-. Available Balance is Rs. 1,858.35."
+        val mockSms = SmsMessage(id = 11L, sender = "VM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNotNull(result)
+        assertEquals(1133.00, result?.amount)
+        assertEquals("income", result?.transactionType)
+        assertEquals("NEFT-HDFCN5202507024345356218-", result?.merchantName)
+        assertNotNull(result?.potentialAccount)
+        assertEquals("ICICI Bank - xx823", result?.potentialAccount?.formattedName)
+        assertEquals("Bank Account", result?.potentialAccount?.accountType)
+    }
+
+    @Test
+    fun `test parses HDFC NEFT credit message`() {
+        val smsBody = "HDFC Bank : NEFT money transfer Txn No HDFCN520253454560344 for Rs INR 1,500.00 has been credited to Manga Penga on 01-07-2025 at 08:05:30"
+        val mockSms = SmsMessage(id = 12L, sender = "VM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+        assertNull("Parser should ignore has been credited to messages", result)
     }
 }
