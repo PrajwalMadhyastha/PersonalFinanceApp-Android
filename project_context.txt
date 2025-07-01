@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul  1 12:05:39 IST 2025
+Generated on: Tue Jul  1 13:33:30 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -5409,6 +5409,7 @@ fun Modifier.pagerTabIndicatorOffset(
 package io.pm.finlight.ui.screens
 
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -5435,6 +5436,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -5442,6 +5444,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -5451,6 +5454,8 @@ import io.pm.finlight.ui.components.TimePickerDialog
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+
+private const val TAG = "DetailScreenDebug"
 
 /**
  * A sealed class to define the content type for the modal bottom sheet.
@@ -5465,6 +5470,13 @@ private sealed class SheetContent {
     object Tags : SheetContent()
 }
 
+// --- BUG FIX: New sealed interface to represent the screen's state robustly ---
+private sealed interface DetailScreenState {
+    object Loading : DetailScreenState
+    data class Success(val details: TransactionDetails) : DetailScreenState
+    object Deleted : DetailScreenState
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -5473,7 +5485,27 @@ fun TransactionDetailScreen(
     transactionId: Int,
     viewModel: TransactionViewModel = viewModel()
 ) {
-    val transactionDetails by viewModel.getTransactionDetailsById(transactionId).collectAsState(initial = null)
+    Log.d(TAG, "Composing TransactionDetailScreen for transactionId: $transactionId")
+
+    // --- BUG FIX: Use produceState for robust state management ---
+    val screenState by produceState<DetailScreenState>(initialValue = DetailScreenState.Loading, transactionId) {
+        viewModel.getTransactionDetailsById(transactionId).collect { details ->
+            value = if (details != null) {
+                Log.d(TAG, "produceState: Received data. Emitting Success.")
+                DetailScreenState.Success(details)
+            } else {
+                // If the current state is already Success, it means the item was just deleted.
+                if (value is DetailScreenState.Success) {
+                    Log.d(TAG, "produceState: Received null after Success. Emitting Deleted.")
+                    DetailScreenState.Deleted
+                } else {
+                    Log.d(TAG, "produceState: Received null initially. Emitting Loading.")
+                    DetailScreenState.Loading
+                }
+            }
+        }
+    }
+
     val accounts by viewModel.allAccounts.collectAsState()
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
     val allTags by viewModel.allTags.collectAsState()
@@ -5487,7 +5519,6 @@ fun TransactionDetailScreen(
     var showImageViewer by remember { mutableStateOf<Uri?>(null) }
     var showImageDeleteDialog by remember { mutableStateOf<TransactionImage?>(null) }
 
-    // --- REFACTORED: State to manage the bottom sheet content ---
     var activeSheetContent by remember { mutableStateOf<SheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
@@ -5500,7 +5531,9 @@ fun TransactionDetailScreen(
         }
     }
 
+    val context = LocalContext.current
     LaunchedEffect(transactionId) {
+        NotificationManagerCompat.from(context).cancel(transactionId)
         viewModel.loadTagsForTransaction(transactionId)
         viewModel.loadImagesForTransaction(transactionId)
     }
@@ -5511,261 +5544,270 @@ fun TransactionDetailScreen(
         }
     }
 
-    val title = when (transactionDetails?.transaction?.transactionType) {
-        "expense" -> "Debit transaction"
-        "income" -> "Credit transaction"
-        else -> "Transaction Details"
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
-                    }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Delete") },
-                            onClick = {
-                                showMenu = false
-                                showDeleteDialog = true
-                            },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete") }
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    ) { innerPadding ->
-        transactionDetails?.let { details ->
+    // --- UI Rendering Logic based on the robust screenState ---
+    when (val state = screenState) {
+        is DetailScreenState.Loading -> {
+            Log.d(TAG, "Rendering Loading state.")
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+        is DetailScreenState.Deleted -> {
+            Log.d(TAG, "Rendering Deleted state. Navigating back.")
+            // This effect will run once when the state becomes Deleted.
+            LaunchedEffect(Unit) {
+                navController.popBackStack()
+            }
+            // Show a blank screen while navigating away.
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        }
+        is DetailScreenState.Success -> {
+            val details = state.details
+            Log.d(TAG, "Rendering Success state for transaction: ${details.transaction.description}")
+            val title = when (details.transaction.transactionType) {
+                "expense" -> "Debit transaction"
+                "income" -> "Credit transaction"
+                else -> "Transaction Details"
+            }
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
 
-            LazyColumn(
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
-            ) {
-                item {
-                    TransactionHeaderCard(
-                        details = details,
-                        onDescriptionClick = { activeSheetContent = SheetContent.Description },
-                        onAmountClick = { activeSheetContent = SheetContent.Amount },
-                        onCategoryClick = { activeSheetContent = SheetContent.Category },
-                        onDateTimeClick = { showDatePicker = true }
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(title) },
+                        navigationIcon = {
+                            IconButton(onClick = { navController.popBackStack() }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Delete") },
+                                    onClick = {
+                                        showMenu = false
+                                        showDeleteDialog = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete") }
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                     )
-                }
-                item {
-                    InfoCard(
-                        icon = Icons.Default.AccountBalanceWallet,
-                        label = "Account",
-                        value = details.accountName ?: "N/A",
-                        onClick = { activeSheetContent = SheetContent.Account }
-                    )
-                }
-                item {
-                    InfoCard(
-                        icon = Icons.AutoMirrored.Filled.Notes,
-                        label = "Notes",
-                        value = details.transaction.notes ?: "Tap to add",
-                        onClick = { activeSheetContent = SheetContent.Notes }
-                    )
-                }
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        elevation = CardDefaults.cardElevation(2.dp),
-                        onClick = { activeSheetContent = SheetContent.Tags }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                },
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ) { innerPadding ->
+                LazyColumn(
+                    modifier = Modifier
+                        .padding(innerPadding)
+                        .fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
+                ) {
+                    item {
+                        TransactionHeaderCard(
+                            details = details,
+                            onDescriptionClick = { activeSheetContent = SheetContent.Description },
+                            onAmountClick = { activeSheetContent = SheetContent.Amount },
+                            onCategoryClick = { activeSheetContent = SheetContent.Category },
+                            onDateTimeClick = { showDatePicker = true }
+                        )
+                    }
+                    item {
+                        InfoCard(
+                            icon = Icons.Default.AccountBalanceWallet,
+                            label = "Account",
+                            value = details.accountName ?: "N/A",
+                            onClick = { activeSheetContent = SheetContent.Account }
+                        )
+                    }
+                    item {
+                        InfoCard(
+                            icon = Icons.AutoMirrored.Filled.Notes,
+                            label = "Notes",
+                            value = details.transaction.notes ?: "Tap to add",
+                            onClick = { activeSheetContent = SheetContent.Notes }
+                        )
+                    }
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            elevation = CardDefaults.cardElevation(2.dp),
+                            onClick = { activeSheetContent = SheetContent.Tags }
                         ) {
-                            Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (selectedTags.isEmpty()) {
-                                    Text("Tap to add tags")
-                                } else {
-                                    FlowRow(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        selectedTags.forEach { tag ->
-                                            AssistChip(onClick = {}, label = { Text(tag.name) })
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (selectedTags.isEmpty()) {
+                                        Text("Tap to add tags")
+                                    } else {
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            selectedTags.forEach { tag ->
+                                                AssistChip(onClick = {}, label = { Text(tag.name) })
+                                            }
+                                        }
+                                    }
+                                }
+                                Icon(Icons.Default.Add, contentDescription = "Add Tag")
+                            }
+                        }
+                    }
+
+                    item {
+                        InfoCard(
+                            icon = Icons.Default.Attachment,
+                            label = "Attachments",
+                            value = if (attachedImages.isEmpty()) "Tap to add a receipt or photo" else "${attachedImages.size} image(s) attached",
+                            onClick = { imagePickerLauncher.launch("image/*") }
+                        )
+                    }
+
+                    if (attachedImages.isNotEmpty()) {
+                        item {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(attachedImages) { image ->
+                                    Box {
+                                        AsyncImage(
+                                            model = File(image.imageUri),
+                                            contentDescription = "Transaction Attachment",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(80.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable { showImageViewer = File(image.imageUri).toUri() }
+                                        )
+                                        IconButton(
+                                            onClick = { showImageDeleteDialog = image },
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(4.dp)
+                                                .size(24.dp)
+                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Delete Attachment",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
                                         }
                                     }
                                 }
                             }
-                            Icon(Icons.Default.Add, contentDescription = "Add Tag")
                         }
                     }
                 }
 
-                item {
-                    InfoCard(
-                        icon = Icons.Default.Attachment,
-                        label = "Attachments",
-                        value = if (attachedImages.isEmpty()) "Tap to add a receipt or photo" else "${attachedImages.size} image(s) attached",
-                        onClick = { imagePickerLauncher.launch("image/*") }
-                    )
+                if (activeSheetContent != null) {
+                    ModalBottomSheet(
+                        onDismissRequest = { activeSheetContent = null },
+                        sheetState = sheetState
+                    ) {
+                        TransactionEditSheetContent(
+                            sheetContent = activeSheetContent!!,
+                            details = details,
+                            viewModel = viewModel,
+                            accounts = accounts,
+                            categories = categories,
+                            allTags = allTags,
+                            selectedTags = selectedTags,
+                            onDismiss = { activeSheetContent = null }
+                        )
+                    }
                 }
 
-                if (attachedImages.isNotEmpty()) {
-                    item {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(attachedImages) { image ->
-                                Box {
-                                    AsyncImage(
-                                        model = File(image.imageUri),
-                                        contentDescription = "Transaction Attachment",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .size(80.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .clickable { showImageViewer = File(image.imageUri).toUri() }
-                                    )
-                                    IconButton(
-                                        onClick = { showImageDeleteDialog = image },
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .padding(4.dp)
-                                            .size(24.dp)
-                                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            contentDescription = "Delete Attachment",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
+
+                if (showDatePicker) {
+                    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
+                    DatePickerDialog(
+                        onDismissRequest = { showDatePicker = false },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                datePickerState.selectedDateMillis?.let {
+                                    calendar.timeInMillis = it
                                 }
-                            }
+                                showDatePicker = false
+                                showTimePicker = true
+                            }) { Text("OK") }
                         }
-                    }
+                    ) { DatePicker(state = datePickerState) }
                 }
-            }
+                if (showTimePicker) {
+                    val timePickerState = rememberTimePickerState(initialHour = calendar.get(Calendar.HOUR_OF_DAY), initialMinute = calendar.get(Calendar.MINUTE))
+                    TimePickerDialog(
+                        onDismissRequest = { showTimePicker = false },
+                        onConfirm = {
+                            calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                            calendar.set(Calendar.MINUTE, timePickerState.minute)
+                            viewModel.updateTransactionDate(transactionId, calendar.timeInMillis)
+                            showTimePicker = false
+                        }
+                    ) { TimePicker(state = timePickerState) }
+                }
 
-            // --- REFACTORED: Modal Bottom Sheet for editing ---
-            if (activeSheetContent != null) {
-                ModalBottomSheet(
-                    onDismissRequest = { activeSheetContent = null },
-                    sheetState = sheetState
-                ) {
-                    TransactionEditSheetContent(
-                        sheetContent = activeSheetContent!!,
-                        details = details,
-                        viewModel = viewModel,
-                        accounts = accounts,
-                        categories = categories,
-                        allTags = allTags,
-                        selectedTags = selectedTags,
-                        onDismiss = { activeSheetContent = null }
+                if (showDeleteDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showDeleteDialog = false },
+                        title = { Text("Delete Transaction?") },
+                        text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.") },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    viewModel.deleteTransaction(details.transaction)
+                                    showDeleteDialog = false
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) { Text("Delete") }
+                        },
+                        dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
                     )
                 }
-            }
 
-
-            // --- Date/Time Pickers (remain as dialogs) ---
-            if (showDatePicker) {
-                val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
-                DatePickerDialog(
-                    onDismissRequest = { showDatePicker = false },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            datePickerState.selectedDateMillis?.let {
-                                calendar.timeInMillis = it
-                            }
-                            showDatePicker = false
-                            showTimePicker = true
-                        }) { Text("OK") }
+                if (showImageViewer != null) {
+                    Dialog(onDismissRequest = { showImageViewer = null }) {
+                        AsyncImage(
+                            model = showImageViewer,
+                            contentDescription = "Full screen image",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                        )
                     }
-                ) { DatePicker(state = datePickerState) }
-            }
-            if (showTimePicker) {
-                val timePickerState = rememberTimePickerState(initialHour = calendar.get(Calendar.HOUR_OF_DAY), initialMinute = calendar.get(Calendar.MINUTE))
-                TimePickerDialog(
-                    onDismissRequest = { showTimePicker = false },
-                    onConfirm = {
-                        calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                        calendar.set(Calendar.MINUTE, timePickerState.minute)
-                        viewModel.updateTransactionDate(transactionId, calendar.timeInMillis)
-                        showTimePicker = false
-                    }
-                ) { TimePicker(state = timePickerState) }
-            }
+                }
 
-            // --- Confirmation/Viewer Dialogs (remain as is) ---
-            if (showDeleteDialog) {
-                AlertDialog(
-                    onDismissRequest = { showDeleteDialog = false },
-                    title = { Text("Delete Transaction?") },
-                    text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.") },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                viewModel.deleteTransaction(details.transaction)
-                                showDeleteDialog = false
-                                navController.popBackStack()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) { Text("Delete") }
-                    },
-                    dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
-                )
-            }
-
-            if (showImageViewer != null) {
-                Dialog(onDismissRequest = { showImageViewer = null }) {
-                    AsyncImage(
-                        model = showImageViewer,
-                        contentDescription = "Full screen image",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
+                if (showImageDeleteDialog != null) {
+                    AlertDialog(
+                        onDismissRequest = { showImageDeleteDialog = null },
+                        title = { Text("Delete Attachment?") },
+                        text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.") },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    viewModel.deleteTransactionImage(showImageDeleteDialog!!)
+                                    showImageDeleteDialog = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) { Text("Delete") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showImageDeleteDialog = null }) { Text("Cancel") }
+                        }
                     )
                 }
-            }
-
-            if (showImageDeleteDialog != null) {
-                AlertDialog(
-                    onDismissRequest = { showImageDeleteDialog = null },
-                    title = { Text("Delete Attachment?") },
-                    text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.") },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                viewModel.deleteTransactionImage(showImageDeleteDialog!!)
-                                showImageDeleteDialog = null
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) { Text("Delete") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showImageDeleteDialog = null }) { Text("Cancel") }
-                    }
-                )
-            }
-
-
-        } ?: run {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
             }
         }
     }
@@ -5877,7 +5919,6 @@ private fun EditTextFieldSheet(
                 capitalization = if (keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None
             ),
             singleLine = true,
-            // --- FIX: Add a testTag for reliable UI testing ---
             modifier = Modifier.fillMaxWidth().testTag("value_input")
         )
         Row(
