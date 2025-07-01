@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsScreen.kt
-// REASON: Added a new "Daily Report Time" setting item. This item displays the
-// currently configured time and opens a TimePicker dialog, allowing the user to
-// customize when they receive their daily summary notification.
+// REASON: Reorganized the "Notifications & Automation" and "SMS Scanning" sections
+// for better logical grouping. Report toggles are now paired with their
+// corresponding time settings, which are enabled/disabled based on the toggle state.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -68,9 +68,13 @@ fun SettingsScreen(
         )
     }
 
-    // --- NEW: State for the time picker dialog ---
     val dailyReportTime by viewModel.dailyReportTime.collectAsState()
-    var showTimePicker by remember { mutableStateOf(false) }
+    var showDailyTimePicker by remember { mutableStateOf(false) }
+
+    val weeklyReportTime by viewModel.weeklyReportTime.collectAsState()
+    var showWeeklyTimePicker by remember { mutableStateOf(false) }
+    val monthlyReportTime by viewModel.monthlyReportTime.collectAsState()
+    var showMonthlyTimePicker by remember { mutableStateOf(false) }
 
 
     LaunchedEffect(key1 = viewModel.scanEvent) {
@@ -234,22 +238,47 @@ fun SettingsScreen(
         )
     }
 
-    // --- NEW: Time picker dialog for the daily report ---
-    if (showTimePicker) {
+    if (showDailyTimePicker) {
         val timePickerState = rememberTimePickerState(
             initialHour = dailyReportTime.first,
             initialMinute = dailyReportTime.second,
             is24Hour = false
         )
         TimePickerDialog(
-            onDismissRequest = { showTimePicker = false },
+            onDismissRequest = { showDailyTimePicker = false },
             onConfirm = {
                 viewModel.saveDailyReportTime(timePickerState.hour, timePickerState.minute)
-                showTimePicker = false
+                showDailyTimePicker = false
             }
         ) {
             TimePicker(state = timePickerState)
         }
+    }
+
+    if (showWeeklyTimePicker) {
+        WeeklyReportTimePicker(
+            initialDay = weeklyReportTime.first,
+            initialHour = weeklyReportTime.second,
+            initialMinute = weeklyReportTime.third,
+            onDismiss = { showWeeklyTimePicker = false },
+            onConfirm = { day, hour, minute ->
+                viewModel.saveWeeklyReportTime(day, hour, minute)
+                showWeeklyTimePicker = false
+            }
+        )
+    }
+
+    if (showMonthlyTimePicker) {
+        MonthlyReportTimePicker(
+            initialDay = monthlyReportTime.first,
+            initialHour = monthlyReportTime.second,
+            initialMinute = monthlyReportTime.third,
+            onDismiss = { showMonthlyTimePicker = false },
+            onConfirm = { day, hour, minute ->
+                viewModel.saveMonthlyReportTime(day, hour, minute)
+                showMonthlyTimePicker = false
+            }
+        )
     }
 
     LazyColumn(
@@ -311,15 +340,16 @@ fun SettingsScreen(
                 onCheckedChange = { viewModel.setDailyReportEnabled(it) },
             )
         }
-        // --- NEW: Setting for report time ---
         item {
             SettingsActionItem(
                 text = "Daily Report Time",
                 subtitle = "Current: ${String.format("%02d:%02d", dailyReportTime.first, dailyReportTime.second)}",
                 icon = Icons.Default.Schedule,
-                onClick = { showTimePicker = true }
+                onClick = { showDailyTimePicker = true },
+                enabled = isDailyReportEnabled
             )
         }
+        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
         item {
             SettingsToggleItem(
                 title = "Weekly Summary Notification",
@@ -330,12 +360,24 @@ fun SettingsScreen(
             )
         }
         item {
-            SettingsToggleItem(
-                title = "Popup for Unknown Transactions",
-                subtitle = "Show notification for SMS from new merchants.",
-                icon = Icons.Default.Notifications,
-                checked = isUnknownTransactionPopupEnabled,
-                onCheckedChange = { viewModel.setUnknownTransactionPopupEnabled(it) },
+            val dayName = SimpleDateFormat("EEEE", Locale.getDefault()).format(
+                Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, weeklyReportTime.first) }.time
+            )
+            SettingsActionItem(
+                text = "Weekly Report Time",
+                subtitle = "Current: $dayName at ${String.format("%02d:%02d", weeklyReportTime.second, weeklyReportTime.third)}",
+                icon = Icons.Default.Schedule,
+                onClick = { showWeeklyTimePicker = true },
+                enabled = isWeeklySummaryEnabled
+            )
+        }
+        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
+        item {
+            SettingsActionItem(
+                text = "Monthly Report Time",
+                subtitle = "Current: Day ${monthlyReportTime.first} of the month at ${String.format("%02d:%02d", monthlyReportTime.second, monthlyReportTime.third)}",
+                icon = Icons.Default.Schedule,
+                onClick = { showMonthlyTimePicker = true }
             )
         }
 
@@ -369,6 +411,15 @@ fun SettingsScreen(
         }
 
         item { SettingSectionHeader("SMS Scanning") }
+        item {
+            SettingsToggleItem(
+                title = "Popup for Unknown Transactions",
+                subtitle = "Show notification for SMS from new merchants.",
+                icon = Icons.Default.Notifications,
+                checked = isUnknownTransactionPopupEnabled,
+                onCheckedChange = { viewModel.setUnknownTransactionPopupEnabled(it) },
+            )
+        }
         item {
             Row(
                 modifier = Modifier
@@ -422,7 +473,7 @@ fun SettingsScreen(
                 onClick = {
                     if (hasSmsPermission) {
                         if (!isScanning) {
-                            viewModel.rescanSmsForReview(null) // Pass null for a full scan
+                            viewModel.rescanSmsForReview(null)
                         }
                     } else {
                         showSmsRationaleDialog = true
@@ -573,28 +624,135 @@ private fun SettingsActionItem(
     subtitle: String? = null,
     icon: ImageVector,
     onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
+    val contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val subtitleColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+
     TextButton(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        enabled = enabled
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = contentColor)
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text, style = MaterialTheme.typography.bodyLarge)
+                Text(text, style = MaterialTheme.typography.bodyLarge, color = contentColor)
                 if (subtitle != null) {
                     Text(
                         subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = subtitleColor
                     )
                 }
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WeeklyReportTimePicker(
+    initialDay: Int,
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int, Int) -> Unit
+) {
+    var selectedDay by remember { mutableStateOf(initialDay) }
+    val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
+    val days = (1..7).map {
+        val cal = Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, it) }
+        Pair(it, cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.SHORT, Locale.getDefault()))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Weekly Report Time") },
+        text = {
+            Column {
+                Text("Day of the Week", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    days.forEach { (dayInt, dayName) ->
+                        SegmentedButton(
+                            shape = MaterialTheme.shapes.medium,
+                            onClick = { selectedDay = dayInt },
+                            selected = dayInt == selectedDay
+                        ) {
+                            Text(dayName)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TimePicker(state = timePickerState)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }) {
+                Text("Set Time")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MonthlyReportTimePicker(
+    initialDay: Int,
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int, Int) -> Unit
+) {
+    var selectedDay by remember { mutableStateOf(initialDay) }
+    var dayText by remember { mutableStateOf(initialDay.toString()) }
+    val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Monthly Report Time") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = dayText,
+                    onValueChange = {
+                        val intValue = it.filter { c -> c.isDigit() }.toIntOrNull()
+                        if (intValue != null && intValue in 1..28) {
+                            dayText = it.filter { c -> c.isDigit() }
+                            selectedDay = intValue
+                        } else if (it.isEmpty()) {
+                            dayText = ""
+                        }
+                    },
+                    label = { Text("Day of the Month (1-28)") }
+                )
+                Spacer(Modifier.height(16.dp))
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TimePicker(state = timePickerState)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = dayText.isNotEmpty(),
+                onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }
+            ) {
+                Text("Set Time")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }

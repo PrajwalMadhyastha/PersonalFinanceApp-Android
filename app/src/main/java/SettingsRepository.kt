@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: Added functions to save and retrieve the user's preferred hour and
-// minute for the daily report notification, persisting the choice in SharedPreferences.
+// REASON: Added functions to save and retrieve user preferences for the weekly
+// and monthly report times, including the day of the week/month.
 // =================================================================================
 package io.pm.finlight
 
@@ -29,9 +29,15 @@ class SettingsRepository(context: Context) {
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
         private const val KEY_BACKUP_ENABLED = "google_drive_backup_enabled"
-        // --- NEW: Keys for storing the daily report time ---
         private const val KEY_DAILY_REPORT_HOUR = "daily_report_hour"
         private const val KEY_DAILY_REPORT_MINUTE = "daily_report_minute"
+        // --- NEW: Keys for weekly and monthly report timing ---
+        private const val KEY_WEEKLY_REPORT_DAY = "weekly_report_day"
+        private const val KEY_WEEKLY_REPORT_HOUR = "weekly_report_hour"
+        private const val KEY_WEEKLY_REPORT_MINUTE = "weekly_report_minute"
+        private const val KEY_MONTHLY_REPORT_DAY = "monthly_report_day"
+        private const val KEY_MONTHLY_REPORT_HOUR = "monthly_report_hour"
+        private const val KEY_MONTHLY_REPORT_MINUTE = "monthly_report_minute"
     }
 
     fun saveBackupEnabled(isEnabled: Boolean) {
@@ -224,7 +230,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Function to save the chosen time ---
     fun saveDailyReportTime(hour: Int, minute: Int) {
         prefs.edit()
             .putInt(KEY_DAILY_REPORT_HOUR, hour)
@@ -232,27 +237,85 @@ class SettingsRepository(context: Context) {
             .apply()
     }
 
-    // --- NEW: Function to get the chosen time ---
     fun getDailyReportTime(): Flow<Pair<Int, Int>> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
                 if (changedKey == KEY_DAILY_REPORT_HOUR || changedKey == KEY_DAILY_REPORT_MINUTE) {
                     trySend(
                         Pair(
-                            sharedPreferences.getInt(KEY_DAILY_REPORT_HOUR, 9), // Default 9 AM
-                            sharedPreferences.getInt(KEY_DAILY_REPORT_MINUTE, 0)  // Default 0 minutes
+                            sharedPreferences.getInt(KEY_DAILY_REPORT_HOUR, 9),
+                            sharedPreferences.getInt(KEY_DAILY_REPORT_MINUTE, 0)
                         )
                     )
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Emit the initial value
             trySend(
                 Pair(
                     prefs.getInt(KEY_DAILY_REPORT_HOUR, 9),
                     prefs.getInt(KEY_DAILY_REPORT_MINUTE, 0)
                 )
             )
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    // --- NEW: Functions for weekly report timing ---
+    fun saveWeeklyReportTime(dayOfWeek: Int, hour: Int, minute: Int) {
+        prefs.edit()
+            .putInt(KEY_WEEKLY_REPORT_DAY, dayOfWeek)
+            .putInt(KEY_WEEKLY_REPORT_HOUR, hour)
+            .putInt(KEY_WEEKLY_REPORT_MINUTE, minute)
+            .apply()
+    }
+
+    fun getWeeklyReportTime(): Flow<Triple<Int, Int, Int>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_WEEKLY_REPORT_DAY || key == KEY_WEEKLY_REPORT_HOUR || key == KEY_WEEKLY_REPORT_MINUTE) {
+                    trySend(Triple(
+                        sp.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.MONDAY),
+                        sp.getInt(KEY_WEEKLY_REPORT_HOUR, 9),
+                        sp.getInt(KEY_WEEKLY_REPORT_MINUTE, 0)
+                    ))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(Triple(
+                prefs.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.MONDAY),
+                prefs.getInt(KEY_WEEKLY_REPORT_HOUR, 9),
+                prefs.getInt(KEY_WEEKLY_REPORT_MINUTE, 0)
+            ))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    // --- NEW: Functions for monthly report timing ---
+    fun saveMonthlyReportTime(dayOfMonth: Int, hour: Int, minute: Int) {
+        prefs.edit()
+            .putInt(KEY_MONTHLY_REPORT_DAY, dayOfMonth)
+            .putInt(KEY_MONTHLY_REPORT_HOUR, hour)
+            .putInt(KEY_MONTHLY_REPORT_MINUTE, minute)
+            .apply()
+    }
+
+    fun getMonthlyReportTime(): Flow<Triple<Int, Int, Int>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_MONTHLY_REPORT_DAY || key == KEY_MONTHLY_REPORT_HOUR || key == KEY_MONTHLY_REPORT_MINUTE) {
+                    trySend(Triple(
+                        sp.getInt(KEY_MONTHLY_REPORT_DAY, 1),
+                        sp.getInt(KEY_MONTHLY_REPORT_HOUR, 9),
+                        sp.getInt(KEY_MONTHLY_REPORT_MINUTE, 0)
+                    ))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(Triple(
+                prefs.getInt(KEY_MONTHLY_REPORT_DAY, 1),
+                prefs.getInt(KEY_MONTHLY_REPORT_HOUR, 9),
+                prefs.getInt(KEY_MONTHLY_REPORT_MINUTE, 0)
+            ))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
