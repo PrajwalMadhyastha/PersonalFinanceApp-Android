@@ -16,9 +16,10 @@ object SmsParser {
     // --- REFINED: Reordered patterns and made them more specific ---
     private val ACCOUNT_PATTERNS =
         listOf(
+            // --- FIX: Added a more specific pattern for Pluxee Meal Cards ---
+            "spent from (Pluxee)\\s*(Meal Card wallet), card no\\.\\s*xx(\\d{4})".toRegex(RegexOption.IGNORE_CASE),
             // Most specific patterns first
             "on your (SBI) (Credit Card) ending with (\\d{4})".toRegex(RegexOption.IGNORE_CASE),
-            "from (Pluxee)\\. (Meal Card wallet), card no\\.\\s*xx(\\d{4})".toRegex(RegexOption.IGNORE_CASE),
             "On (HDFC Bank) (Card) (\\d{4})".toRegex(RegexOption.IGNORE_CASE),
             // Make ICICI patterns mutually exclusive by including the action keyword
             "(ICICI Bank) Acct XX(\\d{3,4}) debited".toRegex(RegexOption.IGNORE_CASE),
@@ -43,8 +44,15 @@ object SmsParser {
                 val pString = pattern.pattern
                 // --- REFINED: Use pattern string to determine logic, which is more robust ---
                 return when {
-                    // Handles SBI, Pluxee, HDFC
-                    pString.startsWith("on your") || pString.startsWith("On") || pString.startsWith("from") -> {
+                    // --- FIX: Updated logic to handle the new Pluxee pattern ---
+                    pString.startsWith("spent from") -> {
+                        val group1 = match.groupValues[1].trim() // Brand (Pluxee)
+                        val group2 = match.groupValues[2].trim() // Type (Meal Card wallet)
+                        val number = match.groupValues[3].trim() // Number
+                        PotentialAccount(formattedName = "$group1 - xx$number", accountType = group2)
+                    }
+                    // Handles SBI, HDFC
+                    pString.startsWith("on your") || pString.startsWith("On") -> {
                         val group1 = match.groupValues[1].trim() // Bank or brand
                         val group2 = match.groupValues[2].trim() // Type
                         val number = match.groupValues[3].trim() // Number

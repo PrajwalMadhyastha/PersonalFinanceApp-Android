@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <cache-path
-        name="shared_images"
-        path="images/" />
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      This path grants temporary access to files in the app's dedicated external
+      files directory, specifically within the "Pictures" sub-folder. This is a secure
+      way to share the image captured by the camera with the image cropper activity.
+    -->
+    <external-files-path
+        name="my_images"
+        path="Pictures" />
 </paths>

@@ -7,6 +7,7 @@ package io.pm.finlight.ui.screens
 
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +42,8 @@ import com.canhub.cropper.CropImageView
 import io.pm.finlight.ProfileViewModel
 import io.pm.finlight.R
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun EditProfileScreen(
@@ -102,6 +105,7 @@ fun EditProfileScreen(
                 TextButton(
                     onClick = {
                         showImageSourceDialog = false
+                        // --- FIX: Create the temp file and get its secure URI before launching the camera ---
                         val tempFile = createTempImageFile(context)
                         val newTempUri = FileProvider.getUriForFile(
                             context,
@@ -213,13 +217,14 @@ private fun createCropOptions(toolbarColor: Int, toolbarTintColor: Int, activity
 }
 
 /**
- * Helper function to create a temporary image file in the app's cache directory.
+ * Helper function to create a temporary image file in the app's external files directory.
  */
 private fun createTempImageFile(context: Context): File {
-    // --- BUG FIX: Use the cache directory for temporary files ---
-    val storageDir: File = context.cacheDir
+    // --- FIX: Use the external files directory for better compatibility with the camera intent ---
+    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val storageDir: File? = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
     return File.createTempFile(
-        "JPEG_${System.currentTimeMillis()}_",
+        "JPEG_${timeStamp}_",
         ".jpg",
         storageDir
     )
