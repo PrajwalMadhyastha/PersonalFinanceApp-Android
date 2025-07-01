@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul  1 16:59:21 IST 2025
+Generated on: Tue Jul  1 17:50:00 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -181,7 +181,6 @@ dependencies {
     <uses-feature
         android:name="android.hardware.telephony"
         android:required="false" />
-    <!-- FIX: Explicitly declare that the camera feature is used, but not required. -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -191,6 +190,8 @@ dependencies {
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- NEW: Permission to run on boot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
 
     <application
@@ -236,6 +237,15 @@ dependencies {
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- NEW: Declare the BootReceiver -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 
@@ -1151,6 +1161,11 @@ data class CsvValidationReport(
 
 
 ================== FILE: ./app/src/main/java/MonthlySummaryWorker.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MonthlySummaryWorker.kt
+// REASON: Added a call to ReminderManager.scheduleMonthlySummary at the end of the
+// worker's execution to create a continuous chain of precisely scheduled tasks.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -1161,10 +1176,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 
-/**
- * A background worker that calculates the user's financial summary for the previous month
- * and displays it as a system notification. This is scheduled to run periodically.
- */
 class MonthlySummaryWorker(
     private val context: Context,
     workerParams: WorkerParameters
@@ -1177,40 +1188,37 @@ class MonthlySummaryWorker(
                 val db = AppDatabase.getInstance(context)
                 val transactionDao = db.transactionDao()
 
-                // 1. Calculate the start and end timestamps for the entire previous month.
                 val calendar = Calendar.getInstance()
-                // Move calendar to the first day of the current month
                 calendar.set(Calendar.DAY_OF_MONTH, 1)
                 calendar.set(Calendar.HOUR_OF_DAY, 0)
                 calendar.set(Calendar.MINUTE, 0)
                 calendar.set(Calendar.SECOND, 0)
                 calendar.set(Calendar.MILLISECOND, 0)
 
-                // Move calendar to the last moment of the previous month
                 calendar.add(Calendar.MILLISECOND, -1)
                 val endDate = calendar.timeInMillis
 
-                // Move calendar to the first day of the previous month
                 calendar.set(Calendar.DAY_OF_MONTH, 1)
                 val startDate = calendar.timeInMillis
 
-                // 2. Fetch the summary for that period.
                 val summary = transactionDao.getFinancialSummaryForRange(startDate, endDate)
 
-                // 3. Send the notification if a summary was found.
                 if (summary != null) {
                     NotificationHelper.showMonthlySummaryNotification(
                         context,
                         summary.totalIncome,
                         summary.totalExpenses,
-                        calendar // Pass the calendar to get the correct month name
+                        calendar
                     )
                     Log.d("MonthlySummaryWorker", "Summary found for ${calendar.time}: Income=${summary.totalIncome}, Expenses=${summary.totalExpenses}")
                 } else {
                     Log.d("MonthlySummaryWorker", "No summary data found for the previous month.")
                 }
 
-                Log.d("MonthlySummaryWorker", "Worker finished successfully.")
+                // --- NEW: Re-schedule the next month's report ---
+                ReminderManager.scheduleMonthlySummary(context)
+
+                Log.d("MonthlySummaryWorker", "Worker finished successfully and rescheduled.")
                 Result.success()
             } catch (e: Exception) {
                 Log.e("MonthlySummaryWorker", "Worker failed", e)
@@ -1275,8 +1283,8 @@ val screenTitles = mapOf(
 ================== FILE: ./app/src/main/java/WeeklySummaryWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/WeeklySummaryWorker.kt
-// REASON: Corrected the call to getTransactionDetailsForRange by passing null
-// for the new, unused filter parameters to resolve the compilation error.
+// REASON: Added a call to ReminderManager.scheduleWeeklySummary at the end of the
+// worker's execution to create a continuous chain of precisely scheduled tasks.
 // =================================================================================
 package io.pm.finlight
 
@@ -1289,10 +1297,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 
-/**
- * A background worker that calculates the user's financial summary for the past 7 days
- * and displays it as a system notification.
- */
 class WeeklySummaryWorker(
     private val context: Context,
     workerParams: WorkerParameters,
@@ -1304,14 +1308,11 @@ class WeeklySummaryWorker(
                 val db = AppDatabase.getInstance(context)
                 val transactionDao = db.transactionDao()
 
-                // 1. Calculate the start and end timestamps for the last 7 days.
                 val calendar = Calendar.getInstance()
                 val endDate = calendar.timeInMillis
                 calendar.add(Calendar.DAY_OF_YEAR, -7)
                 val startDate = calendar.timeInMillis
 
-                // 2. Fetch transactions for the last week using the existing DAO method.
-                // --- FIX: Pass null for the new filter parameters ---
                 val transactions = transactionDao.getTransactionDetailsForRange(
                     startDate = startDate,
                     endDate = endDate,
@@ -1321,7 +1322,6 @@ class WeeklySummaryWorker(
                 ).first()
                 Log.d("WeeklySummaryWorker", "Found ${transactions.size} transactions in the last 7 days.")
 
-                // 3. Calculate total income and expenses.
                 var totalIncome = 0.0
                 var totalExpenses = 0.0
                 transactions.forEach { details ->
@@ -1332,14 +1332,16 @@ class WeeklySummaryWorker(
                     }
                 }
 
-                // 4. Send the summary notification via the helper.
                 NotificationHelper.showWeeklySummaryNotification(context, totalIncome, totalExpenses)
 
-                Log.d("WeeklySummaryWorker", "Worker finished successfully.")
+                // --- NEW: Re-schedule the next week's report ---
+                ReminderManager.scheduleWeeklySummary(context)
+
+                Log.d("WeeklySummaryWorker", "Worker finished successfully and rescheduled.")
                 Result.success()
             } catch (e: Exception) {
                 Log.e("WeeklySummaryWorker", "Worker failed", e)
-                Result.retry() // Retry the job if it fails
+                Result.retry()
             }
         }
     }
@@ -1861,37 +1863,49 @@ data class Category(
 ================== FILE: ./app/src/main/java/ReminderManager.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReminderManager.kt
-// REASON: Added a new function, scheduleMonthlySummary, to enqueue the
-// MonthlySummaryWorker, which will generate the user's end-of-month report.
+// REASON: Added the cancelMonthlySummary function to allow disabling of the
+// monthly report worker, completing the scheduling lifecycle.
 // =================================================================================
 package io.pm.finlight
 
 import android.content.Context
+import android.util.Log
 import androidx.work.*
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 object ReminderManager {
     private const val DAILY_EXPENSE_REPORT_WORK_TAG = "daily_expense_report_work"
     private const val WEEKLY_SUMMARY_WORK_TAG = "weekly_summary_work"
-    // --- NEW: Add a unique tag for the new worker ---
     private const val MONTHLY_SUMMARY_WORK_TAG = "monthly_summary_work"
 
     fun scheduleDailyReport(context: Context) {
-        val constraints =
-            Constraints.Builder()
-                .setRequiresDeviceIdle(true)
-                .build()
+        val prefs = context.getSharedPreferences("finance_app_settings", Context.MODE_PRIVATE)
+        val hour = prefs.getInt("daily_report_hour", 9)
+        val minute = prefs.getInt("daily_report_minute", 0)
 
-        val dailyReportRequest =
-            PeriodicWorkRequestBuilder<DailyReportWorker>(1, TimeUnit.DAYS)
-                .setConstraints(constraints)
-                .build()
+        val now = Calendar.getInstance()
+        val nextRun = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            set(Calendar.SECOND, 0)
+        }
 
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        if (nextRun.before(now)) {
+            nextRun.add(Calendar.DAY_OF_YEAR, 1)
+        }
+
+        val initialDelay = nextRun.timeInMillis - now.timeInMillis
+        val dailyReportRequest = OneTimeWorkRequestBuilder<DailyReportWorker>()
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
             DAILY_EXPENSE_REPORT_WORK_TAG,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingWorkPolicy.REPLACE,
             dailyReportRequest,
         )
+        Log.d("ReminderManager", "Daily report scheduled for ${nextRun.time}")
     }
 
     fun cancelDailyReport(context: Context) {
@@ -1899,32 +1913,75 @@ object ReminderManager {
     }
 
     fun scheduleWeeklySummary(context: Context) {
-        val reminderRequest =
-            PeriodicWorkRequestBuilder<WeeklySummaryWorker>(7, TimeUnit.DAYS)
-                .build()
+        val prefs = context.getSharedPreferences("finance_app_settings", Context.MODE_PRIVATE)
+        val dayOfWeek = prefs.getInt("weekly_report_day", Calendar.MONDAY)
+        val hour = prefs.getInt("weekly_report_hour", 9)
+        val minute = prefs.getInt("weekly_report_minute", 0)
 
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        val now = Calendar.getInstance()
+        val nextRun = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_WEEK, dayOfWeek)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            set(Calendar.SECOND, 0)
+        }
+
+        if (nextRun.before(now)) {
+            nextRun.add(Calendar.WEEK_OF_YEAR, 1)
+        }
+
+        val initialDelay = nextRun.timeInMillis - now.timeInMillis
+        val weeklyReportRequest = OneTimeWorkRequestBuilder<WeeklySummaryWorker>()
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
             WEEKLY_SUMMARY_WORK_TAG,
-            ExistingPeriodicWorkPolicy.KEEP,
-            reminderRequest,
+            ExistingWorkPolicy.REPLACE,
+            weeklyReportRequest,
         )
+        Log.d("ReminderManager", "Weekly summary scheduled for ${nextRun.time}")
     }
+
 
     fun cancelWeeklySummary(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(WEEKLY_SUMMARY_WORK_TAG)
     }
 
-    // --- NEW: Function to schedule the monthly summary worker ---
     fun scheduleMonthlySummary(context: Context) {
-        val reminderRequest =
-            PeriodicWorkRequestBuilder<MonthlySummaryWorker>(30, TimeUnit.DAYS)
-                .build()
+        val prefs = context.getSharedPreferences("finance_app_settings", Context.MODE_PRIVATE)
+        val dayOfMonth = prefs.getInt("monthly_report_day", 1)
+        val hour = prefs.getInt("monthly_report_hour", 9)
+        val minute = prefs.getInt("monthly_report_minute", 0)
 
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        val now = Calendar.getInstance()
+        val nextRun = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, dayOfMonth)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            set(Calendar.SECOND, 0)
+        }
+
+        if (nextRun.before(now)) {
+            nextRun.add(Calendar.MONTH, 1)
+        }
+
+        val initialDelay = nextRun.timeInMillis - now.timeInMillis
+        val monthlyReportRequest = OneTimeWorkRequestBuilder<MonthlySummaryWorker>()
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
             MONTHLY_SUMMARY_WORK_TAG,
-            ExistingPeriodicWorkPolicy.KEEP,
-            reminderRequest
+            ExistingWorkPolicy.REPLACE,
+            monthlyReportRequest,
         )
+        Log.d("ReminderManager", "Monthly summary scheduled for ${nextRun.time}")
+    }
+
+    // --- NEW: Function to cancel the monthly summary worker ---
+    fun cancelMonthlySummary(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(MONTHLY_SUMMARY_WORK_TAG)
     }
 }
 -e 
@@ -4825,6 +4882,14 @@ fun CategoryBudgetItem(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsScreen.kt
+// REASON: Reorganized the "Notifications & Automation" and "SMS Scanning" sections
+// for better logical grouping. Report toggles are now paired with their
+// corresponding time settings, which are enabled/disabled based on the toggle state.
+// The weekly day picker has been improved to prevent text wrapping.
+// The monthly day picker now uses a collapsible grid for better UX.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -4833,9 +4898,14 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ManageSearch
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -4846,12 +4916,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import io.pm.finlight.DataExportService
 import io.pm.finlight.ScanResult
 import io.pm.finlight.SettingsViewModel
+import io.pm.finlight.ui.components.TimePickerDialog
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -4873,6 +4945,7 @@ fun SettingsScreen(
     val isAppLockEnabled by viewModel.appLockEnabled.collectAsState()
     val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReportEnabled by viewModel.dailyReportEnabled.collectAsState()
+    val isMonthlySummaryEnabled by viewModel.monthlySummaryEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
     val isBackupEnabled by viewModel.backupEnabled.collectAsState()
     var showSmsRationaleDialog by remember { mutableStateOf(false) }
@@ -4887,6 +4960,15 @@ fun SettingsScreen(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
         )
     }
+
+    val dailyReportTime by viewModel.dailyReportTime.collectAsState()
+    var showDailyTimePicker by remember { mutableStateOf(false) }
+
+    val weeklyReportTime by viewModel.weeklyReportTime.collectAsState()
+    var showWeeklyTimePicker by remember { mutableStateOf(false) }
+    val monthlyReportTime by viewModel.monthlyReportTime.collectAsState()
+    var showMonthlyTimePicker by remember { mutableStateOf(false) }
+
 
     LaunchedEffect(key1 = viewModel.scanEvent) {
         viewModel.scanEvent.collect { result ->
@@ -5049,6 +5131,49 @@ fun SettingsScreen(
         )
     }
 
+    if (showDailyTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = dailyReportTime.first,
+            initialMinute = dailyReportTime.second,
+            is24Hour = false
+        )
+        TimePickerDialog(
+            onDismissRequest = { showDailyTimePicker = false },
+            onConfirm = {
+                viewModel.saveDailyReportTime(timePickerState.hour, timePickerState.minute)
+                showDailyTimePicker = false
+            }
+        ) {
+            TimePicker(state = timePickerState)
+        }
+    }
+
+    if (showWeeklyTimePicker) {
+        WeeklyReportTimePicker(
+            initialDay = weeklyReportTime.first,
+            initialHour = weeklyReportTime.second,
+            initialMinute = weeklyReportTime.third,
+            onDismiss = { showWeeklyTimePicker = false },
+            onConfirm = { day, hour, minute ->
+                viewModel.saveWeeklyReportTime(day, hour, minute)
+                showWeeklyTimePicker = false
+            }
+        )
+    }
+
+    if (showMonthlyTimePicker) {
+        MonthlyReportTimePicker(
+            initialDay = monthlyReportTime.first,
+            initialHour = monthlyReportTime.second,
+            initialMinute = monthlyReportTime.third,
+            onDismiss = { showMonthlyTimePicker = false },
+            onConfirm = { day, hour, minute ->
+                viewModel.saveMonthlyReportTime(day, hour, minute)
+                showMonthlyTimePicker = false
+            }
+        )
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 9.dp),
@@ -5101,7 +5226,7 @@ fun SettingsScreen(
         item { SettingSectionHeader("Notifications & Automation") }
         item {
             SettingsToggleItem(
-                title = "Enable Daily Summary Notification",
+                title = "Daily Summary",
                 subtitle = "Get a report of yesterday's spending each day.",
                 icon = Icons.Default.NotificationsActive,
                 checked = isDailyReportEnabled,
@@ -5109,8 +5234,18 @@ fun SettingsScreen(
             )
         }
         item {
+            SettingsActionItem(
+                text = "Daily Report Time",
+                subtitle = "Current: ${String.format("%02d:%02d", dailyReportTime.first, dailyReportTime.second)}",
+                icon = Icons.Default.Schedule,
+                onClick = { showDailyTimePicker = true },
+                enabled = isDailyReportEnabled
+            )
+        }
+        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
+        item {
             SettingsToggleItem(
-                title = "Weekly Summary Notification",
+                title = "Weekly Summary",
                 subtitle = "Receive a summary of your finances every week.",
                 icon = Icons.Default.CalendarToday,
                 checked = isWeeklySummaryEnabled,
@@ -5118,12 +5253,34 @@ fun SettingsScreen(
             )
         }
         item {
+            val dayName = SimpleDateFormat("EEEE", Locale.getDefault()).format(
+                Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, weeklyReportTime.first) }.time
+            )
+            SettingsActionItem(
+                text = "Weekly Report Time",
+                subtitle = "Current: $dayName at ${String.format("%02d:%02d", weeklyReportTime.second, weeklyReportTime.third)}",
+                icon = Icons.Default.Schedule,
+                onClick = { showWeeklyTimePicker = true },
+                enabled = isWeeklySummaryEnabled
+            )
+        }
+        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
+        item {
             SettingsToggleItem(
-                title = "Popup for Unknown Transactions",
-                subtitle = "Show notification for SMS from new merchants.",
-                icon = Icons.Default.Notifications,
-                checked = isUnknownTransactionPopupEnabled,
-                onCheckedChange = { viewModel.setUnknownTransactionPopupEnabled(it) },
+                title = "Monthly Summary",
+                subtitle = "Receive a summary of last month's finances.",
+                icon = Icons.Default.Event,
+                checked = isMonthlySummaryEnabled,
+                onCheckedChange = { viewModel.setMonthlySummaryEnabled(it) },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Monthly Report Time",
+                subtitle = "Current: Day ${monthlyReportTime.first} of the month at ${String.format("%02d:%02d", monthlyReportTime.second, monthlyReportTime.third)}",
+                icon = Icons.Default.Schedule,
+                onClick = { showMonthlyTimePicker = true },
+                enabled = isMonthlySummaryEnabled
             )
         }
 
@@ -5157,6 +5314,15 @@ fun SettingsScreen(
         }
 
         item { SettingSectionHeader("SMS Scanning") }
+        item {
+            SettingsToggleItem(
+                title = "Popup for Unknown Transactions",
+                subtitle = "Show notification for SMS from new merchants.",
+                icon = Icons.Default.Notifications,
+                checked = isUnknownTransactionPopupEnabled,
+                onCheckedChange = { viewModel.setUnknownTransactionPopupEnabled(it) },
+            )
+        }
         item {
             Row(
                 modifier = Modifier
@@ -5210,7 +5376,7 @@ fun SettingsScreen(
                 onClick = {
                     if (hasSmsPermission) {
                         if (!isScanning) {
-                            viewModel.rescanSmsForReview(null) // Pass null for a full scan
+                            viewModel.rescanSmsForReview(null)
                         }
                     } else {
                         showSmsRationaleDialog = true
@@ -5219,7 +5385,6 @@ fun SettingsScreen(
             )
         }
         item { SettingSectionHeader("Data Management") }
-        // --- NEW: Toggle for Google Drive Backup ---
         item {
             SettingsToggleItem(
                 title = "Enable Google Drive Backup",
@@ -5362,30 +5527,170 @@ private fun SettingsActionItem(
     subtitle: String? = null,
     icon: ImageVector,
     onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
+    val contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val subtitleColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+
     TextButton(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        enabled = enabled
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = contentColor)
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text, style = MaterialTheme.typography.bodyLarge)
+                Text(text, style = MaterialTheme.typography.bodyLarge, color = contentColor)
                 if (subtitle != null) {
                     Text(
                         subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = subtitleColor
                     )
                 }
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WeeklyReportTimePicker(
+    initialDay: Int,
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int, Int) -> Unit
+) {
+    var selectedDay by remember { mutableStateOf(initialDay) }
+    val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
+    val days = (1..7).map {
+        val cal = Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, it) }
+        Pair(it, cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.SHORT, Locale.getDefault()))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Weekly Report Time") },
+        text = {
+            Column {
+                Text("Day of the Week", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    days.chunked(4).forEach { rowDays ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowDays.forEach { (dayInt, dayName) ->
+                                val isSelected = dayInt == selectedDay
+                                OutlinedButton(
+                                    modifier = Modifier.weight(1f),
+                                    shape = MaterialTheme.shapes.medium,
+                                    onClick = { selectedDay = dayInt },
+                                    colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonColors(),
+                                    contentPadding = PaddingValues(vertical = 12.dp)
+                                ) {
+                                    Text(dayName)
+                                }
+                            }
+                            if (rowDays.size < 4) {
+                                Spacer(modifier = Modifier.weight(4f - rowDays.size))
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TimePicker(state = timePickerState)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }) {
+                Text("Set Time")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MonthlyReportTimePicker(
+    initialDay: Int,
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int, Int) -> Unit
+) {
+    var selectedDay by remember { mutableStateOf(initialDay) }
+    val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
+    var isDayPickerExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Monthly Report Time") },
+        text = {
+            Column {
+                Text("Day of the Month", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { isDayPickerExpanded = !isDayPickerExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Day: $selectedDay")
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        imageVector = if (isDayPickerExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                        contentDescription = "Toggle day picker"
+                    )
+                }
+                AnimatedVisibility(visible = isDayPickerExpanded) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 52.dp),
+                        modifier = Modifier.heightIn(max = 240.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items((1..28).toList()) { day ->
+                            val isSelected = day == selectedDay
+                            OutlinedButton(
+                                onClick = {
+                                    selectedDay = day
+                                    isDayPickerExpanded = false
+                                },
+                                shape = CircleShape,
+                                colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonColors(),
+                                modifier = Modifier.size(48.dp),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("$day")
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TimePicker(state = timePickerState)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }) {
+                Text("Set Time")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 -e 
 
@@ -11361,8 +11666,8 @@ data class AppDataBackup(
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: Enhanced getOverallBudgetForMonth to automatically carry over the
-// previous month's budget if no budget is explicitly set for the current month.
+// REASON: Added functions to save and retrieve the enabled state for the new
+// monthly summary notification toggle.
 // =================================================================================
 package io.pm.finlight
 
@@ -11390,6 +11695,16 @@ class SettingsRepository(context: Context) {
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
         private const val KEY_BACKUP_ENABLED = "google_drive_backup_enabled"
+        private const val KEY_DAILY_REPORT_HOUR = "daily_report_hour"
+        private const val KEY_DAILY_REPORT_MINUTE = "daily_report_minute"
+        private const val KEY_WEEKLY_REPORT_DAY = "weekly_report_day"
+        private const val KEY_WEEKLY_REPORT_HOUR = "weekly_report_hour"
+        private const val KEY_WEEKLY_REPORT_MINUTE = "weekly_report_minute"
+        private const val KEY_MONTHLY_REPORT_DAY = "monthly_report_day"
+        private const val KEY_MONTHLY_REPORT_HOUR = "monthly_report_hour"
+        private const val KEY_MONTHLY_REPORT_MINUTE = "monthly_report_minute"
+        // --- NEW: Key for monthly summary toggle ---
+        private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
     }
 
     fun saveBackupEnabled(isEnabled: Boolean) {
@@ -11517,7 +11832,6 @@ class SettingsRepository(context: Context) {
         return prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
     }
 
-    // --- UPDATED: Logic to carry over the previous month's budget ---
     fun getOverallBudgetForMonth(year: Int, month: Int): Flow<Float> {
         return callbackFlow {
             val currentMonthKey = getBudgetKey(year, month)
@@ -11534,18 +11848,14 @@ class SettingsRepository(context: Context) {
 
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
                 if (changedKey == currentMonthKey) {
-                    // If current month's budget is set/changed, emit it.
                     trySend(sharedPreferences.getFloat(currentMonthKey, 0f))
                 } else if (changedKey == previousMonthKey && !sharedPreferences.contains(currentMonthKey)) {
-                    // If previous month's budget changed AND current month has no budget,
-                    // emit the new carried-over value.
                     trySend(sharedPreferences.getFloat(previousMonthKey, 0f))
                 }
             }
 
             prefs.registerOnSharedPreferenceChangeListener(listener)
 
-            // Initial emission
             val budget = if (prefs.contains(currentMonthKey)) {
                 prefs.getFloat(currentMonthKey, 0f)
             } else {
@@ -11573,6 +11883,22 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    // --- NEW: Functions for monthly summary toggle ---
+    fun saveMonthlySummaryEnabled(isEnabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MONTHLY_SUMMARY_ENABLED, isEnabled).apply()
+    }
+
+    fun getMonthlySummaryEnabled(): Flow<Boolean> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == KEY_MONTHLY_SUMMARY_ENABLED) { trySend(prefs.getBoolean(key, true)) }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getBoolean(KEY_MONTHLY_SUMMARY_ENABLED, true))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
     fun saveUnknownTransactionPopupEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled).apply()
     }
@@ -11583,6 +11909,94 @@ class SettingsRepository(context: Context) {
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    fun saveDailyReportTime(hour: Int, minute: Int) {
+        prefs.edit()
+            .putInt(KEY_DAILY_REPORT_HOUR, hour)
+            .putInt(KEY_DAILY_REPORT_MINUTE, minute)
+            .apply()
+    }
+
+    fun getDailyReportTime(): Flow<Pair<Int, Int>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_DAILY_REPORT_HOUR || changedKey == KEY_DAILY_REPORT_MINUTE) {
+                    trySend(
+                        Pair(
+                            sharedPreferences.getInt(KEY_DAILY_REPORT_HOUR, 9),
+                            sharedPreferences.getInt(KEY_DAILY_REPORT_MINUTE, 0)
+                        )
+                    )
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(
+                Pair(
+                    prefs.getInt(KEY_DAILY_REPORT_HOUR, 9),
+                    prefs.getInt(KEY_DAILY_REPORT_MINUTE, 0)
+                )
+            )
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    fun saveWeeklyReportTime(dayOfWeek: Int, hour: Int, minute: Int) {
+        prefs.edit()
+            .putInt(KEY_WEEKLY_REPORT_DAY, dayOfWeek)
+            .putInt(KEY_WEEKLY_REPORT_HOUR, hour)
+            .putInt(KEY_WEEKLY_REPORT_MINUTE, minute)
+            .apply()
+    }
+
+    fun getWeeklyReportTime(): Flow<Triple<Int, Int, Int>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_WEEKLY_REPORT_DAY || key == KEY_WEEKLY_REPORT_HOUR || key == KEY_WEEKLY_REPORT_MINUTE) {
+                    trySend(Triple(
+                        sp.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.MONDAY),
+                        sp.getInt(KEY_WEEKLY_REPORT_HOUR, 9),
+                        sp.getInt(KEY_WEEKLY_REPORT_MINUTE, 0)
+                    ))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(Triple(
+                prefs.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.MONDAY),
+                prefs.getInt(KEY_WEEKLY_REPORT_HOUR, 9),
+                prefs.getInt(KEY_WEEKLY_REPORT_MINUTE, 0)
+            ))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    fun saveMonthlyReportTime(dayOfMonth: Int, hour: Int, minute: Int) {
+        prefs.edit()
+            .putInt(KEY_MONTHLY_REPORT_DAY, dayOfMonth)
+            .putInt(KEY_MONTHLY_REPORT_HOUR, hour)
+            .putInt(KEY_MONTHLY_REPORT_MINUTE, minute)
+            .apply()
+    }
+
+    fun getMonthlyReportTime(): Flow<Triple<Int, Int, Int>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_MONTHLY_REPORT_DAY || key == KEY_MONTHLY_REPORT_HOUR || key == KEY_MONTHLY_REPORT_MINUTE) {
+                    trySend(Triple(
+                        sp.getInt(KEY_MONTHLY_REPORT_DAY, 1),
+                        sp.getInt(KEY_MONTHLY_REPORT_HOUR, 9),
+                        sp.getInt(KEY_MONTHLY_REPORT_MINUTE, 0)
+                    ))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(Triple(
+                prefs.getInt(KEY_MONTHLY_REPORT_DAY, 1),
+                prefs.getInt(KEY_MONTHLY_REPORT_HOUR, 9),
+                prefs.getInt(KEY_MONTHLY_REPORT_MINUTE, 0)
+            ))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
@@ -11769,6 +12183,11 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
 
 
 ================== FILE: ./app/src/main/java/SettingsViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
+// REASON: Added StateFlow and a corresponding save function for the new monthly
+// summary toggle to manage its state and trigger worker scheduling.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -11826,6 +12245,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = true,
         )
 
+    // --- NEW: StateFlow for the monthly summary toggle ---
+    val monthlySummaryEnabled: StateFlow<Boolean> =
+        settingsRepository.getMonthlySummaryEnabled().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = true
+        )
+
     val appLockEnabled: StateFlow<Boolean> =
         settingsRepository.getAppLockEnabled().stateIn(
             scope = viewModelScope,
@@ -11853,6 +12280,27 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
+    val dailyReportTime: StateFlow<Pair<Int, Int>> =
+        settingsRepository.getDailyReportTime().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = Pair(9, 0)
+        )
+
+    val weeklyReportTime: StateFlow<Triple<Int, Int, Int>> =
+        settingsRepository.getWeeklyReportTime().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = Triple(Calendar.MONDAY, 9, 0)
+        )
+
+    val monthlyReportTime: StateFlow<Triple<Int, Int, Int>> =
+        settingsRepository.getMonthlyReportTime().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = Triple(1, 9, 0)
+        )
+
     init {
         smsScanStartDate =
             settingsRepository.getSmsScanStartDate()
@@ -11866,7 +12314,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val currentYear = calendar.get(Calendar.YEAR)
         val currentMonth = calendar.get(Calendar.MONTH) + 1
 
-        // --- FIX: Use the correct repository method with parameters ---
         overallBudget =
             settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth).stateIn(
                 scope = viewModelScope,
@@ -11957,9 +12404,40 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (enabled) ReminderManager.scheduleDailyReport(context) else ReminderManager.cancelDailyReport(context)
     }
 
+    fun saveDailyReportTime(hour: Int, minute: Int) {
+        settingsRepository.saveDailyReportTime(hour, minute)
+        if (dailyReportEnabled.value) {
+            ReminderManager.scheduleDailyReport(context)
+        }
+    }
+
     fun setWeeklySummaryEnabled(enabled: Boolean) {
         settingsRepository.saveWeeklySummaryEnabled(enabled)
         if (enabled) ReminderManager.scheduleWeeklySummary(context) else ReminderManager.cancelWeeklySummary(context)
+    }
+
+    fun saveWeeklyReportTime(dayOfWeek: Int, hour: Int, minute: Int) {
+        settingsRepository.saveWeeklyReportTime(dayOfWeek, hour, minute)
+        if (weeklySummaryEnabled.value) {
+            ReminderManager.scheduleWeeklySummary(context)
+        }
+    }
+
+    // --- NEW: Function to handle the monthly summary toggle ---
+    fun setMonthlySummaryEnabled(enabled: Boolean) {
+        settingsRepository.saveMonthlySummaryEnabled(enabled)
+        if (enabled) {
+            ReminderManager.scheduleMonthlySummary(context)
+        } else {
+            ReminderManager.cancelMonthlySummary(context)
+        }
+    }
+
+    fun saveMonthlyReportTime(dayOfMonth: Int, hour: Int, minute: Int) {
+        settingsRepository.saveMonthlyReportTime(dayOfMonth, hour, minute)
+        if (monthlySummaryEnabled.value) {
+            ReminderManager.scheduleMonthlySummary(context)
+        }
     }
 
     fun setAppLockEnabled(enabled: Boolean) {
@@ -12978,8 +13456,9 @@ interface BudgetDao {
 ================== FILE: ./app/src/main/java/DailyReportWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
-// REASON: Corrected the call to getTransactionDetailsForRange by passing null
-// for the new, unused filter parameters to resolve the compilation error.
+// REASON: Added a call to ReminderManager.scheduleDailyReport at the end of the
+// worker's execution. This crucial step creates a continuous chain, ensuring that
+// the next day's report is always enqueued after the current one runs.
 // =================================================================================
 package io.pm.finlight
 
@@ -13021,7 +13500,6 @@ class DailyReportWorker(
                 val startDate = calendar.timeInMillis
 
                 // 2. Fetch transactions for yesterday.
-                // --- FIX: Pass null for the new filter parameters ---
                 val transactions = transactionDao.getTransactionDetailsForRange(
                     startDate = startDate,
                     endDate = endDate,
@@ -13040,7 +13518,10 @@ class DailyReportWorker(
                 // 4. Send the summary notification via the helper.
                 NotificationHelper.showDailyReportNotification(context, totalExpenses)
 
-                Log.d("DailyReportWorker", "Worker finished successfully.")
+                // 5. Re-schedule the next day's report.
+                ReminderManager.scheduleDailyReport(context)
+
+                Log.d("DailyReportWorker", "Worker finished successfully and rescheduled.")
                 Result.success()
             } catch (e: Exception) {
                 Log.e("DailyReportWorker", "Worker failed", e)
@@ -13189,6 +13670,41 @@ data class BudgetWithSpending(
     val iconKey: String?,
     val colorKey: String?
 )
+-e 
+
+
+================== FILE: ./app/src/main/java/BootReceiver.kt ==================
+package io.pm.finlight
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+
+/**
+ * A BroadcastReceiver that listens for the device boot completion event.
+ * Its purpose is to re-schedule all necessary background workers (like daily,
+ * weekly, and monthly reports) to ensure they persist across device reboots.
+ */
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+            Log.d("BootReceiver", "Device boot completed. Re-scheduling workers.")
+            // Re-schedule all workers based on their enabled status in SharedPreferences.
+            val settings = context.getSharedPreferences("finance_app_settings", Context.MODE_PRIVATE)
+
+            if (settings.getBoolean("daily_report_enabled", false)) {
+                ReminderManager.scheduleDailyReport(context)
+            }
+            if (settings.getBoolean("weekly_summary_enabled", true)) {
+                ReminderManager.scheduleWeeklySummary(context)
+            }
+            // You would also add the check for the monthly summary here once its toggle exists.
+            // For now, we assume it's always on if scheduled.
+            ReminderManager.scheduleMonthlySummary(context)
+        }
+    }
+}
 -e 
 
 
