@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: Added StateFlows and save functions for the weekly and monthly report
-// timing preferences to manage the new settings from the UI.
+// REASON: Added StateFlow and a corresponding save function for the new monthly
+// summary toggle to manage its state and trigger worker scheduling.
 // =================================================================================
 package io.pm.finlight
 
@@ -60,6 +60,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = true,
         )
 
+    // --- NEW: StateFlow for the monthly summary toggle ---
+    val monthlySummaryEnabled: StateFlow<Boolean> =
+        settingsRepository.getMonthlySummaryEnabled().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = true
+        )
+
     val appLockEnabled: StateFlow<Boolean> =
         settingsRepository.getAppLockEnabled().stateIn(
             scope = viewModelScope,
@@ -94,7 +102,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = Pair(9, 0)
         )
 
-    // --- NEW: Expose weekly report time ---
     val weeklyReportTime: StateFlow<Triple<Int, Int, Int>> =
         settingsRepository.getWeeklyReportTime().stateIn(
             scope = viewModelScope,
@@ -102,7 +109,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = Triple(Calendar.MONDAY, 9, 0)
         )
 
-    // --- NEW: Expose monthly report time ---
     val monthlyReportTime: StateFlow<Triple<Int, Int, Int>> =
         settingsRepository.getMonthlyReportTime().stateIn(
             scope = viewModelScope,
@@ -225,7 +231,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (enabled) ReminderManager.scheduleWeeklySummary(context) else ReminderManager.cancelWeeklySummary(context)
     }
 
-    // --- NEW: Function to save weekly report time ---
     fun saveWeeklyReportTime(dayOfWeek: Int, hour: Int, minute: Int) {
         settingsRepository.saveWeeklyReportTime(dayOfWeek, hour, minute)
         if (weeklySummaryEnabled.value) {
@@ -233,10 +238,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- NEW: Function to save monthly report time ---
+    // --- NEW: Function to handle the monthly summary toggle ---
+    fun setMonthlySummaryEnabled(enabled: Boolean) {
+        settingsRepository.saveMonthlySummaryEnabled(enabled)
+        if (enabled) {
+            ReminderManager.scheduleMonthlySummary(context)
+        } else {
+            ReminderManager.cancelMonthlySummary(context)
+        }
+    }
+
     fun saveMonthlyReportTime(dayOfMonth: Int, hour: Int, minute: Int) {
         settingsRepository.saveMonthlyReportTime(dayOfMonth, hour, minute)
-        ReminderManager.scheduleMonthlySummary(context)
+        if (monthlySummaryEnabled.value) {
+            ReminderManager.scheduleMonthlySummary(context)
+        }
     }
 
     fun setAppLockEnabled(enabled: Boolean) {

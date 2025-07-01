@@ -3,6 +3,8 @@
 // REASON: Reorganized the "Notifications & Automation" and "SMS Scanning" sections
 // for better logical grouping. Report toggles are now paired with their
 // corresponding time settings, which are enabled/disabled based on the toggle state.
+// The weekly day picker has been improved to prevent text wrapping.
+// The monthly day picker now uses a collapsible grid for better UX.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12,9 +14,14 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ManageSearch
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -25,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
@@ -53,6 +61,7 @@ fun SettingsScreen(
     val isAppLockEnabled by viewModel.appLockEnabled.collectAsState()
     val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReportEnabled by viewModel.dailyReportEnabled.collectAsState()
+    val isMonthlySummaryEnabled by viewModel.monthlySummaryEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
     val isBackupEnabled by viewModel.backupEnabled.collectAsState()
     var showSmsRationaleDialog by remember { mutableStateOf(false) }
@@ -333,7 +342,7 @@ fun SettingsScreen(
         item { SettingSectionHeader("Notifications & Automation") }
         item {
             SettingsToggleItem(
-                title = "Enable Daily Summary Notification",
+                title = "Daily Summary",
                 subtitle = "Get a report of yesterday's spending each day.",
                 icon = Icons.Default.NotificationsActive,
                 checked = isDailyReportEnabled,
@@ -352,7 +361,7 @@ fun SettingsScreen(
         item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
         item {
             SettingsToggleItem(
-                title = "Weekly Summary Notification",
+                title = "Weekly Summary",
                 subtitle = "Receive a summary of your finances every week.",
                 icon = Icons.Default.CalendarToday,
                 checked = isWeeklySummaryEnabled,
@@ -373,11 +382,21 @@ fun SettingsScreen(
         }
         item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
         item {
+            SettingsToggleItem(
+                title = "Monthly Summary",
+                subtitle = "Receive a summary of last month's finances.",
+                icon = Icons.Default.Event,
+                checked = isMonthlySummaryEnabled,
+                onCheckedChange = { viewModel.setMonthlySummaryEnabled(it) },
+            )
+        }
+        item {
             SettingsActionItem(
                 text = "Monthly Report Time",
                 subtitle = "Current: Day ${monthlyReportTime.first} of the month at ${String.format("%02d:%02d", monthlyReportTime.second, monthlyReportTime.third)}",
                 icon = Icons.Default.Schedule,
-                onClick = { showMonthlyTimePicker = true }
+                onClick = { showMonthlyTimePicker = true },
+                enabled = isMonthlySummaryEnabled
             )
         }
 
@@ -678,14 +697,27 @@ private fun WeeklyReportTimePicker(
             Column {
                 Text("Day of the Week", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    days.forEach { (dayInt, dayName) ->
-                        SegmentedButton(
-                            shape = MaterialTheme.shapes.medium,
-                            onClick = { selectedDay = dayInt },
-                            selected = dayInt == selectedDay
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    days.chunked(4).forEach { rowDays ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(dayName)
+                            rowDays.forEach { (dayInt, dayName) ->
+                                val isSelected = dayInt == selectedDay
+                                OutlinedButton(
+                                    modifier = Modifier.weight(1f),
+                                    shape = MaterialTheme.shapes.medium,
+                                    onClick = { selectedDay = dayInt },
+                                    colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonColors(),
+                                    contentPadding = PaddingValues(vertical = 12.dp)
+                                ) {
+                                    Text(dayName)
+                                }
+                            }
+                            if (rowDays.size < 4) {
+                                Spacer(modifier = Modifier.weight(4f - rowDays.size))
+                            }
                         }
                     }
                 }
@@ -716,27 +748,50 @@ private fun MonthlyReportTimePicker(
     onConfirm: (Int, Int, Int) -> Unit
 ) {
     var selectedDay by remember { mutableStateOf(initialDay) }
-    var dayText by remember { mutableStateOf(initialDay.toString()) }
     val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
+    var isDayPickerExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Set Monthly Report Time") },
         text = {
             Column {
-                OutlinedTextField(
-                    value = dayText,
-                    onValueChange = {
-                        val intValue = it.filter { c -> c.isDigit() }.toIntOrNull()
-                        if (intValue != null && intValue in 1..28) {
-                            dayText = it.filter { c -> c.isDigit() }
-                            selectedDay = intValue
-                        } else if (it.isEmpty()) {
-                            dayText = ""
+                Text("Day of the Month", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { isDayPickerExpanded = !isDayPickerExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Day: $selectedDay")
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        imageVector = if (isDayPickerExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                        contentDescription = "Toggle day picker"
+                    )
+                }
+                AnimatedVisibility(visible = isDayPickerExpanded) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 52.dp),
+                        modifier = Modifier.heightIn(max = 240.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items((1..28).toList()) { day ->
+                            val isSelected = day == selectedDay
+                            OutlinedButton(
+                                onClick = {
+                                    selectedDay = day
+                                    isDayPickerExpanded = false
+                                },
+                                shape = CircleShape,
+                                colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonColors(),
+                                modifier = Modifier.size(48.dp),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("$day")
+                            }
                         }
-                    },
-                    label = { Text("Day of the Month (1-28)") }
-                )
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     TimePicker(state = timePickerState)
@@ -744,10 +799,7 @@ private fun MonthlyReportTimePicker(
             }
         },
         confirmButton = {
-            Button(
-                enabled = dayText.isNotEmpty(),
-                onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }
-            ) {
+            Button(onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }) {
                 Text("Set Time")
             }
         },

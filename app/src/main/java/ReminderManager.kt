@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReminderManager.kt
-// REASON: Refactored all scheduling functions to use OneTimeWorkRequest for
-// precise timing based on user preferences, ensuring accurate report delivery.
+// REASON: Added the cancelMonthlySummary function to allow disabling of the
+// monthly report worker, completing the scheduling lifecycle.
 // =================================================================================
 package io.pm.finlight
 
@@ -114,5 +114,10 @@ object ReminderManager {
             monthlyReportRequest,
         )
         Log.d("ReminderManager", "Monthly summary scheduled for ${nextRun.time}")
+    }
+
+    // --- NEW: Function to cancel the monthly summary worker ---
+    fun cancelMonthlySummary(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(MONTHLY_SUMMARY_WORK_TAG)
     }
 }

@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: Added functions to save and retrieve user preferences for the weekly
-// and monthly report times, including the day of the week/month.
+// REASON: Added functions to save and retrieve the enabled state for the new
+// monthly summary notification toggle.
 // =================================================================================
 package io.pm.finlight
 
@@ -31,13 +31,14 @@ class SettingsRepository(context: Context) {
         private const val KEY_BACKUP_ENABLED = "google_drive_backup_enabled"
         private const val KEY_DAILY_REPORT_HOUR = "daily_report_hour"
         private const val KEY_DAILY_REPORT_MINUTE = "daily_report_minute"
-        // --- NEW: Keys for weekly and monthly report timing ---
         private const val KEY_WEEKLY_REPORT_DAY = "weekly_report_day"
         private const val KEY_WEEKLY_REPORT_HOUR = "weekly_report_hour"
         private const val KEY_WEEKLY_REPORT_MINUTE = "weekly_report_minute"
         private const val KEY_MONTHLY_REPORT_DAY = "monthly_report_day"
         private const val KEY_MONTHLY_REPORT_HOUR = "monthly_report_hour"
         private const val KEY_MONTHLY_REPORT_MINUTE = "monthly_report_minute"
+        // --- NEW: Key for monthly summary toggle ---
+        private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
     }
 
     fun saveBackupEnabled(isEnabled: Boolean) {
@@ -216,6 +217,22 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    // --- NEW: Functions for monthly summary toggle ---
+    fun saveMonthlySummaryEnabled(isEnabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MONTHLY_SUMMARY_ENABLED, isEnabled).apply()
+    }
+
+    fun getMonthlySummaryEnabled(): Flow<Boolean> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == KEY_MONTHLY_SUMMARY_ENABLED) { trySend(prefs.getBoolean(key, true)) }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(prefs.getBoolean(KEY_MONTHLY_SUMMARY_ENABLED, true))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
     fun saveUnknownTransactionPopupEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled).apply()
     }
@@ -260,7 +277,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Functions for weekly report timing ---
     fun saveWeeklyReportTime(dayOfWeek: Int, hour: Int, minute: Int) {
         prefs.edit()
             .putInt(KEY_WEEKLY_REPORT_DAY, dayOfWeek)
@@ -290,7 +306,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Functions for monthly report timing ---
     fun saveMonthlyReportTime(dayOfMonth: Int, hour: Int, minute: Int) {
         prefs.edit()
             .putInt(KEY_MONTHLY_REPORT_DAY, dayOfMonth)
