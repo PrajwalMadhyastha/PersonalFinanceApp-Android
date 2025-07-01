@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul  1 09:17:27 IST 2025
+Generated on: Tue Jul  1 12:05:39 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -181,12 +181,16 @@ dependencies {
     <uses-feature
         android:name="android.hardware.telephony"
         android:required="false" />
+    <!-- FIX: Explicitly declare that the camera feature is used, but not required. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <uses-permission android:name="android.permission.CAMERA" />
 
 
     <application
@@ -240,7 +244,6 @@ dependencies {
             android:theme="@style/Theme.AppCompat.DayNight"
             />
 
-        <!-- BUG FIX: Declare the FileProvider to securely handle camera image URIs -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
@@ -1173,7 +1176,9 @@ val screenTitles = mapOf(
     BottomNavItem.Profile.route to "Profile",
     "settings_screen" to "App Settings",
     "add_transaction" to "Add Transaction",
-    "edit_transaction/{transactionId}" to "Edit Transaction",
+    // --- DELETED: Removed route for the obsolete EditTransactionScreen ---
+    // "edit_transaction/{transactionId}" to "Edit Transaction",
+    "transaction_detail/{transactionId}" to "Edit Transaction", // The detail screen is now the edit screen
     "account_list" to "Your Accounts",
     "add_account" to "Add New Account",
     "edit_account/{accountId}" to "Edit Account",
@@ -1188,7 +1193,6 @@ val screenTitles = mapOf(
     "review_sms_screen" to "Review SMS Transactions",
     "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
     "tag_management" to "Manage Tags",
-    // --- NEW: Add the title for the new Edit Profile screen ---
     "edit_profile" to "Edit Profile"
 )
 -e 
@@ -2877,6 +2881,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -3015,6 +3020,8 @@ fun ApproveTransactionScreen(
     var notes by remember { mutableStateOf("") }
     var selectedTransactionType by remember(potentialTxn.transactionType) { mutableStateOf(potentialTxn.transactionType) }
     val scope = rememberCoroutineScope()
+    // --- FIX: Get the context for the NotificationManager ---
+    val context = LocalContext.current
 
     val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
@@ -3141,6 +3148,9 @@ fun ApproveTransactionScreen(
                                 if (success) {
                                     settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
                                     settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
+                                    // --- FIX: Programmatically dismiss the source notification ---
+                                    val notificationManager = NotificationManagerCompat.from(context)
+                                    notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
                                     navController.popBackStack()
                                 }
                             }
@@ -3493,6 +3503,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -3500,6 +3511,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
@@ -3517,6 +3530,9 @@ private sealed class AddSheetContent {
 fun AddTransactionScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
+    isCsvEdit: Boolean = false,
+    csvLineNumber: Int = -1,
+    initialDataJson: String? = null
 ) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
@@ -3537,7 +3553,6 @@ fun AddTransactionScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val validationError by viewModel.validationError.collectAsState()
 
-    // --- NEW: State for attachments ---
     var attachedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -3545,8 +3560,6 @@ fun AddTransactionScreen(
         attachedImageUris = attachedImageUris + uris
     }
 
-
-    // --- NEW: State for bottom sheets ---
     var activeSheetContent by remember { mutableStateOf<AddSheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
@@ -3556,10 +3569,38 @@ fun AddTransactionScreen(
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
 
+    // --- NEW: Logic to pre-fill the form when editing a CSV row ---
+    LaunchedEffect(initialDataJson, accounts, categories) {
+        if (isCsvEdit && initialDataJson != null) {
+            try {
+                val gson = Gson()
+                val initialData: List<String> = gson.fromJson(initialDataJson, object : TypeToken<List<String>>() {}.type)
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+                initialData.getOrNull(0)?.let {
+                    try {
+                        selectedDateTime.time = dateFormat.parse(it) ?: Date()
+                    } catch (e: Exception) { /* Keep default date on parse error */ }
+                }
+                description = initialData.getOrElse(1) { "" }
+                amount = initialData.getOrElse(2) { "" }
+                transactionType = initialData.getOrElse(3) { "expense" }
+                val categoryName = initialData.getOrElse(4) { "" }
+                val accountName = initialData.getOrElse(5) { "" }
+                notes = initialData.getOrElse(6) { "" }
+
+                selectedCategory = categories.find { it.name.equals(categoryName, ignoreCase = true) }
+                selectedAccount = accounts.find { it.name.equals(accountName, ignoreCase = true) }
+
+            } catch (e: Exception) {
+                // Log error or show a toast if JSON parsing fails
+            }
+        }
+    }
+
     DisposableEffect(Unit) { onDispose { viewModel.clearSelectedTags() } }
 
     LaunchedEffect(validationError) { validationError?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() } }
-
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -3645,7 +3686,6 @@ fun AddTransactionScreen(
                 }
             }
 
-
             item {
                 Row(
                     modifier = Modifier
@@ -3658,32 +3698,54 @@ fun AddTransactionScreen(
                     }
                     Button(
                         onClick = {
-                            val success = viewModel.addTransaction(
-                                description = description,
-                                categoryId = selectedCategory?.id,
-                                amountStr = amount,
-                                accountId = selectedAccount!!.id,
-                                notes = notes.takeIf { it.isNotBlank() },
-                                date = selectedDateTime.timeInMillis,
-                                transactionType = transactionType,
-                                sourceSmsId = null,
-                                sourceSmsHash = null,
-                                imageUris = attachedImageUris
-                            )
-                            if (success) navController.popBackStack()
+                            if (isCsvEdit) {
+                                // --- NEW: Logic for returning edited CSV data ---
+                                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                                val correctedData = listOf(
+                                    dateFormat.format(selectedDateTime.time),
+                                    description,
+                                    amount,
+                                    transactionType,
+                                    selectedCategory?.name ?: "",
+                                    selectedAccount?.name ?: "",
+                                    notes
+                                )
+                                val gson = Gson()
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("corrected_row", gson.toJson(correctedData))
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("corrected_row_line", csvLineNumber)
+                                navController.popBackStack()
+                            } else {
+                                // Original logic for adding a new transaction
+                                val success = viewModel.addTransaction(
+                                    description = description,
+                                    categoryId = selectedCategory?.id,
+                                    amountStr = amount,
+                                    accountId = selectedAccount!!.id,
+                                    notes = notes.takeIf { it.isNotBlank() },
+                                    date = selectedDateTime.timeInMillis,
+                                    transactionType = transactionType,
+                                    sourceSmsId = null,
+                                    sourceSmsHash = null,
+                                    imageUris = attachedImageUris
+                                )
+                                if (success) navController.popBackStack()
+                            }
                         },
                         modifier = Modifier.weight(1f),
                         enabled = isSaveEnabled
                     ) {
-                        Text("Save")
+                        // --- UPDATED: Button text is now dynamic ---
+                        Text(if (isCsvEdit) "Update Row" else "Save")
                     }
                 }
             }
         }
     }
 
-
-    // --- Bottom Sheet Logic ---
     if (activeSheetContent != null) {
         ModalBottomSheet(
             onDismissRequest = { activeSheetContent = null },
@@ -3713,8 +3775,6 @@ fun AddTransactionScreen(
         }
     }
 
-
-    // --- Dialogs for Date/Time ---
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
         DatePickerDialog(
@@ -3802,7 +3862,8 @@ fun PrimaryInfoCard(
                 value = description,
                 onValueChange = onDescriptionChange,
                 label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth(),
+                // --- FIX: Add a testTag for reliable UI testing ---
+                modifier = Modifier.fillMaxWidth().testTag("description_input"),
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedBorderColor = Color.Transparent,
                     focusedBorderColor = Color.Transparent
@@ -5374,6 +5435,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -5815,7 +5877,8 @@ private fun EditTextFieldSheet(
                 capitalization = if (keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None
             ),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            // --- FIX: Add a testTag for reliable UI testing ---
+            modifier = Modifier.fillMaxWidth().testTag("value_input")
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -6173,128 +6236,6 @@ fun InfoCard(
                 Text(value, style = MaterialTheme.typography.bodyLarge)
             }
             Icon(Icons.Default.Edit, contentDescription = "Edit")
-        }
-    }
-}
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/EditImportedTransactionScreen.kt ==================
-package io.pm.finlight.ui.screens
-
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
-import com.google.gson.Gson
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun EditImportedTransactionScreen(
-    navController: NavController,
-    lineNumber: Int,
-    initialData: List<String>,
-) {
-    var date by remember { mutableStateOf(initialData.getOrElse(0) { "" }) }
-    var description by remember { mutableStateOf(initialData.getOrElse(1) { "" }) }
-    var amount by remember { mutableStateOf(initialData.getOrElse(2) { "" }) }
-    var type by remember { mutableStateOf(initialData.getOrElse(3) { "" }) }
-    var categoryName by remember { mutableStateOf(initialData.getOrElse(4) { "" }) }
-    var accountName by remember { mutableStateOf(initialData.getOrElse(5) { "" }) }
-    var notes by remember { mutableStateOf(initialData.getOrElse(6) { "" }) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Edit CSV Row (Line $lineNumber)") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        },
-        bottomBar = {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
-                    Text("Cancel")
-                }
-                Button(
-                    onClick = {
-                        val correctedData = listOf(date, description, amount, type, categoryName, accountName, notes)
-                        val gson = Gson()
-                        navController.previousBackStackEntry
-                            ?.savedStateHandle
-                            ?.set("corrected_row", gson.toJson(correctedData))
-                        navController.previousBackStackEntry
-                            ?.savedStateHandle
-                            ?.set("corrected_row_line", lineNumber)
-                        navController.popBackStack()
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Update Row")
-                }
-            }
-        },
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier.padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item {
-                OutlinedTextField(value = date, onValueChange = {
-                    date = it
-                }, label = { Text("Date (yyyy-MM-dd HH:mm:ss)") }, modifier = Modifier.fillMaxWidth())
-            }
-            item {
-                OutlinedTextField(value = description, onValueChange = {
-                    description = it
-                }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-            }
-            item {
-                OutlinedTextField(value = amount, onValueChange = {
-                    amount = it
-                }, label = {
-                    Text(
-                        "Amount",
-                    )
-                }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            }
-            item {
-                OutlinedTextField(value = type, onValueChange = {
-                    type = it
-                }, label = { Text("Type (income/expense)") }, modifier = Modifier.fillMaxWidth())
-            }
-            item {
-                OutlinedTextField(value = categoryName, onValueChange = {
-                    categoryName = it
-                }, label = { Text("Category") }, modifier = Modifier.fillMaxWidth())
-            }
-            item {
-                OutlinedTextField(value = accountName, onValueChange = {
-                    accountName = it
-                }, label = { Text("Account") }, modifier = Modifier.fillMaxWidth())
-            }
-            item {
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
         }
     }
 }
@@ -6723,6 +6664,7 @@ package io.pm.finlight.ui.screens
 
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -6757,6 +6699,8 @@ import com.canhub.cropper.CropImageView
 import io.pm.finlight.ProfileViewModel
 import io.pm.finlight.R
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun EditProfileScreen(
@@ -6818,6 +6762,7 @@ fun EditProfileScreen(
                 TextButton(
                     onClick = {
                         showImageSourceDialog = false
+                        // --- FIX: Create the temp file and get its secure URI before launching the camera ---
                         val tempFile = createTempImageFile(context)
                         val newTempUri = FileProvider.getUriForFile(
                             context,
@@ -6929,13 +6874,14 @@ private fun createCropOptions(toolbarColor: Int, toolbarTintColor: Int, activity
 }
 
 /**
- * Helper function to create a temporary image file in the app's cache directory.
+ * Helper function to create a temporary image file in the app's external files directory.
  */
 private fun createTempImageFile(context: Context): File {
-    // --- BUG FIX: Use the cache directory for temporary files ---
-    val storageDir: File = context.cacheDir
+    // --- FIX: Use the external files directory for better compatibility with the camera intent ---
+    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val storageDir: File? = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
     return File.createTempFile(
-        "JPEG_${System.currentTimeMillis()}_",
+        "JPEG_${timeStamp}_",
         ".jpg",
         storageDir
     )
@@ -7329,10 +7275,11 @@ fun CsvValidationScreen(
                     EditableRowItem(
                         row = row,
                         onEditClick = {
+                            // --- UPDATED: Navigate to the AddTransactionScreen in edit mode ---
                             val gson = Gson()
                             val rowDataJson = gson.toJson(row.rowData)
                             val encodedJson = URLEncoder.encode(rowDataJson, "UTF-8")
-                            navController.navigate("edit_transaction/-1?isFromCsv=true&lineNumber=${row.lineNumber}&rowDataJson=$encodedJson")
+                            navController.navigate("add_transaction?isCsvEdit=true&csvLineNumber=${row.lineNumber}&initialDataJson=$encodedJson")
                         },
                         onDeleteClick = {
                             viewModel.removeRowFromReport(row)
@@ -7351,7 +7298,6 @@ fun CsvValidationScreen(
                     onClick = {
                         scope.launch {
                             val rowsToImport = report?.reviewableRows?.filter { it.status != CsvRowStatus.INVALID_AMOUNT && it.status != CsvRowStatus.INVALID_DATE && it.status != CsvRowStatus.INVALID_COLUMN_COUNT }
-                            // --- BUG FIX: The null check is redundant because .filter always returns a list ---
                             if (!rowsToImport.isNullOrEmpty()) {
                                 viewModel.commitCsvImport(rowsToImport)
                                 Toast.makeText(context, "$importableRowCount transactions imported!", Toast.LENGTH_LONG).show()
@@ -7477,401 +7423,6 @@ fun AddAccountScreen(
             ) {
                 Text("Save Account")
             }
-        }
-    }
-}
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/EditTransactionScreen.kt ==================
-package io.pm.finlight.ui.screens
-
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
-import io.pm.finlight.Account
-import io.pm.finlight.Category
-import io.pm.finlight.TransactionViewModel
-import io.pm.finlight.ui.components.TimePickerDialog
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-fun EditTransactionScreen(
-    navController: NavController,
-    viewModel: TransactionViewModel,
-    transactionId: Int,
-) {
-    var description by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    var newTagName by remember { mutableStateOf("") }
-    var source by remember { mutableStateOf("") }
-
-    var transactionType by remember { mutableStateOf("expense") }
-    val transactionTypes = listOf("Expense", "Income")
-
-    val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
-    var selectedAccount by remember { mutableStateOf<Account?>(null) }
-    var isAccountDropdownExpanded by remember { mutableStateOf(false) }
-
-    val categories by viewModel.allCategories.collectAsState(initial = emptyList())
-    var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
-
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showTimePicker by remember { mutableStateOf(false) }
-    val selectedDateTime = remember { Calendar.getInstance() }
-
-    val snackbarHostState = remember { SnackbarHostState() }
-    val validationError by viewModel.validationError.collectAsState()
-    val transactionFromDb by viewModel.getTransactionById(transactionId).collectAsState(initial = null)
-
-    val isExpense = transactionType == "expense"
-    val isUpdateEnabled = (
-            description.isNotBlank() &&
-                    amount.isNotBlank() &&
-                    selectedAccount != null &&
-                    (!isExpense || selectedCategory != null)
-            )
-
-    val allTags by viewModel.allTags.collectAsState()
-    val selectedTags by viewModel.selectedTags.collectAsState()
-
-    LaunchedEffect(key1 = transactionId) {
-        if (transactionId != -1) {
-            viewModel.loadTagsForTransaction(transactionId)
-        }
-    }
-
-    LaunchedEffect(transactionFromDb, accounts, categories) {
-        if (transactionFromDb != null) {
-            transactionFromDb?.let { txn ->
-                description = txn.description
-                amount = txn.amount.toString()
-                notes = txn.notes ?: ""
-                selectedDateTime.timeInMillis = txn.date
-                selectedAccount = accounts.find { it.id == txn.accountId }
-                selectedCategory = categories.find { it.id == txn.categoryId }
-                transactionType = txn.transactionType
-                source = txn.source
-            }
-        }
-    }
-
-    LaunchedEffect(validationError) {
-        validationError?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (transactionFromDb != null) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                item {
-                    TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
-                        transactionTypes.forEachIndexed { index, title ->
-                            Tab(
-                                selected = (if (isExpense) 0 else 1) == index,
-                                onClick = {
-                                    transactionType = if (index == 0) "expense" else "income"
-                                    if (transactionType == "income") {
-                                        selectedCategory = null
-                                    }
-                                },
-                                text = { Text(title) },
-                            )
-                        }
-                    }
-                }
-                item {
-                    OutlinedTextField(value = description, onValueChange = {
-                        description = it
-                    }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-                }
-                item {
-                    OutlinedTextField(value = amount, onValueChange = {
-                        amount = it
-                    }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                }
-                item {
-                    OutlinedTextField(
-                        value = notes,
-                        onValueChange = { notes = it },
-                        label = { Text("Notes (Optional)") },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
-                            Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateTime.time))
-                        }
-                        Button(onClick = { showTimePicker = true }, modifier = Modifier.weight(1f)) {
-                            Icon(imageVector = Icons.Default.AccessTime, contentDescription = "Select Time")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time))
-                        }
-                    }
-                }
-                item {
-                    ExposedDropdownMenuBox(expanded = isAccountDropdownExpanded, onExpandedChange = {
-                        isAccountDropdownExpanded = !isAccountDropdownExpanded
-                    }) {
-                        OutlinedTextField(value = selectedAccount?.name ?: "Select Account", onValueChange = {},
-                            readOnly = true, label = { Text("Account") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAccountDropdownExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor())
-                        ExposedDropdownMenu(expanded = isAccountDropdownExpanded, onDismissRequest = { isAccountDropdownExpanded = false }) {
-                            accounts.forEach { account ->
-                                DropdownMenuItem(text = { Text(account.name) }, onClick = {
-                                    selectedAccount = account
-                                    isAccountDropdownExpanded = false
-                                })
-                            }
-                        }
-                    }
-                }
-                if (isExpense) {
-                    item {
-                        ExposedDropdownMenuBox(expanded = isCategoryDropdownExpanded, onExpandedChange = {
-                            isCategoryDropdownExpanded = !isCategoryDropdownExpanded
-                        }) {
-                            OutlinedTextField(value = selectedCategory?.name ?: "", onValueChange = {},
-                                readOnly = true, label = { Text("Category") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded) },
-                                modifier = Modifier.fillMaxWidth().menuAnchor())
-                            ExposedDropdownMenu(expanded = isCategoryDropdownExpanded, onDismissRequest = { isCategoryDropdownExpanded = false }) {
-                                categories.forEach { category ->
-                                    DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                        selectedCategory = category
-                                        isCategoryDropdownExpanded = false
-                                    })
-                                }
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = source,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Source") },
-                        modifier = Modifier.fillMaxWidth(),
-                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = "Source Info") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                            disabledBorderColor = MaterialTheme.colorScheme.outline,
-                            disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        enabled = false
-                    )
-                }
-
-                item {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text("Tags (Optional)", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        allTags.forEach { tag ->
-                            FilterChip(
-                                selected = tag in selectedTags,
-                                onClick = { viewModel.onTagSelected(tag) },
-                                label = { Text(tag.name) }
-                            )
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = newTagName,
-                            onValueChange = { newTagName = it },
-                            label = { Text("New Tag") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = {
-                                viewModel.addTagOnTheGo(newTagName)
-                                newTagName = ""
-                            },
-                            enabled = newTagName.isNotBlank()
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add New Tag")
-                        }
-                    }
-                }
-
-                item {
-                    Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
-                            Text("Cancel")
-                        }
-                        Button(
-                            onClick = {
-                                val updatedAmount = amount.toDoubleOrNull() ?: 0.0
-                                val currentTransaction = transactionFromDb
-                                if (currentTransaction != null && selectedAccount != null) {
-                                    val updatedTransaction =
-                                        currentTransaction.copy(
-                                            description = description,
-                                            amount = updatedAmount,
-                                            accountId = selectedAccount!!.id,
-                                            categoryId = selectedCategory?.id,
-                                            notes = notes.takeIf { it.isNotBlank() },
-                                            date = selectedDateTime.timeInMillis,
-                                            transactionType = transactionType,
-                                        )
-                                    if (viewModel.updateTransaction(updatedTransaction)) {
-                                        navController.popBackStack()
-                                    }
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            enabled = isUpdateEnabled,
-                        ) {
-                            Text("Update Transaction")
-                        }
-                    }
-                }
-                item {
-                    Button(
-                        onClick = { showDeleteDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete Icon")
-                        Spacer(Modifier.width(8.dp))
-                        Text("Delete Transaction")
-                    }
-                }
-            }
-        }
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
-    }
-
-    if (showDatePicker) {
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
-        DatePickerDialog(onDismissRequest = { showDatePicker = false }, confirmButton = {
-            TextButton(onClick = {
-                datePickerState.selectedDateMillis?.let {
-                    val newCalendar = Calendar.getInstance().apply { timeInMillis = it }
-                    selectedDateTime.set(Calendar.YEAR, newCalendar.get(Calendar.YEAR))
-                    selectedDateTime.set(Calendar.MONTH, newCalendar.get(Calendar.MONTH))
-                    selectedDateTime.set(Calendar.DAY_OF_MONTH, newCalendar.get(Calendar.DAY_OF_MONTH))
-                }
-                showDatePicker = false
-            }) { Text("OK") }
-        }, dismissButton = {
-            TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
-        }) { DatePicker(state = datePickerState) }
-    }
-
-    if (showTimePicker) {
-        val timePickerState =
-            rememberTimePickerState(
-                initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
-                initialMinute = selectedDateTime.get(Calendar.MINUTE),
-            )
-        TimePickerDialog(onDismissRequest = { showTimePicker = false }, onConfirm = {
-            selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-            selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
-            showTimePicker = false
-        }) { TimePicker(state = timePickerState) }
-    }
-
-    if (showDeleteDialog) {
-        val transactionToDelete = transactionFromDb
-        if (transactionToDelete != null) {
-            AlertDialog(onDismissRequest = {
-                showDeleteDialog = false
-            }, title = {
-                Text("Confirm Deletion")
-            }, text = { Text("Are you sure you want to permanently delete this transaction?") }, confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteTransaction(transactionToDelete)
-                        showDeleteDialog = false
-                        navController.popBackStack()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
-            }, dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } })
         }
     }
 }
@@ -9516,7 +9067,8 @@ fun MainAppScreen() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentRoute = currentDestination?.route
-    val baseCurrentRoute = currentRoute?.split("/")?.firstOrNull()
+    val baseCurrentRoute = currentRoute?.split("?")?.firstOrNull()?.split("/")?.firstOrNull()
+
 
     val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
         "Hi, $userName!"
@@ -9688,7 +9240,38 @@ fun AppNavHost(
             )
         }
 
-        composable("add_transaction") { AddTransactionScreen(navController, transactionViewModel) }
+        // --- UPDATED: Route now accepts optional arguments for editing a CSV row ---
+        composable(
+            "add_transaction?isCsvEdit={isCsvEdit}&csvLineNumber={csvLineNumber}&initialDataJson={initialDataJson}",
+            arguments = listOf(
+                navArgument("isCsvEdit") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+                navArgument("csvLineNumber") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                },
+                navArgument("initialDataJson") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            val arguments = requireNotNull(backStackEntry.arguments)
+            val isCsvEdit = arguments.getBoolean("isCsvEdit")
+            val csvLineNumber = arguments.getInt("csvLineNumber")
+            val initialDataJson = arguments.getString("initialDataJson")
+
+            AddTransactionScreen(
+                navController = navController,
+                viewModel = transactionViewModel,
+                isCsvEdit = isCsvEdit,
+                csvLineNumber = csvLineNumber,
+                initialDataJson = initialDataJson?.let { URLDecoder.decode(it, "UTF-8") }
+            )
+        }
 
         composable(
             route = "transaction_detail/{transactionId}",
@@ -9699,20 +9282,6 @@ fun AppNavHost(
             TransactionDetailScreen(navController, transactionId, transactionViewModel)
         }
 
-        composable(
-            route = "edit_transaction/{transactionId}",
-            arguments = listOf(
-                navArgument("transactionId") { type = NavType.IntType }
-            ),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/edit_transaction/{transactionId}" })
-        ) { backStackEntry ->
-            val arguments = requireNotNull(backStackEntry.arguments)
-            EditTransactionScreen(
-                navController = navController,
-                viewModel = transactionViewModel,
-                transactionId = arguments.getInt("transactionId")
-            )
-        }
         composable("account_list") { AccountListScreen(navController, accountViewModel) }
         composable("add_account") { AddAccountScreen(navController, accountViewModel) }
         composable("edit_account/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
@@ -10590,14 +10159,19 @@ object SmsParser {
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
 
+    // --- FIX: Added "has been credited to" to ignore informational NEFT messages ---
+    private val NEGATIVE_KEYWORDS_REGEX = "\\b(invoice of|payment of.*is successful|has been credited to)\\b".toRegex(RegexOption.IGNORE_CASE)
+
+
     // --- REFINED: Reordered patterns and made them more specific ---
     private val ACCOUNT_PATTERNS =
         listOf(
-            // Most specific patterns first
+            // --- FIX: Added new, more specific patterns for ICICI and HDFC ---
+            "(ICICI Bank) Account XX(\\d{3,4}) credited".toRegex(RegexOption.IGNORE_CASE),
+            "(HDFC Bank) : NEFT money transfer".toRegex(RegexOption.IGNORE_CASE),
+            "spent from (Pluxee)\\s*(Meal Card wallet), card no\\.\\s*xx(\\d{4})".toRegex(RegexOption.IGNORE_CASE),
             "on your (SBI) (Credit Card) ending with (\\d{4})".toRegex(RegexOption.IGNORE_CASE),
-            "from (Pluxee)\\. (Meal Card wallet), card no\\.\\s*xx(\\d{4})".toRegex(RegexOption.IGNORE_CASE),
             "On (HDFC Bank) (Card) (\\d{4})".toRegex(RegexOption.IGNORE_CASE),
-            // Make ICICI patterns mutually exclusive by including the action keyword
             "(ICICI Bank) Acct XX(\\d{3,4}) debited".toRegex(RegexOption.IGNORE_CASE),
             "Acct XX(\\d{3,4}) is credited.*-(ICICI Bank)".toRegex(RegexOption.IGNORE_CASE)
         )
@@ -10610,7 +10184,8 @@ object SmsParser {
             "UPI.*(?:to|\\bat\\b)\\s+([A-Za-z0-9\\s.&'()]+?)(?:\\s+on|\\s+Ref|$)".toRegex(RegexOption.IGNORE_CASE),
             "to\\s+([a-zA-Z0-9.\\-_]+@[a-zA-Z0-9]+)".toRegex(RegexOption.IGNORE_CASE),
             "(?:\\bat\\b|to\\s+)([A-Za-z0-9\\s.&'-]+?)(?:\\s+on\\s+|\\s+for\\s+|\\.|$|\\s+was\\s+)".toRegex(RegexOption.IGNORE_CASE),
-            "Info:\\s*([A-Za-z0-9\\s.&'-]+)".toRegex(RegexOption.IGNORE_CASE),
+            // --- FIX: Made the colon optional and the capture non-greedy to correctly parse NEFT info ---
+            "Info:?\\s*([A-Za-z0-9\\s.&'-]+?)(?:\\.|$)".toRegex(RegexOption.IGNORE_CASE)
         )
 
     private fun parseAccount(smsBody: String, sender: String): PotentialAccount? {
@@ -10620,8 +10195,25 @@ object SmsParser {
                 val pString = pattern.pattern
                 // --- REFINED: Use pattern string to determine logic, which is more robust ---
                 return when {
-                    // Handles SBI, Pluxee, HDFC
-                    pString.startsWith("on your") || pString.startsWith("On") || pString.startsWith("from") -> {
+                    // --- FIX: Handle new ICICI credit pattern ---
+                    pString.startsWith("(ICICI Bank) Account") -> {
+                        val bank = match.groupValues[1].trim()
+                        val number = match.groupValues[2].trim()
+                        PotentialAccount(formattedName = "$bank - xx$number", accountType = "Bank Account")
+                    }
+                    // --- FIX: Handle new HDFC NEFT pattern ---
+                    pString.startsWith("(HDFC Bank) : NEFT") -> {
+                        val bank = match.groupValues[1].trim()
+                        PotentialAccount(formattedName = bank, accountType = "Bank Account")
+                    }
+                    pString.startsWith("spent from") -> {
+                        val group1 = match.groupValues[1].trim() // Brand (Pluxee)
+                        val group2 = match.groupValues[2].trim() // Type (Meal Card wallet)
+                        val number = match.groupValues[3].trim() // Number
+                        PotentialAccount(formattedName = "$group1 - xx$number", accountType = group2)
+                    }
+                    // Handles SBI, HDFC
+                    pString.startsWith("on your") || pString.startsWith("On") -> {
                         val group1 = match.groupValues[1].trim() // Bank or brand
                         val group2 = match.groupValues[2].trim() // Type
                         val number = match.groupValues[3].trim() // Number
@@ -10652,6 +10244,11 @@ object SmsParser {
     ): PotentialTransaction? {
         val messageBody = sms.body
 
+        // --- FIX: Check for negative keywords first to reject non-transactional messages ---
+        if (NEGATIVE_KEYWORDS_REGEX.containsMatchIn(messageBody)) {
+            return null
+        }
+
         val amountMatch = AMOUNT_REGEX.find(messageBody)
         val amount =
             amountMatch?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
@@ -10671,9 +10268,14 @@ object SmsParser {
                 val match = pattern.find(messageBody)
                 if (match != null) {
                     val potentialName = match.groups[1]?.value?.replace("_", " ")?.replace(Regex("\\s+"), " ")?.trim()
-                    if (!potentialName.isNullOrBlank() && !potentialName.contains("call", ignoreCase = true) && !potentialName.matches(Regex(".*\\d{6,}.*"))) {
-                        merchantName = potentialName
-                        break
+                    // --- FIX: Allow NEFT references to pass the digit filter ---
+                    if (!potentialName.isNullOrBlank() && !potentialName.contains("call", ignoreCase = true)) {
+                        // If the name starts with NEFT, it's a valid transaction reference.
+                        // Otherwise, apply the digit check to filter out phone numbers.
+                        if (potentialName.startsWith("NEFT", ignoreCase = true) || !potentialName.matches(Regex(".*\\d{6,}.*"))) {
+                            merchantName = potentialName
+                            break
+                        }
                     }
                 }
             }
@@ -13223,14 +12825,19 @@ class TransactionCrudTests {
             composeTestRule.onAllNodesWithText("Monthly Budget").fetchSemanticsNodes().isNotEmpty()
         }
         composeTestRule.onNodeWithContentDescription("Add").performClick()
-        composeTestRule.onNodeWithText("Add Transaction").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Description").performTextInput(uniqueDescription)
-        composeTestRule.onNodeWithText("Amount").performTextInput("100.0")
-        composeTestRule.onNodeWithText("Select Account").performClick()
+
+        // Wait for AddTransactionScreen to appear and fill the form
+        composeTestRule.waitUntil(timeoutMillis = 5000) {
+            composeTestRule.onAllNodesWithTag("description_input").fetchSemanticsNodes().isNotEmpty()
+        }
+        // --- FIX: Use onNodeWithTag to reliably find the text field ---
+        composeTestRule.onNodeWithTag("description_input").performTextInput(uniqueDescription)
+        composeTestRule.onNodeWithText("0.00").performTextInput("100.0")
+        composeTestRule.onNodeWithText("Select account").performClick()
         composeTestRule.onNodeWithText("SBI").performClick()
-        composeTestRule.onNodeWithText("Select Category").performClick()
-        composeTestRule.onNodeWithText("Food").performClick()
-        composeTestRule.onNodeWithText("Save Transaction").performClick()
+        composeTestRule.onNodeWithText("Select category").performClick()
+        composeTestRule.onNodeWithText("Food & Drinks").performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
 
         // Wait to return to the dashboard and confirm the new item is there.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
@@ -13259,26 +12866,34 @@ class TransactionCrudTests {
         val originalDescription = addTransactionForTest()
         val updatedDescription = "Updated UI Test Dinner"
 
-        // 1. Find the transaction and click to edit it.
+        // 1. Find the transaction on the dashboard and click to open the detail screen.
         composeTestRule.onNodeWithText(originalDescription, useUnmergedTree = true)
             .performScrollTo()
             .performClick()
 
-        // 2. On the edit screen, change the description.
-        // --- FIXED: Wait for the edit screen to fully load before proceeding ---
+        // 2. On the detail screen, wait for it to load, then click the description to open the bottom sheet.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
-            composeTestRule.onAllNodesWithText("Update Transaction").fetchSemanticsNodes().isNotEmpty()
+            composeTestRule.onAllNodesWithText(originalDescription).fetchSemanticsNodes().isNotEmpty()
         }
-        composeTestRule.onNodeWithText("Description").performTextClearance()
-        composeTestRule.onNodeWithText("Description").performTextInput(updatedDescription)
-        composeTestRule.onNodeWithText("Update Transaction").performClick()
+        composeTestRule.onNodeWithText(originalDescription).performClick()
 
-        // 3. Wait to navigate back to the dashboard.
+        // 3. In the bottom sheet, edit the text field and save.
+        // --- FIX: Use onNodeWithTag to reliably find the text field ---
+        composeTestRule.onNodeWithTag("value_input").performTextClearance()
+        composeTestRule.onNodeWithTag("value_input").performTextInput(updatedDescription)
+        composeTestRule.onNodeWithText("Save").performClick()
+
+
+        // 4. Verify the description is updated on the detail screen.
+        composeTestRule.onNodeWithText(updatedDescription).assertIsDisplayed()
+
+        // 5. Navigate back to the dashboard.
+        composeTestRule.onNodeWithContentDescription("Back").performClick()
+
+        // 6. Assert that the old description is gone and the new one is displayed on the dashboard.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
             composeTestRule.onAllNodesWithText("Monthly Budget").fetchSemanticsNodes().isNotEmpty()
         }
-
-        // 4. Assert that the old description is gone and the new one is displayed.
         composeTestRule.onNodeWithText(originalDescription).assertDoesNotExist()
         composeTestRule.onNodeWithText(updatedDescription, useUnmergedTree = true)
             .performScrollTo()
@@ -13286,30 +12901,31 @@ class TransactionCrudTests {
     }
 
     /**
-     * Tests that a transaction can be successfully deleted.
+     * Tests that a transaction can be successfully deleted from the detail screen.
      */
     @Test
     fun test_deleteTransaction_removesFromList() {
         val description = addTransactionForTest()
 
-        // 1. Find the transaction and click to edit it.
+        // 1. Find the transaction on the dashboard and click to open the detail screen.
         composeTestRule.onNodeWithText(description, useUnmergedTree = true)
             .performScrollTo()
             .performClick()
 
-        // 2. On the edit screen, click the new delete button.
-        // --- FIXED: Wait for the edit screen to fully load before proceeding ---
+        // 2. On the detail screen, click the 'More' menu icon.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
-            composeTestRule.onAllNodesWithText("Update Transaction").fetchSemanticsNodes().isNotEmpty()
+            composeTestRule.onAllNodesWithContentDescription("More options").fetchSemanticsNodes().isNotEmpty()
         }
-        composeTestRule.onNodeWithText("Delete Transaction").performClick()
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
 
-        // 3. Confirm the deletion in the dialog.
-        composeTestRule.onNodeWithText("Confirm Deletion").assertIsDisplayed()
+        // 3. Click the 'Delete' option in the dropdown menu.
         composeTestRule.onNodeWithText("Delete").performClick()
 
+        // 4. Confirm the deletion in the dialog.
+        composeTestRule.onNodeWithText("Delete Transaction?").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Delete").performClick()
 
-        // 4. Wait to navigate back to the dashboard and assert the item is gone.
+        // 5. Wait to navigate back to the dashboard and assert the item is gone.
         composeTestRule.waitUntil(timeoutMillis = 5000) {
             composeTestRule.onAllNodesWithText("Monthly Budget").fetchSemanticsNodes().isNotEmpty()
         }
@@ -13712,7 +13328,7 @@ class SmsParserTest {
 
     @Test
     fun `test parses HDFC card message`() {
-        val smsBody = "[JD-HDFCBK-S] Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on2025-06-22:08:01:24.Not You> To Block+Reissue Call 1800232323232/SMS BLOCK CC 9922 to 123098123"
+        val smsBody = "[JD-HDFCBK-S] Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on2025-06-22:08:01:24.Not You> To Block+Reissue Call 18002323232/SMS BLOCK CC 9922 to 123098123"
         val mockSms = SmsMessage(id = 6L, sender = "JD-HDFCBK", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings)
 
@@ -13727,16 +13343,16 @@ class SmsParserTest {
 
     @Test
     fun `test parses Pluxee Meal Card message`() {
-        val smsBody = "[VD-PLUXEE-S] Rs.40.00 spent from Pluxee. Meal Card wallet, card no.xx7809 on 22-06-2025 14:46:11 at KITCHEN AFF . Avl bal Rs.3402.65. Not you call 213091823"
+        val smsBody = "Rs. 60.00 spent from Pluxee Meal Card wallet, card no.xx1345 on 30-06-2025 18:41:56 at KITCHEN AFF . Avl bal Rs.1824.65. Not you call 18002106919"
         val mockSms = SmsMessage(id = 7L, sender = "VD-PLUXEE", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings)
 
         assertNotNull(result)
-        assertEquals(40.00, result?.amount)
+        assertEquals(60.00, result?.amount)
         assertEquals("expense", result?.transactionType)
         assertEquals("KITCHEN AFF", result?.merchantName)
         assertNotNull(result?.potentialAccount)
-        assertEquals("Pluxee - xx7809", result?.potentialAccount?.formattedName)
+        assertEquals("Pluxee - xx1345", result?.potentialAccount?.formattedName)
         assertEquals("Meal Card wallet", result?.potentialAccount?.accountType)
     }
 
@@ -13753,6 +13369,47 @@ class SmsParserTest {
         assertNotNull(result?.potentialAccount)
         assertEquals("ICICI Bank - xx823", result?.potentialAccount?.formattedName)
         assertEquals("Savings Account", result?.potentialAccount?.accountType)
+    }
+
+    // --- NEW: Unit tests for the latest fixes ---
+
+    @Test
+    fun `test ignores invoice message`() {
+        val smsBody = "An Invoice of Rs.330.8 for A4 Block-108 is raised. Pay at https://nbhd.co/NBHood/g/szBBpng. Ignore if paid - NoBrokerHood"
+        val mockSms = SmsMessage(id = 9L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+        assertNull("Parser should ignore invoice messages", result)
+    }
+
+    @Test
+    fun `test ignores successful payment confirmation`() {
+        val smsBody = "Your payment of Rs.330.80 for A4-108 against Water Charges is successful. Regards NoBrokerHood"
+        val mockSms = SmsMessage(id = 10L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+        assertNull("Parser should ignore successful payment confirmations", result)
+    }
+
+    @Test
+    fun `test parses ICICI NEFT credit message`() {
+        val smsBody = "ICICI Bank Account XX823 credited:Rs. 1,133.00 on 01-Jul-25. Info NEFT-HDFCN5202507024345356218-. Available Balance is Rs. 1,858.35."
+        val mockSms = SmsMessage(id = 11L, sender = "VM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+
+        assertNotNull(result)
+        assertEquals(1133.00, result?.amount)
+        assertEquals("income", result?.transactionType)
+        assertEquals("NEFT-HDFCN5202507024345356218-", result?.merchantName)
+        assertNotNull(result?.potentialAccount)
+        assertEquals("ICICI Bank - xx823", result?.potentialAccount?.formattedName)
+        assertEquals("Bank Account", result?.potentialAccount?.accountType)
+    }
+
+    @Test
+    fun `test parses HDFC NEFT credit message`() {
+        val smsBody = "HDFC Bank : NEFT money transfer Txn No HDFCN520253454560344 for Rs INR 1,500.00 has been credited to Manga Penga on 01-07-2025 at 08:05:30"
+        val mockSms = SmsMessage(id = 12L, sender = "VM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings)
+        assertNull("Parser should ignore has been credited to messages", result)
     }
 }
 -e 

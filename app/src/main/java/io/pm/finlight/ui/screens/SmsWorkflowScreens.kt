@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -168,6 +169,8 @@ fun ApproveTransactionScreen(
     var notes by remember { mutableStateOf("") }
     var selectedTransactionType by remember(potentialTxn.transactionType) { mutableStateOf(potentialTxn.transactionType) }
     val scope = rememberCoroutineScope()
+    // --- FIX: Get the context for the NotificationManager ---
+    val context = LocalContext.current
 
     val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
@@ -294,6 +297,9 @@ fun ApproveTransactionScreen(
                                 if (success) {
                                     settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
                                     settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
+                                    // --- FIX: Programmatically dismiss the source notification ---
+                                    val notificationManager = NotificationManagerCompat.from(context)
+                                    notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
                                     navController.popBackStack()
                                 }
                             }
