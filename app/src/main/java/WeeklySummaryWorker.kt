@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/WeeklySummaryWorker.kt
+// REASON: Corrected the call to getTransactionDetailsForRange by passing null
+// for the new, unused filter parameters to resolve the compilation error.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -31,7 +36,14 @@ class WeeklySummaryWorker(
                 val startDate = calendar.timeInMillis
 
                 // 2. Fetch transactions for the last week using the existing DAO method.
-                val transactions = transactionDao.getTransactionDetailsForRange(startDate, endDate).first()
+                // --- FIX: Pass null for the new filter parameters ---
+                val transactions = transactionDao.getTransactionDetailsForRange(
+                    startDate = startDate,
+                    endDate = endDate,
+                    keyword = null,
+                    accountId = null,
+                    categoryId = null
+                ).first()
                 Log.d("WeeklySummaryWorker", "Found ${transactions.size} transactions in the last 7 days.")
 
                 // 3. Calculate total income and expenses.

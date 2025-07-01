@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
+// REASON: Corrected the call to getSpendingByCategoryForMonth by passing null
+// for the new, unused filter parameters to resolve the compilation error.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -22,25 +27,31 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         transactionRepository = TransactionRepository(db.transactionDao())
 
         val calendar = Calendar.getInstance()
-        monthYear = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(calendar.time)
+        monthYear = SimpleDateFormat("MMMM<x_bin_615>", Locale.getDefault()).format(calendar.time)
 
         val monthStart = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0) }.timeInMillis
         val monthEnd = Calendar.getInstance().apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23) }.timeInMillis
 
+        // --- FIX: Pass null for the new filter parameters ---
         spendingByCategoryPieData =
-            transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd)
-                .map { spendingList ->
-                    val entries = spendingList.map { PieEntry(it.totalAmount.toFloat(), it.categoryName) }
-                    val colors = spendingList.map {
-                        (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
-                    }
-                    val dataSet =
-                        PieDataSet(entries, "Spending by Category").apply {
-                            this.colors = colors
-                            valueTextSize = 12f
-                        }
-                    PieData(dataSet)
+            transactionRepository.getSpendingByCategoryForMonth(
+                startDate = monthStart,
+                endDate = monthEnd,
+                keyword = null,
+                accountId = null,
+                categoryId = null
+            ).map { spendingList ->
+                val entries = spendingList.map { PieEntry(it.totalAmount.toFloat(), it.categoryName) }
+                val colors = spendingList.map {
+                    (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
                 }
+                val dataSet =
+                    PieDataSet(entries, "Spending by Category").apply {
+                        this.colors = colors
+                        valueTextSize = 12f
+                    }
+                PieData(dataSet)
+            }
 
         val sixMonthsAgo = Calendar.getInstance().apply { add(Calendar.MONTH, -6) }.timeInMillis
         monthlyTrendData =

@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: Added functions to expose the new DAO queries for fetching and
-// aggregating income-only transactions.
+// REASON: Updated function signatures to pass the new filter parameters down
+// to the corresponding DAO methods.
 // =================================================================================
 package io.pm.finlight
 
@@ -20,18 +20,16 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Expose the income-only transaction list ---
-    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>> {
-        return transactionDao.getIncomeTransactionsForRange(startDate, endDate)
+    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>> {
+        return transactionDao.getIncomeTransactionsForRange(startDate, endDate, keyword, accountId, categoryId)
     }
 
-    // --- NEW: Expose the income-by-category data ---
-    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long): Flow<List<CategorySpending>> {
-        return transactionDao.getIncomeByCategoryForMonth(startDate, endDate)
+    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<CategorySpending>> {
+        return transactionDao.getIncomeByCategoryForMonth(startDate, endDate, keyword, accountId, categoryId)
     }
 
-    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>> {
-        return transactionDao.getSpendingByMerchantForMonth(startDate, endDate)
+    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>> {
+        return transactionDao.getSpendingByMerchantForMonth(startDate, endDate, keyword, accountId, categoryId)
     }
 
     suspend fun addImageToTransaction(transactionId: Int, imageUri: String) {
@@ -71,8 +69,11 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     fun getTransactionDetailsForRange(
         startDate: Long,
         endDate: Long,
+        keyword: String?,
+        accountId: Int?,
+        categoryId: Int?
     ): Flow<List<TransactionDetails>> {
-        return transactionDao.getTransactionDetailsForRange(startDate, endDate)
+        return transactionDao.getTransactionDetailsForRange(startDate, endDate, keyword, accountId, categoryId)
     }
 
     fun getAllTransactionsSimple(): Flow<List<Transaction>> {
@@ -105,8 +106,11 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     fun getSpendingByCategoryForMonth(
         startDate: Long,
         endDate: Long,
+        keyword: String?,
+        accountId: Int?,
+        categoryId: Int?
     ): Flow<List<CategorySpending>> {
-        return transactionDao.getSpendingByCategoryForMonth(startDate, endDate)
+        return transactionDao.getSpendingByCategoryForMonth(startDate, endDate, keyword, accountId, categoryId)
     }
 
     fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>> {

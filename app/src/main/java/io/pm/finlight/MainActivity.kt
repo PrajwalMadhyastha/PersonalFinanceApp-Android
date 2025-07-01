@@ -1,7 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Added the new "income_screen" route to the AppNavHost to make it
-// accessible within the app's navigation graph.
+// REASON: Updated the TopAppBar logic to hide the main app bar for the new
+// IncomeScreen and the existing TransactionListScreen, as they now manage
+// their own app bars with filter actions.
 // =================================================================================
 package io.pm.finlight
 
@@ -219,7 +220,13 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
-    val showMainTopBar = baseCurrentRoute != "transaction_detail" && baseCurrentRoute != "transaction_list" && baseCurrentRoute != "splash_screen"
+    // --- UPDATED: The main TopAppBar is now hidden for more screens ---
+    val showMainTopBar = baseCurrentRoute !in setOf(
+        "transaction_detail",
+        "transaction_list",
+        "income_screen",
+        "splash_screen"
+    )
 
     val activity = LocalContext.current as AppCompatActivity
 
@@ -323,7 +330,6 @@ fun AppNavHost(
     val categoryViewModel: CategoryViewModel = viewModel()
     val budgetViewModel: BudgetViewModel = viewModel()
     val profileViewModel: ProfileViewModel = viewModel()
-    // --- NEW: Instantiate the IncomeViewModel ---
     val incomeViewModel: IncomeViewModel = viewModel()
 
     NavHost(
@@ -357,7 +363,6 @@ fun AppNavHost(
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
         ) { ReviewSmsScreen(navController, settingsViewModel) }
 
-        // --- NEW: Add the composable for the income screen ---
         composable("income_screen") {
             IncomeScreen(navController, incomeViewModel)
         }

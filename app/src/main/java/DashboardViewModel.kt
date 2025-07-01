@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
+// REASON: Corrected the call to getTransactionDetailsForRange by passing null
+// for the new, unused filter parameters to resolve the compilation error.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -65,8 +70,14 @@ class DashboardViewModel(
                 set(Calendar.MILLISECOND, 999)
             }.timeInMillis
 
-        val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        // --- FIX: Pass null for the new filter parameters ---
+        val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(
+            startDate = monthStart,
+            endDate = monthEnd,
+            keyword = null,
+            accountId = null,
+            categoryId = null
+        ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         monthlyIncome =
             transactionsThisMonth.map { transactions ->
@@ -85,7 +96,6 @@ class DashboardViewModel(
         val currentYear = calendar.get(Calendar.YEAR)
         val currentMonth = calendar.get(Calendar.MONTH) + 1
 
-        // --- FIX: Use the correct repository method with parameters ---
         overallMonthlyBudget =
             settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth)
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)

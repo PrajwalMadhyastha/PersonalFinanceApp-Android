@@ -1,10 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
-// REASON: NEW FILE - This is the main UI for the dedicated income details screen.
-// UPDATE: The UI has been completely overhauled to match the look and feel of the
-// main transaction list, including a detailed header with a month selector.
-// BUG FIX: Removed the local definition of pagerTabIndicatorOffset and imported
-// it from the new PagerUtils.kt file to resolve compilation errors.
+// REASON: Integrated a TopAppBar with a filter icon that triggers a modal bottom
+// sheet, allowing users to apply filters to the income list.
+// BUG FIX: Corrected the invalid SimpleDateFormat pattern.
+// BUG FIX: Removed the incorrect dependency on TransactionViewModel and now
+// correctly sources all data from the IncomeViewModel.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12,30 +12,36 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.IncomeViewModel
 import io.pm.finlight.MonthlySummaryItem
+import io.pm.finlight.ui.components.FilterBottomSheet
 import io.pm.finlight.ui.components.TransactionList
 import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun IncomeScreen(
     navController: NavController,
@@ -51,47 +57,107 @@ fun IncomeScreen(
     val selectedMonth by viewModel.selectedMonth.collectAsState()
     val monthlySummaries by viewModel.monthlySummaries.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        IncomeHeader(
-            totalIncome = totalIncome,
-            selectedMonth = selectedMonth,
-            monthlySummaries = monthlySummaries,
-            onMonthSelected = { viewModel.setSelectedMonth(it) }
-        )
+    val filterState by viewModel.filterState.collectAsState()
+    // --- FIX: Get data from the correct ViewModel ---
+    val allAccounts by viewModel.allAccounts.collectAsState()
+    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
+    var showFilterSheet by remember { mutableStateOf(false) }
 
-        TabRow(
-            selectedTabIndex = pagerState.currentPage,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
-                )
-            }
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = pagerState.currentPage == index,
-                    onClick = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(index)
-                        }
-                    },
-                    text = { Text(title) }
-                )
-            }
+    val areFiltersActive by remember(filterState) {
+        derivedStateOf {
+            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
         }
+    }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.weight(1f)
-        ) { page ->
-            when (page) {
-                0 -> TransactionList(transactions = incomeTransactions, navController = navController)
-                1 -> CategorySpendingScreen(spendingList = incomeByCategory)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Income") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    BadgedBox(
+                        badge = {
+                            if (areFiltersActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary)
+                                )
+                            }
+                        }
+                    ) {
+                        IconButton(onClick = { showFilterSheet = true }) {
+                            Icon(Icons.Default.FilterList, contentDescription = "Filter Income")
+                        }
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            IncomeHeader(
+                totalIncome = totalIncome,
+                selectedMonth = selectedMonth,
+                monthlySummaries = monthlySummaries,
+                onMonthSelected = { viewModel.setSelectedMonth(it) }
+            )
+
+            TabRow(
+                selectedTabIndex = pagerState.currentPage,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
+                    )
+                }
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
+                        text = { Text(title) }
+                    )
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f)
+            ) { page ->
+                when (page) {
+                    0 -> TransactionList(transactions = incomeTransactions, navController = navController)
+                    1 -> CategorySpendingScreen(spendingList = incomeByCategory)
+                }
             }
         }
     }
-}
 
+    if (showFilterSheet) {
+        ModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
+            FilterBottomSheet(
+                filterState = filterState,
+                accounts = allAccounts,
+                categories = allCategories,
+                onKeywordChange = viewModel::updateFilterKeyword,
+                onAccountChange = viewModel::updateFilterAccount,
+                onCategoryChange = viewModel::updateFilterCategory,
+                onClearFilters = viewModel::clearFilters
+            )
+        }
+    }
+}
 
 @Composable
 fun IncomeHeader(
@@ -162,7 +228,7 @@ fun IncomeHeader(
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                                 Text(
-                                    text = "₹${"%,.0f".format(summaryItem.totalSpent)}", // Note: totalSpent holds income here
+                                    text = "₹${"%,.0f".format(summaryItem.totalSpent)}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                                 )

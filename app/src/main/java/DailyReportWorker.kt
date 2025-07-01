@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
+// REASON: Corrected the call to getTransactionDetailsForRange by passing null
+// for the new, unused filter parameters to resolve the compilation error.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -38,7 +43,14 @@ class DailyReportWorker(
                 val startDate = calendar.timeInMillis
 
                 // 2. Fetch transactions for yesterday.
-                val transactions = transactionDao.getTransactionDetailsForRange(startDate, endDate).first()
+                // --- FIX: Pass null for the new filter parameters ---
+                val transactions = transactionDao.getTransactionDetailsForRange(
+                    startDate = startDate,
+                    endDate = endDate,
+                    keyword = null,
+                    accountId = null,
+                    categoryId = null
+                ).first()
                 Log.d("DailyReportWorker", "Found ${transactions.size} transactions for yesterday.")
 
                 // 3. Calculate total expenses.

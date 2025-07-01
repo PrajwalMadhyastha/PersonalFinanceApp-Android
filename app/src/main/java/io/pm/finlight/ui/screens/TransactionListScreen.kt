@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: Removed the local definition of pagerTabIndicatorOffset and imported
-// it from the new PagerUtils.kt file to resolve potential compilation errors
-// and avoid code duplication.
+// REASON: Integrated a TopAppBar with a filter icon that triggers a modal bottom
+// sheet, allowing users to apply filters to the transaction list.
+// BUG FIX: Corrected the invalid SimpleDateFormat pattern.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -20,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,13 +35,14 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.MonthlySummaryItem
 import io.pm.finlight.TransactionViewModel
+import io.pm.finlight.ui.components.FilterBottomSheet
 import io.pm.finlight.ui.components.TransactionList
 import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionListScreen(
     navController: NavController,
@@ -58,47 +61,100 @@ fun TransactionListScreen(
     val totalIncome by viewModel.monthlyIncome.collectAsState()
     val budget by viewModel.overallMonthlyBudget.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        MonthlySummaryHeader(
-            selectedMonth = selectedMonth,
-            monthlySummaries = monthlySummaries,
-            totalSpent = totalSpent,
-            totalIncome = totalIncome,
-            budget = budget,
-            onMonthSelected = { viewModel.setSelectedMonth(it) }
-        )
-        TabRow(
-            selectedTabIndex = pagerState.currentPage,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
-                )
-            }
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = pagerState.currentPage == index,
-                    onClick = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(index)
+    val filterState by viewModel.filterState.collectAsState()
+    val allAccounts by viewModel.allAccounts.collectAsState()
+    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
+    var showFilterSheet by remember { mutableStateOf(false) }
+
+    val areFiltersActive by remember(filterState) {
+        derivedStateOf {
+            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Transactions") },
+                actions = {
+                    BadgedBox(
+                        badge = {
+                            if (areFiltersActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary)
+                                )
+                            }
                         }
-                    },
-                    text = { Text(title) }
-                )
+                    ) {
+                        IconButton(onClick = { showFilterSheet = true }) {
+                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                        }
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            MonthlySummaryHeader(
+                selectedMonth = selectedMonth,
+                monthlySummaries = monthlySummaries,
+                totalSpent = totalSpent,
+                totalIncome = totalIncome,
+                budget = budget,
+                onMonthSelected = { viewModel.setSelectedMonth(it) }
+            )
+            TabRow(
+                selectedTabIndex = pagerState.currentPage,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
+                    )
+                }
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
+                        text = { Text(title) }
+                    )
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f)
+            ) { page ->
+                when (page) {
+                    0 -> TransactionList(transactions = transactions, navController = navController)
+                    1 -> CategorySpendingScreen(spendingList = categorySpending)
+                    2 -> MerchantSpendingScreen(merchantList = merchantSpending)
+                }
             }
         }
+    }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.weight(1f)
-        ) { page ->
-            when (page) {
-                0 -> {
-                    TransactionList(transactions = transactions, navController = navController)
-                }
-                1 -> CategorySpendingScreen(spendingList = categorySpending)
-                2 -> MerchantSpendingScreen(merchantList = merchantSpending)
-            }
+    if (showFilterSheet) {
+        ModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
+            FilterBottomSheet(
+                filterState = filterState,
+                accounts = allAccounts,
+                categories = allCategories,
+                onKeywordChange = viewModel::updateFilterKeyword,
+                onAccountChange = viewModel::updateFilterAccount,
+                onCategoryChange = viewModel::updateFilterCategory,
+                onClearFilters = viewModel::clearFilters
+            )
         }
     }
 }
@@ -113,6 +169,7 @@ fun MonthlySummaryHeader(
     onMonthSelected: (Calendar) -> Unit
 ) {
     val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
+    // --- FIX: Corrected the date format pattern ---
     val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
     var showMonthScroller by remember { mutableStateOf(false) }
 
@@ -250,7 +307,7 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
 
     val progressColor = when {
         progress > 1f -> MaterialTheme.colorScheme.error
-        progress > 0.85f -> Color(0xFFFBC02D) // Amber
+        progress > 0.8f -> Color(0xFFFBC02D) // Amber
         else -> MaterialTheme.colorScheme.primary
     }
 

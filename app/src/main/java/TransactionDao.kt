@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: Added two new queries to specifically fetch and aggregate income-only
-// transactions for the new Income screen.
+// REASON: Updated the primary data fetching queries to accept additional filter
+// parameters (keyword, account, category) to enable in-screen filtering.
 // =================================================================================
 package io.pm.finlight
 
@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Query to get all income transactions for a specific date range ---
     @Query("""
         SELECT
             T.*,
@@ -26,12 +25,14 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         ORDER BY
             T.date DESC
     """)
-    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
+    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>>
 
-    // --- NEW: Query to get aggregated income by category for a specific date range ---
     @Query("""
         SELECT 
             C.name as categoryName, 
@@ -41,10 +42,13 @@ interface TransactionDao {
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         GROUP BY C.name
         ORDER BY totalAmount DESC
     """)
-    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long): Flow<List<CategorySpending>>
+    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<CategorySpending>>
 
     @Query("""
         SELECT
@@ -53,11 +57,13 @@ interface TransactionDao {
             COUNT(id) as transactionCount
         FROM transactions
         WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR description LIKE '%' || :keyword || '%' OR notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR accountId = :accountId)
+          AND (:categoryId IS NULL OR categoryId = :categoryId)
         GROUP BY description
         ORDER BY totalAmount DESC
     """)
-    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>>
-
+    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>>
 
     @Insert
     suspend fun insertImage(transactionImage: TransactionImage)
@@ -165,6 +171,9 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         ORDER BY
             T.date DESC
     """
@@ -172,6 +181,9 @@ interface TransactionDao {
     fun getTransactionDetailsForRange(
         startDate: Long,
         endDate: Long,
+        keyword: String?,
+        accountId: Int?,
+        categoryId: Int?
     ): Flow<List<TransactionDetails>>
 
     @Query(
@@ -228,6 +240,9 @@ interface TransactionDao {
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         GROUP BY C.name
         ORDER BY totalAmount ASC
     """
@@ -235,6 +250,9 @@ interface TransactionDao {
     fun getSpendingByCategoryForMonth(
         startDate: Long,
         endDate: Long,
+        keyword: String?,
+        accountId: Int?,
+        categoryId: Int?
     ): Flow<List<CategorySpending>>
 
     @Query(

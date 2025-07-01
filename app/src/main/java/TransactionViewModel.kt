@@ -1,7 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: Added functions to create accounts and categories on-the-fly and
-// provide the newly created object back via a callback for auto-selection in the UI.
+// REASON: Added state management for filters (keyword, account, category) and
+// refactored the main data flows to be reactive to changes in these filters,
+// enabling a dynamic, in-screen filtering experience.
 // =================================================================================
 package io.pm.finlight
 
@@ -24,6 +25,14 @@ import java.util.Locale
 
 private const val TAG = "TransactionViewModel"
 
+// --- NEW: Data class to hold the filter state ---
+data class TransactionFilterState(
+    val keyword: String = "",
+    val account: Account? = null,
+    val category: Category? = null
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
     val accountRepository: AccountRepository
@@ -36,19 +45,44 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private var areTagsLoadedForCurrentTxn = false
     private var currentTxnIdForTags: Int? = null
 
-    // ... (Existing StateFlows and init block remain the same)
     private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
     val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
-    val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>>
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>>
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>>
-    val monthlyIncome: StateFlow<Double>
-    val monthlyExpenses: StateFlow<Double>
-    @OptIn(ExperimentalCoroutinesApi::class)
+
+    // --- NEW: StateFlow to manage the active filters ---
+    private val _filterState = MutableStateFlow(TransactionFilterState())
+    val filterState: StateFlow<TransactionFilterState> = _filterState.asStateFlow()
+
+    private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
+        _selectedMonth.combine(_filterState) { month, filters ->
+            Pair(month, filters)
+        }
+
+    val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>> = combinedState.flatMapLatest { (calendar, filters) ->
+        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+        transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val monthlyIncome: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
+        txns.filter { it.transaction.transactionType == "income" }.sumOf { it.transaction.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val monthlyExpenses: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
+        txns.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>> = combinedState.flatMapLatest { (calendar, filters) ->
+        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+        transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>> = combinedState.flatMapLatest { (calendar, filters) ->
+        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+        transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
     val safeToSpendPerDay: StateFlow<Float>
@@ -62,6 +96,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val selectedTags = _selectedTags.asStateFlow()
     private val _transactionImages = MutableStateFlow<List<TransactionImage>>(emptyList())
     val transactionImages: StateFlow<List<TransactionImage>> = _transactionImages.asStateFlow()
+    val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
 
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
@@ -69,7 +104,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         categoryRepository = CategoryRepository(db.categoryDao())
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
         settingsRepository = SettingsRepository(application)
-        // ... (rest of init block is unchanged)
         allTransactions = transactionRepository.allTransactions.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -108,26 +142,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        categorySpendingForSelectedMonth = _selectedMonth.flatMapLatest { calendar ->
-            val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
-            val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
-            transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-        merchantSpendingForSelectedMonth = _selectedMonth.flatMapLatest { calendar ->
-            val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
-            val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
-            transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-        transactionsForSelectedMonth = _selectedMonth.flatMapLatest { calendar ->
-            val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
-            val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
-            transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-        monthlyIncome = transactionsForSelectedMonth.map { txns -> txns.filter { it.transaction.transactionType == "income" }.sumOf { it.transaction.amount } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
-        monthlyExpenses = transactionsForSelectedMonth.map { txns -> txns.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
         overallMonthlyBudget = _selectedMonth.flatMapLatest { settingsRepository.getOverallBudgetForMonth(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
         amountRemaining = combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses -> budget - expenses.toFloat() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
         safeToSpendPerDay = combine(amountRemaining, _selectedMonth) { remaining, calendar ->
@@ -138,19 +152,37 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
     }
 
-    // --- NEW: Function to create an account and return it via callback ---
+    // --- NEW: Functions to update the filter state ---
+    fun updateFilterKeyword(keyword: String) {
+        _filterState.update { it.copy(keyword = keyword) }
+    }
+
+    fun updateFilterAccount(account: Account?) {
+        _filterState.update { it.copy(account = account) }
+    }
+
+    fun updateFilterCategory(category: Category?) {
+        _filterState.update { it.copy(category = category) }
+    }
+
+    fun clearFilters() {
+        _filterState.value = TransactionFilterState()
+    }
+
+    fun setSelectedMonth(calendar: Calendar) {
+        _selectedMonth.value = calendar
+    }
+
     fun createAccount(name: String, type: String, onAccountCreated: (Account) -> Unit) {
         if (name.isBlank() || type.isBlank()) return
         viewModelScope.launch {
             val newAccountId = accountRepository.insert(Account(name = name, type = type))
-            // After inserting, fetch the newly created account to get the full object with its ID
             accountRepository.getAccountById(newAccountId.toInt()).first()?.let { newAccount ->
                 onAccountCreated(newAccount)
             }
         }
     }
 
-    // --- NEW: Function to create a category and return it via callback ---
     fun createCategory(name: String, iconKey: String, colorKey: String, onCategoryCreated: (Category) -> Unit) {
         if (name.isBlank()) return
         viewModelScope.launch {
@@ -160,17 +192,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
             val newCategory = Category(name = name, iconKey = finalIconKey, colorKey = finalColorKey)
             val newCategoryId = categoryRepository.insert(newCategory)
-            // After inserting, fetch the newly created category to get the full object with its ID
             categoryRepository.getCategoryById(newCategoryId.toInt())?.let { createdCategory ->
                 onCategoryCreated(createdCategory)
             }
         }
     }
 
-    fun setSelectedMonth(calendar: Calendar) {
-        _selectedMonth.value = calendar
-    }
-    // ... (rest of the ViewModel functions are unchanged)
     fun attachPhotoToTransaction(transactionId: Int, sourceUri: Uri) {
         viewModelScope.launch {
             val localPath = saveImageToInternalStorage(sourceUri)
@@ -201,7 +228,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-
     private suspend fun saveImageToInternalStorage(sourceUri: Uri): String? {
         return withContext(Dispatchers.IO) {
             try {
@@ -221,7 +247,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
     }
-
 
     fun updateTransactionDescription(id: Int, description: String) = viewModelScope.launch {
         if (description.isNotBlank()) {
@@ -372,7 +397,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
     }
-
 
     fun addTransaction(
         description: String,
