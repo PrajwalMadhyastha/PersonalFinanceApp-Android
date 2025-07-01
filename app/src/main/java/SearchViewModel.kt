@@ -1,7 +1,14 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SearchViewModel.kt
+// REASON: Implemented a dynamic, debounced search mechanism. The ViewModel now
+// automatically triggers a search query 300ms after any filter or keyword
+// changes, removing the need for a manual "Apply" button.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -17,6 +24,7 @@ data class SearchUiState(
     val hasSearched: Boolean = false,
 )
 
+@OptIn(FlowPreview::class)
 class SearchViewModel(
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
@@ -29,6 +37,7 @@ class SearchViewModel(
     val searchResults: StateFlow<List<TransactionDetails>> = _searchResults.asStateFlow()
 
     init {
+        // Load initial filter options (accounts and categories)
         viewModelScope.launch {
             accountDao.getAllAccounts().collect { accounts ->
                 _uiState.update { it.copy(accounts = accounts) }
@@ -38,6 +47,38 @@ class SearchViewModel(
             categoryDao.getAllCategories().collect { categories ->
                 _uiState.update { it.copy(categories = categories) }
             }
+        }
+
+        // --- NEW: Reactive search logic ---
+        // This flow automatically executes a search whenever the UI state changes,
+        // with a 300ms debounce to prevent excessive queries while typing.
+        viewModelScope.launch {
+            uiState
+                .debounce(300L)
+                .collectLatest { state -> // Use collectLatest to cancel previous searches if a new state arrives
+                    val filtersAreActive = state.selectedAccount != null ||
+                            state.selectedCategory != null ||
+                            state.transactionType != "All" ||
+                            state.startDate != null ||
+                            state.endDate != null
+
+                    if (state.keyword.isNotBlank() || filtersAreActive) {
+                        _uiState.update { it.copy(hasSearched = true) }
+                        val results = transactionDao.searchTransactions(
+                            keyword = state.keyword,
+                            accountId = state.selectedAccount?.id,
+                            categoryId = state.selectedCategory?.id,
+                            transactionType = if (state.transactionType.equals("All", ignoreCase = true)) null else state.transactionType.lowercase(),
+                            startDate = state.startDate,
+                            endDate = state.endDate
+                        )
+                        _searchResults.value = results
+                    } else {
+                        // Clear results and search status if no filters/keyword are active
+                        _searchResults.value = emptyList()
+                        _uiState.update { it.copy(hasSearched = false) }
+                    }
+                }
         }
     }
 
@@ -53,9 +94,7 @@ class SearchViewModel(
         _uiState.update { it.copy(selectedCategory = category) }
     }
 
-    // CORRECTED: The 'type' parameter is now nullable to handle when the user clears the filter.
     fun onTypeChange(type: String?) {
-        // If the type is null (cleared), default back to "All".
         _uiState.update { it.copy(transactionType = type ?: "All") }
     }
 
@@ -72,22 +111,8 @@ class SearchViewModel(
                 accounts = _uiState.value.accounts,
                 categories = _uiState.value.categories,
             )
-        _searchResults.value = emptyList()
+        // Results will clear automatically due to the reactive flow
     }
 
-    fun executeSearch() {
-        viewModelScope.launch {
-            val state = _uiState.value
-            _searchResults.value =
-                transactionDao.searchTransactions(
-                    keyword = state.keyword,
-                    accountId = state.selectedAccount?.id,
-                    categoryId = state.selectedCategory?.id,
-                    transactionType = if (state.transactionType.equals("All", ignoreCase = true)) null else state.transactionType.lowercase(),
-                    startDate = state.startDate,
-                    endDate = state.endDate,
-                )
-            _uiState.update { it.copy(hasSearched = true) }
-        }
-    }
+    // The manual executeSearch function is no longer needed.
 }

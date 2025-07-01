@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
+// REASON: Modernized the UI by implementing auto-focus for the keyword field
+// and removing the now-obsolete "Apply Filter" button, creating a more
+// dynamic and responsive search experience.
+// BUG FIX: Added the missing import for SearchViewModelFactory.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
@@ -12,6 +19,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -25,6 +34,7 @@ import java.util.*
 @Composable
 fun SearchScreen(navController: NavController) {
     val context = LocalContext.current
+    // --- FIX: The factory is now correctly referenced ---
     val factory = SearchViewModelFactory(context.applicationContext as Application)
     val viewModel: SearchViewModel = viewModel(factory = factory)
 
@@ -33,6 +43,8 @@ fun SearchScreen(navController: NavController) {
 
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
+
+    val focusRequester = remember { FocusRequester() }
 
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
@@ -47,7 +59,10 @@ fun SearchScreen(navController: NavController) {
                     value = searchUiState.keyword,
                     onValueChange = { viewModel.onKeywordChange(it) },
                     label = { Text("Keyword (description, notes)") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                    singleLine = true
                 )
             }
 
@@ -117,7 +132,7 @@ fun SearchScreen(navController: NavController) {
                 items(searchResults) { transactionDetails ->
                     TransactionItem(
                         transactionDetails = transactionDetails,
-                        onClick = { navController.navigate("edit_transaction/${transactionDetails.transaction.id}") },
+                        onClick = { navController.navigate("transaction_detail/${transactionDetails.transaction.id}") },
                     )
                 }
             } else if (searchUiState.hasSearched) {
@@ -138,14 +153,13 @@ fun SearchScreen(navController: NavController) {
         ) {
             OutlinedButton(
                 onClick = { viewModel.clearFilters() },
-                modifier = Modifier.weight(1f),
-            ) { Text("Clear") }
-
-            Button(
-                onClick = { viewModel.executeSearch() },
-                modifier = Modifier.weight(1f),
-            ) { Text("Apply Filters") }
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Clear All Filters") }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
     }
 
     if (showStartDatePicker) {
