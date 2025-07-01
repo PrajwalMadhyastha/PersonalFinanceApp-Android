@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
+// REASON: Added a new function, showMonthlySummaryNotification, to create and
+// display the formatted notification for the user's end-of-month report.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -12,6 +17,8 @@ import androidx.core.app.TaskStackBuilder
 import androidx.core.net.toUri
 import com.google.gson.Gson
 import java.net.URLEncoder
+import java.util.Calendar
+import java.util.Locale
 
 object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
@@ -25,10 +32,6 @@ object NotificationHelper {
             return
         }
 
-        // --- BUG FIX: Correctly build the back stack to avoid double-back-press issue ---
-        // This ensures a clean navigation path: Notification -> Detail Screen -> Dashboard.
-
-        // Create the Intent for the deep link. This is the only Intent we need to provide.
         val detailIntent = Intent(
             Intent.ACTION_VIEW,
             "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri(),
@@ -36,18 +39,14 @@ object NotificationHelper {
             MainActivity::class.java
         )
 
-        // TaskStackBuilder will use this single intent to create the full, correct back stack
-        // by looking at the parent activity defined in the manifest.
         val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
-            // This correctly adds the parent (MainActivity) and then the detailIntent on top.
             addNextIntentWithParentStack(detailIntent)
-            // Get the PendingIntent containing the entire back stack.
             getPendingIntent(transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Transaction Auto-Saved")
             .setContentText("Saved ${transaction.description} (₹${"%.2f".format(transaction.amount)}). Tap to edit or categorize.")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -125,7 +124,7 @@ object NotificationHelper {
 
         val notification =
             NotificationCompat.Builder(context, MainApplication.DAILY_REPORT_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle("Your Daily Report")
                 .setContentText(reportText)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -156,7 +155,7 @@ object NotificationHelper {
 
         val notification =
             NotificationCompat.Builder(context, MainApplication.SUMMARY_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle("Your Weekly Financial Summary")
                 .setContentText(summaryText)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(summaryText))
@@ -166,5 +165,39 @@ object NotificationHelper {
                 .build()
 
         NotificationManagerCompat.from(context).notify(3, notification)
+    }
+
+    // --- NEW: Function to show the monthly summary notification ---
+    fun showMonthlySummaryNotification(
+        context: Context,
+        totalIncome: Double,
+        totalExpenses: Double,
+        calendar: Calendar // To get the month name
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+
+        val pendingIntent = PendingIntent.getActivity(context, 200, intent, PendingIntent.FLAG_IMMUTABLE)
+
+        val monthName = calendar.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
+        val summaryText = "Income: ₹${"%,.2f".format(totalIncome)} | Expenses: ₹${"%,.2f".format(totalExpenses)}"
+
+        val notification =
+            NotificationCompat.Builder(context, MainApplication.MONTHLY_SUMMARY_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle("Your Financial Summary for $monthName")
+                .setContentText(summaryText)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(summaryText))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+
+        NotificationManagerCompat.from(context).notify(4, notification) // Use a new ID
     }
 }

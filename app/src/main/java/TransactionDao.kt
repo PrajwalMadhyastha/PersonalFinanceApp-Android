@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: Updated the primary data fetching queries to accept additional filter
-// parameters (keyword, account, category) to enable in-screen filtering.
+// REASON: Added a new query to efficiently calculate the total income and expenses
+// for a given date range, which will be used by the new MonthlySummaryWorker.
 // =================================================================================
 package io.pm.finlight
 
@@ -299,6 +299,16 @@ interface TransactionDao {
 
     @Query("SELECT COUNT(*) FROM transaction_tag_cross_ref WHERE tagId = :tagId")
     suspend fun countTransactionsForTag(tagId: Int): Int
+
+    // --- NEW: Query to get a financial summary for a date range ---
+    @Query("""
+        SELECT
+            SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
+        FROM transactions
+        WHERE date BETWEEN :startDate AND :endDate
+    """)
+    suspend fun getFinancialSummaryForRange(startDate: Long, endDate: Long): FinancialSummary?
 
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

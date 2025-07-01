@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul  1 13:33:30 IST 2025
+Generated on: Tue Jul  1 16:41:06 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -512,12 +512,15 @@ object DataExportService {
 
 
 ================== FILE: ./app/src/main/java/AccountRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/AccountRepository.kt
+// REASON: Updated the insert function to return the new account's ID (Long).
+// =================================================================================
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
 
 class AccountRepository(private val accountDao: AccountDao) {
-    // Expose the new query result to the ViewModel
     val accountsWithBalance: Flow<List<AccountWithBalance>> = accountDao.getAccountsWithBalance()
 
     val allAccounts: Flow<List<Account>> = accountDao.getAllAccounts()
@@ -526,8 +529,9 @@ class AccountRepository(private val accountDao: AccountDao) {
         return accountDao.getAccountById(accountId)
     }
 
-    suspend fun insert(account: Account) {
-        accountDao.insert(account)
+    // --- UPDATED: Returns the new row ID from the DAO ---
+    suspend fun insert(account: Account): Long {
+        return accountDao.insert(account)
     }
 
     suspend fun update(account: Account) {
@@ -586,6 +590,12 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 
 
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
+// REASON: Added state management for filters (keyword, account, category) and
+// refactored the main data flows to be reactive to changes in these filters,
+// enabling a dynamic, in-screen filtering experience.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -607,6 +617,14 @@ import java.util.Locale
 
 private const val TAG = "TransactionViewModel"
 
+// --- NEW: Data class to hold the filter state ---
+data class TransactionFilterState(
+    val keyword: String = "",
+    val account: Account? = null,
+    val category: Category? = null
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
     val accountRepository: AccountRepository
@@ -619,136 +637,58 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private var areTagsLoadedForCurrentTxn = false
     private var currentTxnIdForTags: Int? = null
 
-    // --- State for the currently selected month ---
     private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
     val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
 
-    // --- Flow that provides a list of past months with their total spending ---
-    val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
+    // --- NEW: StateFlow to manage the active filters ---
+    private val _filterState = MutableStateFlow(TransactionFilterState())
+    val filterState: StateFlow<TransactionFilterState> = _filterState.asStateFlow()
 
-    // --- Flow for category spending in the selected month ---
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>> = _selectedMonth.flatMapLatest { calendar ->
-        val monthStart = (calendar.clone() as Calendar).apply {
-            set(Calendar.DAY_OF_MONTH, 1)
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-        }.timeInMillis
+    private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
+        _selectedMonth.combine(_filterState) { month, filters ->
+            Pair(month, filters)
+        }
 
-        val monthEnd = (calendar.clone() as Calendar).apply {
-            add(Calendar.MONTH, 1)
-            set(Calendar.DAY_OF_MONTH, 1)
-            add(Calendar.DAY_OF_MONTH, -1)
-            set(Calendar.HOUR_OF_DAY, 23)
-            set(Calendar.MINUTE, 59)
-            set(Calendar.SECOND, 59)
-        }.timeInMillis
-
-        transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd)
+    val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>> = combinedState.flatMapLatest { (calendar, filters) ->
+        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+        transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // --- Flow for merchant spending in the selected month ---
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>> = _selectedMonth.flatMapLatest { calendar ->
-        val monthStart = (calendar.clone() as Calendar).apply {
-            set(Calendar.DAY_OF_MONTH, 1)
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-        }.timeInMillis
-
-        val monthEnd = (calendar.clone() as Calendar).apply {
-            add(Calendar.MONTH, 1)
-            set(Calendar.DAY_OF_MONTH, 1)
-            add(Calendar.DAY_OF_MONTH, -1)
-            set(Calendar.HOUR_OF_DAY, 23)
-            set(Calendar.MINUTE, 59)
-            set(Calendar.SECOND, 59)
-        }.timeInMillis
-
-        transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-
-    // --- Flow that emits transactions only for the selected month ---
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>> = _selectedMonth.flatMapLatest { calendar ->
-        val monthStart = (calendar.clone() as Calendar).apply {
-            set(Calendar.DAY_OF_MONTH, 1)
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-        }.timeInMillis
-
-        val monthEnd = (calendar.clone() as Calendar).apply {
-            add(Calendar.MONTH, 1)
-            set(Calendar.DAY_OF_MONTH, 1)
-            add(Calendar.DAY_OF_MONTH, -1)
-            set(Calendar.HOUR_OF_DAY, 23)
-            set(Calendar.MINUTE, 59)
-            set(Calendar.SECOND, 59)
-        }.timeInMillis
-
-        transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // --- Flow for total income in the selected month ---
     val monthlyIncome: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
         txns.filter { it.transaction.transactionType == "income" }.sumOf { it.transaction.amount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    // --- Flow for total expenses in the selected month ---
     val monthlyExpenses: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
         txns.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    // --- Flow for the overall budget in the selected month ---
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val overallMonthlyBudget: StateFlow<Float> = _selectedMonth.flatMapLatest {
-        settingsRepository.getOverallBudgetForMonth(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+    val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>> = combinedState.flatMapLatest { (calendar, filters) ->
+        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+        transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // --- Flow for remaining budget amount ---
-    val amountRemaining: StateFlow<Float> =
-        combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses ->
-            budget - expenses.toFloat()
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+    val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>> = combinedState.flatMapLatest { (calendar, filters) ->
+        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+        transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // --- Flow for the 'Safe to Spend' amount per day ---
-    val safeToSpendPerDay: StateFlow<Float> =
-        combine(amountRemaining, _selectedMonth) { remaining, calendar ->
-            val today = Calendar.getInstance()
-            val lastDayOfMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-
-            val remainingDays = if (
-                today.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) &&
-                today.get(Calendar.MONTH) == calendar.get(Calendar.MONTH)
-            ) {
-                (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1)
-            } else if (calendar.after(today)) {
-                lastDayOfMonth
-            } else {
-                1
-            }
-
-            if (remaining > 0) remaining / remainingDays else 0f
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
-
-
+    val overallMonthlyBudget: StateFlow<Float>
+    val amountRemaining: StateFlow<Float>
+    val safeToSpendPerDay: StateFlow<Float>
     val allTransactions: StateFlow<List<TransactionDetails>>
     val allAccounts: StateFlow<List<Account>>
     val allCategories: Flow<List<Category>>
     val allTags: StateFlow<List<Tag>>
-
     private val _validationError = MutableStateFlow<String?>(null)
     val validationError = _validationError.asStateFlow()
-
     private val _selectedTags = MutableStateFlow<Set<Tag>>(emptySet())
     val selectedTags = _selectedTags.asStateFlow()
-
     private val _transactionImages = MutableStateFlow<List<TransactionImage>>(emptyList())
     val transactionImages: StateFlow<List<TransactionImage>> = _transactionImages.asStateFlow()
+    val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
 
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
@@ -756,21 +696,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         categoryRepository = CategoryRepository(db.categoryDao())
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
         settingsRepository = SettingsRepository(application)
-
         allTransactions = transactionRepository.allTransactions.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
-
         allAccounts = accountRepository.allAccounts.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
-
         allCategories = categoryRepository.allCategories
-
         allTags = tagRepository.allTags.onEach {
             Log.d(TAG, "allTags flow collected new data. Count: ${it.size}")
         }.stateIn(
@@ -778,8 +714,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
-
-        // --- NEW: Calculate monthly summaries ---
         val twelveMonthsAgo = Calendar.getInstance().apply { add(Calendar.YEAR, -1) }.timeInMillis
         monthlySummaries = transactionRepository.getMonthlyTrends(twelveMonthsAgo)
             .map { trends ->
@@ -799,13 +733,62 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 }.reversed()
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        overallMonthlyBudget = _selectedMonth.flatMapLatest { settingsRepository.getOverallBudgetForMonth(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+        amountRemaining = combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses -> budget - expenses.toFloat() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+        safeToSpendPerDay = combine(amountRemaining, _selectedMonth) { remaining, calendar ->
+            val today = Calendar.getInstance()
+            val lastDayOfMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+            val remainingDays = if (today.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) && today.get(Calendar.MONTH) == calendar.get(Calendar.MONTH)) { (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1) } else if (calendar.after(today)) { lastDayOfMonth } else { 1 }
+            if (remaining > 0) remaining / remainingDays else 0f
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
     }
 
-    // --- REFACTORED: Function to set the selected month directly ---
+    // --- NEW: Functions to update the filter state ---
+    fun updateFilterKeyword(keyword: String) {
+        _filterState.update { it.copy(keyword = keyword) }
+    }
+
+    fun updateFilterAccount(account: Account?) {
+        _filterState.update { it.copy(account = account) }
+    }
+
+    fun updateFilterCategory(category: Category?) {
+        _filterState.update { it.copy(category = category) }
+    }
+
+    fun clearFilters() {
+        _filterState.value = TransactionFilterState()
+    }
+
     fun setSelectedMonth(calendar: Calendar) {
         _selectedMonth.value = calendar
     }
 
+    fun createAccount(name: String, type: String, onAccountCreated: (Account) -> Unit) {
+        if (name.isBlank() || type.isBlank()) return
+        viewModelScope.launch {
+            val newAccountId = accountRepository.insert(Account(name = name, type = type))
+            accountRepository.getAccountById(newAccountId.toInt()).first()?.let { newAccount ->
+                onAccountCreated(newAccount)
+            }
+        }
+    }
+
+    fun createCategory(name: String, iconKey: String, colorKey: String, onCategoryCreated: (Category) -> Unit) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val usedColorKeys = allCategories.first().map { it.colorKey }
+            val finalIconKey = if (iconKey == "category") "letter_default" else iconKey
+            val finalColorKey = if (colorKey == "gray_light") CategoryIconHelper.getNextAvailableColor(usedColorKeys) else colorKey
+
+            val newCategory = Category(name = name, iconKey = finalIconKey, colorKey = finalColorKey)
+            val newCategoryId = categoryRepository.insert(newCategory)
+            categoryRepository.getCategoryById(newCategoryId.toInt())?.let { createdCategory ->
+                onCategoryCreated(createdCategory)
+            }
+        }
+    }
 
     fun attachPhotoToTransaction(transactionId: Int, sourceUri: Uri) {
         viewModelScope.launch {
@@ -837,7 +820,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-
     private suspend fun saveImageToInternalStorage(sourceUri: Uri): String? {
         return withContext(Dispatchers.IO) {
             try {
@@ -857,7 +839,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
     }
-
 
     fun updateTransactionDescription(id: Int, description: String) = viewModelScope.launch {
         if (description.isNotBlank()) {
@@ -1009,7 +990,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-
     fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -1154,6 +1134,11 @@ data class CsvValidationReport(
 
 
 ================== FILE: ./app/src/main/java/NavItems.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
+// REASON: Added the new "income_screen" route and its corresponding title to the
+// screen titles map for the top app bar.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.compose.material.icons.Icons
@@ -1176,9 +1161,7 @@ val screenTitles = mapOf(
     BottomNavItem.Profile.route to "Profile",
     "settings_screen" to "App Settings",
     "add_transaction" to "Add Transaction",
-    // --- DELETED: Removed route for the obsolete EditTransactionScreen ---
-    // "edit_transaction/{transactionId}" to "Edit Transaction",
-    "transaction_detail/{transactionId}" to "Edit Transaction", // The detail screen is now the edit screen
+    "transaction_detail/{transactionId}" to "Edit Transaction",
     "account_list" to "Your Accounts",
     "add_account" to "Add New Account",
     "edit_account/{accountId}" to "Edit Account",
@@ -1193,12 +1176,19 @@ val screenTitles = mapOf(
     "review_sms_screen" to "Review SMS Transactions",
     "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
     "tag_management" to "Manage Tags",
-    "edit_profile" to "Edit Profile"
+    "edit_profile" to "Edit Profile",
+    // --- NEW: Add route for the income screen ---
+    "income_screen" to "Income"
 )
 -e 
 
 
 ================== FILE: ./app/src/main/java/WeeklySummaryWorker.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/WeeklySummaryWorker.kt
+// REASON: Corrected the call to getTransactionDetailsForRange by passing null
+// for the new, unused filter parameters to resolve the compilation error.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -1232,7 +1222,14 @@ class WeeklySummaryWorker(
                 val startDate = calendar.timeInMillis
 
                 // 2. Fetch transactions for the last week using the existing DAO method.
-                val transactions = transactionDao.getTransactionDetailsForRange(startDate, endDate).first()
+                // --- FIX: Pass null for the new filter parameters ---
+                val transactions = transactionDao.getTransactionDetailsForRange(
+                    startDate = startDate,
+                    endDate = endDate,
+                    keyword = null,
+                    accountId = null,
+                    categoryId = null
+                ).first()
                 Log.d("WeeklySummaryWorker", "Found ${transactions.size} transactions in the last 7 days.")
 
                 // 3. Calculate total income and expenses.
@@ -1261,11 +1258,137 @@ class WeeklySummaryWorker(
 -e 
 
 
+================== FILE: ./app/src/main/java/IncomeViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/IncomeViewModel.kt
+// REASON: Added state management for filters and refactored data flows to be
+// reactive to filter changes, enabling a dynamic filtering experience.
+// BUG FIX: The ViewModel now correctly exposes its own lists of accounts and
+// categories, making it self-sufficient and removing the dependency on
+// TransactionViewModel from the UI layer.
+// =================================================================================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.*
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class IncomeViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val transactionRepository: TransactionRepository
+    // --- NEW: Add repositories for accounts and categories ---
+    val accountRepository: AccountRepository
+    val categoryRepository: CategoryRepository
+
+    private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
+    val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
+
+    private val _filterState = MutableStateFlow(TransactionFilterState())
+    val filterState: StateFlow<TransactionFilterState> = _filterState.asStateFlow()
+
+    private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
+        _selectedMonth.combine(_filterState) { month, filters ->
+            Pair(month, filters)
+        }
+
+    // --- NEW: Expose account and category flows ---
+    val allAccounts: StateFlow<List<Account>>
+    val allCategories: Flow<List<Category>>
+
+    val incomeTransactionsForSelectedMonth: StateFlow<List<TransactionDetails>> = combinedState.flatMapLatest { (calendar, filters) ->
+        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+        transactionRepository.getIncomeTransactionsForRange(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalIncomeForSelectedMonth: StateFlow<Double> = incomeTransactionsForSelectedMonth.map { transactions ->
+        transactions.sumOf { it.transaction.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val incomeByCategoryForSelectedMonth: StateFlow<List<CategorySpending>> = combinedState.flatMapLatest { (calendar, filters) ->
+        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+        transactionRepository.getIncomeByCategoryForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
+
+    init {
+        val db = AppDatabase.getInstance(application)
+        transactionRepository = TransactionRepository(db.transactionDao())
+        accountRepository = AccountRepository(db.accountDao())
+        categoryRepository = CategoryRepository(db.categoryDao())
+
+        allAccounts = accountRepository.allAccounts.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+        allCategories = categoryRepository.allCategories
+
+        val twelveMonthsAgo = Calendar.getInstance().apply { add(Calendar.YEAR, -1) }.timeInMillis
+        monthlySummaries = transactionRepository.getMonthlyTrends(twelveMonthsAgo)
+            .map { trends ->
+                val dateFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+                val monthMap = trends.associate {
+                    val cal = Calendar.getInstance().apply {
+                        time = dateFormat.parse(it.monthYear) ?: Date()
+                    }
+                    (cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)) to it.totalIncome
+                }
+
+                (0..11).map { i ->
+                    val cal = Calendar.getInstance().apply { add(Calendar.MONTH, -i) }
+                    val key = cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)
+                    val income = monthMap[key] ?: 0.0
+                    MonthlySummaryItem(calendar = cal, totalSpent = income)
+                }.reversed()
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+
+    fun setSelectedMonth(calendar: Calendar) {
+        _selectedMonth.value = calendar
+    }
+
+    fun updateFilterKeyword(keyword: String) {
+        _filterState.update { it.copy(keyword = keyword) }
+    }
+
+    fun updateFilterAccount(account: Account?) {
+        _filterState.update { it.copy(account = account) }
+    }
+
+    fun updateFilterCategory(category: Category?) {
+        _filterState.update { it.copy(category = category) }
+    }
+
+    fun clearFilters() {
+        _filterState.value = TransactionFilterState()
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/SearchViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SearchViewModel.kt
+// REASON: Implemented a dynamic, debounced search mechanism. The ViewModel now
+// automatically triggers a search query 300ms after any filter or keyword
+// changes, removing the need for a manual "Apply" button.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -1281,6 +1404,7 @@ data class SearchUiState(
     val hasSearched: Boolean = false,
 )
 
+@OptIn(FlowPreview::class)
 class SearchViewModel(
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
@@ -1293,6 +1417,7 @@ class SearchViewModel(
     val searchResults: StateFlow<List<TransactionDetails>> = _searchResults.asStateFlow()
 
     init {
+        // Load initial filter options (accounts and categories)
         viewModelScope.launch {
             accountDao.getAllAccounts().collect { accounts ->
                 _uiState.update { it.copy(accounts = accounts) }
@@ -1302,6 +1427,38 @@ class SearchViewModel(
             categoryDao.getAllCategories().collect { categories ->
                 _uiState.update { it.copy(categories = categories) }
             }
+        }
+
+        // --- NEW: Reactive search logic ---
+        // This flow automatically executes a search whenever the UI state changes,
+        // with a 300ms debounce to prevent excessive queries while typing.
+        viewModelScope.launch {
+            uiState
+                .debounce(300L)
+                .collectLatest { state -> // Use collectLatest to cancel previous searches if a new state arrives
+                    val filtersAreActive = state.selectedAccount != null ||
+                            state.selectedCategory != null ||
+                            state.transactionType != "All" ||
+                            state.startDate != null ||
+                            state.endDate != null
+
+                    if (state.keyword.isNotBlank() || filtersAreActive) {
+                        _uiState.update { it.copy(hasSearched = true) }
+                        val results = transactionDao.searchTransactions(
+                            keyword = state.keyword,
+                            accountId = state.selectedAccount?.id,
+                            categoryId = state.selectedCategory?.id,
+                            transactionType = if (state.transactionType.equals("All", ignoreCase = true)) null else state.transactionType.lowercase(),
+                            startDate = state.startDate,
+                            endDate = state.endDate
+                        )
+                        _searchResults.value = results
+                    } else {
+                        // Clear results and search status if no filters/keyword are active
+                        _searchResults.value = emptyList()
+                        _uiState.update { it.copy(hasSearched = false) }
+                    }
+                }
         }
     }
 
@@ -1317,9 +1474,7 @@ class SearchViewModel(
         _uiState.update { it.copy(selectedCategory = category) }
     }
 
-    // CORRECTED: The 'type' parameter is now nullable to handle when the user clears the filter.
     fun onTypeChange(type: String?) {
-        // If the type is null (cleared), default back to "All".
         _uiState.update { it.copy(transactionType = type ?: "All") }
     }
 
@@ -1336,24 +1491,10 @@ class SearchViewModel(
                 accounts = _uiState.value.accounts,
                 categories = _uiState.value.categories,
             )
-        _searchResults.value = emptyList()
+        // Results will clear automatically due to the reactive flow
     }
 
-    fun executeSearch() {
-        viewModelScope.launch {
-            val state = _uiState.value
-            _searchResults.value =
-                transactionDao.searchTransactions(
-                    keyword = state.keyword,
-                    accountId = state.selectedAccount?.id,
-                    categoryId = state.selectedCategory?.id,
-                    transactionType = if (state.transactionType.equals("All", ignoreCase = true)) null else state.transactionType.lowercase(),
-                    startDate = state.startDate,
-                    endDate = state.endDate,
-                )
-            _uiState.update { it.copy(hasSearched = true) }
-        }
-    }
+    // The manual executeSearch function is no longer needed.
 }
 -e 
 
@@ -2092,8 +2233,11 @@ fun AddRecurringTransactionScreen(navController: NavController) {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt ==================
-// FILE: app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
-
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
+// REASON: Implemented auto-focus for the text fields on the "User Name" and
+// "Budget" pages to improve usability during the onboarding flow.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -2110,6 +2254,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -2173,6 +2319,8 @@ fun WelcomePage() {
 @Composable
 fun UserNamePage(viewModel: OnboardingViewModel) {
     val name by viewModel.userName.collectAsState()
+    // --- NEW: Create a focus requester ---
+    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
@@ -2205,14 +2353,24 @@ fun UserNamePage(viewModel: OnboardingViewModel) {
                 capitalization = KeyboardCapitalization.Words
             ),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            // --- NEW: Apply the focus requester modifier ---
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
         )
+    }
+
+    // --- NEW: Request focus when the composable enters the composition ---
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
     }
 }
 
 @Composable
 fun BudgetSetupPage(viewModel: OnboardingViewModel) {
     val budget by viewModel.monthlyBudget.collectAsState()
+    // --- NEW: Create a focus requester ---
+    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
@@ -2240,8 +2398,16 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
             label = { Text("Total Monthly Budget") },
             leadingIcon = { Text("₹") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
+            // --- NEW: Apply the focus requester modifier ---
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
         )
+    }
+
+    // --- NEW: Request focus when the composable enters the composition ---
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
     }
 }
 
@@ -2849,6 +3015,11 @@ fun AddEditBudgetScreen(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
+// REASON: Updated the ApproveTransactionScreen to require a category for both
+// income and expense transactions, ensuring data consistency.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -2890,7 +3061,6 @@ import io.pm.finlight.*
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
-// --- NEW: Sealed class to manage bottom sheet content ---
 private sealed class ApproveSheetContent {
     object Category : ApproveSheetContent()
     object Tags : ApproveSheetContent()
@@ -3020,7 +3190,6 @@ fun ApproveTransactionScreen(
     var notes by remember { mutableStateOf("") }
     var selectedTransactionType by remember(potentialTxn.transactionType) { mutableStateOf(potentialTxn.transactionType) }
     val scope = rememberCoroutineScope()
-    // --- FIX: Get the context for the NotificationManager ---
     val context = LocalContext.current
 
     val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
@@ -3029,13 +3198,12 @@ fun ApproveTransactionScreen(
     val allTags by transactionViewModel.allTags.collectAsState()
     val selectedTags by transactionViewModel.selectedTags.collectAsState()
 
-    // --- NEW: State for bottom sheets ---
     var activeSheetContent by remember { mutableStateOf<ApproveSheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
 
-    val isExpense = selectedTransactionType == "expense"
-    val isSaveEnabled = description.isNotBlank() && (!isExpense || selectedCategory != null)
+    // --- FIX: A category is now required for ALL transaction types ---
+    val isSaveEnabled = description.isNotBlank() && selectedCategory != null
 
     DisposableEffect(Unit) {
         onDispose {
@@ -3052,7 +3220,6 @@ fun ApproveTransactionScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                // --- REFACTORED: Primary Info Card ---
                 Card(elevation = CardDefaults.cardElevation(2.dp)) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
@@ -3078,9 +3245,9 @@ fun ApproveTransactionScreen(
                 }
             }
             item {
-                TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
+                TabRow(selectedTabIndex = if (selectedTransactionType == "expense") 0 else 1) {
                     listOf("Expense", "Income").forEachIndexed { index, title ->
-                        Tab(selected = (if (isExpense) 0 else 1) == index, onClick = {
+                        Tab(selected = (if (selectedTransactionType == "expense") 0 else 1) == index, onClick = {
                             selectedTransactionType = if (index == 0) "expense" else "income"
                         }, text = { Text(title) })
                     }
@@ -3088,7 +3255,6 @@ fun ApproveTransactionScreen(
             }
 
             item {
-                // --- REFACTORED: Details Card ---
                 Card(elevation = CardDefaults.cardElevation(2.dp)) {
                     Column {
                         DetailRow(
@@ -3097,17 +3263,16 @@ fun ApproveTransactionScreen(
                             value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
                             onClick = null // Not editable
                         )
-                        if (isExpense) {
-                            HorizontalDivider()
-                            DetailRow(
-                                icon = Icons.Default.Category,
-                                label = "Category",
-                                value = selectedCategory?.name ?: "Select category",
-                                onClick = { activeSheetContent = ApproveSheetContent.Category },
-                                valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                                leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
-                            )
-                        }
+                        // --- FIX: Category selector is now always visible ---
+                        HorizontalDivider()
+                        DetailRow(
+                            icon = Icons.Default.Category,
+                            label = "Category",
+                            value = selectedCategory?.name ?: "Select category",
+                            onClick = { activeSheetContent = ApproveSheetContent.Category },
+                            valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                            leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
+                        )
                         HorizontalDivider()
                         DetailRow(
                             icon = Icons.Default.NewLabel,
@@ -3148,7 +3313,6 @@ fun ApproveTransactionScreen(
                                 if (success) {
                                     settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
                                     settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
-                                    // --- FIX: Programmatically dismiss the source notification ---
                                     val notificationManager = NotificationManagerCompat.from(context)
                                     notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
                                     navController.popBackStack()
@@ -3163,7 +3327,6 @@ fun ApproveTransactionScreen(
         }
     }
 
-    // --- NEW: Bottom Sheet Logic ---
     if (activeSheetContent != null) {
         ModalBottomSheet(
             onDismissRequest = { activeSheetContent = null },
@@ -3186,9 +3349,6 @@ fun ApproveTransactionScreen(
         }
     }
 }
-
-
-// --- NEW: Helper composables adapted from AddTransactionScreen ---
 
 @Composable
 private fun DetailRow(
@@ -3474,6 +3634,17 @@ fun EditAccountScreen(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
+// REASON: Implemented on-the-fly creation of Accounts and Categories. The selection
+// bottom sheets now include a "+ Create New" option, which launches a dialog
+// to add the new item without leaving the screen. The new item is then
+// automatically selected.
+// BUG FIX: Removed local dialog definitions and imported them from the new
+// ui.components package to resolve compilation errors.
+// BUG FIX: The Category picker is now always visible for both Income and Expense
+// types, and is required for saving.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.net.Uri
@@ -3514,6 +3685,8 @@ import coil.compose.AsyncImage
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.CreateAccountDialog
+import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
 import java.util.*
@@ -3563,13 +3736,15 @@ fun AddTransactionScreen(
     var activeSheetContent by remember { mutableStateOf<AddSheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
-    val isExpense = transactionType == "expense"
-    val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && (!isExpense || selectedCategory != null))
+    var showCreateAccountDialog by remember { mutableStateOf(false) }
+    var showCreateCategoryDialog by remember { mutableStateOf(false) }
+
+    // --- FIX: The save button is now enabled only when a category is selected for ALL types ---
+    val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && selectedCategory != null)
 
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
 
-    // --- NEW: Logic to pre-fill the form when editing a CSV row ---
     LaunchedEffect(initialDataJson, accounts, categories) {
         if (isCsvEdit && initialDataJson != null) {
             try {
@@ -3618,9 +3793,6 @@ fun AddTransactionScreen(
                     selectedOption = transactionType.replaceFirstChar { it.uppercase() },
                     onOptionSelected = {
                         transactionType = it.lowercase(Locale.getDefault())
-                        if (transactionType == "income") {
-                            selectedCategory = null
-                        }
                     }
                 )
             }
@@ -3640,7 +3812,8 @@ fun AddTransactionScreen(
                     onAccountClick = { activeSheetContent = AddSheetContent.Account },
                     selectedCategory = selectedCategory,
                     onCategoryClick = { activeSheetContent = AddSheetContent.Category },
-                    isCategoryVisible = isExpense,
+                    // --- FIX: Category is now always visible ---
+                    isCategoryVisible = true,
                     selectedDate = selectedDateTime.time,
                     onDateClick = { showDatePicker = true },
                     tags = selectedTags,
@@ -3699,7 +3872,6 @@ fun AddTransactionScreen(
                     Button(
                         onClick = {
                             if (isCsvEdit) {
-                                // --- NEW: Logic for returning edited CSV data ---
                                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                                 val correctedData = listOf(
                                     dateFormat.format(selectedDateTime.time),
@@ -3719,10 +3891,9 @@ fun AddTransactionScreen(
                                     ?.set("corrected_row_line", csvLineNumber)
                                 navController.popBackStack()
                             } else {
-                                // Original logic for adding a new transaction
                                 val success = viewModel.addTransaction(
                                     description = description,
-                                    categoryId = selectedCategory?.id,
+                                    categoryId = selectedCategory!!.id, // It can't be null here due to isSaveEnabled
                                     amountStr = amount,
                                     accountId = selectedAccount!!.id,
                                     notes = notes.takeIf { it.isNotBlank() },
@@ -3738,7 +3909,6 @@ fun AddTransactionScreen(
                         modifier = Modifier.weight(1f),
                         enabled = isSaveEnabled
                     ) {
-                        // --- UPDATED: Button text is now dynamic ---
                         Text(if (isCsvEdit) "Update Row" else "Save")
                     }
                 }
@@ -3755,11 +3925,19 @@ fun AddTransactionScreen(
                 is AddSheetContent.Account -> AddAccountPickerSheet(
                     items = accounts,
                     onItemSelected = { selectedAccount = it; activeSheetContent = null },
+                    onAddNew = {
+                        activeSheetContent = null
+                        showCreateAccountDialog = true
+                    },
                     onDismiss = { activeSheetContent = null }
                 )
                 is AddSheetContent.Category -> AddCategoryPickerSheet(
                     items = categories,
                     onItemSelected = { selectedCategory = it; activeSheetContent = null },
+                    onAddNew = {
+                        activeSheetContent = null
+                        showCreateCategoryDialog = true
+                    },
                     onDismiss = { activeSheetContent = null }
                 )
                 is AddSheetContent.Tags -> AddTagPickerSheet(
@@ -3774,6 +3952,31 @@ fun AddTransactionScreen(
             }
         }
     }
+
+    if (showCreateAccountDialog) {
+        CreateAccountDialog(
+            onDismiss = { showCreateAccountDialog = false },
+            onConfirm = { name, type ->
+                viewModel.createAccount(name, type) { newAccount ->
+                    selectedAccount = newAccount
+                }
+                showCreateAccountDialog = false
+            }
+        )
+    }
+
+    if (showCreateCategoryDialog) {
+        CreateCategoryDialog(
+            onDismiss = { showCreateCategoryDialog = false },
+            onConfirm = { name, iconKey, colorKey ->
+                viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
+                    selectedCategory = newCategory
+                }
+                showCreateCategoryDialog = false
+            }
+        )
+    }
+
 
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
@@ -3862,7 +4065,6 @@ fun PrimaryInfoCard(
                 value = description,
                 onValueChange = onDescriptionChange,
                 label = { Text("Description") },
-                // --- FIX: Add a testTag for reliable UI testing ---
                 modifier = Modifier.fillMaxWidth().testTag("description_input"),
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedBorderColor = Color.Transparent,
@@ -3890,7 +4092,7 @@ fun DetailsCard(
     attachmentsCount: Int,
     onAttachmentsClick: () -> Unit
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMMyyyy", Locale.getDefault()) }
 
     Card(elevation = CardDefaults.cardElevation(2.dp)) {
         Column {
@@ -3934,7 +4136,6 @@ fun DetailsCard(
                 onClick = onAttachmentsClick
             )
             HorizontalDivider()
-            // Notes field directly inside the card
             OutlinedTextField(
                 value = notes,
                 onValueChange = onNotesChange,
@@ -4012,13 +4213,11 @@ private fun SegmentedButton(
     }
 }
 
-
-// --- Bottom Sheet Composables for Add Screen ---
-
 @Composable
 private fun AddAccountPickerSheet(
     items: List<Account>,
     onItemSelected: (Account) -> Unit,
+    onAddNew: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Column(modifier = Modifier.navigationBarsPadding()) {
@@ -4034,6 +4233,13 @@ private fun AddAccountPickerSheet(
                     modifier = Modifier.clickable { onItemSelected(item) }
                 )
             }
+            item {
+                ListItem(
+                    headlineContent = { Text("+ Create New Account") },
+                    leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New Account") },
+                    modifier = Modifier.clickable(onClick = onAddNew)
+                )
+            }
         }
         Spacer(Modifier.height(16.dp))
     }
@@ -4043,6 +4249,7 @@ private fun AddAccountPickerSheet(
 private fun AddCategoryPickerSheet(
     items: List<Category>,
     onItemSelected: (Category) -> Unit,
+    onAddNew: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Column(modifier = Modifier.navigationBarsPadding()) {
@@ -4068,6 +4275,20 @@ private fun AddCategoryPickerSheet(
                 ) {
                     CategoryIcon(category, Modifier.size(48.dp))
                     Text(category.name, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                }
+            }
+            item {
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onAddNew)
+                        .padding(vertical = 12.dp)
+                        .height(76.dp), // Match height of other items
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.AddCircleOutline, contentDescription = "Create New", modifier = Modifier.size(48.dp))
+                    Text("New", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                 }
             }
         }
@@ -4141,7 +4362,7 @@ private fun AddTagPickerSheet(
                 if (newTagName.isNotBlank()) {
                     onAddNewTag(newTagName)
                 }
-                onConfirm() // This just dismisses the sheet now
+                onConfirm()
             }) { Text("Done") }
         }
     }
@@ -5062,6 +5283,12 @@ private fun SettingsActionItem(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
+// REASON: Integrated a TopAppBar with a filter icon that triggers a modal bottom
+// sheet, allowing users to apply filters to the transaction list.
+// BUG FIX: Corrected the invalid SimpleDateFormat pattern.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -5070,37 +5297,37 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.MonthlySummaryItem
 import io.pm.finlight.TransactionViewModel
+import io.pm.finlight.ui.components.FilterBottomSheet
 import io.pm.finlight.ui.components.TransactionList
+import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.absoluteValue
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionListScreen(
     navController: NavController,
@@ -5119,47 +5346,100 @@ fun TransactionListScreen(
     val totalIncome by viewModel.monthlyIncome.collectAsState()
     val budget by viewModel.overallMonthlyBudget.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        MonthlySummaryHeader(
-            selectedMonth = selectedMonth,
-            monthlySummaries = monthlySummaries,
-            totalSpent = totalSpent,
-            totalIncome = totalIncome,
-            budget = budget,
-            onMonthSelected = { viewModel.setSelectedMonth(it) }
-        )
-        TabRow(
-            selectedTabIndex = pagerState.currentPage,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
-                )
-            }
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = pagerState.currentPage == index,
-                    onClick = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(index)
+    val filterState by viewModel.filterState.collectAsState()
+    val allAccounts by viewModel.allAccounts.collectAsState()
+    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
+    var showFilterSheet by remember { mutableStateOf(false) }
+
+    val areFiltersActive by remember(filterState) {
+        derivedStateOf {
+            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Transactions") },
+                actions = {
+                    BadgedBox(
+                        badge = {
+                            if (areFiltersActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary)
+                                )
+                            }
                         }
-                    },
-                    text = { Text(title) }
-                )
+                    ) {
+                        IconButton(onClick = { showFilterSheet = true }) {
+                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                        }
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            MonthlySummaryHeader(
+                selectedMonth = selectedMonth,
+                monthlySummaries = monthlySummaries,
+                totalSpent = totalSpent,
+                totalIncome = totalIncome,
+                budget = budget,
+                onMonthSelected = { viewModel.setSelectedMonth(it) }
+            )
+            TabRow(
+                selectedTabIndex = pagerState.currentPage,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
+                    )
+                }
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
+                        text = { Text(title) }
+                    )
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f)
+            ) { page ->
+                when (page) {
+                    0 -> TransactionList(transactions = transactions, navController = navController)
+                    1 -> CategorySpendingScreen(spendingList = categorySpending)
+                    2 -> MerchantSpendingScreen(merchantList = merchantSpending)
+                }
             }
         }
+    }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.weight(1f)
-        ) { page ->
-            when (page) {
-                0 -> {
-                    TransactionList(transactions = transactions, navController = navController)
-                }
-                1 -> CategorySpendingScreen(spendingList = categorySpending)
-                2 -> MerchantSpendingScreen(merchantList = merchantSpending)
-            }
+    if (showFilterSheet) {
+        ModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
+            FilterBottomSheet(
+                filterState = filterState,
+                accounts = allAccounts,
+                categories = allCategories,
+                onKeywordChange = viewModel::updateFilterKeyword,
+                onAccountChange = viewModel::updateFilterAccount,
+                onCategoryChange = viewModel::updateFilterCategory,
+                onClearFilters = viewModel::clearFilters
+            )
         }
     }
 }
@@ -5174,7 +5454,7 @@ fun MonthlySummaryHeader(
     onMonthSelected: (Calendar) -> Unit
 ) {
     val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
-    // --- FIX: Corrected the illegal date format pattern ---
+    // --- FIX: Corrected the date format pattern ---
     val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
     var showMonthScroller by remember { mutableStateOf(false) }
 
@@ -5188,7 +5468,6 @@ fun MonthlySummaryHeader(
             .fillMaxWidth()
             .padding(bottom = 8.dp)
     ) {
-        // Clickable header to toggle the month scroller
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -5196,7 +5475,6 @@ fun MonthlySummaryHeader(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // This inner Row groups the Text and Icon together at the start
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = monthYearFormat.format(selectedMonth.time),
@@ -5210,7 +5488,6 @@ fun MonthlySummaryHeader(
             }
         }
 
-        // Animated visibility for the horizontal month scroller
         AnimatedVisibility(
             visible = showMonthScroller,
             enter = expandVertically(),
@@ -5219,7 +5496,7 @@ fun MonthlySummaryHeader(
             ScrollableTabRow(
                 selectedTabIndex = selectedTabIndex,
                 edgePadding = 16.dp,
-                indicator = {}, // No indicator needed
+                indicator = {},
                 divider = {}
             ) {
                 monthlySummaries.forEach { summaryItem ->
@@ -5229,7 +5506,7 @@ fun MonthlySummaryHeader(
                         selected = isSelected,
                         onClick = {
                             onMonthSelected(summaryItem.calendar)
-                            showMonthScroller = false // Hide after selection
+                            showMonthScroller = false
                         },
                         text = {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -5315,7 +5592,7 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
 
     val progressColor = when {
         progress > 1f -> MaterialTheme.colorScheme.error
-        progress > 0.85f -> Color(0xFFFBC02D) // Amber
+        progress > 0.8f -> Color(0xFFFBC02D) // Amber
         else -> MaterialTheme.colorScheme.primary
     }
 
@@ -5358,53 +5635,18 @@ fun PlaceholderTabContent(title: String) {
         Text("Content for $title", style = MaterialTheme.typography.headlineMedium)
     }
 }
-
-private fun lerp(start: Dp, stop: Dp, fraction: Float): Dp {
-    return Dp(start.value + (stop.value - start.value) * fraction)
-}
-
-
-@OptIn(ExperimentalFoundationApi::class)
-fun Modifier.pagerTabIndicatorOffset(
-    pagerState: PagerState,
-    tabPositions: List<TabPosition>,
-): Modifier = composed {
-    if (tabPositions.isEmpty()) {
-        this
-    } else {
-        val currentPage = pagerState.currentPage
-        val fraction = pagerState.currentPageOffsetFraction.absoluteValue
-
-        val currentTab = tabPositions[currentPage]
-        val nextTab = tabPositions.getOrNull(currentPage + 1)
-
-        val targetIndicatorOffset = if (nextTab != null) {
-            lerp(currentTab.left, nextTab.left, fraction)
-        } else {
-            currentTab.left
-        }
-
-        val indicatorWidth = if (nextTab != null) {
-            lerp(currentTab.width, nextTab.width, fraction)
-        } else {
-            currentTab.width
-        }
-
-        this.fillMaxWidth()
-            .wrapContentSize(Alignment.BottomStart)
-            .offset(x = targetIndicatorOffset)
-            .width(indicatorWidth)
-    }
-}
 -e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: REFACTORED - Replaced all editing dialogs with standardized ModalBottomSheets
-// for a more consistent and modern user experience. Added an enhanced category
-// picker with icons inside its bottom sheet.
+// REASON: Implemented on-the-fly creation for Accounts and Categories within the
+// editing flow. The bottom sheets for selection now include a "+ Create New"
+// option, which launches a dialog. After creation, the transaction is
+// automatically updated with the new item.
+// BUG FIX: Removed local dialog definitions and imported them from the new
+// ui.components package to resolve compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -5450,6 +5692,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.CreateAccountDialog
+import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.TimePickerDialog
 import java.io.File
 import java.text.SimpleDateFormat
@@ -5457,10 +5701,6 @@ import java.util.*
 
 private const val TAG = "DetailScreenDebug"
 
-/**
- * A sealed class to define the content type for the modal bottom sheet.
- * This allows for a type-safe way to determine which editor to display.
- */
 private sealed class SheetContent {
     object Description : SheetContent()
     object Amount : SheetContent()
@@ -5470,11 +5710,10 @@ private sealed class SheetContent {
     object Tags : SheetContent()
 }
 
-// --- BUG FIX: New sealed interface to represent the screen's state robustly ---
 private sealed interface DetailScreenState {
     object Loading : DetailScreenState
     data class Success(val details: TransactionDetails) : DetailScreenState
-    object Deleted : DetailScreenState
+    object Exit : DetailScreenState
 }
 
 
@@ -5487,21 +5726,12 @@ fun TransactionDetailScreen(
 ) {
     Log.d(TAG, "Composing TransactionDetailScreen for transactionId: $transactionId")
 
-    // --- BUG FIX: Use produceState for robust state management ---
     val screenState by produceState<DetailScreenState>(initialValue = DetailScreenState.Loading, transactionId) {
         viewModel.getTransactionDetailsById(transactionId).collect { details ->
             value = if (details != null) {
-                Log.d(TAG, "produceState: Received data. Emitting Success.")
                 DetailScreenState.Success(details)
             } else {
-                // If the current state is already Success, it means the item was just deleted.
-                if (value is DetailScreenState.Success) {
-                    Log.d(TAG, "produceState: Received null after Success. Emitting Deleted.")
-                    DetailScreenState.Deleted
-                } else {
-                    Log.d(TAG, "produceState: Received null initially. Emitting Loading.")
-                    DetailScreenState.Loading
-                }
+                DetailScreenState.Exit
             }
         }
     }
@@ -5522,6 +5752,8 @@ fun TransactionDetailScreen(
     var activeSheetContent by remember { mutableStateOf<SheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
+    var showCreateAccountDialog by remember { mutableStateOf(false) }
+    var showCreateCategoryDialog by remember { mutableStateOf(false) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -5544,26 +5776,20 @@ fun TransactionDetailScreen(
         }
     }
 
-    // --- UI Rendering Logic based on the robust screenState ---
     when (val state = screenState) {
         is DetailScreenState.Loading -> {
-            Log.d(TAG, "Rendering Loading state.")
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         }
-        is DetailScreenState.Deleted -> {
-            Log.d(TAG, "Rendering Deleted state. Navigating back.")
-            // This effect will run once when the state becomes Deleted.
+        is DetailScreenState.Exit -> {
             LaunchedEffect(Unit) {
                 navController.popBackStack()
             }
-            // Show a blank screen while navigating away.
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         }
         is DetailScreenState.Success -> {
             val details = state.details
-            Log.d(TAG, "Rendering Success state for transaction: ${details.transaction.description}")
             val title = when (details.transaction.transactionType) {
                 "expense" -> "Debit transaction"
                 "income" -> "Credit transaction"
@@ -5725,11 +5951,42 @@ fun TransactionDetailScreen(
                             categories = categories,
                             allTags = allTags,
                             selectedTags = selectedTags,
-                            onDismiss = { activeSheetContent = null }
+                            onDismiss = { activeSheetContent = null },
+                            onAddNewAccount = {
+                                activeSheetContent = null
+                                showCreateAccountDialog = true
+                            },
+                            onAddNewCategory = {
+                                activeSheetContent = null
+                                showCreateCategoryDialog = true
+                            }
                         )
                     }
                 }
 
+                if (showCreateAccountDialog) {
+                    CreateAccountDialog(
+                        onDismiss = { showCreateAccountDialog = false },
+                        onConfirm = { name, type ->
+                            viewModel.createAccount(name, type) { newAccount ->
+                                viewModel.updateTransactionAccount(transactionId, newAccount.id)
+                            }
+                            showCreateAccountDialog = false
+                        }
+                    )
+                }
+
+                if (showCreateCategoryDialog) {
+                    CreateCategoryDialog(
+                        onDismiss = { showCreateCategoryDialog = false },
+                        onConfirm = { name, iconKey, colorKey ->
+                            viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
+                                viewModel.updateTransactionCategory(transactionId, newCategory.id)
+                            }
+                            showCreateCategoryDialog = false
+                        }
+                    )
+                }
 
                 if (showDatePicker) {
                     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
@@ -5813,10 +6070,6 @@ fun TransactionDetailScreen(
     }
 }
 
-/**
- * A composable that renders the appropriate editor inside the modal bottom sheet
- * based on the [SheetContent] type.
- */
 @Composable
 private fun TransactionEditSheetContent(
     sheetContent: SheetContent,
@@ -5826,7 +6079,9 @@ private fun TransactionEditSheetContent(
     categories: List<Category>,
     allTags: List<Tag>,
     selectedTags: Set<Tag>,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddNewAccount: () -> Unit,
+    onAddNewCategory: () -> Unit
 ) {
     val transactionId = details.transaction.id
 
@@ -5862,7 +6117,8 @@ private fun TransactionEditSheetContent(
                 items = accounts,
                 getItemName = { (it as Account).name },
                 onItemSelected = { viewModel.updateTransactionAccount(transactionId, (it as Account).id) },
-                onDismiss = onDismiss
+                onDismiss = onDismiss,
+                onAddNew = onAddNewAccount
             )
         }
         is SheetContent.Category -> {
@@ -5870,7 +6126,8 @@ private fun TransactionEditSheetContent(
                 title = "Select Category",
                 items = categories,
                 onItemSelected = { viewModel.updateTransactionCategory(transactionId, it.id) },
-                onDismiss = onDismiss
+                onDismiss = onDismiss,
+                onAddNew = onAddNewCategory
             )
         }
         is SheetContent.Tags -> {
@@ -5889,10 +6146,6 @@ private fun TransactionEditSheetContent(
     }
 }
 
-
-/**
- * A generic bottom sheet for editing a simple text field.
- */
 @Composable
 private fun EditTextFieldSheet(
     title: String,
@@ -5936,16 +6189,14 @@ private fun EditTextFieldSheet(
     }
 }
 
-/**
- * A generic bottom sheet for picking an item from a list.
- */
 @Composable
 private fun <T> PickerSheet(
     title: String,
     items: List<T>,
     getItemName: (T) -> String,
     onItemSelected: (T) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddNew: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.navigationBarsPadding()) {
         Text(
@@ -5963,20 +6214,27 @@ private fun <T> PickerSheet(
                     }
                 )
             }
+            if (onAddNew != null) {
+                item {
+                    ListItem(
+                        headlineContent = { Text("Create New") },
+                        leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New") },
+                        modifier = Modifier.clickable(onClick = onAddNew)
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(16.dp))
     }
 }
 
-/**
- * An enhanced category picker bottom sheet that shows category icons in a grid.
- */
 @Composable
 private fun CategoryPickerSheet(
     title: String,
     items: List<Category>,
     onItemSelected: (Category) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddNew: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.navigationBarsPadding()) {
         Text(
@@ -6006,14 +6264,27 @@ private fun CategoryPickerSheet(
                     Text(category.name, style = MaterialTheme.typography.bodyMedium)
                 }
             }
+            if (onAddNew != null) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(onClick = onAddNew)
+                            .padding(vertical = 12.dp)
+                            .height(80.dp), // Match height of other items
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.AddCircleOutline, contentDescription = "Create New", modifier = Modifier.size(48.dp))
+                        Text("New", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(16.dp))
     }
 }
 
-/**
- * A bottom sheet for selecting and creating tags.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagPickerSheet(
@@ -6084,8 +6355,6 @@ private fun TagPickerSheet(
         }
     }
 }
-
-// --- Helper Composables (mostly unchanged, but kept for context) ---
 
 @Composable
 private fun CategoryIconDisplay(category: Category) {
@@ -6202,7 +6471,6 @@ private fun TransactionHeaderCard(
     }
 }
 
-// Extension function to convert TransactionDetails to a Category object
 private fun TransactionDetails.toCategory(): Category {
     return Category(
         id = this.transaction.categoryId ?: 0,
@@ -6541,6 +6809,11 @@ fun AccountDetailScreen(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
+// REASON: Updated the onClick handler for the "Monthly Income" card to navigate
+// to the new, dedicated "income_screen".
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
@@ -6601,7 +6874,6 @@ fun DashboardScreen(
     val budgetStatus by viewModel.budgetStatus.collectAsState()
     val recentTransactions by viewModel.recentTransactions.collectAsState()
     val accountsSummary by viewModel.accountsSummary.collectAsState()
-    // --- BUG FIX: Get the correct state for the card ---
     val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
 
 
@@ -6622,14 +6894,9 @@ fun DashboardScreen(
                     label = "Monthly Income",
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
+                    // --- FIX: Navigate to the new income_screen ---
                     onClick = {
-                        navController.navigate(BottomNavItem.Transactions.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                        navController.navigate("income_screen")
                     }
                 )
                 StatCard(
@@ -6638,13 +6905,11 @@ fun DashboardScreen(
                     modifier = Modifier.weight(1f),
                     onClick = { navController.navigate("budget_screen") }
                 )
-                // --- BUG FIX: Removed onClick and corrected amount ---
                 StatCard(
                     label = "Safe To Spend",
                     amount = safeToSpendPerDay,
-                    isPerDay = true, // Add flag to show "/day" suffix
+                    isPerDay = true,
                     modifier = Modifier.weight(1f)
-                    // No onClick handler, so the card is not clickable
                 )
             }
         }
@@ -6979,20 +7244,37 @@ fun RecurringTransactionScreen(navController: NavController) {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
+// REASON: Modernized the UI by implementing auto-focus for the keyword field
+// and removing the now-obsolete "Apply Filter" button, creating a more
+// dynamic and responsive search experience.
+// UPDATE: Redesigned the layout to hide advanced filters in a collapsible
+// section, providing a cleaner initial view and an indicator for active filters.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -7014,119 +7296,152 @@ fun SearchScreen(navController: NavController) {
 
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
+    var showAdvancedFilters by remember { mutableStateOf(false) }
 
+    val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
+    val areFiltersActive by remember(searchUiState) {
+        derivedStateOf {
+            searchUiState.selectedAccount != null ||
+                    searchUiState.selectedCategory != null ||
+                    searchUiState.transactionType != "All" ||
+                    searchUiState.startDate != null ||
+                    searchUiState.endDate != null
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.weight(1f),
-        ) {
-            item {
+        // Search Bar and Filter Toggle
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedTextField(
                     value = searchUiState.keyword,
                     onValueChange = { viewModel.onKeywordChange(it) },
                     label = { Text("Keyword (description, notes)") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester),
+                    singleLine = true
                 )
-            }
-
-            item {
-                SearchableDropdown(
-                    label = "Account",
-                    options = searchUiState.accounts,
-                    selectedOption = searchUiState.selectedAccount,
-                    onOptionSelected = { viewModel.onAccountChange(it) },
-                    getDisplayName = { it.name },
-                )
-            }
-
-            item {
-                SearchableDropdown(
-                    label = "Category",
-                    options = searchUiState.categories,
-                    selectedOption = searchUiState.selectedCategory,
-                    onOptionSelected = { viewModel.onCategoryChange(it) },
-                    getDisplayName = { it.name },
-                )
-            }
-
-            item {
-                SearchableDropdown(
-                    label = "Transaction Type",
-                    options = listOf("All", "Income", "Expense"),
-                    selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
-                    onOptionSelected = { viewModel.onTypeChange(it) },
-                    getDisplayName = { it },
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                BadgedBox(
+                    badge = {
+                        if (areFiltersActive) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                    }
                 ) {
-                    DateTextField(
-                        label = "Start Date",
-                        date = searchUiState.startDate,
-                        formatter = dateFormatter,
-                        onClick = { showStartDatePicker = true },
-                        onClear = { viewModel.onDateChange(start = null) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    DateTextField(
-                        label = "End Date",
-                        date = searchUiState.endDate,
-                        formatter = dateFormatter,
-                        onClick = { showEndDatePicker = true },
-                        onClear = { viewModel.onDateChange(end = null) },
-                        modifier = Modifier.weight(1f),
-                    )
+                    IconButton(onClick = { showAdvancedFilters = !showAdvancedFilters }) {
+                        Icon(Icons.Default.FilterList, contentDescription = "Toggle Advanced Filters")
+                    }
                 }
             }
 
-            if (searchResults.isNotEmpty()) {
+            // Collapsible Advanced Filters Section
+            AnimatedVisibility(
+                visible = showAdvancedFilters,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(
+                    modifier = Modifier.padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SearchableDropdown(
+                        label = "Account",
+                        options = searchUiState.accounts,
+                        selectedOption = searchUiState.selectedAccount,
+                        onOptionSelected = { viewModel.onAccountChange(it) },
+                        getDisplayName = { it.name },
+                    )
+                    SearchableDropdown(
+                        label = "Category",
+                        options = searchUiState.categories,
+                        selectedOption = searchUiState.selectedCategory,
+                        onOptionSelected = { viewModel.onCategoryChange(it) },
+                        getDisplayName = { it.name },
+                    )
+                    SearchableDropdown(
+                        label = "Transaction Type",
+                        options = listOf("All", "Income", "Expense"),
+                        selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
+                        onOptionSelected = { viewModel.onTypeChange(it) },
+                        getDisplayName = { it },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        DateTextField(
+                            label = "Start Date",
+                            date = searchUiState.startDate,
+                            formatter = dateFormatter,
+                            onClick = { showStartDatePicker = true },
+                            onClear = { viewModel.onDateChange(start = null) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        DateTextField(
+                            label = "End Date",
+                            date = searchUiState.endDate,
+                            formatter = dateFormatter,
+                            onClick = { showEndDatePicker = true },
+                            onClear = { viewModel.onDateChange(end = null) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.clearFilters() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Clear All Filters") }
+                }
+            }
+        }
+
+        HorizontalDivider()
+
+        // Search Results
+        if (searchResults.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(16.dp)
+            ) {
                 item {
                     Text(
                         text = "Results (${searchResults.size})",
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = 16.dp),
+                        modifier = Modifier.padding(bottom = 8.dp),
                     )
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 }
                 items(searchResults) { transactionDetails ->
                     TransactionItem(
                         transactionDetails = transactionDetails,
-                        onClick = { navController.navigate("edit_transaction/${transactionDetails.transaction.id}") },
+                        onClick = { navController.navigate("transaction_detail/${transactionDetails.transaction.id}") },
                     )
                 }
-            } else if (searchUiState.hasSearched) {
-                item {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
-                        Text("No transactions match your criteria.")
-                    }
-                }
+            }
+        } else if (searchUiState.hasSearched) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No transactions match your criteria.")
             }
         }
+    }
 
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            OutlinedButton(
-                onClick = { viewModel.clearFilters() },
-                modifier = Modifier.weight(1f),
-            ) { Text("Clear") }
-
-            Button(
-                onClick = { viewModel.executeSearch() },
-                modifier = Modifier.weight(1f),
-            ) { Text("Apply Filters") }
-        }
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
     }
 
     if (showStartDatePicker) {
@@ -7463,6 +7778,274 @@ fun AddAccountScreen(
                 enabled = accountName.isNotBlank() && accountType.isNotBlank(),
             ) {
                 Text("Save Account")
+            }
+        }
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
+// REASON: Integrated a TopAppBar with a filter icon that triggers a modal bottom
+// sheet, allowing users to apply filters to the income list.
+// BUG FIX: Corrected the invalid SimpleDateFormat pattern.
+// BUG FIX: Removed the incorrect dependency on TransactionViewModel and now
+// correctly sources all data from the IncomeViewModel.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import io.pm.finlight.IncomeViewModel
+import io.pm.finlight.MonthlySummaryItem
+import io.pm.finlight.ui.components.FilterBottomSheet
+import io.pm.finlight.ui.components.TransactionList
+import io.pm.finlight.ui.components.pagerTabIndicatorOffset
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+fun IncomeScreen(
+    navController: NavController,
+    viewModel: IncomeViewModel = viewModel(),
+) {
+    val tabs = listOf("Credits", "Categories")
+    val pagerState = rememberPagerState { tabs.size }
+    val scope = rememberCoroutineScope()
+
+    val incomeTransactions by viewModel.incomeTransactionsForSelectedMonth.collectAsState()
+    val incomeByCategory by viewModel.incomeByCategoryForSelectedMonth.collectAsState()
+    val totalIncome by viewModel.totalIncomeForSelectedMonth.collectAsState()
+    val selectedMonth by viewModel.selectedMonth.collectAsState()
+    val monthlySummaries by viewModel.monthlySummaries.collectAsState()
+
+    val filterState by viewModel.filterState.collectAsState()
+    // --- FIX: Get data from the correct ViewModel ---
+    val allAccounts by viewModel.allAccounts.collectAsState()
+    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
+    var showFilterSheet by remember { mutableStateOf(false) }
+
+    val areFiltersActive by remember(filterState) {
+        derivedStateOf {
+            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Income") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    BadgedBox(
+                        badge = {
+                            if (areFiltersActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary)
+                                )
+                            }
+                        }
+                    ) {
+                        IconButton(onClick = { showFilterSheet = true }) {
+                            Icon(Icons.Default.FilterList, contentDescription = "Filter Income")
+                        }
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            IncomeHeader(
+                totalIncome = totalIncome,
+                selectedMonth = selectedMonth,
+                monthlySummaries = monthlySummaries,
+                onMonthSelected = { viewModel.setSelectedMonth(it) }
+            )
+
+            TabRow(
+                selectedTabIndex = pagerState.currentPage,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
+                    )
+                }
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
+                        text = { Text(title) }
+                    )
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f)
+            ) { page ->
+                when (page) {
+                    0 -> TransactionList(transactions = incomeTransactions, navController = navController)
+                    1 -> CategorySpendingScreen(spendingList = incomeByCategory)
+                }
+            }
+        }
+    }
+
+    if (showFilterSheet) {
+        ModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
+            FilterBottomSheet(
+                filterState = filterState,
+                accounts = allAccounts,
+                categories = allCategories,
+                onKeywordChange = viewModel::updateFilterKeyword,
+                onAccountChange = viewModel::updateFilterAccount,
+                onCategoryChange = viewModel::updateFilterCategory,
+                onClearFilters = viewModel::clearFilters
+            )
+        }
+    }
+}
+
+@Composable
+fun IncomeHeader(
+    selectedMonth: Calendar,
+    monthlySummaries: List<MonthlySummaryItem>,
+    totalIncome: Double,
+    onMonthSelected: (Calendar) -> Unit
+) {
+    val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
+    val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
+    var showMonthScroller by remember { mutableStateOf(false) }
+
+    val selectedTabIndex = monthlySummaries.indexOfFirst {
+        it.calendar.get(Calendar.MONTH) == selectedMonth.get(Calendar.MONTH) &&
+                it.calendar.get(Calendar.YEAR) == selectedMonth.get(Calendar.YEAR)
+    }.coerceAtLeast(0)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showMonthScroller = !showMonthScroller }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = monthYearFormat.format(selectedMonth.time),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Icon(
+                    imageVector = if (showMonthScroller) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector"
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showMonthScroller,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            ScrollableTabRow(
+                selectedTabIndex = selectedTabIndex,
+                edgePadding = 16.dp,
+                indicator = {},
+                divider = {}
+            ) {
+                monthlySummaries.forEach { summaryItem ->
+                    val isSelected = summaryItem.calendar.get(Calendar.MONTH) == selectedMonth.get(Calendar.MONTH) &&
+                            summaryItem.calendar.get(Calendar.YEAR) == selectedMonth.get(Calendar.YEAR)
+                    Tab(
+                        selected = isSelected,
+                        onClick = {
+                            onMonthSelected(summaryItem.calendar)
+                            showMonthScroller = false
+                        },
+                        text = {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = monthFormat.format(summaryItem.calendar.time),
+                                    style = if (isSelected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = "₹${"%,.0f".format(summaryItem.totalSpent)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Text("Total Income", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "₹${"%,.2f".format(totalIncome)}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
@@ -7969,6 +8552,66 @@ fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
                 .fillMaxWidth()
                 .height(250.dp),
     )
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/PagerUtils.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/PagerUtils.kt
+// REASON: NEW FILE - Centralized the pagerTabIndicatorOffset helper function
+// to resolve conflicting overload errors and avoid code duplication.
+// =================================================================================
+package io.pm.finlight.ui.components
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.material3.TabPosition
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.unit.Dp
+import kotlin.math.absoluteValue
+
+private fun lerp(start: Dp, stop: Dp, fraction: Float): Dp {
+    return Dp(start.value + (stop.value - start.value) * fraction)
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+fun Modifier.pagerTabIndicatorOffset(
+    pagerState: PagerState,
+    tabPositions: List<TabPosition>,
+): Modifier = composed {
+    if (tabPositions.isEmpty()) {
+        this
+    } else {
+        val currentPage = pagerState.currentPage
+        val fraction = pagerState.currentPageOffsetFraction.absoluteValue
+
+        val currentTab = tabPositions[currentPage]
+        val nextTab = tabPositions.getOrNull(currentPage + 1)
+
+        val targetIndicatorOffset = if (nextTab != null) {
+            lerp(currentTab.left, nextTab.left, fraction)
+        } else {
+            currentTab.left
+        }
+
+        val indicatorWidth = if (nextTab != null) {
+            lerp(currentTab.width, nextTab.width, fraction)
+        } else {
+            currentTab.width
+        }
+
+        this.fillMaxWidth()
+            .wrapContentSize(Alignment.BottomStart)
+            .offset(x = targetIndicatorOffset)
+            .width(indicatorWidth)
+    }
 }
 -e 
 
@@ -8672,6 +9315,241 @@ fun DeleteCategoryDialog(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/CreationDialogs.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/CreationDialogs.kt
+// REASON: NEW FILE - Centralized the creation dialogs to resolve conflicting
+// overload errors and improve code organization.
+// =================================================================================
+package io.pm.finlight.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import io.pm.finlight.CategoryIconHelper
+
+@Composable
+fun CreateAccountDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create New Account") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Account Name (e.g., Chase Sapphire)") }
+                )
+                OutlinedTextField(
+                    value = type,
+                    onValueChange = { type = it },
+                    label = { Text("Account Type (e.g., Credit Card)") }
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(name, type) },
+                enabled = name.isNotBlank() && type.isNotBlank()
+            ) { Text("Create") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+fun CreateCategoryDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var selectedIconKey by remember { mutableStateOf("category") }
+    var selectedColorKey by remember { mutableStateOf("gray_light") }
+    val allIcons = remember { CategoryIconHelper.getAllIcons().entries.toList() }
+    val allColors = remember { CategoryIconHelper.getAllIconColors().entries.toList() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create New Category") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Category Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(16.dp))
+                Text("Select Icon", style = MaterialTheme.typography.titleMedium)
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 48.dp),
+                    modifier = Modifier.heightIn(max = 150.dp)
+                ) {
+                    items(allIcons) { (key, icon) ->
+                        IconButton(
+                            onClick = { selectedIconKey = key },
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = if (selectedIconKey == key) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    shape = MaterialTheme.shapes.medium
+                                )
+                        ) {
+                            Icon(imageVector = icon, contentDescription = key)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("Select Color", style = MaterialTheme.typography.titleMedium)
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 48.dp),
+                    modifier = Modifier.heightIn(max = 100.dp)
+                ) {
+                    items(allColors) { (key, color) ->
+                        Box(
+                            modifier = Modifier
+                                .padding(6.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .clickable { selectedColorKey = key }
+                                .border(
+                                    width = 2.dp,
+                                    color = if (selectedColorKey == key) MaterialTheme.colorScheme.outline else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(name, selectedIconKey, selectedColorKey) },
+                enabled = name.isNotBlank()
+            ) { Text("Create") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/FilterBottomSheet.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/FilterBottomSheet.kt
+// REASON: NEW FILE - A reusable composable for the filter bottom sheet to be
+// used across the Transaction and Income screens, avoiding code duplication.
+// =================================================================================
+package io.pm.finlight.ui.components
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
+import io.pm.finlight.Account
+import io.pm.finlight.Category
+import io.pm.finlight.TransactionFilterState
+import io.pm.finlight.ui.screens.SearchableDropdown
+
+@Composable
+fun FilterBottomSheet(
+    filterState: TransactionFilterState,
+    accounts: List<Account>,
+    categories: List<Category>,
+    onKeywordChange: (String) -> Unit,
+    onAccountChange: (Account?) -> Unit,
+    onCategoryChange: (Category?) -> Unit,
+    onClearFilters: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .padding(16.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("Filter Transactions", style = MaterialTheme.typography.titleLarge)
+
+        OutlinedTextField(
+            value = filterState.keyword,
+            onValueChange = onKeywordChange,
+            label = { Text("Search by keyword") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+        )
+
+        SearchableDropdown(
+            label = "Account",
+            options = accounts,
+            selectedOption = filterState.account,
+            onOptionSelected = onAccountChange,
+            getDisplayName = { it.name }
+        )
+
+        SearchableDropdown(
+            label = "Category",
+            options = categories,
+            selectedOption = filterState.category,
+            onOptionSelected = onCategoryChange,
+            getDisplayName = { it.name }
+        )
+
+        Button(
+            onClick = onClearFilters,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Clear All Filters")
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt ==================
 package io.pm.finlight.ui.theme
 
@@ -8907,9 +9785,9 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Implemented a splash/routing screen to handle deep links seamlessly.
-// This prevents the main dashboard from "flashing" before navigating to the
-// deep-linked content, improving the user experience.
+// REASON: Updated the TopAppBar logic to hide the main app bar for the new
+// IncomeScreen and the existing TransactionListScreen, as they now manage
+// their own app bars with filter actions.
 // =================================================================================
 package io.pm.finlight
 
@@ -9127,7 +10005,13 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
-    val showMainTopBar = baseCurrentRoute != "transaction_detail" && baseCurrentRoute != "transaction_list" && baseCurrentRoute != "splash_screen"
+    // --- UPDATED: The main TopAppBar is now hidden for more screens ---
+    val showMainTopBar = baseCurrentRoute !in setOf(
+        "transaction_detail",
+        "transaction_list",
+        "income_screen",
+        "splash_screen"
+    )
 
     val activity = LocalContext.current as AppCompatActivity
 
@@ -9231,6 +10115,7 @@ fun AppNavHost(
     val categoryViewModel: CategoryViewModel = viewModel()
     val budgetViewModel: BudgetViewModel = viewModel()
     val profileViewModel: ProfileViewModel = viewModel()
+    val incomeViewModel: IncomeViewModel = viewModel()
 
     NavHost(
         navController = navController,
@@ -9263,6 +10148,10 @@ fun AppNavHost(
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
         ) { ReviewSmsScreen(navController, settingsViewModel) }
 
+        composable("income_screen") {
+            IncomeScreen(navController, incomeViewModel)
+        }
+
         composable(
             route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
             arguments = listOf(
@@ -9281,7 +10170,6 @@ fun AppNavHost(
             )
         }
 
-        // --- UPDATED: Route now accepts optional arguments for editing a CSV row ---
         composable(
             "add_transaction?isCsvEdit={isCsvEdit}&csvLineNumber={csvLineNumber}&initialDataJson={initialDataJson}",
             arguments = listOf(
@@ -9346,36 +10234,23 @@ fun AppNavHost(
     }
 }
 
-/**
- * A new composable that acts as a routing screen. It checks the intent
- * for a deep link and navigates accordingly, preventing the dashboard from
- * flashing on screen during a deep link launch.
- */
 @Composable
 fun SplashScreen(navController: NavHostController, activity: Activity) {
     LaunchedEffect(key1 = Unit) {
         val deepLinkUri = activity.intent?.data
         if (deepLinkUri != null) {
-            // --- BUG FIX: Manually build the back stack for a seamless experience ---
-            // First, navigate to the main screen of the app.
             navController.navigate(BottomNavItem.Dashboard.route) {
-                // Pop the splash screen off the stack to prevent going back to it.
                 popUpTo("splash_screen") { inclusive = true }
             }
-            // Then, navigate to the specific deep-linked content.
-            // This places the dashboard on the back stack before the detail screen.
             navController.navigate(deepLinkUri)
-            // Clear the intent data so it's not reused on process recreation.
             activity.intent.data = null
         } else {
-            // It's a normal launch, go to the dashboard
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }
         }
     }
 
-    // Show a loading indicator while the navigation logic runs
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -9484,6 +10359,11 @@ data class MonthlySummary(
 
 
 ================== FILE: ./app/src/main/java/CategoryRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CategoryRepository.kt
+// REASON: Updated the insert function to return the new category's ID (Long) and
+// added a function to get a category by its ID.
+// =================================================================================
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
@@ -9498,10 +10378,17 @@ class CategoryRepository(private val categoryDao: CategoryDao) {
     val allCategories: Flow<List<Category>> = categoryDao.getAllCategories()
 
     /**
+     * Retrieves a single category by its unique ID.
+     */
+    suspend fun getCategoryById(id: Int): Category? {
+        return categoryDao.getCategoryById(id)
+    }
+
+    /**
      * Inserts a category in a non-blocking way.
      */
-    suspend fun insert(category: Category) {
-        categoryDao.insert(category)
+    suspend fun insert(category: Category): Long {
+        return categoryDao.insert(category)
     }
 
     /**
@@ -10364,6 +11251,11 @@ data class AppDataBackup(
 
 
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
+// REASON: Enhanced getOverallBudgetForMonth to automatically carry over the
+// previous month's budget if no budget is explicitly set for the current month.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -10389,16 +11281,13 @@ class SettingsRepository(context: Context) {
         private const val KEY_DAILY_REPORT_ENABLED = "daily_report_enabled"
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
-        // --- NEW: Key for storing the backup preference ---
         private const val KEY_BACKUP_ENABLED = "google_drive_backup_enabled"
     }
 
-    // --- NEW: Function to save the backup preference ---
     fun saveBackupEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_BACKUP_ENABLED, isEnabled).apply()
     }
 
-    // --- NEW: Flow to read the backup preference ---
     fun getBackupEnabled(): Flow<Boolean> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
@@ -10407,7 +11296,6 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Default to true, as backup is enabled by default in the manifest
             trySend(prefs.getBoolean(KEY_BACKUP_ENABLED, true))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
@@ -10496,7 +11384,7 @@ class SettingsRepository(context: Context) {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                 if (key == KEY_DAILY_REPORT_ENABLED) {
-                    trySend(prefs.getBoolean(key, false)) // Default to false
+                    trySend(prefs.getBoolean(key, false))
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -10521,16 +11409,42 @@ class SettingsRepository(context: Context) {
         return prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
     }
 
+    // --- UPDATED: Logic to carry over the previous month's budget ---
     fun getOverallBudgetForMonth(year: Int, month: Int): Flow<Float> {
-        val key = getBudgetKey(year, month)
         return callbackFlow {
+            val currentMonthKey = getBudgetKey(year, month)
+
+            val previousMonthCalendar = Calendar.getInstance().apply {
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month - 1) // Calendar month is 0-indexed
+                add(Calendar.MONTH, -1)
+            }
+            val previousMonthKey = getBudgetKey(
+                previousMonthCalendar.get(Calendar.YEAR),
+                previousMonthCalendar.get(Calendar.MONTH) + 1
+            )
+
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
-                if (changedKey == key) {
-                    trySend(sharedPreferences.getFloat(key, 0f))
+                if (changedKey == currentMonthKey) {
+                    // If current month's budget is set/changed, emit it.
+                    trySend(sharedPreferences.getFloat(currentMonthKey, 0f))
+                } else if (changedKey == previousMonthKey && !sharedPreferences.contains(currentMonthKey)) {
+                    // If previous month's budget changed AND current month has no budget,
+                    // emit the new carried-over value.
+                    trySend(sharedPreferences.getFloat(previousMonthKey, 0f))
                 }
             }
+
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            trySend(prefs.getFloat(key, 0f))
+
+            // Initial emission
+            val budget = if (prefs.contains(currentMonthKey)) {
+                prefs.getFloat(currentMonthKey, 0f)
+            } else {
+                prefs.getFloat(previousMonthKey, 0f)
+            }
+            trySend(budget)
+
             awaitClose {
                 prefs.unregisterOnSharedPreferenceChangeListener(listener)
             }
@@ -10543,7 +11457,7 @@ class SettingsRepository(context: Context) {
     fun getWeeklySummaryEnabled(): Flow<Boolean> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == KEY_WEEKLY_SUMMARY_ENABLED) { trySend(prefs.getBoolean(key, true)) } // Default to true
+                if (key == KEY_WEEKLY_SUMMARY_ENABLED) { trySend(prefs.getBoolean(key, true)) }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_WEEKLY_SUMMARY_ENABLED, true))
@@ -10557,7 +11471,7 @@ class SettingsRepository(context: Context) {
     fun getUnknownTransactionPopupEnabled(): Flow<Boolean> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED) { trySend(prefs.getBoolean(key, true)) } // Default to true
+                if (key == KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED) { trySend(prefs.getBoolean(key, true)) }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true))
@@ -10593,6 +11507,11 @@ class SearchViewModelFactory(private val application: Application) : ViewModelPr
 
 
 ================== FILE: ./app/src/main/java/ReportsViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
+// REASON: Corrected the call to getSpendingByCategoryForMonth by passing null
+// for the new, unused filter parameters to resolve the compilation error.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -10617,25 +11536,31 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         transactionRepository = TransactionRepository(db.transactionDao())
 
         val calendar = Calendar.getInstance()
-        monthYear = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(calendar.time)
+        monthYear = SimpleDateFormat("MMMM<x_bin_615>", Locale.getDefault()).format(calendar.time)
 
         val monthStart = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0) }.timeInMillis
         val monthEnd = Calendar.getInstance().apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23) }.timeInMillis
 
+        // --- FIX: Pass null for the new filter parameters ---
         spendingByCategoryPieData =
-            transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd)
-                .map { spendingList ->
-                    val entries = spendingList.map { PieEntry(it.totalAmount.toFloat(), it.categoryName) }
-                    val colors = spendingList.map {
-                        (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
-                    }
-                    val dataSet =
-                        PieDataSet(entries, "Spending by Category").apply {
-                            this.colors = colors
-                            valueTextSize = 12f
-                        }
-                    PieData(dataSet)
+            transactionRepository.getSpendingByCategoryForMonth(
+                startDate = monthStart,
+                endDate = monthEnd,
+                keyword = null,
+                accountId = null,
+                categoryId = null
+            ).map { spendingList ->
+                val entries = spendingList.map { PieEntry(it.totalAmount.toFloat(), it.categoryName) }
+                val colors = spendingList.map {
+                    (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
                 }
+                val dataSet =
+                    PieDataSet(entries, "Spending by Category").apply {
+                        this.colors = colors
+                        valueTextSize = 12f
+                    }
+                PieData(dataSet)
+            }
 
         val sixMonthsAgo = Calendar.getInstance().apply { add(Calendar.MONTH, -6) }.timeInMillis
         monthlyTrendData =
@@ -11301,6 +12226,11 @@ data class TransactionImage(
 
 
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
+// REASON: Updated the primary data fetching queries to accept additional filter
+// parameters (keyword, account, category) to enable in-screen filtering.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -11309,7 +12239,45 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Query to get aggregated spending by merchant for a specific date range ---
+    @Query("""
+        SELECT
+            T.*,
+            A.name as accountName,
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
+        FROM
+            transactions AS T
+        LEFT JOIN
+            accounts AS A ON T.accountId = A.id
+        LEFT JOIN
+            categories AS C ON T.categoryId = C.id
+        WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
+        ORDER BY
+            T.date DESC
+    """)
+    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>>
+
+    @Query("""
+        SELECT 
+            C.name as categoryName, 
+            SUM(T.amount) as totalAmount,
+            C.iconKey as iconKey,
+            C.colorKey as colorKey
+        FROM transactions AS T
+        INNER JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
+        GROUP BY C.name
+        ORDER BY totalAmount DESC
+    """)
+    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<CategorySpending>>
+
     @Query("""
         SELECT
             description as merchantName,
@@ -11317,13 +12285,14 @@ interface TransactionDao {
             COUNT(id) as transactionCount
         FROM transactions
         WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR description LIKE '%' || :keyword || '%' OR notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR accountId = :accountId)
+          AND (:categoryId IS NULL OR categoryId = :categoryId)
         GROUP BY description
         ORDER BY totalAmount DESC
     """)
-    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>>
+    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>>
 
-
-    // --- Methods for image attachments ---
     @Insert
     suspend fun insertImage(transactionImage: TransactionImage)
 
@@ -11430,6 +12399,9 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         ORDER BY
             T.date DESC
     """
@@ -11437,6 +12409,9 @@ interface TransactionDao {
     fun getTransactionDetailsForRange(
         startDate: Long,
         endDate: Long,
+        keyword: String?,
+        accountId: Int?,
+        categoryId: Int?
     ): Flow<List<TransactionDetails>>
 
     @Query(
@@ -11493,6 +12468,9 @@ interface TransactionDao {
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
+          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         GROUP BY C.name
         ORDER BY totalAmount ASC
     """
@@ -11500,6 +12478,9 @@ interface TransactionDao {
     fun getSpendingByCategoryForMonth(
         startDate: Long,
         endDate: Long,
+        keyword: String?,
+        accountId: Int?,
+        categoryId: Int?
     ): Flow<List<CategorySpending>>
 
     @Query(
@@ -11621,28 +12602,19 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
 
 
 ================== FILE: ./app/src/main/java/CategoryIconHelper.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CategoryIconHelper.kt
+// REASON: Added new predefined categories for income ("Refund", "Credit") and
+// updated the "Salary" category's icon. Also added the new icons to the
+// helper maps.
+// BUG FIX: Replaced the 'Replay' icon with 'Redo' to resolve compilation errors.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
-import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.CardGiftcard
-import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.Fastfood
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.LocalGasStation
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.Pets
-import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.ShoppingBag
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -11675,20 +12647,12 @@ object CategoryIconHelper {
         return iconColors
     }
 
-    /**
-     * NEW: Finds the first available color key that is not in the provided list of used keys.
-     * This ensures new categories get a unique color by default.
-     */
     fun getNextAvailableColor(usedColorKeys: List<String>): String {
-        // Find the first color key from our predefined list that isn't already used.
         return iconColors.keys.firstOrNull { it !in usedColorKeys }
-        // If all colors are used, cycle back and return the first one.
             ?: iconColors.keys.firstOrNull()
-            // As a final fallback, return a default key.
             ?: "gray_light"
     }
 
-    // --- UPDATED: Each category now has a fixed, explicit ID ---
     val predefinedCategories = listOf(
         Category(id = 1, name = "Bills", iconKey = "receipt_long", colorKey = "green_light"),
         Category(id = 2, name = "EMI", iconKey = "trending_up", colorKey = "blue_light"),
@@ -11701,8 +12665,11 @@ object CategoryIconHelper {
         Category(id = 9, name = "Shopping", iconKey = "shopping_bag", colorKey = "cyan_light"),
         Category(id = 10, name = "Transfer", iconKey = "swap_horiz", colorKey = "indigo_light"),
         Category(id = 11, name = "Travel", iconKey = "travel_explore", colorKey = "deep_purple_light"),
-        Category(id = 12, name = "Salary", iconKey = "account_balance", colorKey = "yellow_light"),
+        Category(id = 12, name = "Salary", iconKey = "work", colorKey = "yellow_light"),
         Category(id = 13, name = "Other", iconKey = "more_horiz", colorKey = "gray_light"),
+        // --- UPDATED: Replaced 'replay' with 'redo' ---
+        Category(id = 14, name = "Refund", iconKey = "redo", colorKey = "green_light"),
+        Category(id = 15, name = "Credit", iconKey = "add_card", colorKey = "blue_light"),
     )
 
     fun getIcon(iconKey: String): ImageVector {
@@ -11725,6 +12692,10 @@ object CategoryIconHelper {
             "pets" -> Icons.Default.Pets
             "fastfood" -> Icons.Default.Fastfood
             "directions_car" -> Icons.Default.DirectionsCar
+            "work" -> Icons.Default.Work
+            // --- UPDATED: Replaced 'Replay' with 'Redo' ---
+            "redo" -> Icons.Default.Redo
+            "add_card" -> Icons.Default.AddCard
             else -> Icons.Default.Category
         }
     }
@@ -11749,7 +12720,11 @@ object CategoryIconHelper {
             "pets" to Icons.Default.Pets,
             "fastfood" to Icons.Default.Fastfood,
             "directions_car" to Icons.Default.DirectionsCar,
-            "category" to Icons.Default.Category
+            "category" to Icons.Default.Category,
+            "work" to Icons.Default.Work,
+            // --- UPDATED: Replaced 'replay' with 'redo' ---
+            "redo" to Icons.Default.Redo,
+            "add_card" to Icons.Default.AddCard,
         )
     }
 }
@@ -11757,6 +12732,11 @@ object CategoryIconHelper {
 
 
 ================== FILE: ./app/src/main/java/CategoryDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CategoryDao.kt
+// REASON: Updated the insert function to return the new category's ID (Long) and
+// added a function to get a category by its ID.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -11773,23 +12753,22 @@ interface CategoryDao {
     @Query("SELECT * FROM categories ORDER BY name ASC")
     fun getAllCategories(): Flow<List<Category>>
 
+    // --- NEW: Function to get a single category by its ID ---
     @Query("SELECT * FROM categories WHERE id = :categoryId")
     suspend fun getCategoryById(categoryId: Int): Category?
 
-    // --- BUG FIX: Query the correct table ('categories') ---
     @Query("SELECT * FROM categories WHERE name = :name LIMIT 1")
     suspend fun findByName(name: String): Category?
 
-    // --- NEW: For data seeding ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(categories: List<Category>)
 
-    // --- NEW: For data seeding ---
     @Query("DELETE FROM categories")
     suspend fun deleteAll()
 
+    // --- UPDATED: Returns the new row ID ---
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(category: Category)
+    suspend fun insert(category: Category): Long
 
     @Update
     suspend fun update(category: Category)
@@ -11879,6 +12858,11 @@ interface BudgetDao {
 
 
 ================== FILE: ./app/src/main/java/DailyReportWorker.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
+// REASON: Corrected the call to getTransactionDetailsForRange by passing null
+// for the new, unused filter parameters to resolve the compilation error.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -11919,7 +12903,14 @@ class DailyReportWorker(
                 val startDate = calendar.timeInMillis
 
                 // 2. Fetch transactions for yesterday.
-                val transactions = transactionDao.getTransactionDetailsForRange(startDate, endDate).first()
+                // --- FIX: Pass null for the new filter parameters ---
+                val transactions = transactionDao.getTransactionDetailsForRange(
+                    startDate = startDate,
+                    endDate = endDate,
+                    keyword = null,
+                    accountId = null,
+                    categoryId = null
+                ).first()
                 Log.d("DailyReportWorker", "Found ${transactions.size} transactions for yesterday.")
 
                 // 3. Calculate total expenses.
@@ -11944,6 +12935,10 @@ class DailyReportWorker(
 
 
 ================== FILE: ./app/src/main/java/AccountDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/AccountDao.kt
+// REASON: Updated the insert function to return the new account's ID (Long).
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -11957,11 +12952,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AccountDao {
-    // --- PERFORMANCE OPTIMIZATION ---
-    // The original query ran a sub-query for every account, which is very inefficient (N+1 problem).
-    // This new query is significantly more performant. It calculates the balances for all accounts
-    // in a single pass using GROUP BY, and then LEFT JOINs the results back to the accounts table.
-    // This ensures that even with thousands of transactions and many accounts, the query remains fast.
     @Transaction
     @Query(
         """
@@ -11998,8 +12988,9 @@ interface AccountDao {
     @Query("DELETE FROM accounts")
     suspend fun deleteAll()
 
+    // --- UPDATED: Returns the new row ID ---
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(account: Account)
+    suspend fun insert(account: Account): Long
 
     @Update
     suspend fun update(account: Account)
@@ -12502,6 +13493,11 @@ object NotificationHelper {
 
 
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
+// REASON: Updated function signatures to pass the new filter parameters down
+// to the corresponding DAO methods.
+// =================================================================================
 package io.pm.finlight
 
 import android.net.Uri
@@ -12519,12 +13515,18 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Expose the merchant spending data ---
-    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long): Flow<List<MerchantSpendingSummary>> {
-        return transactionDao.getSpendingByMerchantForMonth(startDate, endDate)
+    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>> {
+        return transactionDao.getIncomeTransactionsForRange(startDate, endDate, keyword, accountId, categoryId)
     }
 
-    // --- Methods for image attachments ---
+    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<CategorySpending>> {
+        return transactionDao.getIncomeByCategoryForMonth(startDate, endDate, keyword, accountId, categoryId)
+    }
+
+    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>> {
+        return transactionDao.getSpendingByMerchantForMonth(startDate, endDate, keyword, accountId, categoryId)
+    }
+
     suspend fun addImageToTransaction(transactionId: Int, imageUri: String) {
         val transactionImage = TransactionImage(transactionId = transactionId, imageUri = imageUri)
         transactionDao.insertImage(transactionImage)
@@ -12562,8 +13564,11 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     fun getTransactionDetailsForRange(
         startDate: Long,
         endDate: Long,
+        keyword: String?,
+        accountId: Int?,
+        categoryId: Int?
     ): Flow<List<TransactionDetails>> {
-        return transactionDao.getTransactionDetailsForRange(startDate, endDate)
+        return transactionDao.getTransactionDetailsForRange(startDate, endDate, keyword, accountId, categoryId)
     }
 
     fun getAllTransactionsSimple(): Flow<List<Transaction>> {
@@ -12596,8 +13601,11 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     fun getSpendingByCategoryForMonth(
         startDate: Long,
         endDate: Long,
+        keyword: String?,
+        accountId: Int?,
+        categoryId: Int?
     ): Flow<List<CategorySpending>> {
-        return transactionDao.getSpendingByCategoryForMonth(startDate, endDate)
+        return transactionDao.getSpendingByCategoryForMonth(startDate, endDate, keyword, accountId, categoryId)
     }
 
     fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>> {
@@ -12643,28 +13651,22 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         }
     }
 
-    // --- FIX: Changed parameter from List<Uri> to List<String> to accept permanent paths ---
     suspend fun insertTransactionWithTagsAndImages(
         transaction: Transaction,
         tags: Set<Tag>,
-        imagePaths: List<String> // Changed from imageUris
+        imagePaths: List<String>
     ): Long {
-        // First, insert the main transaction to get its ID
         val newTransactionId = transactionDao.insert(transaction)
-
-        // Then, use the new ID to associate tags
         if (tags.isNotEmpty()) {
             val crossRefs = tags.map { tag ->
                 TransactionTagCrossRef(transactionId = newTransactionId.toInt(), tagId = tag.id)
             }
             transactionDao.addTagsToTransaction(crossRefs)
         }
-
-        // Finally, use the ID to associate images with their permanent paths
         imagePaths.forEach { path ->
             val imageEntity = TransactionImage(
                 transactionId = newTransactionId.toInt(),
-                imageUri = path // Save the permanent file path
+                imageUri = path
             )
             transactionDao.insertImage(imageEntity)
         }
@@ -12687,6 +13689,11 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
 
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
+// REASON: Corrected the call to getTransactionDetailsForRange by passing null
+// for the new, unused filter parameters to resolve the compilation error.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -12754,8 +13761,14 @@ class DashboardViewModel(
                 set(Calendar.MILLISECOND, 999)
             }.timeInMillis
 
-        val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        // --- FIX: Pass null for the new filter parameters ---
+        val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(
+            startDate = monthStart,
+            endDate = monthEnd,
+            keyword = null,
+            accountId = null,
+            categoryId = null
+        ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         monthlyIncome =
             transactionsThisMonth.map { transactions ->
@@ -12774,7 +13787,6 @@ class DashboardViewModel(
         val currentYear = calendar.get(Calendar.YEAR)
         val currentMonth = calendar.get(Calendar.MONTH) + 1
 
-        // --- FIX: Use the correct repository method with parameters ---
         overallMonthlyBudget =
             settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth)
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
