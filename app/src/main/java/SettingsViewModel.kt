@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
+// REASON: Added a StateFlow to expose the user's chosen daily report time and a
+// function to save the new time, which also triggers the rescheduling of the worker.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -82,6 +87,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
+    // --- NEW: Expose the daily report time ---
+    val dailyReportTime: StateFlow<Pair<Int, Int>> =
+        settingsRepository.getDailyReportTime().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = Pair(9, 0) // Default 9:00 AM
+        )
+
     init {
         smsScanStartDate =
             settingsRepository.getSmsScanStartDate()
@@ -95,7 +108,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val currentYear = calendar.get(Calendar.YEAR)
         val currentMonth = calendar.get(Calendar.MONTH) + 1
 
-        // --- FIX: Use the correct repository method with parameters ---
         overallBudget =
             settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth).stateIn(
                 scope = viewModelScope,
@@ -184,6 +196,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setDailyReportEnabled(enabled: Boolean) {
         settingsRepository.saveDailyReportEnabled(enabled)
         if (enabled) ReminderManager.scheduleDailyReport(context) else ReminderManager.cancelDailyReport(context)
+    }
+
+    // --- NEW: Function to save the daily report time ---
+    fun saveDailyReportTime(hour: Int, minute: Int) {
+        settingsRepository.saveDailyReportTime(hour, minute)
+        // Re-schedule the worker with the new time if the setting is enabled
+        if (dailyReportEnabled.value) {
+            ReminderManager.scheduleDailyReport(context)
+        }
     }
 
     fun setWeeklySummaryEnabled(enabled: Boolean) {

@@ -1,7 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: Enhanced getOverallBudgetForMonth to automatically carry over the
-// previous month's budget if no budget is explicitly set for the current month.
+// REASON: Added functions to save and retrieve the user's preferred hour and
+// minute for the daily report notification, persisting the choice in SharedPreferences.
 // =================================================================================
 package io.pm.finlight
 
@@ -29,6 +29,9 @@ class SettingsRepository(context: Context) {
         private const val KEY_SMS_SCAN_START_DATE = "sms_scan_start_date"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
         private const val KEY_BACKUP_ENABLED = "google_drive_backup_enabled"
+        // --- NEW: Keys for storing the daily report time ---
+        private const val KEY_DAILY_REPORT_HOUR = "daily_report_hour"
+        private const val KEY_DAILY_REPORT_MINUTE = "daily_report_minute"
     }
 
     fun saveBackupEnabled(isEnabled: Boolean) {
@@ -156,7 +159,6 @@ class SettingsRepository(context: Context) {
         return prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
     }
 
-    // --- UPDATED: Logic to carry over the previous month's budget ---
     fun getOverallBudgetForMonth(year: Int, month: Int): Flow<Float> {
         return callbackFlow {
             val currentMonthKey = getBudgetKey(year, month)
@@ -173,18 +175,14 @@ class SettingsRepository(context: Context) {
 
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
                 if (changedKey == currentMonthKey) {
-                    // If current month's budget is set/changed, emit it.
                     trySend(sharedPreferences.getFloat(currentMonthKey, 0f))
                 } else if (changedKey == previousMonthKey && !sharedPreferences.contains(currentMonthKey)) {
-                    // If previous month's budget changed AND current month has no budget,
-                    // emit the new carried-over value.
                     trySend(sharedPreferences.getFloat(previousMonthKey, 0f))
                 }
             }
 
             prefs.registerOnSharedPreferenceChangeListener(listener)
 
-            // Initial emission
             val budget = if (prefs.contains(currentMonthKey)) {
                 prefs.getFloat(currentMonthKey, 0f)
             } else {
@@ -222,6 +220,39 @@ class SettingsRepository(context: Context) {
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    // --- NEW: Function to save the chosen time ---
+    fun saveDailyReportTime(hour: Int, minute: Int) {
+        prefs.edit()
+            .putInt(KEY_DAILY_REPORT_HOUR, hour)
+            .putInt(KEY_DAILY_REPORT_MINUTE, minute)
+            .apply()
+    }
+
+    // --- NEW: Function to get the chosen time ---
+    fun getDailyReportTime(): Flow<Pair<Int, Int>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, changedKey ->
+                if (changedKey == KEY_DAILY_REPORT_HOUR || changedKey == KEY_DAILY_REPORT_MINUTE) {
+                    trySend(
+                        Pair(
+                            sharedPreferences.getInt(KEY_DAILY_REPORT_HOUR, 9), // Default 9 AM
+                            sharedPreferences.getInt(KEY_DAILY_REPORT_MINUTE, 0)  // Default 0 minutes
+                        )
+                    )
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            // Emit the initial value
+            trySend(
+                Pair(
+                    prefs.getInt(KEY_DAILY_REPORT_HOUR, 9),
+                    prefs.getInt(KEY_DAILY_REPORT_MINUTE, 0)
+                )
+            )
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }

@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul  1 16:41:06 IST 2025
+Generated on: Tue Jul  1 16:59:21 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -542,6 +542,23 @@ class AccountRepository(private val accountDao: AccountDao) {
         accountDao.delete(account)
     }
 }
+-e 
+
+
+================== FILE: ./app/src/main/java/FinancialSummary.kt ==================
+package io.pm.finlight
+
+/**
+ * A data class to hold a financial summary, typically for a specific date range.
+ * This is used for fetching aggregated income and expense data from the database.
+ *
+ * @param totalIncome The sum of all income transactions in the period.
+ * @param totalExpenses The sum of all expense transactions in the period.
+ */
+data class FinancialSummary(
+    val totalIncome: Double,
+    val totalExpenses: Double
+)
 -e 
 
 
@@ -1130,6 +1147,78 @@ data class CsvValidationReport(
     val reviewableRows: List<ReviewableRow> = emptyList(),
     val totalRowCount: Int = 0,
 )
+-e 
+
+
+================== FILE: ./app/src/main/java/MonthlySummaryWorker.kt ==================
+package io.pm.finlight
+
+import android.content.Context
+import android.util.Log
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.Calendar
+
+/**
+ * A background worker that calculates the user's financial summary for the previous month
+ * and displays it as a system notification. This is scheduled to run periodically.
+ */
+class MonthlySummaryWorker(
+    private val context: Context,
+    workerParams: WorkerParameters
+) : CoroutineWorker(context, workerParams) {
+
+    override suspend fun doWork(): Result {
+        return withContext(Dispatchers.IO) {
+            try {
+                Log.d("MonthlySummaryWorker", "Worker starting...")
+                val db = AppDatabase.getInstance(context)
+                val transactionDao = db.transactionDao()
+
+                // 1. Calculate the start and end timestamps for the entire previous month.
+                val calendar = Calendar.getInstance()
+                // Move calendar to the first day of the current month
+                calendar.set(Calendar.DAY_OF_MONTH, 1)
+                calendar.set(Calendar.HOUR_OF_DAY, 0)
+                calendar.set(Calendar.MINUTE, 0)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
+
+                // Move calendar to the last moment of the previous month
+                calendar.add(Calendar.MILLISECOND, -1)
+                val endDate = calendar.timeInMillis
+
+                // Move calendar to the first day of the previous month
+                calendar.set(Calendar.DAY_OF_MONTH, 1)
+                val startDate = calendar.timeInMillis
+
+                // 2. Fetch the summary for that period.
+                val summary = transactionDao.getFinancialSummaryForRange(startDate, endDate)
+
+                // 3. Send the notification if a summary was found.
+                if (summary != null) {
+                    NotificationHelper.showMonthlySummaryNotification(
+                        context,
+                        summary.totalIncome,
+                        summary.totalExpenses,
+                        calendar // Pass the calendar to get the correct month name
+                    )
+                    Log.d("MonthlySummaryWorker", "Summary found for ${calendar.time}: Income=${summary.totalIncome}, Expenses=${summary.totalExpenses}")
+                } else {
+                    Log.d("MonthlySummaryWorker", "No summary data found for the previous month.")
+                }
+
+                Log.d("MonthlySummaryWorker", "Worker finished successfully.")
+                Result.success()
+            } catch (e: Exception) {
+                Log.e("MonthlySummaryWorker", "Worker failed", e)
+                Result.retry()
+            }
+        }
+    }
+}
 -e 
 
 
@@ -1770,6 +1859,11 @@ data class Category(
 
 
 ================== FILE: ./app/src/main/java/ReminderManager.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ReminderManager.kt
+// REASON: Added a new function, scheduleMonthlySummary, to enqueue the
+// MonthlySummaryWorker, which will generate the user's end-of-month report.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -1779,6 +1873,8 @@ import java.util.concurrent.TimeUnit
 object ReminderManager {
     private const val DAILY_EXPENSE_REPORT_WORK_TAG = "daily_expense_report_work"
     private const val WEEKLY_SUMMARY_WORK_TAG = "weekly_summary_work"
+    // --- NEW: Add a unique tag for the new worker ---
+    private const val MONTHLY_SUMMARY_WORK_TAG = "monthly_summary_work"
 
     fun scheduleDailyReport(context: Context) {
         val constraints =
@@ -1786,7 +1882,6 @@ object ReminderManager {
                 .setRequiresDeviceIdle(true)
                 .build()
 
-        // Schedule the new DailyReportWorker to run periodically.
         val dailyReportRequest =
             PeriodicWorkRequestBuilder<DailyReportWorker>(1, TimeUnit.DAYS)
                 .setConstraints(constraints)
@@ -1817,6 +1912,19 @@ object ReminderManager {
 
     fun cancelWeeklySummary(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(WEEKLY_SUMMARY_WORK_TAG)
+    }
+
+    // --- NEW: Function to schedule the monthly summary worker ---
+    fun scheduleMonthlySummary(context: Context) {
+        val reminderRequest =
+            PeriodicWorkRequestBuilder<MonthlySummaryWorker>(30, TimeUnit.DAYS)
+                .build()
+
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            MONTHLY_SUMMARY_WORK_TAG,
+            ExistingPeriodicWorkPolicy.KEEP,
+            reminderRequest
+        )
     }
 }
 -e 
@@ -12228,8 +12336,8 @@ data class TransactionImage(
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: Updated the primary data fetching queries to accept additional filter
-// parameters (keyword, account, category) to enable in-screen filtering.
+// REASON: Added a new query to efficiently calculate the total income and expenses
+// for a given date range, which will be used by the new MonthlySummaryWorker.
 // =================================================================================
 package io.pm.finlight
 
@@ -12527,6 +12635,16 @@ interface TransactionDao {
 
     @Query("SELECT COUNT(*) FROM transaction_tag_cross_ref WHERE tagId = :tagId")
     suspend fun countTransactionsForTag(tagId: Int): Int
+
+    // --- NEW: Query to get a financial summary for a date range ---
+    @Query("""
+        SELECT
+            SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
+        FROM transactions
+        WHERE date BETWEEN :startDate AND :endDate
+    """)
+    suspend fun getFinancialSummaryForRange(startDate: Long, endDate: Long): FinancialSummary?
 
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -13075,6 +13193,11 @@ data class BudgetWithSpending(
 
 
 ================== FILE: ./app/src/main/java/MainApplication.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MainApplication.kt
+// REASON: Added a new notification channel ID and a corresponding creation
+// function to support the new monthly summary notifications.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -13088,16 +13211,19 @@ class MainApplication : Application() {
         const val TRANSACTION_CHANNEL_ID = "transaction_channel"
         const val DAILY_REPORT_CHANNEL_ID = "daily_report_channel"
         const val SUMMARY_CHANNEL_ID = "summary_channel"
+        // --- NEW: Add a channel ID for monthly summaries ---
+        const val MONTHLY_SUMMARY_CHANNEL_ID = "monthly_summary_channel"
     }
 
     override fun onCreate() {
         super.onCreate()
-        // --- FIX: Initialize the MPAndroidChart library ---
         Utils.init(this)
 
         createTransactionNotificationChannel()
         createDailyReportNotificationChannel()
         createSummaryNotificationChannel()
+        // --- NEW: Call the creation function for the new channel ---
+        createMonthlySummaryNotificationChannel()
     }
 
     private fun createTransactionNotificationChannel() {
@@ -13137,6 +13263,22 @@ class MainApplication : Application() {
             val importance = NotificationManager.IMPORTANCE_DEFAULT
             val channel =
                 NotificationChannel(SUMMARY_CHANNEL_ID, name, importance).apply {
+                    description = descriptionText
+                }
+            val notificationManager: NotificationManager =
+                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    // --- NEW: Function to create the monthly summary notification channel ---
+    private fun createMonthlySummaryNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Monthly Summaries"
+            val descriptionText = "A monthly summary of your financial activity."
+            val importance = NotificationManager.IMPORTANCE_DEFAULT
+            val channel =
+                NotificationChannel(MONTHLY_SUMMARY_CHANNEL_ID, name, importance).apply {
                     description = descriptionText
                 }
             val notificationManager: NotificationManager =
@@ -13319,6 +13461,11 @@ class SmsReceiver : BroadcastReceiver() {
 
 
 ================== FILE: ./app/src/main/java/NotificationHelper.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
+// REASON: Added a new function, showMonthlySummaryNotification, to create and
+// display the formatted notification for the user's end-of-month report.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -13333,6 +13480,8 @@ import androidx.core.app.TaskStackBuilder
 import androidx.core.net.toUri
 import com.google.gson.Gson
 import java.net.URLEncoder
+import java.util.Calendar
+import java.util.Locale
 
 object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
@@ -13346,10 +13495,6 @@ object NotificationHelper {
             return
         }
 
-        // --- BUG FIX: Correctly build the back stack to avoid double-back-press issue ---
-        // This ensures a clean navigation path: Notification -> Detail Screen -> Dashboard.
-
-        // Create the Intent for the deep link. This is the only Intent we need to provide.
         val detailIntent = Intent(
             Intent.ACTION_VIEW,
             "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri(),
@@ -13357,18 +13502,14 @@ object NotificationHelper {
             MainActivity::class.java
         )
 
-        // TaskStackBuilder will use this single intent to create the full, correct back stack
-        // by looking at the parent activity defined in the manifest.
         val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
-            // This correctly adds the parent (MainActivity) and then the detailIntent on top.
             addNextIntentWithParentStack(detailIntent)
-            // Get the PendingIntent containing the entire back stack.
             getPendingIntent(transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Transaction Auto-Saved")
             .setContentText("Saved ${transaction.description} (₹${"%.2f".format(transaction.amount)}). Tap to edit or categorize.")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -13446,7 +13587,7 @@ object NotificationHelper {
 
         val notification =
             NotificationCompat.Builder(context, MainApplication.DAILY_REPORT_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle("Your Daily Report")
                 .setContentText(reportText)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -13477,7 +13618,7 @@ object NotificationHelper {
 
         val notification =
             NotificationCompat.Builder(context, MainApplication.SUMMARY_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle("Your Weekly Financial Summary")
                 .setContentText(summaryText)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(summaryText))
@@ -13487,6 +13628,40 @@ object NotificationHelper {
                 .build()
 
         NotificationManagerCompat.from(context).notify(3, notification)
+    }
+
+    // --- NEW: Function to show the monthly summary notification ---
+    fun showMonthlySummaryNotification(
+        context: Context,
+        totalIncome: Double,
+        totalExpenses: Double,
+        calendar: Calendar // To get the month name
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+
+        val pendingIntent = PendingIntent.getActivity(context, 200, intent, PendingIntent.FLAG_IMMUTABLE)
+
+        val monthName = calendar.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
+        val summaryText = "Income: ₹${"%,.2f".format(totalIncome)} | Expenses: ₹${"%,.2f".format(totalExpenses)}"
+
+        val notification =
+            NotificationCompat.Builder(context, MainApplication.MONTHLY_SUMMARY_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle("Your Financial Summary for $monthName")
+                .setContentText(summaryText)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(summaryText))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+
+        NotificationManagerCompat.from(context).notify(4, notification) // Use a new ID
     }
 }
 -e 

@@ -1,3 +1,9 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsScreen.kt
+// REASON: Added a new "Daily Report Time" setting item. This item displays the
+// currently configured time and opens a TimePicker dialog, allowing the user to
+// customize when they receive their daily summary notification.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -25,6 +31,7 @@ import androidx.navigation.NavController
 import io.pm.finlight.DataExportService
 import io.pm.finlight.ScanResult
 import io.pm.finlight.SettingsViewModel
+import io.pm.finlight.ui.components.TimePickerDialog
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -60,6 +67,11 @@ fun SettingsScreen(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
         )
     }
+
+    // --- NEW: State for the time picker dialog ---
+    val dailyReportTime by viewModel.dailyReportTime.collectAsState()
+    var showTimePicker by remember { mutableStateOf(false) }
+
 
     LaunchedEffect(key1 = viewModel.scanEvent) {
         viewModel.scanEvent.collect { result ->
@@ -222,6 +234,24 @@ fun SettingsScreen(
         )
     }
 
+    // --- NEW: Time picker dialog for the daily report ---
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = dailyReportTime.first,
+            initialMinute = dailyReportTime.second,
+            is24Hour = false
+        )
+        TimePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            onConfirm = {
+                viewModel.saveDailyReportTime(timePickerState.hour, timePickerState.minute)
+                showTimePicker = false
+            }
+        ) {
+            TimePicker(state = timePickerState)
+        }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 9.dp),
@@ -279,6 +309,15 @@ fun SettingsScreen(
                 icon = Icons.Default.NotificationsActive,
                 checked = isDailyReportEnabled,
                 onCheckedChange = { viewModel.setDailyReportEnabled(it) },
+            )
+        }
+        // --- NEW: Setting for report time ---
+        item {
+            SettingsActionItem(
+                text = "Daily Report Time",
+                subtitle = "Current: ${String.format("%02d:%02d", dailyReportTime.first, dailyReportTime.second)}",
+                icon = Icons.Default.Schedule,
+                onClick = { showTimePicker = true }
             )
         }
         item {
@@ -392,7 +431,6 @@ fun SettingsScreen(
             )
         }
         item { SettingSectionHeader("Data Management") }
-        // --- NEW: Toggle for Google Drive Backup ---
         item {
             SettingsToggleItem(
                 title = "Enable Google Drive Backup",

@@ -1,7 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
-// REASON: Corrected the call to getTransactionDetailsForRange by passing null
-// for the new, unused filter parameters to resolve the compilation error.
+// REASON: Added a call to ReminderManager.scheduleDailyReport at the end of the
+// worker's execution. This crucial step creates a continuous chain, ensuring that
+// the next day's report is always enqueued after the current one runs.
 // =================================================================================
 package io.pm.finlight
 
@@ -43,7 +44,6 @@ class DailyReportWorker(
                 val startDate = calendar.timeInMillis
 
                 // 2. Fetch transactions for yesterday.
-                // --- FIX: Pass null for the new filter parameters ---
                 val transactions = transactionDao.getTransactionDetailsForRange(
                     startDate = startDate,
                     endDate = endDate,
@@ -62,7 +62,10 @@ class DailyReportWorker(
                 // 4. Send the summary notification via the helper.
                 NotificationHelper.showDailyReportNotification(context, totalExpenses)
 
-                Log.d("DailyReportWorker", "Worker finished successfully.")
+                // 5. Re-schedule the next day's report.
+                ReminderManager.scheduleDailyReport(context)
+
+                Log.d("DailyReportWorker", "Worker finished successfully and rescheduled.")
                 Result.success()
             } catch (e: Exception) {
                 Log.e("DailyReportWorker", "Worker failed", e)
