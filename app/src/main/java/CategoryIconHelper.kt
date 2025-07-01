@@ -1,25 +1,16 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CategoryIconHelper.kt
+// REASON: Added new predefined categories for income ("Refund", "Credit") and
+// updated the "Salary" category's icon. Also added the new icons to the
+// helper maps.
+// BUG FIX: Replaced the 'Replay' icon with 'Redo' to resolve compilation errors.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
-import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.CardGiftcard
-import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.Fastfood
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.LocalGasStation
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.Pets
-import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.ShoppingBag
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -52,20 +43,12 @@ object CategoryIconHelper {
         return iconColors
     }
 
-    /**
-     * NEW: Finds the first available color key that is not in the provided list of used keys.
-     * This ensures new categories get a unique color by default.
-     */
     fun getNextAvailableColor(usedColorKeys: List<String>): String {
-        // Find the first color key from our predefined list that isn't already used.
         return iconColors.keys.firstOrNull { it !in usedColorKeys }
-        // If all colors are used, cycle back and return the first one.
             ?: iconColors.keys.firstOrNull()
-            // As a final fallback, return a default key.
             ?: "gray_light"
     }
 
-    // --- UPDATED: Each category now has a fixed, explicit ID ---
     val predefinedCategories = listOf(
         Category(id = 1, name = "Bills", iconKey = "receipt_long", colorKey = "green_light"),
         Category(id = 2, name = "EMI", iconKey = "trending_up", colorKey = "blue_light"),
@@ -78,8 +61,11 @@ object CategoryIconHelper {
         Category(id = 9, name = "Shopping", iconKey = "shopping_bag", colorKey = "cyan_light"),
         Category(id = 10, name = "Transfer", iconKey = "swap_horiz", colorKey = "indigo_light"),
         Category(id = 11, name = "Travel", iconKey = "travel_explore", colorKey = "deep_purple_light"),
-        Category(id = 12, name = "Salary", iconKey = "account_balance", colorKey = "yellow_light"),
+        Category(id = 12, name = "Salary", iconKey = "work", colorKey = "yellow_light"),
         Category(id = 13, name = "Other", iconKey = "more_horiz", colorKey = "gray_light"),
+        // --- UPDATED: Replaced 'replay' with 'redo' ---
+        Category(id = 14, name = "Refund", iconKey = "redo", colorKey = "green_light"),
+        Category(id = 15, name = "Credit", iconKey = "add_card", colorKey = "blue_light"),
     )
 
     fun getIcon(iconKey: String): ImageVector {
@@ -102,6 +88,10 @@ object CategoryIconHelper {
             "pets" -> Icons.Default.Pets
             "fastfood" -> Icons.Default.Fastfood
             "directions_car" -> Icons.Default.DirectionsCar
+            "work" -> Icons.Default.Work
+            // --- UPDATED: Replaced 'Replay' with 'Redo' ---
+            "redo" -> Icons.Default.Redo
+            "add_card" -> Icons.Default.AddCard
             else -> Icons.Default.Category
         }
     }
@@ -126,7 +116,11 @@ object CategoryIconHelper {
             "pets" to Icons.Default.Pets,
             "fastfood" to Icons.Default.Fastfood,
             "directions_car" to Icons.Default.DirectionsCar,
-            "category" to Icons.Default.Category
+            "category" to Icons.Default.Category,
+            "work" to Icons.Default.Work,
+            // --- UPDATED: Replaced 'replay' with 'redo' ---
+            "redo" to Icons.Default.Redo,
+            "add_card" to Icons.Default.AddCard,
         )
     }
 }

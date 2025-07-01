@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
+// REASON: Updated the ApproveTransactionScreen to require a category for both
+// income and expense transactions, ensuring data consistency.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -39,7 +44,6 @@ import io.pm.finlight.*
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
-// --- NEW: Sealed class to manage bottom sheet content ---
 private sealed class ApproveSheetContent {
     object Category : ApproveSheetContent()
     object Tags : ApproveSheetContent()
@@ -169,7 +173,6 @@ fun ApproveTransactionScreen(
     var notes by remember { mutableStateOf("") }
     var selectedTransactionType by remember(potentialTxn.transactionType) { mutableStateOf(potentialTxn.transactionType) }
     val scope = rememberCoroutineScope()
-    // --- FIX: Get the context for the NotificationManager ---
     val context = LocalContext.current
 
     val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
@@ -178,13 +181,12 @@ fun ApproveTransactionScreen(
     val allTags by transactionViewModel.allTags.collectAsState()
     val selectedTags by transactionViewModel.selectedTags.collectAsState()
 
-    // --- NEW: State for bottom sheets ---
     var activeSheetContent by remember { mutableStateOf<ApproveSheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
 
-    val isExpense = selectedTransactionType == "expense"
-    val isSaveEnabled = description.isNotBlank() && (!isExpense || selectedCategory != null)
+    // --- FIX: A category is now required for ALL transaction types ---
+    val isSaveEnabled = description.isNotBlank() && selectedCategory != null
 
     DisposableEffect(Unit) {
         onDispose {
@@ -201,7 +203,6 @@ fun ApproveTransactionScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                // --- REFACTORED: Primary Info Card ---
                 Card(elevation = CardDefaults.cardElevation(2.dp)) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
@@ -227,9 +228,9 @@ fun ApproveTransactionScreen(
                 }
             }
             item {
-                TabRow(selectedTabIndex = if (isExpense) 0 else 1) {
+                TabRow(selectedTabIndex = if (selectedTransactionType == "expense") 0 else 1) {
                     listOf("Expense", "Income").forEachIndexed { index, title ->
-                        Tab(selected = (if (isExpense) 0 else 1) == index, onClick = {
+                        Tab(selected = (if (selectedTransactionType == "expense") 0 else 1) == index, onClick = {
                             selectedTransactionType = if (index == 0) "expense" else "income"
                         }, text = { Text(title) })
                     }
@@ -237,7 +238,6 @@ fun ApproveTransactionScreen(
             }
 
             item {
-                // --- REFACTORED: Details Card ---
                 Card(elevation = CardDefaults.cardElevation(2.dp)) {
                     Column {
                         DetailRow(
@@ -246,17 +246,16 @@ fun ApproveTransactionScreen(
                             value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
                             onClick = null // Not editable
                         )
-                        if (isExpense) {
-                            HorizontalDivider()
-                            DetailRow(
-                                icon = Icons.Default.Category,
-                                label = "Category",
-                                value = selectedCategory?.name ?: "Select category",
-                                onClick = { activeSheetContent = ApproveSheetContent.Category },
-                                valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                                leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
-                            )
-                        }
+                        // --- FIX: Category selector is now always visible ---
+                        HorizontalDivider()
+                        DetailRow(
+                            icon = Icons.Default.Category,
+                            label = "Category",
+                            value = selectedCategory?.name ?: "Select category",
+                            onClick = { activeSheetContent = ApproveSheetContent.Category },
+                            valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                            leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
+                        )
                         HorizontalDivider()
                         DetailRow(
                             icon = Icons.Default.NewLabel,
@@ -297,7 +296,6 @@ fun ApproveTransactionScreen(
                                 if (success) {
                                     settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
                                     settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
-                                    // --- FIX: Programmatically dismiss the source notification ---
                                     val notificationManager = NotificationManagerCompat.from(context)
                                     notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
                                     navController.popBackStack()
@@ -312,7 +310,6 @@ fun ApproveTransactionScreen(
         }
     }
 
-    // --- NEW: Bottom Sheet Logic ---
     if (activeSheetContent != null) {
         ModalBottomSheet(
             onDismissRequest = { activeSheetContent = null },
@@ -335,9 +332,6 @@ fun ApproveTransactionScreen(
         }
     }
 }
-
-
-// --- NEW: Helper composables adapted from AddTransactionScreen ---
 
 @Composable
 private fun DetailRow(

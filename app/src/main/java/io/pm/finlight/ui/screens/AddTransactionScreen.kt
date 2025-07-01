@@ -6,6 +6,8 @@
 // automatically selected.
 // BUG FIX: Removed local dialog definitions and imported them from the new
 // ui.components package to resolve compilation errors.
+// BUG FIX: The Category picker is now always visible for both Income and Expense
+// types, and is required for saving.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -101,8 +103,8 @@ fun AddTransactionScreen(
     var showCreateAccountDialog by remember { mutableStateOf(false) }
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
 
-    val isExpense = transactionType == "expense"
-    val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && (!isExpense || selectedCategory != null))
+    // --- FIX: The save button is now enabled only when a category is selected for ALL types ---
+    val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && selectedCategory != null)
 
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
@@ -155,9 +157,6 @@ fun AddTransactionScreen(
                     selectedOption = transactionType.replaceFirstChar { it.uppercase() },
                     onOptionSelected = {
                         transactionType = it.lowercase(Locale.getDefault())
-                        if (transactionType == "income") {
-                            selectedCategory = null
-                        }
                     }
                 )
             }
@@ -177,7 +176,8 @@ fun AddTransactionScreen(
                     onAccountClick = { activeSheetContent = AddSheetContent.Account },
                     selectedCategory = selectedCategory,
                     onCategoryClick = { activeSheetContent = AddSheetContent.Category },
-                    isCategoryVisible = isExpense,
+                    // --- FIX: Category is now always visible ---
+                    isCategoryVisible = true,
                     selectedDate = selectedDateTime.time,
                     onDateClick = { showDatePicker = true },
                     tags = selectedTags,
@@ -257,7 +257,7 @@ fun AddTransactionScreen(
                             } else {
                                 val success = viewModel.addTransaction(
                                     description = description,
-                                    categoryId = selectedCategory?.id,
+                                    categoryId = selectedCategory!!.id, // It can't be null here due to isSaveEnabled
                                     amountStr = amount,
                                     accountId = selectedAccount!!.id,
                                     notes = notes.takeIf { it.isNotBlank() },
@@ -456,7 +456,7 @@ fun DetailsCard(
     attachmentsCount: Int,
     onAttachmentsClick: () -> Unit
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMMyyyy", Locale.getDefault()) }
 
     Card(elevation = CardDefaults.cardElevation(2.dp)) {
         Column {

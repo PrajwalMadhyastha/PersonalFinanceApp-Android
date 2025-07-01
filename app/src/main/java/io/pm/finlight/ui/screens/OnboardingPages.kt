@@ -1,5 +1,8 @@
-// FILE: app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
-
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
+// REASON: Implemented auto-focus for the text fields on the "User Name" and
+// "Budget" pages to improve usability during the onboarding flow.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -16,6 +19,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -79,6 +84,8 @@ fun WelcomePage() {
 @Composable
 fun UserNamePage(viewModel: OnboardingViewModel) {
     val name by viewModel.userName.collectAsState()
+    // --- NEW: Create a focus requester ---
+    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
@@ -111,14 +118,24 @@ fun UserNamePage(viewModel: OnboardingViewModel) {
                 capitalization = KeyboardCapitalization.Words
             ),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            // --- NEW: Apply the focus requester modifier ---
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
         )
+    }
+
+    // --- NEW: Request focus when the composable enters the composition ---
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
     }
 }
 
 @Composable
 fun BudgetSetupPage(viewModel: OnboardingViewModel) {
     val budget by viewModel.monthlyBudget.collectAsState()
+    // --- NEW: Create a focus requester ---
+    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
@@ -146,8 +163,16 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
             label = { Text("Total Monthly Budget") },
             leadingIcon = { Text("₹") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
+            // --- NEW: Apply the focus requester modifier ---
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
         )
+    }
+
+    // --- NEW: Request focus when the composable enters the composition ---
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
     }
 }
 
