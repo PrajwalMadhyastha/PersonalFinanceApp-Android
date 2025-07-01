@@ -1,5 +1,6 @@
 package io.pm.finlight.ui.screens
 
+import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -14,18 +15,34 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.RuleCreationViewModel
 import io.pm.finlight.RuleSelection
+import kotlinx.coroutines.launch
+
+// Factory for creating RuleCreationViewModel with Application context
+class RuleCreationViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(RuleCreationViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return RuleCreationViewModel(application) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
 
 /**
  * A screen where users can define custom parsing rules for SMS messages.
@@ -34,16 +51,20 @@ import io.pm.finlight.RuleSelection
  *
  * @param navController The NavController for handling navigation.
  * @param smsText The full body of the SMS message to create a rule for.
- * @param viewModel The ViewModel to manage the state of the rule creation process.
+ * @param smsSender The sender address of the SMS.
  */
 @Composable
 fun RuleCreationScreen(
     navController: NavController,
     smsText: String,
-    viewModel: RuleCreationViewModel = viewModel()
+    smsSender: String
 ) {
+    val context = LocalContext.current.applicationContext as Application
+    val viewModel: RuleCreationViewModel = viewModel(factory = RuleCreationViewModelFactory(context))
+
     val uiState by viewModel.uiState.collectAsState()
     var textFieldValue by remember { mutableStateOf(TextFieldValue(smsText)) }
+    val scope = rememberCoroutineScope()
 
     Scaffold { innerPadding ->
         Column(
@@ -66,11 +87,10 @@ fun RuleCreationScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(8.dp))
-                    // --- FIX: Using a read-only BasicTextField to reliably get selection ---
                     BasicTextField(
                         value = textFieldValue,
                         onValueChange = { textFieldValue = it },
-                        readOnly = true, // Makes it behave like Text, but allows selection
+                        readOnly = true,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = MaterialTheme.colorScheme.onSurface
                         ),
@@ -152,7 +172,21 @@ fun RuleCreationScreen(
                 OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                     Text("Cancel")
                 }
-                Button(onClick = { /* TODO: Implement save logic */ }, enabled = false, modifier = Modifier.weight(1f)) {
+                // --- UPDATED: Enable save button based on selections ---
+                val isSaveEnabled = uiState.merchantSelection.selectedText.isNotBlank() ||
+                        uiState.amountSelection.selectedText.isNotBlank()
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            viewModel.saveRules(smsSender, smsText) {
+                                navController.popBackStack()
+                            }
+                        }
+                    },
+                    enabled = isSaveEnabled,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text("Save Rule")
                 }
             }

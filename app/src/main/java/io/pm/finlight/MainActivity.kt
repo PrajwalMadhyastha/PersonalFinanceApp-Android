@@ -447,14 +447,22 @@ fun AppNavHost(
         composable("recurring_transactions") { RecurringTransactionScreen(navController) }
         composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
 
-        // --- NEW: Route for the Rule Creation Screen ---
+        // --- UPDATED: Route for the Rule Creation Screen now includes smsSender ---
         composable(
-            "rule_creation_screen/{smsText}",
-            arguments = listOf(navArgument("smsText") { type = NavType.StringType })
+            "rule_creation_screen/{smsSender}/{smsText}",
+            arguments = listOf(
+                navArgument("smsSender") { type = NavType.StringType },
+                navArgument("smsText") { type = NavType.StringType }
+            )
         ) { backStackEntry ->
+            val smsSender = backStackEntry.arguments?.getString("smsSender") ?: ""
             val encodedSmsText = backStackEntry.arguments?.getString("smsText") ?: ""
             val smsText = URLDecoder.decode(encodedSmsText, "UTF-8")
-            RuleCreationScreen(navController = navController, smsText = smsText)
+            RuleCreationScreen(
+                navController = navController,
+                smsText = smsText,
+                smsSender = smsSender
+            )
         }
     }
 }

@@ -100,6 +100,10 @@ fun ReviewSmsScreen(
                         val route = "approve_transaction_screen?potentialTxnJson=$encodedPotentialTxn"
                         navController.navigate(route)
                     },
+                    onCreateRule = { transaction ->
+                        val encodedSmsText = URLEncoder.encode(transaction.originalMessage, "UTF-8")
+                        navController.navigate("rule_creation_screen/${transaction.smsSender}/$encodedSmsText")
+                    }
                 )
             }
         }
@@ -111,6 +115,7 @@ fun PotentialTransactionItem(
     transaction: PotentialTransaction,
     onDismiss: (PotentialTransaction) -> Unit,
     onApprove: (PotentialTransaction) -> Unit,
+    onCreateRule: (PotentialTransaction) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -152,7 +157,12 @@ fun PotentialTransactionItem(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(16.dp))
+            // --- UPDATED: Added "Create Rule" button ---
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { onCreateRule(transaction) }) {
+                    Text("Create Rule")
+                }
+                Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = { onDismiss(transaction) }) { Text("Dismiss") }
                 Spacer(Modifier.width(8.dp))
                 Button(onClick = { onApprove(transaction) }) { Text("Approve") }
