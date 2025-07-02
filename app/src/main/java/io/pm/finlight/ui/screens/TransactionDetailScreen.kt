@@ -51,6 +51,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.google.gson.Gson
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.CreateAccountDialog
 import io.pm.finlight.ui.components.CreateCategoryDialog
@@ -321,11 +322,21 @@ fun TransactionDetailScreen(
                             Button(
                                 onClick = {
                                     scope.launch {
-                                        val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId)
+                                        val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
                                         if (smsMessage != null) {
-                                            // --- UPDATED: Navigate to the new route with the transactionId ---
-                                            val encodedBody = URLEncoder.encode(smsMessage.body, "UTF-8")
-                                            navController.navigate("rule_creation_screen/$encodedBody?transactionId=${details.transaction.id}")
+                                            // Construct a PotentialTransaction object to pass to the next screen
+                                            val potentialTxn = PotentialTransaction(
+                                                sourceSmsId = smsMessage.id,
+                                                smsSender = smsMessage.sender,
+                                                amount = details.transaction.amount,
+                                                transactionType = details.transaction.transactionType,
+                                                merchantName = details.transaction.description,
+                                                originalMessage = smsMessage.body,
+                                                sourceSmsHash = details.transaction.sourceSmsHash
+                                            )
+                                            val json = Gson().toJson(potentialTxn)
+                                            val encodedJson = URLEncoder.encode(json, "UTF-8")
+                                            navController.navigate("rule_creation_screen/$encodedJson")
                                         } else {
                                             Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
                                         }

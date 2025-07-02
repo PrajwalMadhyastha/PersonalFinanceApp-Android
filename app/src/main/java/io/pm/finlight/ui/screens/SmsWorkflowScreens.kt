@@ -101,9 +101,9 @@ fun ReviewSmsScreen(
                         navController.navigate(route)
                     },
                     onCreateRule = { transaction ->
-                        // --- UPDATED: Navigate to the new, simpler route ---
-                        val encodedSmsText = URLEncoder.encode(transaction.originalMessage, "UTF-8")
-                        navController.navigate("rule_creation_screen/$encodedSmsText")
+                        val json = Gson().toJson(transaction)
+                        val encodedJson = URLEncoder.encode(json, "UTF-8")
+                        navController.navigate("rule_creation_screen/$encodedJson")
                     }
                 )
             }

@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
-// REASON: UX IMPROVEMENT - The `saveRule` function is updated to populate the new
-// `merchantNameExample` and `amountExample` fields in the `CustomSmsRule` entity.
-// It now saves the literal text the user selected, which will be displayed on
-// the rule management screen for better readability.
+// REASON: CRASH FIX - The `saveRule` function was incorrectly passing a text
+// snippet instead of the full SMS body to the `generateRegex` function, causing
+// a StringIndexOutOfBoundsException. The function signature has been corrected
+// to accept the `fullSmsText`, resolving the crash.
 // =================================================================================
 package io.pm.finlight
 
@@ -37,7 +37,8 @@ data class RuleSelection(
 data class RuleCreationUiState(
     val triggerSelection: RuleSelection = RuleSelection(),
     val merchantSelection: RuleSelection = RuleSelection(),
-    val amountSelection: RuleSelection = RuleSelection()
+    val amountSelection: RuleSelection = RuleSelection(),
+    val transactionType: String? = null
 )
 
 /**
@@ -49,6 +50,31 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
     val uiState = _uiState.asStateFlow()
 
     private val customSmsRuleDao = AppDatabase.getInstance(application).customSmsRuleDao()
+
+    /**
+     * Initializes the ViewModel's state based on a PotentialTransaction.
+     * This pre-fills any data that was already successfully parsed.
+     */
+    fun initializeState(potentialTxn: PotentialTransaction) {
+        val amountStr = String.format("%.2f", potentialTxn.amount)
+        val amountIndex = potentialTxn.originalMessage.indexOf(amountStr)
+
+        val amountSelection = if (amountIndex != -1) {
+            RuleSelection(
+                selectedText = amountStr,
+                startIndex = amountIndex,
+                endIndex = amountIndex + amountStr.length
+            )
+        } else {
+            RuleSelection()
+        }
+
+        _uiState.value = RuleCreationUiState(
+            amountSelection = amountSelection,
+            transactionType = potentialTxn.transactionType
+        )
+    }
+
 
     fun onMarkAsTrigger(selection: RuleSelection) {
         _uiState.update { it.copy(triggerSelection = selection) }
@@ -86,7 +112,6 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
                 triggerPhrase = currentState.triggerSelection.selectedText,
                 merchantRegex = merchantRegex,
                 amountRegex = amountRegex,
-                // --- NEW: Save the example text for user-friendly display ---
                 merchantNameExample = currentState.merchantSelection.selectedText.takeIf { it.isNotBlank() },
                 amountExample = currentState.amountSelection.selectedText.takeIf { it.isNotBlank() },
                 priority = 10 // Default priority

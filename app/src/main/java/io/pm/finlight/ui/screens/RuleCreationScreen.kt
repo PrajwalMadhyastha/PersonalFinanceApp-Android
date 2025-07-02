@@ -1,31 +1,28 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt
-// REASON: The screen now accepts an optional `transactionId`. If a valid ID is
-// present, it uses the SavedStateHandle to send a "reparse_needed" signal back
-// to the previous screen (TransactionDetailScreen) when a rule is saved. This
-// triggers the automatic update of the transaction.
+// REASON: CRASH FIX - The call to `viewModel.saveRule` is updated to pass the
+// full original SMS message. This provides the necessary context for the
+// `generateRegex` function in the ViewModel and resolves the
+// StringIndexOutOfBoundsException crash.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pin
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +32,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.google.gson.Gson
+import io.pm.finlight.PotentialTransaction
 import io.pm.finlight.RuleCreationViewModel
 import io.pm.finlight.RuleSelection
 import kotlinx.coroutines.launch
@@ -58,15 +57,23 @@ class RuleCreationViewModelFactory(private val application: Application) : ViewM
 @Composable
 fun RuleCreationScreen(
     navController: NavController,
-    smsText: String,
-    transactionId: Int // --- NEW: Accept the transactionId ---
+    potentialTransactionJson: String
 ) {
     val context = LocalContext.current.applicationContext as Application
     val viewModel: RuleCreationViewModel = viewModel(factory = RuleCreationViewModelFactory(context))
 
+    // Deserialize the JSON string back into a PotentialTransaction object
+    val potentialTxn = remember { Gson().fromJson(potentialTransactionJson, PotentialTransaction::class.java) }
+
     val uiState by viewModel.uiState.collectAsState()
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(smsText)) }
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(potentialTxn.originalMessage)) }
     val scope = rememberCoroutineScope()
+
+    // Initialize the ViewModel's state with the pre-parsed data
+    LaunchedEffect(key1 = potentialTxn) {
+        viewModel.initializeState(potentialTxn)
+    }
+
 
     Scaffold { innerPadding ->
         Column(
@@ -77,6 +84,21 @@ fun RuleCreationScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // --- NEW: Instructional Text ---
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+            ) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = "Info")
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "Long-press text to select it, then tap a 'Mark as...' button below. Manage your rules later in Settings.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+
             Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Full SMS Message", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -167,9 +189,9 @@ fun RuleCreationScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            viewModel.saveRule(smsText) {
-                                // --- NEW: If we have a valid ID, send the signal back ---
-                                if (transactionId != -1) {
+                            // --- FIX: Pass the full original message to the save function ---
+                            viewModel.saveRule(potentialTxn.originalMessage) {
+                                if (potentialTxn.sourceSmsId != -1L) { // Check if we came from a real transaction
                                     navController.previousBackStackEntry
                                         ?.savedStateHandle
                                         ?.set("reparse_needed", true)
