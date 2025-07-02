@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
+// REASON: ARCHITECTURAL REFACTOR - Database version is incremented to 13. A new
+// migration (12-13) is added to drop the old sender-based rules table and
+// create the new, more robust trigger-based table, aligning with the new
+// CustomSmsRule entity.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -23,9 +30,9 @@ import java.util.Calendar
         Tag::class,
         TransactionTagCrossRef::class,
         TransactionImage::class,
-        CustomSmsRule::class // --- NEW: Added CustomSmsRule entity ---
+        CustomSmsRule::class
     ],
-    version = 12, // --- UPDATED: Incremented version to 12 ---
+    version = 13, // --- UPDATED: Incremented version to 13 ---
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -36,7 +43,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantMappingDao(): MerchantMappingDao
     abstract fun recurringTransactionDao(): RecurringTransactionDao
     abstract fun tagDao(): TagDao
-    abstract fun customSmsRuleDao(): CustomSmsRuleDao // --- NEW: Added DAO for custom rules ---
+    abstract fun customSmsRuleDao(): CustomSmsRuleDao
 
     companion object {
         @Volatile
@@ -108,7 +115,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to create the custom_sms_rules table ---
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -123,11 +129,31 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to the new trigger-based rule system ---
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Drop the old, sender-based table
+                db.execSQL("DROP TABLE IF EXISTS `custom_sms_rules`")
+                // Create the new, trigger-based table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `custom_sms_rules` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `triggerPhrase` TEXT NOT NULL,
+                        `merchantRegex` TEXT,
+                        `amountRegex` TEXT,
+                        `priority` INTEGER NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_custom_sms_rules_triggerPhrase` ON `custom_sms_rules` (`triggerPhrase`)")
+            }
+        }
+
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12) // --- UPDATED: Added new migration ---
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13) // --- UPDATED: Added new migration ---
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance

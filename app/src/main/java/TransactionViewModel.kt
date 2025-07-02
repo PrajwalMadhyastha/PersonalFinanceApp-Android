@@ -39,6 +39,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
     private val settingsRepository: SettingsRepository
+    private val smsRepository: SmsRepository // --- NEW: Add SmsRepository instance ---
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
@@ -104,6 +105,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         categoryRepository = CategoryRepository(db.categoryDao())
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
         settingsRepository = SettingsRepository(application)
+        smsRepository = SmsRepository(application) // --- NEW: Initialize SmsRepository ---
         allTransactions = transactionRepository.allTransactions.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -150,6 +152,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val remainingDays = if (today.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) && today.get(Calendar.MONTH) == calendar.get(Calendar.MONTH)) { (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1) } else if (calendar.after(today)) { lastDayOfMonth } else { 1 }
             if (remaining > 0) remaining / remainingDays else 0f
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+    }
+
+    /**
+     * Fetches the original SMS message details from the content provider.
+     * @param smsId The ID of the SMS to fetch.
+     * @return The SmsMessage object, or null if not found.
+     */
+    suspend fun getOriginalSmsMessage(smsId: Long): SmsMessage? {
+        return withContext(Dispatchers.IO) {
+            smsRepository.getSmsDetailsById(smsId)
+        }
     }
 
     // --- NEW: Functions to update the filter state ---

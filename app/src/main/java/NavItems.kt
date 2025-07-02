@@ -1,8 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: Added the new "income_screen" route and its corresponding title to the
-// screen titles map for the top app bar.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.compose.material.icons.Icons
@@ -41,8 +36,7 @@ val screenTitles = mapOf(
     "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
     "tag_management" to "Manage Tags",
     "edit_profile" to "Edit Profile",
-    // --- NEW: Add route for the income screen ---
     "income_screen" to "Income",
-    // --- NEW: Add route for the rule creation screen ---
+    // --- UPDATED: Route no longer needs smsSender ---
     "rule_creation_screen/{smsText}" to "Create Parsing Rule"
 )

@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt
+// REASON: ARCHITECTURAL REFACTOR - The UI is updated for the trigger-based
+// system. A "Mark as Trigger" button has been added, and the summary view now
+// displays the selected trigger. The "Save Rule" button is now enabled only
+// when a trigger and at least one other field (merchant or amount) are marked.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
@@ -6,7 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.NewLabel
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Pin
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.*
@@ -21,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -32,6 +38,8 @@ import androidx.navigation.NavController
 import io.pm.finlight.RuleCreationViewModel
 import io.pm.finlight.RuleSelection
 import kotlinx.coroutines.launch
+import kotlin.math.max
+import kotlin.math.min
 
 // Factory for creating RuleCreationViewModel with Application context
 class RuleCreationViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
@@ -46,18 +54,11 @@ class RuleCreationViewModelFactory(private val application: Application) : ViewM
 
 /**
  * A screen where users can define custom parsing rules for SMS messages.
- * This screen displays the full SMS text and provides tools for the user
- * to mark different parts of the text (e.g., merchant name, amount).
- *
- * @param navController The NavController for handling navigation.
- * @param smsText The full body of the SMS message to create a rule for.
- * @param smsSender The sender address of the SMS.
  */
 @Composable
 fun RuleCreationScreen(
     navController: NavController,
-    smsText: String,
-    smsSender: String
+    smsText: String
 ) {
     val context = LocalContext.current.applicationContext as Application
     val viewModel: RuleCreationViewModel = viewModel(factory = RuleCreationViewModelFactory(context))
@@ -75,43 +76,44 @@ fun RuleCreationScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Section to display the full SMS text with selection enabled
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(2.dp)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Full SMS Message",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("Full SMS Message", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     BasicTextField(
                         value = textFieldValue,
                         onValueChange = { textFieldValue = it },
                         readOnly = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
                     )
                 }
             }
 
-            // Section for action buttons, enabled when text is selected
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val selection = textFieldValue.selection
-                val isSelectionActive = !selection.collapsed
+            val selection = textFieldValue.selection
+            val isSelectionActive = !selection.collapsed
 
+            // --- NEW: Button to mark the trigger phrase ---
+            Button(
+                onClick = {
+                    val start = min(selection.start, selection.end)
+                    val end = max(selection.start, selection.end)
+                    val selectedText = textFieldValue.text.substring(start, end)
+                    viewModel.onMarkAsTrigger(RuleSelection(selectedText, start, end))
+                },
+                enabled = isSelectionActive,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Mark as Trigger Phrase")
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        val selectedText = textFieldValue.text.substring(selection.start, selection.end)
-                        val ruleSelection = RuleSelection(selectedText, selection.start, selection.end)
-                        viewModel.onMarkAsMerchant(ruleSelection)
+                        val start = min(selection.start, selection.end)
+                        val end = max(selection.start, selection.end)
+                        val selectedText = textFieldValue.text.substring(start, end)
+                        viewModel.onMarkAsMerchant(RuleSelection(selectedText, start, end))
                     },
                     enabled = isSelectionActive,
                     modifier = Modifier.weight(1f)
@@ -120,9 +122,10 @@ fun RuleCreationScreen(
                 }
                 Button(
                     onClick = {
-                        val selectedText = textFieldValue.text.substring(selection.start, selection.end)
-                        val ruleSelection = RuleSelection(selectedText, selection.start, selection.end)
-                        viewModel.onMarkAsAmount(ruleSelection)
+                        val start = min(selection.start, selection.end)
+                        val end = max(selection.start, selection.end)
+                        val selectedText = textFieldValue.text.substring(start, end)
+                        viewModel.onMarkAsAmount(RuleSelection(selectedText, start, end))
                     },
                     enabled = isSelectionActive,
                     modifier = Modifier.weight(1f)
@@ -131,21 +134,17 @@ fun RuleCreationScreen(
                 }
             }
 
-            // Dynamic rule summary
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        "Defined Rules",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Defined Rule", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     HorizontalDivider()
+                    // --- NEW: Display the selected trigger phrase ---
+                    RuleSummaryItem(
+                        icon = Icons.Default.Flag,
+                        label = "Trigger",
+                        value = uiState.triggerSelection.selectedText.ifBlank { "Not set (Required)" },
+                        isError = uiState.triggerSelection.selectedText.isBlank()
+                    )
                     RuleSummaryItem(
                         icon = Icons.Default.Title,
                         label = "Merchant",
@@ -156,30 +155,20 @@ fun RuleCreationScreen(
                         label = "Amount",
                         value = uiState.amountSelection.selectedText.ifBlank { "Not set" }
                     )
-                    RuleSummaryItem(
-                        icon = Icons.Default.NewLabel,
-                        label = "Transaction Type",
-                        value = uiState.transactionType ?: "Not set"
-                    )
                 }
             }
 
-            // Save and Cancel buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                     Text("Cancel")
                 }
-                // --- UPDATED: Enable save button based on selections ---
-                val isSaveEnabled = uiState.merchantSelection.selectedText.isNotBlank() ||
-                        uiState.amountSelection.selectedText.isNotBlank()
+                val isSaveEnabled = uiState.triggerSelection.selectedText.isNotBlank() &&
+                        (uiState.merchantSelection.selectedText.isNotBlank() || uiState.amountSelection.selectedText.isNotBlank())
 
                 Button(
                     onClick = {
                         scope.launch {
-                            viewModel.saveRules(smsSender, smsText) {
+                            viewModel.saveRule(smsText) {
                                 navController.popBackStack()
                             }
                         }
@@ -194,24 +183,22 @@ fun RuleCreationScreen(
     }
 }
 
-/**
- * A helper composable to display a single line in the rule summary card.
- *
- * @param icon The icon to display for the rule type.
- * @param label The label for the rule type (e.g., "Merchant").
- * @param value The value extracted or defined for this rule.
- */
 @Composable
-private fun RuleSummaryItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String) {
+private fun RuleSummaryItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    isError: Boolean = false
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
+            tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.width(16.dp))
         Text("$label:", fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.width(8.dp))
-        Text(value, style = MaterialTheme.typography.bodyMedium)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = if (isError) MaterialTheme.colorScheme.error else LocalContentColor.current)
     }
 }

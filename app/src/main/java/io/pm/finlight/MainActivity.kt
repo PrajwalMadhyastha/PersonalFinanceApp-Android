@@ -449,19 +449,16 @@ fun AppNavHost(
 
         // --- UPDATED: Route for the Rule Creation Screen now includes smsSender ---
         composable(
-            "rule_creation_screen/{smsSender}/{smsText}",
+            "rule_creation_screen/{smsText}",
             arguments = listOf(
-                navArgument("smsSender") { type = NavType.StringType },
                 navArgument("smsText") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val smsSender = backStackEntry.arguments?.getString("smsSender") ?: ""
             val encodedSmsText = backStackEntry.arguments?.getString("smsText") ?: ""
             val smsText = URLDecoder.decode(encodedSmsText, "UTF-8")
             RuleCreationScreen(
                 navController = navController,
-                smsText = smsText,
-                smsSender = smsSender
+                smsText = smsText
             )
         }
     }

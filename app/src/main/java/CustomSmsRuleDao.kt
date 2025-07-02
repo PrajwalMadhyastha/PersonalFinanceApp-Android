@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRuleDao.kt
+// REASON: ARCHITECTURAL REFACTOR - The DAO has been updated to align with the new
+// trigger-based system. The getRulesForSender function has been replaced with
+// getAllRules, as rules are no longer tied to a specific sender and the parser
+// needs to check all of them.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -23,12 +30,11 @@ interface CustomSmsRuleDao {
     suspend fun insert(rule: CustomSmsRule)
 
     /**
-     * Retrieves all custom SMS rules for a specific sender, ordered by priority in descending order.
+     * Retrieves all custom SMS rules from the database, ordered by priority in descending order.
      * This ensures that higher-priority rules are evaluated first.
      *
-     * @param sender The SMS sender address to fetch rules for.
-     * @return A Flow emitting a list of CustomSmsRule objects.
+     * @return A list of all CustomSmsRule objects.
      */
-    @Query("SELECT * FROM custom_sms_rules WHERE smsSender = :sender ORDER BY priority DESC")
-    fun getRulesForSender(sender: String): Flow<List<CustomSmsRule>>
+    @Query("SELECT * FROM custom_sms_rules ORDER BY priority DESC")
+    suspend fun getAllRules(): List<CustomSmsRule>
 }

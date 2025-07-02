@@ -1,6 +1,14 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
+// REASON: ARCHITECTURAL REFACTOR - The ViewModel is completely updated to support
+// the new trigger-based rule creation. It now manages state for a "trigger"
+// selection and saves a single, consolidated CustomSmsRule object containing
+// the trigger phrase and its associated merchant/amount regex patterns.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,16 +35,14 @@ data class RuleSelection(
  * UI state for the RuleCreationScreen.
  */
 data class RuleCreationUiState(
+    // --- NEW: Added state for the trigger phrase selection ---
+    val triggerSelection: RuleSelection = RuleSelection(),
     val merchantSelection: RuleSelection = RuleSelection(),
-    val amountSelection: RuleSelection = RuleSelection(),
-    val transactionType: String? = null
+    val amountSelection: RuleSelection = RuleSelection()
 )
 
 /**
  * ViewModel for the RuleCreationScreen.
- *
- * This ViewModel is responsible for holding the state of the user's selections
- * as they define a new custom parsing rule from an SMS message.
  */
 class RuleCreationViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -45,93 +51,75 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
 
     private val customSmsRuleDao = AppDatabase.getInstance(application).customSmsRuleDao()
 
-    /**
-     * Updates the state to reflect that the user has marked the provided selection as the merchant.
-     *
-     * @param selection The user's text selection.
-     */
+    // --- NEW: Function to handle marking text as the trigger phrase ---
+    fun onMarkAsTrigger(selection: RuleSelection) {
+        _uiState.update { it.copy(triggerSelection = selection) }
+    }
+
     fun onMarkAsMerchant(selection: RuleSelection) {
         _uiState.update { it.copy(merchantSelection = selection) }
     }
 
-    /**
-     * Updates the state to reflect that the user has marked the provided selection as the amount.
-     *
-     * @param selection The user's text selection.
-     */
     fun onMarkAsAmount(selection: RuleSelection) {
         _uiState.update { it.copy(amountSelection = selection) }
     }
 
     /**
-     * Generates regex patterns from the user's selections and saves them to the database.
-     *
-     * @param smsSender The sender of the SMS (e.g., "AM-HDFCBK").
-     * @param fullSmsText The complete text of the SMS message.
-     * @param onComplete A callback to be invoked when the save operation is finished.
+     * Generates regex patterns and saves a single consolidated rule to the database.
      */
-    fun saveRules(smsSender: String, fullSmsText: String, onComplete: () -> Unit) {
+    fun saveRule(fullSmsText: String, onComplete: () -> Unit) {
         viewModelScope.launch {
             val currentState = _uiState.value
-
-            // Generate and save the merchant rule if a selection was made
-            if (currentState.merchantSelection.selectedText.isNotBlank()) {
-                val merchantRegex = generateRegex(fullSmsText, currentState.merchantSelection)
-                if (merchantRegex != null) {
-                    val rule = CustomSmsRule(
-                        smsSender = smsSender,
-                        ruleType = "MERCHANT",
-                        regexPattern = merchantRegex,
-                        priority = 10 // Default priority
-                    )
-                    customSmsRuleDao.insert(rule)
-                }
+            if (currentState.triggerSelection.selectedText.isBlank()) {
+                Log.e("RuleCreation", "Cannot save rule without a trigger phrase.")
+                onComplete()
+                return@launch
             }
 
-            // Generate and save the amount rule if a selection was made
-            if (currentState.amountSelection.selectedText.isNotBlank()) {
-                val amountRegex = generateRegex(fullSmsText, currentState.amountSelection)
-                if (amountRegex != null) {
-                    val rule = CustomSmsRule(
-                        smsSender = smsSender,
-                        ruleType = "AMOUNT",
-                        regexPattern = amountRegex,
-                        priority = 10 // Default priority
-                    )
-                    customSmsRuleDao.insert(rule)
-                }
-            }
+            val merchantRegex = if (currentState.merchantSelection.selectedText.isNotBlank()) {
+                generateRegex(fullSmsText, currentState.merchantSelection)
+            } else null
 
+            val amountRegex = if (currentState.amountSelection.selectedText.isNotBlank()) {
+                generateRegex(fullSmsText, currentState.amountSelection)
+            } else null
+
+            val newRule = CustomSmsRule(
+                triggerPhrase = currentState.triggerSelection.selectedText,
+                merchantRegex = merchantRegex,
+                amountRegex = amountRegex,
+                priority = 10 // Default priority
+            )
+
+            Log.d("RuleCreation", "Saving new trigger-based rule: $newRule")
+            customSmsRuleDao.insert(newRule)
             onComplete()
         }
     }
 
     /**
-     * Generates a regular expression based on the text surrounding a user's selection.
-     *
-     * @param fullText The entire SMS message body.
-     * @param selection The user's selection details (text, start index, end index).
-     * @return A regex string, or null if generation is not possible.
+     * Generates a robust regular expression based on the words surrounding a user's selection.
      */
     private fun generateRegex(fullText: String, selection: RuleSelection): String? {
         if (selection.startIndex == -1) return null
 
-        // Define how many characters to look for before and after the selection
-        val contextLength = 10
+        val textBefore = fullText.substring(0, selection.startIndex)
+        val textAfter = fullText.substring(selection.endIndex)
 
-        // Get the text immediately before the selection
-        val prefixStart = (selection.startIndex - contextLength).coerceAtLeast(0)
-        val prefix = fullText.substring(prefixStart, selection.startIndex)
+        val prefixWords = textBefore.trim().split(Regex("\\s+")).takeLast(2)
+        val prefix = prefixWords.joinToString(separator = " ")
 
-        // Get the text immediately after the selection
-        val suffixEnd = (selection.endIndex + contextLength).coerceAtMost(fullText.length)
-        val suffix = fullText.substring(selection.endIndex, suffixEnd)
+        val suffixWords = textAfter.trim().split(Regex("\\s+")).take(2)
+        val suffix = suffixWords.joinToString(separator = " ")
 
-        // Escape any special regex characters in the prefix and suffix to treat them as literals
-        val escapedPrefix = Pattern.quote(prefix)
-        val escapedSuffix = Pattern.quote(suffix)
+        val escapedPrefix = if (prefix.isNotBlank()) Pattern.quote(prefix) else ""
+        val escapedSuffix = if (suffix.isNotBlank()) Pattern.quote(suffix) else ""
 
-        // Construct the final regex with a non-greedy capture group for the selected part
-        return "$escapedPrefix(.*?)$escapedSuffix"
+        return when {
+            escapedPrefix.isNotBlank() && escapedSuffix.isNotBlank() -> "$escapedPrefix\\s+(.*?)\\s+$escapedSuffix"
+            escapedPrefix.isNotBlank() -> "$escapedPrefix\\s+(.*)"
+            escapedSuffix.isNotBlank() -> "(.*?)\\s+$escapedSuffix"
+            else -> Pattern.quote(selection.selectedText)
+        }
     }
 }

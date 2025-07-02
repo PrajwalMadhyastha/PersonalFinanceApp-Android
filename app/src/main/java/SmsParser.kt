@@ -1,10 +1,17 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
+// REASON: ARCHITECTURAL REFACTOR - The parsing logic is completely overhauled.
+// It no longer checks the sender. Instead, it fetches all custom rules and
+// iterates through them, checking if a rule's 'triggerPhrase' is present in
+// the SMS body. If a match is found, it applies the corresponding regex
+// patterns from that rule to extract the data.
+// =================================================================================
 package io.pm.finlight
 
+import android.util.Log
 import kotlinx.coroutines.flow.first
 import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
-
-// Removed android.util.Log import as it's not needed and causes test failures.
 
 data class PotentialAccount(
     val formattedName: String, // e.g., "SBI - xx3201"
@@ -12,7 +19,6 @@ data class PotentialAccount(
 )
 
 object SmsParser {
-    // --- UPDATED: Renamed for clarity and added a fallback regex ---
     // This is a high-precision regex that looks for explicit currency symbols.
     private val CURRENCY_AMOUNT_REGEX = "(?:rs|inr|rs\\.?)\\s*([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
     // This is a fallback regex that looks for keywords often preceding an amount.
@@ -51,37 +57,12 @@ object SmsParser {
             if (match != null) {
                 val pString = pattern.pattern
                 return when {
-                    pString.startsWith("(ICICI Bank) Account") -> {
-                        val bank = match.groupValues[1].trim()
-                        val number = match.groupValues[2].trim()
-                        PotentialAccount(formattedName = "$bank - xx$number", accountType = "Bank Account")
-                    }
-                    pString.startsWith("(HDFC Bank) : NEFT") -> {
-                        val bank = match.groupValues[1].trim()
-                        PotentialAccount(formattedName = bank, accountType = "Bank Account")
-                    }
-                    pString.startsWith("spent from") -> {
-                        val group1 = match.groupValues[1].trim() // Brand (Pluxee)
-                        val group2 = match.groupValues[2].trim() // Type (Meal Card wallet)
-                        val number = match.groupValues[3].trim() // Number
-                        PotentialAccount(formattedName = "$group1 - xx$number", accountType = group2)
-                    }
-                    pString.startsWith("on your") || pString.startsWith("On") -> {
-                        val group1 = match.groupValues[1].trim() // Bank or brand
-                        val group2 = match.groupValues[2].trim() // Type
-                        val number = match.groupValues[3].trim() // Number
-                        PotentialAccount(formattedName = "$group1 - xx$number", accountType = group2)
-                    }
-                    pString.contains("debited") -> {
-                        val bank = match.groupValues[1].trim()
-                        val number = match.groupValues[2].trim()
-                        PotentialAccount(formattedName = "$bank - xx$number", accountType = "Savings Account")
-                    }
-                    pString.contains("is credited") -> {
-                        val number = match.groupValues[1].trim()
-                        val bank = match.groupValues[2].trim()
-                        PotentialAccount(formattedName = "$bank - xx$number", accountType = "Savings Account")
-                    }
+                    pString.startsWith("(ICICI Bank) Account") -> PotentialAccount(formattedName = "${match.groupValues[1].trim()} - xx${match.groupValues[2].trim()}", accountType = "Bank Account")
+                    pString.startsWith("(HDFC Bank) : NEFT") -> PotentialAccount(formattedName = match.groupValues[1].trim(), accountType = "Bank Account")
+                    pString.startsWith("spent from") -> PotentialAccount(formattedName = "${match.groupValues[1].trim()} - xx${match.groupValues[3].trim()}", accountType = match.groupValues[2].trim())
+                    pString.startsWith("on your") || pString.startsWith("On") -> PotentialAccount(formattedName = "${match.groupValues[1].trim()} - xx${match.groupValues[3].trim()}", accountType = match.groupValues[2].trim())
+                    pString.contains("debited") -> PotentialAccount(formattedName = "${match.groupValues[1].trim()} - xx${match.groupValues[2].trim()}", accountType = "Savings Account")
+                    pString.contains("is credited") -> PotentialAccount(formattedName = "${match.groupValues[2].trim()} - xx${match.groupValues[1].trim()}", accountType = "Savings Account")
                     else -> null
                 }
             }
@@ -95,34 +76,55 @@ object SmsParser {
         customSmsRuleDao: CustomSmsRuleDao
     ): PotentialTransaction? {
         val messageBody = sms.body
+        Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
+        Log.d("SmsParser", "Body: $messageBody")
 
         if (NEGATIVE_KEYWORDS_REGEX.containsMatchIn(messageBody)) {
+            Log.d("SmsParser", "Message contains negative keywords. Ignoring.")
             return null
         }
 
-        val customRules = customSmsRuleDao.getRulesForSender(sms.sender).first()
         var extractedMerchant: String? = null
         var extractedAmount: Double? = null
 
-        if (customRules.isNotEmpty()) {
-            for (rule in customRules) {
-                try {
-                    val regex = rule.regexPattern.toRegex()
-                    val match = regex.find(messageBody)
-                    if (match != null && match.groupValues.size > 1) {
-                        val capturedValue = match.groupValues[1].trim()
-                        when (rule.ruleType) {
-                            "MERCHANT" -> if (extractedMerchant == null) extractedMerchant = capturedValue
-                            "AMOUNT" -> if (extractedAmount == null) extractedAmount = capturedValue.replace(",", "").toDoubleOrNull()
+        // --- REWRITTEN LOGIC: Iterate through all trigger-based rules ---
+        val allRules = customSmsRuleDao.getAllRules()
+        Log.d("SmsParser", "Found ${allRules.size} total custom rules to check.")
+
+        for (rule in allRules) {
+            if (messageBody.contains(rule.triggerPhrase, ignoreCase = true)) {
+                Log.d("SmsParser", "SUCCESS: Found matching trigger phrase '${rule.triggerPhrase}' for rule ID ${rule.id}.")
+
+                // Trigger matched, now apply the specific regex patterns from this rule.
+                rule.merchantRegex?.let { regexStr ->
+                    try {
+                        val match = regexStr.toRegex().find(messageBody)
+                        if (match != null && match.groupValues.size > 1) {
+                            extractedMerchant = match.groupValues[1].trim()
+                            Log.d("SmsParser", "Extracted Merchant: '$extractedMerchant' using regex: $regexStr")
                         }
+                    } catch (e: PatternSyntaxException) {
+                        Log.e("SmsParser", "Invalid merchant regex for rule ID ${rule.id}", e)
                     }
-                } catch (e: PatternSyntaxException) {
-                    // Ignore invalid regex patterns
                 }
+
+                rule.amountRegex?.let { regexStr ->
+                    try {
+                        val match = regexStr.toRegex().find(messageBody)
+                        if (match != null && match.groupValues.size > 1) {
+                            extractedAmount = match.groupValues[1].replace(",", "").toDoubleOrNull()
+                            Log.d("SmsParser", "Extracted Amount: '$extractedAmount' using regex: $regexStr")
+                        }
+                    } catch (e: PatternSyntaxException) {
+                        Log.e("SmsParser", "Invalid amount regex for rule ID ${rule.id}", e)
+                    }
+                }
+                // Stop after the first matching rule is applied.
+                break
             }
         }
 
-        // --- UPDATED: Use the new fallback amount regex ---
+        // Fallback to default parsing if custom rules didn't find anything.
         val amount = extractedAmount
             ?: CURRENCY_AMOUNT_REGEX.find(messageBody)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
             ?: KEYWORD_AMOUNT_REGEX.find(messageBody)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()

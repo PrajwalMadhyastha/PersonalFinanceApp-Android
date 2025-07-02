@@ -101,8 +101,9 @@ fun ReviewSmsScreen(
                         navController.navigate(route)
                     },
                     onCreateRule = { transaction ->
+                        // --- UPDATED: Navigate to the new, simpler route ---
                         val encodedSmsText = URLEncoder.encode(transaction.originalMessage, "UTF-8")
-                        navController.navigate("rule_creation_screen/${transaction.smsSender}/$encodedSmsText")
+                        navController.navigate("rule_creation_screen/$encodedSmsText")
                     }
                 )
             }

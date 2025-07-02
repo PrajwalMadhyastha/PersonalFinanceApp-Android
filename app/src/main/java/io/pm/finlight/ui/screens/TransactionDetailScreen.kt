@@ -4,13 +4,12 @@
 // editing flow. The bottom sheets for selection now include a "+ Create New"
 // option, which launches a dialog. After creation, the transaction is
 // automatically updated with the new item.
-// BUG FIX: Removed local dialog definitions and imported them from the new
-// ui.components package to resolve compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -54,7 +53,9 @@ import io.pm.finlight.*
 import io.pm.finlight.ui.components.CreateAccountDialog
 import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.TimePickerDialog
+import kotlinx.coroutines.launch
 import java.io.File
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -100,6 +101,7 @@ fun TransactionDetailScreen(
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
     val attachedImages by viewModel.transactionImages.collectAsState()
+    val scope = rememberCoroutineScope()
 
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -292,6 +294,31 @@ fun TransactionDetailScreen(
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    // --- NEW: Conditionally show the "Fix Parsing" button ---
+                    if (details.transaction.description == "Unknown Merchant" && details.transaction.sourceSmsId != null) {
+                        item {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId)
+                                        if (smsMessage != null) {
+                                            // --- UPDATED: Navigate to the new, simpler route ---
+                                            val encodedBody = URLEncoder.encode(smsMessage.body, "UTF-8")
+                                            navController.navigate("rule_creation_screen/$encodedBody")
+                                        } else {
+                                            Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Build, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Fix Parsing")
                             }
                         }
                     }
