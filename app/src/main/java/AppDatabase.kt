@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: ARCHITECTURAL REFACTOR - Database version is incremented to 13. A new
-// migration (12-13) is added to drop the old sender-based rules table and
-// create the new, more robust trigger-based table, aligning with the new
-// CustomSmsRule entity.
+// REASON: UX IMPROVEMENT - Database version is incremented to 14. A new
+// migration (13-14) is added to alter the `custom_sms_rules` table, adding
+// the new `merchantNameExample` and `amountExample` columns to store
+// user-friendly text for the management screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -32,7 +32,7 @@ import java.util.Calendar
         TransactionImage::class,
         CustomSmsRule::class
     ],
-    version = 13, // --- UPDATED: Incremented version to 13 ---
+    version = 14, // --- UPDATED: Incremented version to 14 ---
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -129,7 +129,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to the new trigger-based rule system ---
         val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Drop the old, sender-based table
@@ -148,12 +147,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to add example fields to the rules table ---
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `merchantNameExample` TEXT")
+                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `amountExample` TEXT")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13) // --- UPDATED: Added new migration ---
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14) // --- UPDATED: Added new migration ---
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance

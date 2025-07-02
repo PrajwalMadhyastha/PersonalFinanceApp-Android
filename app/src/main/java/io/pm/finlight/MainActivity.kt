@@ -341,6 +341,10 @@ fun AppNavHost(
             SplashScreen(navController = navController, activity = activity)
         }
 
+        composable("manage_parse_rules") {
+            ManageParseRulesScreen()
+        }
+
         composable(BottomNavItem.Dashboard.route) {
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
         }

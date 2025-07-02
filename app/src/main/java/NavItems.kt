@@ -38,5 +38,6 @@ val screenTitles = mapOf(
     "edit_profile" to "Edit Profile",
     "income_screen" to "Income",
     // --- UPDATED: Route no longer needs smsSender ---
-    "rule_creation_screen/{smsText}?transactionId={transactionId}" to "Create Parsing Rule"
+    "rule_creation_screen/{smsText}?transactionId={transactionId}" to "Create Parsing Rule",
+    "manage_parse_rules" to "Manage Parsing Rules"
 )

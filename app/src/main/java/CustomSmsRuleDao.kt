@@ -1,13 +1,13 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRuleDao.kt
-// REASON: ARCHITECTURAL REFACTOR - The DAO has been updated to align with the new
-// trigger-based system. The getRulesForSender function has been replaced with
-// getAllRules, as rules are no longer tied to a specific sender and the parser
-// needs to check all of them.
+// REASON: Added new methods to support the rule management screen. `getAllRules`
+// now returns a Flow to enable real-time UI updates, and a `delete` method has
+// been added to allow users to remove specific rules.
 // =================================================================================
 package io.pm.finlight
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -33,8 +33,16 @@ interface CustomSmsRuleDao {
      * Retrieves all custom SMS rules from the database, ordered by priority in descending order.
      * This ensures that higher-priority rules are evaluated first.
      *
-     * @return A list of all CustomSmsRule objects.
+     * @return A Flow emitting a list of all CustomSmsRule objects.
      */
     @Query("SELECT * FROM custom_sms_rules ORDER BY priority DESC")
-    suspend fun getAllRules(): List<CustomSmsRule>
+    fun getAllRules(): Flow<List<CustomSmsRule>>
+
+    /**
+     * Deletes a specific custom rule from the database.
+     *
+     * @param rule The CustomSmsRule object to delete.
+     */
+    @Delete
+    suspend fun delete(rule: CustomSmsRule)
 }

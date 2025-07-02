@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: ARCHITECTURAL REFACTOR - The parsing logic is completely overhauled.
-// It no longer checks the sender. Instead, it fetches all custom rules and
-// iterates through them, checking if a rule's 'triggerPhrase' is present in
-// the SMS body. If a match is found, it applies the corresponding regex
-// patterns from that rule to extract the data.
+// REASON: Fixed a series of compilation errors caused by incorrectly handling the
+// Flow<List<CustomSmsRule>> from the DAO. The logic is now corrected to use
+// .first() to collect the list of rules before iterating, resolving the type
+// mismatch and allowing the parser to function correctly.
 // =================================================================================
 package io.pm.finlight
 
@@ -87,8 +86,8 @@ object SmsParser {
         var extractedMerchant: String? = null
         var extractedAmount: Double? = null
 
-        // --- REWRITTEN LOGIC: Iterate through all trigger-based rules ---
-        val allRules = customSmsRuleDao.getAllRules()
+        // --- FIX: Correctly collect the list from the Flow before using it ---
+        val allRules = customSmsRuleDao.getAllRules().first()
         Log.d("SmsParser", "Found ${allRules.size} total custom rules to check.")
 
         for (rule in allRules) {

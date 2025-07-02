@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
-// REASON: ARCHITECTURAL REFACTOR - The ViewModel is completely updated to support
-// the new trigger-based rule creation. It now manages state for a "trigger"
-// selection and saves a single, consolidated CustomSmsRule object containing
-// the trigger phrase and its associated merchant/amount regex patterns.
+// REASON: UX IMPROVEMENT - The `saveRule` function is updated to populate the new
+// `merchantNameExample` and `amountExample` fields in the `CustomSmsRule` entity.
+// It now saves the literal text the user selected, which will be displayed on
+// the rule management screen for better readability.
 // =================================================================================
 package io.pm.finlight
 
@@ -35,7 +35,6 @@ data class RuleSelection(
  * UI state for the RuleCreationScreen.
  */
 data class RuleCreationUiState(
-    // --- NEW: Added state for the trigger phrase selection ---
     val triggerSelection: RuleSelection = RuleSelection(),
     val merchantSelection: RuleSelection = RuleSelection(),
     val amountSelection: RuleSelection = RuleSelection()
@@ -51,7 +50,6 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
 
     private val customSmsRuleDao = AppDatabase.getInstance(application).customSmsRuleDao()
 
-    // --- NEW: Function to handle marking text as the trigger phrase ---
     fun onMarkAsTrigger(selection: RuleSelection) {
         _uiState.update { it.copy(triggerSelection = selection) }
     }
@@ -88,6 +86,9 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
                 triggerPhrase = currentState.triggerSelection.selectedText,
                 merchantRegex = merchantRegex,
                 amountRegex = amountRegex,
+                // --- NEW: Save the example text for user-friendly display ---
+                merchantNameExample = currentState.merchantSelection.selectedText.takeIf { it.isNotBlank() },
+                amountExample = currentState.amountSelection.selectedText.takeIf { it.isNotBlank() },
                 priority = 10 // Default priority
             )
 

@@ -431,6 +431,14 @@ fun SettingsScreen(
 
         item { SettingSectionHeader("SMS Scanning") }
         item {
+            SettingsActionItem(
+                text = "Manage Custom Rules",
+                subtitle = "View or delete your custom SMS parsing rules.",
+                icon = Icons.Default.Rule,
+                onClick = { navController.navigate("manage_parse_rules") },
+            )
+        }
+        item {
             SettingsToggleItem(
                 title = "Popup for Unknown Transactions",
                 subtitle = "Show notification for SMS from new merchants.",
