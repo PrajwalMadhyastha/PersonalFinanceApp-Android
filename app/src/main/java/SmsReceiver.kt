@@ -1,3 +1,11 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
+// REASON: REFACTOR - The call to `SmsParser.parse` has been updated to pass the
+// full database instance instead of just a single DAO, enabling the parser to
+// access all necessary rule tables.
+// FEATURE: When creating a new `Transaction` from a parsed SMS, the new
+// `originalDescription` field is now populated with the parsed merchant name.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -38,14 +46,12 @@ class SmsReceiver : BroadcastReceiver() {
                         val transactionDao = db.transactionDao()
                         val accountDao = db.accountDao()
                         val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
-                        val customSmsRuleDao = db.customSmsRuleDao() // Get DAO instance
 
                         val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
                         val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
-                        // --- UPDATED: Pass the custom rule DAO to the parser ---
-                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, customSmsRuleDao)
+                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db)
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
@@ -63,6 +69,7 @@ class SmsReceiver : BroadcastReceiver() {
                             if (account != null) {
                                 val newTransaction = Transaction(
                                     description = potentialTxn.merchantName ?: "Unknown Merchant",
+                                    originalDescription = potentialTxn.merchantName,
                                     amount = potentialTxn.amount,
                                     date = System.currentTimeMillis(),
                                     accountId = account.id,
@@ -71,14 +78,11 @@ class SmsReceiver : BroadcastReceiver() {
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                                    // --- UPDATED: Set the source for auto-imports ---
                                     source = "Auto-Imported"
                                 )
-                                // The insert method returns the ID of the new row
                                 val newTransactionId = transactionDao.insert(newTransaction)
                                 Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
 
-                                // --- UPDATED: Show informational notification ---
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                                     NotificationHelper.showAutoSaveConfirmationNotification(context, newTransaction.copy(id = newTransactionId.toInt()))
                                 }

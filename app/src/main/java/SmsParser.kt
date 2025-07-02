@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: BUG FIX - The fallback `parseAccount` function is refactored to use a
-// more specific `when` statement based on the full regex pattern. This removes
-// ambiguity and ensures the correct logic is applied for each hardcoded account
-// pattern, making the fallback parsing more reliable.
+// REASON: REFACTOR - The `parse` function signature now accepts the full AppDatabase
+// instance instead of just a single DAO. This allows it to access the new
+// `MerchantRenameRuleDao` and apply user-defined renaming rules after the
+// initial merchant name has been extracted, making the parsing logic smarter.
 // =================================================================================
 package io.pm.finlight
 
@@ -48,7 +48,6 @@ object SmsParser {
         for (pattern in ACCOUNT_PATTERNS) {
             val match = pattern.find(smsBody)
             if (match != null) {
-                // --- REFACTORED: Use specific pattern matching for clarity and correctness ---
                 return when (pattern.pattern) {
                     "(ICICI Bank) Account XX(\\d{3,4}) credited" ->
                         PotentialAccount(formattedName = "${match.groupValues[1].trim()} - xx${match.groupValues[2].trim()}", accountType = "Bank Account")
@@ -74,7 +73,7 @@ object SmsParser {
     suspend fun parse(
         sms: SmsMessage,
         mappings: Map<String, String>,
-        customSmsRuleDao: CustomSmsRuleDao
+        db: AppDatabase
     ): PotentialTransaction? {
         val messageBody = sms.body
         Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
@@ -88,8 +87,13 @@ object SmsParser {
         var extractedAmount: Double? = null
         var extractedAccount: PotentialAccount? = null
 
+        val customSmsRuleDao = db.customSmsRuleDao()
+        val renameRuleDao = db.merchantRenameRuleDao()
+
         val allRules = customSmsRuleDao.getAllRules().first()
-        Log.d("SmsParser", "Found ${allRules.size} total custom rules to check.")
+        val renameRules = renameRuleDao.getAllRules().first().associateBy({ it.originalName }, { it.newName })
+        Log.d("SmsParser", "Found ${allRules.size} custom rules and ${renameRules.size} rename rules.")
+
 
         for (rule in allRules) {
             if (messageBody.contains(rule.triggerPhrase, ignoreCase = true)) {
@@ -156,6 +160,13 @@ object SmsParser {
                     }
                 }
             }
+        }
+
+        // --- NEW: Apply rename rule if applicable ---
+        if (merchantName != null && renameRules.containsKey(merchantName)) {
+            val originalName = merchantName
+            merchantName = renameRules[merchantName]
+            Log.d("SmsParser", "Applied rename rule: '$originalName' -> '$merchantName'")
         }
 
         val potentialAccount = extractedAccount ?: parseAccount(messageBody, sms.sender)

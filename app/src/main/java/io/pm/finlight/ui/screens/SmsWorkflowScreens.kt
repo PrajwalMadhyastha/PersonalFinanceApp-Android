@@ -1,7 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
-// REASON: Updated the ApproveTransactionScreen to require a category for both
-// income and expense transactions, ensuring data consistency.
+// REASON: BUG FIX - The call to save a merchant name has been updated from the
+// obsolete `saveMerchantMapping` to the new `saveMerchantRenameRule`. This
+// aligns the approval screen with the new intelligent renaming feature, passing
+// the originally parsed name and the user's final description to create a rule.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -158,7 +160,6 @@ fun PotentialTransactionItem(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(16.dp))
-            // --- UPDATED: Added "Create Rule" button ---
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { onCreateRule(transaction) }) {
                     Text("Create Rule")
@@ -196,7 +197,6 @@ fun ApproveTransactionScreen(
     val sheetState = rememberModalBottomSheetState()
 
 
-    // --- FIX: A category is now required for ALL transaction types ---
     val isSaveEnabled = description.isNotBlank() && selectedCategory != null
 
     DisposableEffect(Unit) {
@@ -257,7 +257,6 @@ fun ApproveTransactionScreen(
                             value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
                             onClick = null // Not editable
                         )
-                        // --- FIX: Category selector is now always visible ---
                         HorizontalDivider()
                         DetailRow(
                             icon = Icons.Default.Category,
@@ -306,7 +305,10 @@ fun ApproveTransactionScreen(
                                 )
                                 if (success) {
                                     settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
-                                    settingsViewModel.saveMerchantMapping(potentialTxn.smsSender, description)
+                                    // --- FIX: Call the correct function with the correct parameters ---
+                                    potentialTxn.merchantName?.let { originalName ->
+                                        settingsViewModel.saveMerchantRenameRule(originalName, description)
+                                    }
                                     val notificationManager = NotificationManagerCompat.from(context)
                                     notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
                                     navController.popBackStack()

@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - The AppNavHost has been updated to reflect the new UI
-// structure. The route for "settings_screen" has been completely removed. The
-// composable for the "Profile" destination now correctly provides the
-// SettingsViewModel, enabling the consolidated ProfileScreen to manage all
-// app settings.
+// REASON: REFACTOR - Lifted all shared ViewModels out of the NavHost and into the
+// MainAppScreen. They are now passed as explicit parameters to the AppNavHost. This
+// resolves the "Unresolved reference" compilation error by making the dependency
+// scopes clear and unambiguous for the navigation graph builder.
 // =================================================================================
 package io.pm.finlight
 
@@ -189,7 +188,17 @@ fun LockScreen(onUnlock: () -> Unit) {
 @Composable
 fun MainAppScreen() {
     val navController = rememberNavController()
+
+    // --- VIEWMODEL CREATION LIFTED TO HERE ---
     val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application))
+    val settingsViewModel: SettingsViewModel = viewModel()
+    val transactionViewModel: TransactionViewModel = viewModel()
+    val accountViewModel: AccountViewModel = viewModel()
+    val categoryViewModel: CategoryViewModel = viewModel()
+    val budgetViewModel: BudgetViewModel = viewModel()
+    val profileViewModel: ProfileViewModel = viewModel()
+    val incomeViewModel: IncomeViewModel = viewModel()
+
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
 
@@ -311,8 +320,16 @@ fun MainAppScreen() {
         AppNavHost(
             navController = navController,
             modifier = Modifier.padding(innerPadding),
+            activity = activity,
+            // --- PASSING VIEWMODELS AS PARAMETERS ---
             dashboardViewModel = dashboardViewModel,
-            activity = activity
+            settingsViewModel = settingsViewModel,
+            transactionViewModel = transactionViewModel,
+            accountViewModel = accountViewModel,
+            categoryViewModel = categoryViewModel,
+            budgetViewModel = budgetViewModel,
+            profileViewModel = profileViewModel,
+            incomeViewModel = incomeViewModel
         )
     }
 }
@@ -322,17 +339,17 @@ fun MainAppScreen() {
 fun AppNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
+    activity: AppCompatActivity,
+    // --- RECEIVING VIEWMODELS AS PARAMETERS ---
     dashboardViewModel: DashboardViewModel,
-    activity: AppCompatActivity
+    settingsViewModel: SettingsViewModel,
+    transactionViewModel: TransactionViewModel,
+    accountViewModel: AccountViewModel,
+    categoryViewModel: CategoryViewModel,
+    budgetViewModel: BudgetViewModel,
+    profileViewModel: ProfileViewModel,
+    incomeViewModel: IncomeViewModel
 ) {
-    val settingsViewModel: SettingsViewModel = viewModel()
-    val transactionViewModel: TransactionViewModel = viewModel()
-    val accountViewModel: AccountViewModel = viewModel()
-    val categoryViewModel: CategoryViewModel = viewModel()
-    val budgetViewModel: BudgetViewModel = viewModel()
-    val profileViewModel: ProfileViewModel = viewModel()
-    val incomeViewModel: IncomeViewModel = viewModel()
-
     NavHost(
         navController = navController,
         startDestination = "splash_screen",
@@ -358,7 +375,6 @@ fun AppNavHost(
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        // --- UPDATED: Pass SettingsViewModel to the ProfileScreen composable ---
         composable(BottomNavItem.Profile.route) {
             ProfileScreen(
                 navController = navController,
@@ -367,7 +383,6 @@ fun AppNavHost(
             )
         }
         composable("edit_profile") { EditProfileScreen(navController, profileViewModel) }
-        // --- REMOVED: The "settings_screen" route is now obsolete ---
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
         composable("search_screen") { SearchScreen(navController) }
         composable(
@@ -435,7 +450,15 @@ fun AppNavHost(
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/transaction_detail/{transactionId}" })
         ) { backStackEntry ->
             val transactionId = backStackEntry.arguments!!.getInt("transactionId")
-            TransactionDetailScreen(navController, transactionId, transactionViewModel)
+            TransactionDetailScreen(
+                navController = navController,
+                transactionId = transactionId,
+                viewModel = transactionViewModel,
+                // THIS NOW COMPILES CORRECTLY
+                onSaveRenameRule = { original, new ->
+                    settingsViewModel.saveMerchantRenameRule(original, new)
+                }
+            )
         }
 
         composable("account_list") { AccountListScreen(navController, accountViewModel) }

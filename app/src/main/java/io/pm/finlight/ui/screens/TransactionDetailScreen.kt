@@ -8,6 +8,15 @@
 // BUG FIX: The call to the suspend function `getOriginalSmsMessage` is now
 // correctly wrapped in a `rememberCoroutineScope` launch block to prevent
 // compilation errors.
+// REFACTOR: The logic for saving a merchant name has been updated to create a
+// `MerchantRenameRule` based on the original parsed text, rather than the SMS
+// sender, for a more accurate and intelligent parsing system.
+// BUG FIX: Removed the default `viewModel()` parameter for the SettingsViewModel
+// to resolve a compile-time "Unresolved reference" error by making the
+// dependency explicit and unambiguous for the navigation graph.
+// BUG FIX: Refactored to accept an `onSaveRenameRule` lambda instead of the
+// entire SettingsViewModel, which definitively resolves the "Unresolved reference"
+// error by removing dependency scope ambiguity.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -90,7 +99,7 @@ fun TransactionDetailScreen(
     navController: NavController,
     transactionId: Int,
     viewModel: TransactionViewModel = viewModel(),
-    settingsViewModel: SettingsViewModel = viewModel()
+    onSaveRenameRule: (originalName: String, newName: String) -> Unit
 ) {
     Log.d(TAG, "Composing TransactionDetailScreen for transactionId: $transactionId")
 
@@ -405,7 +414,7 @@ fun TransactionDetailScreen(
                             sheetContent = activeSheetContent!!,
                             details = details,
                             viewModel = viewModel,
-                            settingsViewModel = settingsViewModel,
+                            onSaveRenameRule = onSaveRenameRule,
                             accounts = accounts,
                             categories = categories,
                             allTags = allTags,
@@ -534,7 +543,7 @@ private fun TransactionEditSheetContent(
     sheetContent: SheetContent,
     details: TransactionDetails,
     viewModel: TransactionViewModel,
-    settingsViewModel: SettingsViewModel,
+    onSaveRenameRule: (originalName: String, newName: String) -> Unit,
     accounts: List<Account>,
     categories: List<Category>,
     allTags: List<Tag>,
@@ -556,10 +565,9 @@ private fun TransactionEditSheetContent(
                     scope.launch {
                         viewModel.updateTransactionDescription(transactionId, newDescription)
                         if (saveForFuture) {
-                            details.transaction.sourceSmsId?.let { smsId ->
-                                val smsMessage = viewModel.getOriginalSmsMessage(smsId)
-                                smsMessage?.sender?.let { sender ->
-                                    settingsViewModel.saveMerchantMapping(sender, newDescription)
+                            details.transaction.originalDescription?.let { originalName ->
+                                if (originalName.isNotBlank() && newDescription.isNotBlank()) {
+                                    onSaveRenameRule(originalName, newDescription)
                                 }
                             }
                         }
@@ -567,7 +575,7 @@ private fun TransactionEditSheetContent(
                 },
                 onDismiss = onDismiss
             ) {
-                if (details.transaction.sourceSmsId != null) {
+                if (details.transaction.originalDescription != null) {
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -577,7 +585,7 @@ private fun TransactionEditSheetContent(
                     ) {
                         Checkbox(checked = saveForFuture, onCheckedChange = { saveForFuture = it })
                         Spacer(Modifier.width(8.dp))
-                        Text("Apply this name to all future transactions from this sender.")
+                        Text("Always rename '${details.transaction.originalDescription}' to this")
                     }
                 }
             }
@@ -883,7 +891,7 @@ private fun TransactionHeaderCard(
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit,
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMMyyyy, h:mm a", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy, h:mm a", Locale.getDefault()) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),

@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - A new default account, "Cash Spends," has been added to the
-// initial database seeding in the `populateDatabase` function. This ensures that
-// all new installations of the app will have a default account available for
-// manual transaction entry, streamlining the user experience.
+// REASON: FEATURE - Added the new MerchantRenameRule entity and its corresponding
+// DAO to the database configuration. Also added a new migration (15 -> 16) to
+// create the `merchant_rename_rules` table and add the `originalDescription`
+// column to the `transactions` table.
 // =================================================================================
 package io.pm.finlight
 
@@ -30,9 +30,10 @@ import java.util.Calendar
         Tag::class,
         TransactionTagCrossRef::class,
         TransactionImage::class,
-        CustomSmsRule::class
+        CustomSmsRule::class,
+        MerchantRenameRule::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -44,6 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun recurringTransactionDao(): RecurringTransactionDao
     abstract fun tagDao(): TagDao
     abstract fun customSmsRuleDao(): CustomSmsRuleDao
+    abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
 
     companion object {
         @Volatile
@@ -131,9 +133,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Drop the old, sender-based table
                 db.execSQL("DROP TABLE IF EXISTS `custom_sms_rules`")
-                // Create the new, trigger-based table
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `custom_sms_rules` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -161,12 +161,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN originalDescription TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_rename_rules` (`originalName` TEXT NOT NULL, `newName` TEXT NOT NULL, PRIMARY KEY(`originalName`))")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -184,7 +191,6 @@ abstract class AppDatabase : RoomDatabase() {
 
             override fun onOpen(db: SupportSQLiteDatabase) {
                 super.onOpen(db)
-                // This remains as a good failsafe check
                 CoroutineScope(Dispatchers.IO).launch {
                     val database = getInstance(context)
                     val categoryDao = database.categoryDao()
@@ -201,18 +207,13 @@ abstract class AppDatabase : RoomDatabase() {
                 val transactionDao = db.transactionDao()
                 val budgetDao = db.budgetDao()
 
-                // 1. Clear all existing data
                 transactionDao.deleteAll()
                 budgetDao.deleteAll()
                 categoryDao.deleteAll()
                 accountDao.deleteAll()
 
-                // 2. Populate with defaults in the correct order
-                // FIRST, insert categories so they can be referenced by transactions/budgets.
                 categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
 
-                // SECOND, insert accounts.
-                // --- UPDATED: Added "Cash Spends" account ---
                 accountDao.insertAll(
                     listOf(
                         Account(id = 1, name = "Cash Spends", type = "Cash"),
@@ -222,7 +223,6 @@ abstract class AppDatabase : RoomDatabase() {
                     ),
                 )
 
-                // THIRD, insert sample data that references the defaults.
                 val calendar = Calendar.getInstance()
                 calendar.set(Calendar.DAY_OF_MONTH, 5)
                 val incomeDate = calendar.timeInMillis

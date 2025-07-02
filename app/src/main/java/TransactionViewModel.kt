@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE - Added logic to fetch and expose the original SMS message
-// for a given transaction. A new StateFlow `originalSmsText` holds the message
-// body, which is loaded via `loadOriginalSms` and cleared with `clearOriginalSms`
-// to support the new UI feature on the transaction detail screen.
+// REASON: BUG FIX - The call to `SmsParser.parse` was updated to pass the
+// full `db` instance instead of just the `customSmsRuleDao`. This resolves the
+// argument type mismatch and allows the parser to access all necessary DAOs
+// for applying custom parsing and renaming rules.
 // =================================================================================
 package io.pm.finlight
 
@@ -101,7 +101,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _defaultAccount = MutableStateFlow<Account?>(null)
     val defaultAccount: StateFlow<Account?> = _defaultAccount.asStateFlow()
 
-    // --- NEW: StateFlow to hold the original SMS text for the detail screen ---
     private val _originalSmsText = MutableStateFlow<String?>(null)
     val originalSmsText: StateFlow<String?> = _originalSmsText.asStateFlow()
 
@@ -164,7 +163,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- NEW: Function to load the original SMS message body ---
     fun loadOriginalSms(sourceSmsId: Long?) {
         if (sourceSmsId == null) {
             _originalSmsText.value = null
@@ -177,7 +175,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- NEW: Function to clear the SMS text when leaving the detail screen ---
     fun clearOriginalSms() {
         _originalSmsText.value = null
     }
@@ -207,8 +204,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            val customSmsRuleDao = db.customSmsRuleDao()
-            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), customSmsRuleDao)
+            // --- FIX: Pass the full db instance to the parser ---
+            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db)
             Log.d(logTag, "SmsParser result: $potentialTxn")
 
             if (potentialTxn != null) {
