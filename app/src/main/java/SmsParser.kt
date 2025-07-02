@@ -1,5 +1,9 @@
 package io.pm.finlight
 
+import kotlinx.coroutines.flow.first
+import java.util.regex.Pattern
+import java.util.regex.PatternSyntaxException
+
 // Removed android.util.Log import as it's not needed and causes test failures.
 
 data class PotentialAccount(
@@ -8,19 +12,19 @@ data class PotentialAccount(
 )
 
 object SmsParser {
-    // private const val TAG = "SmsParser" // No longer needed
-    private val AMOUNT_REGEX = "(?:rs|inr|rs\\.?)\\s*([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
+    // --- UPDATED: Renamed for clarity and added a fallback regex ---
+    // This is a high-precision regex that looks for explicit currency symbols.
+    private val CURRENCY_AMOUNT_REGEX = "(?:rs|inr|rs\\.?)\\s*([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
+    // This is a fallback regex that looks for keywords often preceding an amount.
+    private val KEYWORD_AMOUNT_REGEX = "(?:purchase of|payment of|spent|charged|credited with|debited for|credit of|for)\\s+([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
+
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
-
-    // --- FIX: Added "has been credited to" to ignore informational NEFT messages ---
     private val NEGATIVE_KEYWORDS_REGEX = "\\b(invoice of|payment of.*is successful|has been credited to)\\b".toRegex(RegexOption.IGNORE_CASE)
 
 
-    // --- REFINED: Reordered patterns and made them more specific ---
     private val ACCOUNT_PATTERNS =
         listOf(
-            // --- FIX: Added new, more specific patterns for ICICI and HDFC ---
             "(ICICI Bank) Account XX(\\d{3,4}) credited".toRegex(RegexOption.IGNORE_CASE),
             "(HDFC Bank) : NEFT money transfer".toRegex(RegexOption.IGNORE_CASE),
             "spent from (Pluxee)\\s*(Meal Card wallet), card no\\.\\s*xx(\\d{4})".toRegex(RegexOption.IGNORE_CASE),
@@ -38,7 +42,6 @@ object SmsParser {
             "UPI.*(?:to|\\bat\\b)\\s+([A-Za-z0-9\\s.&'()]+?)(?:\\s+on|\\s+Ref|$)".toRegex(RegexOption.IGNORE_CASE),
             "to\\s+([a-zA-Z0-9.\\-_]+@[a-zA-Z0-9]+)".toRegex(RegexOption.IGNORE_CASE),
             "(?:\\bat\\b|to\\s+)([A-Za-z0-9\\s.&'-]+?)(?:\\s+on\\s+|\\s+for\\s+|\\.|$|\\s+was\\s+)".toRegex(RegexOption.IGNORE_CASE),
-            // --- FIX: Made the colon optional and the capture non-greedy to correctly parse NEFT info ---
             "Info:?\\s*([A-Za-z0-9\\s.&'-]+?)(?:\\.|$)".toRegex(RegexOption.IGNORE_CASE)
         )
 
@@ -47,15 +50,12 @@ object SmsParser {
             val match = pattern.find(smsBody)
             if (match != null) {
                 val pString = pattern.pattern
-                // --- REFINED: Use pattern string to determine logic, which is more robust ---
                 return when {
-                    // --- FIX: Handle new ICICI credit pattern ---
                     pString.startsWith("(ICICI Bank) Account") -> {
                         val bank = match.groupValues[1].trim()
                         val number = match.groupValues[2].trim()
                         PotentialAccount(formattedName = "$bank - xx$number", accountType = "Bank Account")
                     }
-                    // --- FIX: Handle new HDFC NEFT pattern ---
                     pString.startsWith("(HDFC Bank) : NEFT") -> {
                         val bank = match.groupValues[1].trim()
                         PotentialAccount(formattedName = bank, accountType = "Bank Account")
@@ -66,20 +66,17 @@ object SmsParser {
                         val number = match.groupValues[3].trim() // Number
                         PotentialAccount(formattedName = "$group1 - xx$number", accountType = group2)
                     }
-                    // Handles SBI, HDFC
                     pString.startsWith("on your") || pString.startsWith("On") -> {
                         val group1 = match.groupValues[1].trim() // Bank or brand
                         val group2 = match.groupValues[2].trim() // Type
                         val number = match.groupValues[3].trim() // Number
                         PotentialAccount(formattedName = "$group1 - xx$number", accountType = group2)
                     }
-                    // Handles ICICI Debit
                     pString.contains("debited") -> {
                         val bank = match.groupValues[1].trim()
                         val number = match.groupValues[2].trim()
                         PotentialAccount(formattedName = "$bank - xx$number", accountType = "Savings Account")
                     }
-                    // Handles ICICI Credit
                     pString.contains("is credited") -> {
                         val number = match.groupValues[1].trim()
                         val bank = match.groupValues[2].trim()
@@ -92,21 +89,44 @@ object SmsParser {
         return null
     }
 
-    fun parse(
+    suspend fun parse(
         sms: SmsMessage,
         mappings: Map<String, String>,
+        customSmsRuleDao: CustomSmsRuleDao
     ): PotentialTransaction? {
         val messageBody = sms.body
 
-        // --- FIX: Check for negative keywords first to reject non-transactional messages ---
         if (NEGATIVE_KEYWORDS_REGEX.containsMatchIn(messageBody)) {
             return null
         }
 
-        val amountMatch = AMOUNT_REGEX.find(messageBody)
-        val amount =
-            amountMatch?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
-                ?: return null
+        val customRules = customSmsRuleDao.getRulesForSender(sms.sender).first()
+        var extractedMerchant: String? = null
+        var extractedAmount: Double? = null
+
+        if (customRules.isNotEmpty()) {
+            for (rule in customRules) {
+                try {
+                    val regex = rule.regexPattern.toRegex()
+                    val match = regex.find(messageBody)
+                    if (match != null && match.groupValues.size > 1) {
+                        val capturedValue = match.groupValues[1].trim()
+                        when (rule.ruleType) {
+                            "MERCHANT" -> if (extractedMerchant == null) extractedMerchant = capturedValue
+                            "AMOUNT" -> if (extractedAmount == null) extractedAmount = capturedValue.replace(",", "").toDoubleOrNull()
+                        }
+                    }
+                } catch (e: PatternSyntaxException) {
+                    // Ignore invalid regex patterns
+                }
+            }
+        }
+
+        // --- UPDATED: Use the new fallback amount regex ---
+        val amount = extractedAmount
+            ?: CURRENCY_AMOUNT_REGEX.find(messageBody)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
+            ?: KEYWORD_AMOUNT_REGEX.find(messageBody)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
+            ?: return null
 
         val transactionType =
             when {
@@ -115,17 +135,14 @@ object SmsParser {
                 else -> return null
             }
 
-        var merchantName = mappings[sms.sender]
+        var merchantName = extractedMerchant ?: mappings[sms.sender]
 
         if (merchantName == null) {
             for (pattern in MERCHANT_REGEX_PATTERNS) {
                 val match = pattern.find(messageBody)
                 if (match != null) {
                     val potentialName = match.groups[1]?.value?.replace("_", " ")?.replace(Regex("\\s+"), " ")?.trim()
-                    // --- FIX: Allow NEFT references to pass the digit filter ---
                     if (!potentialName.isNullOrBlank() && !potentialName.contains("call", ignoreCase = true)) {
-                        // If the name starts with NEFT, it's a valid transaction reference.
-                        // Otherwise, apply the digit check to filter out phone numbers.
                         if (potentialName.startsWith("NEFT", ignoreCase = true) || !potentialName.matches(Regex(".*\\d{6,}.*"))) {
                             merchantName = potentialName
                             break
@@ -136,7 +153,6 @@ object SmsParser {
         }
 
         val potentialAccount = parseAccount(messageBody, sms.sender)
-
         val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
         val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
         val smsHash = (normalizedSender + normalizedBody).hashCode().toString()

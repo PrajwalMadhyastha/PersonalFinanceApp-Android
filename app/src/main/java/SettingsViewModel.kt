@@ -163,9 +163,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     transactionRepository.getAllSmsHashes().first().toSet()
                 }
 
+                val customSmsRuleDao = db.customSmsRuleDao() // Get DAO instance
+
                 val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { sms ->
-                        SmsParser.parse(sms, existingMappings)
+                        // --- UPDATED: Pass the custom rule DAO to the parser ---
+                        SmsParser.parse(sms, existingMappings, customSmsRuleDao)
                     }
                 }
 
