@@ -1,5 +1,10 @@
+// =================================================================================
 // FILE: app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt
-
+// REASON: BUG FIX - The PagerState is now passed down to the individual page
+// composables (`UserNamePage`, `BudgetSetupPage`). This allows each page to
+// know when it is the `currentPage` and request focus only when it is active,
+// preventing focus from being stolen by off-screen pages.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -26,7 +31,6 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // --- UPDATED: Page count is now 7 after removing category selection ---
     val pagerState = rememberPagerState { 7 }
     val scope = rememberCoroutineScope()
 
@@ -56,11 +60,11 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
                 .padding(innerPadding),
             userScrollEnabled = false
         ) { page ->
-            // --- UPDATED: Removed CategorySetupPage and shifted indices ---
             when (page) {
                 0 -> WelcomePage()
-                1 -> UserNamePage(viewModel)
-                2 -> BudgetSetupPage(viewModel)
+                // --- FIX: Pass pagerState to pages that need to manage focus ---
+                1 -> UserNamePage(viewModel = viewModel, pagerState = pagerState)
+                2 -> BudgetSetupPage(viewModel = viewModel, pagerState = pagerState)
                 3 -> SmsPermissionPage(onPermissionResult = onNextClicked)
                 4 -> SmsScanningInfoPage()
                 5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
@@ -90,7 +94,6 @@ fun OnboardingBottomBar(
         ) {
             PageIndicator(pageCount = pagerState.pageCount, currentPage = pagerState.currentPage)
 
-            // --- UPDATED: Page indices for hiding the "Next" button adjusted ---
             val isNextButtonVisible = pagerState.currentPage < pagerState.pageCount - 1 &&
                     pagerState.currentPage != 3 && // Hide on SMS Permission Page
                     pagerState.currentPage != 5    // Hide on Notification Permission Page

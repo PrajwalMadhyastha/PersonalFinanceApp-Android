@@ -1,7 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
-// REASON: Implemented auto-focus for the text fields on the "User Name" and
-// "Budget" pages to improve usability during the onboarding flow.
+// REASON: BUG FIX - The automatic focus request logic has been completely removed
+// from `UserNamePage` and `BudgetSetupPage`. This was causing unpredictable
+// layout behavior when the keyboard appeared. Removing it prioritizes a stable,
+// centered layout and definitively resolves the issue where the content would
+// shift to the side.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -10,8 +13,12 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.*
@@ -19,8 +26,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -81,15 +86,15 @@ fun WelcomePage() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun UserNamePage(viewModel: OnboardingViewModel) {
+fun UserNamePage(viewModel: OnboardingViewModel, pagerState: PagerState) {
     val name by viewModel.userName.collectAsState()
-    // --- NEW: Create a focus requester ---
-    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -101,7 +106,7 @@ fun UserNamePage(viewModel: OnboardingViewModel) {
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(24.dp))
-        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall)
+        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Text(
             "This will be used to personalize your experience.",
             style = MaterialTheme.typography.bodyMedium,
@@ -118,33 +123,32 @@ fun UserNamePage(viewModel: OnboardingViewModel) {
                 capitalization = KeyboardCapitalization.Words
             ),
             singleLine = true,
-            // --- NEW: Apply the focus requester modifier ---
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester)
+            modifier = Modifier.fillMaxWidth()
         )
-    }
-
-    // --- NEW: Request focus when the composable enters the composition ---
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun BudgetSetupPage(viewModel: OnboardingViewModel) {
+fun BudgetSetupPage(viewModel: OnboardingViewModel, pagerState: PagerState) {
     val budget by viewModel.monthlyBudget.collectAsState()
-    // --- NEW: Create a focus requester ---
-    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall)
+        Icon(
+            imageVector = Icons.Default.Savings,
+            contentDescription = "Budget Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Text(
             "Give yourself a spending target for the month.",
             style = MaterialTheme.typography.bodyMedium,
@@ -163,16 +167,8 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
             label = { Text("Total Monthly Budget") },
             leadingIcon = { Text("₹") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            // --- NEW: Apply the focus requester modifier ---
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester)
+            modifier = Modifier.fillMaxWidth()
         )
-    }
-
-    // --- NEW: Request focus when the composable enters the composition ---
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
     }
 }
 
@@ -199,7 +195,7 @@ fun SmsPermissionPage(onPermissionResult: () -> Unit) {
     ) {
         Icon(Icons.AutoMirrored.Filled.Message, contentDescription = "SMS Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(24.dp))
-        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium)
+        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         Text(
             "Consider allowing Finlight to read your SMS inbox to automatically detect and import new transactions. This is a huge time-saver!",

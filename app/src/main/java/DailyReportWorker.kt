@@ -1,8 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
-// REASON: Added a call to ReminderManager.scheduleDailyReport at the end of the
-// worker's execution. This crucial step creates a continuous chain, ensuring that
-// the next day's report is always enqueued after the current one runs.
+// REASON: BUG FIX - The date calculation logic has been made more precise. The
+// start of "yesterday" is now explicitly set to the first millisecond (00:00:00.000)
+// and the end is set to the last millisecond (23:59:59.999). This ensures that
+// the `BETWEEN` clause in the database query correctly includes all transactions
+// from the entire day, fixing a bug where transactions from late in the day
+// could be missed.
 // =================================================================================
 package io.pm.finlight
 
@@ -33,14 +36,19 @@ class DailyReportWorker(
                 // 1. Calculate the start and end timestamps for "yesterday".
                 val calendar = Calendar.getInstance()
                 calendar.add(Calendar.DAY_OF_YEAR, -1) // Go back to yesterday
+
+                // --- FIX: Set to the very end of yesterday for full inclusivity ---
                 calendar.set(Calendar.HOUR_OF_DAY, 23)
                 calendar.set(Calendar.MINUTE, 59)
                 calendar.set(Calendar.SECOND, 59)
+                calendar.set(Calendar.MILLISECOND, 999)
                 val endDate = calendar.timeInMillis
 
+                // --- FIX: Set to the very start of yesterday for full inclusivity ---
                 calendar.set(Calendar.HOUR_OF_DAY, 0)
                 calendar.set(Calendar.MINUTE, 0)
                 calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
                 val startDate = calendar.timeInMillis
 
                 // 2. Fetch transactions for yesterday.
