@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - Lifted all shared ViewModels out of the NavHost and into the
-// MainAppScreen. They are now passed as explicit parameters to the AppNavHost. This
-// resolves the "Unresolved reference" compilation error by making the dependency
-// scopes clear and unambiguous for the navigation graph builder.
+// REASON: REFACTOR - Removed `BottomNavItem.Profile` from the `bottomNavItems`
+// list. This simplifies the main navigation by removing the "Profile" tab from
+// the bottom navigation bar, making the clickable profile picture on the
+// dashboard the sole entry point to the user's profile.
 // =================================================================================
 package io.pm.finlight
 
@@ -189,7 +189,6 @@ fun LockScreen(onUnlock: () -> Unit) {
 fun MainAppScreen() {
     val navController = rememberNavController()
 
-    // --- VIEWMODEL CREATION LIFTED TO HERE ---
     val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application))
     val settingsViewModel: SettingsViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
@@ -202,11 +201,11 @@ fun MainAppScreen() {
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
 
+    // --- REFACTOR: Removed BottomNavItem.Profile from this list ---
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
-        BottomNavItem.Reports,
-        BottomNavItem.Profile
+        BottomNavItem.Reports
     )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -258,7 +257,7 @@ fun MainAppScreen() {
                                     .size(36.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable { navController.navigate(BottomNavItem.Profile.route) }
+                                    .clickable { navController.navigate("profile") } // Navigate to the profile route
                             )
                         } else if (!showBottomBar) {
                             IconButton(onClick = { navController.popBackStack() }) {
@@ -321,7 +320,6 @@ fun MainAppScreen() {
             navController = navController,
             modifier = Modifier.padding(innerPadding),
             activity = activity,
-            // --- PASSING VIEWMODELS AS PARAMETERS ---
             dashboardViewModel = dashboardViewModel,
             settingsViewModel = settingsViewModel,
             transactionViewModel = transactionViewModel,
@@ -340,7 +338,6 @@ fun AppNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
     activity: AppCompatActivity,
-    // --- RECEIVING VIEWMODELS AS PARAMETERS ---
     dashboardViewModel: DashboardViewModel,
     settingsViewModel: SettingsViewModel,
     transactionViewModel: TransactionViewModel,
@@ -375,7 +372,7 @@ fun AppNavHost(
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        composable(BottomNavItem.Profile.route) {
+        composable("profile") { // The route "profile" is still valid
             ProfileScreen(
                 navController = navController,
                 profileViewModel = profileViewModel,
@@ -454,7 +451,6 @@ fun AppNavHost(
                 navController = navController,
                 transactionId = transactionId,
                 viewModel = transactionViewModel,
-                // THIS NOW COMPILES CORRECTLY
                 onSaveRenameRule = { original, new ->
                     settingsViewModel.saveMerchantRenameRule(original, new)
                 }
