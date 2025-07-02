@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Updated the TopAppBar logic to hide the main app bar for the new
-// IncomeScreen and the existing TransactionListScreen, as they now manage
-// their own app bars with filter actions.
+// REASON: REFACTOR - The AppNavHost has been updated to reflect the new UI
+// structure. The route for "settings_screen" has been completely removed. The
+// composable for the "Profile" destination now correctly provides the
+// SettingsViewModel, enabling the consolidated ProfileScreen to manage all
+// app settings.
 // =================================================================================
 package io.pm.finlight
 
@@ -220,7 +222,6 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
-    // --- UPDATED: The main TopAppBar is now hidden for more screens ---
     val showMainTopBar = baseCurrentRoute !in setOf(
         "transaction_detail",
         "transaction_list",
@@ -357,9 +358,16 @@ fun AppNavHost(
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        composable(BottomNavItem.Profile.route) { ProfileScreen(navController, profileViewModel) }
+        // --- UPDATED: Pass SettingsViewModel to the ProfileScreen composable ---
+        composable(BottomNavItem.Profile.route) {
+            ProfileScreen(
+                navController = navController,
+                profileViewModel = profileViewModel,
+                settingsViewModel = settingsViewModel
+            )
+        }
         composable("edit_profile") { EditProfileScreen(navController, profileViewModel) }
-        composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
+        // --- REMOVED: The "settings_screen" route is now obsolete ---
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
         composable("search_screen") { SearchScreen(navController) }
         composable(
@@ -451,7 +459,6 @@ fun AppNavHost(
         composable("recurring_transactions") { RecurringTransactionScreen(navController) }
         composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
 
-        // --- UPDATED: Route for the Rule Creation Screen now includes smsSender ---
         composable(
             "rule_creation_screen/{potentialTransactionJson}",
             arguments = listOf(
