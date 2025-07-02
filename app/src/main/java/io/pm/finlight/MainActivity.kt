@@ -449,16 +449,22 @@ fun AppNavHost(
 
         // --- UPDATED: Route for the Rule Creation Screen now includes smsSender ---
         composable(
-            "rule_creation_screen/{smsText}",
+            "rule_creation_screen/{smsText}?transactionId={transactionId}",
             arguments = listOf(
-                navArgument("smsText") { type = NavType.StringType }
+                navArgument("smsText") { type = NavType.StringType },
+                navArgument("transactionId") {
+                    type = NavType.IntType
+                    defaultValue = -1 // A default value indicates no ID was passed
+                }
             )
         ) { backStackEntry ->
             val encodedSmsText = backStackEntry.arguments?.getString("smsText") ?: ""
             val smsText = URLDecoder.decode(encodedSmsText, "UTF-8")
+            val transactionId = backStackEntry.arguments?.getInt("transactionId") ?: -1
             RuleCreationScreen(
                 navController = navController,
-                smsText = smsText
+                smsText = smsText,
+                transactionId = transactionId // Pass the ID to the screen
             )
         }
     }

@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: Added state management for filters (keyword, account, category) and
-// refactored the main data flows to be reactive to changes in these filters,
-// enabling a dynamic, in-screen filtering experience.
+// REASON: Added the `reparseTransactionFromSms` function. This new function
+// provides the core logic for the auto-update feature. It fetches the original
+// SMS for a given transaction, re-runs the parser (which will now use the newly
+// saved rule), and updates the transaction's description in the database if a
+// better one is found.
 // =================================================================================
 package io.pm.finlight
 
@@ -25,7 +27,6 @@ import java.util.Locale
 
 private const val TAG = "TransactionViewModel"
 
-// --- NEW: Data class to hold the filter state ---
 data class TransactionFilterState(
     val keyword: String = "",
     val account: Account? = null,
@@ -39,7 +40,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val categoryRepository: CategoryRepository
     private val tagRepository: TagRepository
     private val settingsRepository: SettingsRepository
-    private val smsRepository: SmsRepository // --- NEW: Add SmsRepository instance ---
+    private val smsRepository: SmsRepository
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
@@ -49,7 +50,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
     val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
 
-    // --- NEW: StateFlow to manage the active filters ---
     private val _filterState = MutableStateFlow(TransactionFilterState())
     val filterState: StateFlow<TransactionFilterState> = _filterState.asStateFlow()
 
@@ -105,7 +105,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         categoryRepository = CategoryRepository(db.categoryDao())
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
         settingsRepository = SettingsRepository(application)
-        smsRepository = SmsRepository(application) // --- NEW: Initialize SmsRepository ---
+        smsRepository = SmsRepository(application)
         allTransactions = transactionRepository.allTransactions.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -165,7 +165,35 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- NEW: Functions to update the filter state ---
+    // --- NEW: Function to re-parse a transaction and update it ---
+    fun reparseTransactionFromSms(transactionId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val transaction = transactionRepository.getTransactionById(transactionId).first()
+            if (transaction?.sourceSmsId == null) {
+                Log.w(TAG, "Reparse failed: Transaction or sourceSmsId is null for txnId: $transactionId")
+                return@launch
+            }
+
+            val smsMessage = smsRepository.getSmsDetailsById(transaction.sourceSmsId)
+            if (smsMessage == null) {
+                Log.w(TAG, "Reparse failed: Could not find original SMS for sourceSmsId: ${transaction.sourceSmsId}")
+                return@launch
+            }
+
+            // Re-run the parser with the latest rules
+            val customSmsRuleDao = db.customSmsRuleDao()
+            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), customSmsRuleDao)
+
+            if (potentialTxn?.merchantName != null && potentialTxn.merchantName != transaction.description) {
+                Log.d(TAG, "Reparsed successfully. Updating description for txnId $transactionId from '${transaction.description}' to '${potentialTxn.merchantName}'")
+                transactionRepository.updateDescription(transactionId, potentialTxn.merchantName)
+            } else {
+                Log.d(TAG, "Reparse complete, but no new merchant name found. No update needed.")
+            }
+        }
+    }
+
+
     fun updateFilterKeyword(keyword: String) {
         _filterState.update { it.copy(keyword = keyword) }
     }

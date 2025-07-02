@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: Implemented on-the-fly creation for Accounts and Categories within the
-// editing flow. The bottom sheets for selection now include a "+ Create New"
-// option, which launches a dialog. After creation, the transaction is
-// automatically updated with the new item.
+// REASON: Implemented the final piece of the auto-update flow. The screen now
+// passes the current `transactionId` when navigating to the rule creation screen.
+// It also uses a `LaunchedEffect` to listen for the "reparse_needed" signal
+// from the navigation back stack, triggering the new `reparseTransactionFromSms`
+// function in the ViewModel to provide instant feedback to the user.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +97,22 @@ fun TransactionDetailScreen(
             }
         }
     }
+
+    // --- NEW: Listen for the result from the RuleCreationScreen ---
+    val reparseResult = navController.currentBackStackEntry
+        ?.savedStateHandle
+        ?.getLiveData<Boolean>("reparse_needed")
+        ?.observeAsState()
+
+    LaunchedEffect(reparseResult?.value) {
+        if (reparseResult?.value == true) {
+            Log.d("DetailScreen", "Reparse needed signal received for txn ID: $transactionId")
+            viewModel.reparseTransactionFromSms(transactionId)
+            // Clear the signal to prevent re-triggering on config change
+            navController.currentBackStackEntry?.savedStateHandle?.set("reparse_needed", false)
+        }
+    }
+
 
     val accounts by viewModel.allAccounts.collectAsState()
     val categories by viewModel.allCategories.collectAsState(initial = emptyList())
@@ -298,17 +316,16 @@ fun TransactionDetailScreen(
                         }
                     }
 
-                    // --- NEW: Conditionally show the "Fix Parsing" button ---
-                    if (details.transaction.description == "Unknown Merchant" && details.transaction.sourceSmsId != null) {
+                    if (details.transaction.sourceSmsId != null) {
                         item {
                             Button(
                                 onClick = {
                                     scope.launch {
                                         val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId)
                                         if (smsMessage != null) {
-                                            // --- UPDATED: Navigate to the new, simpler route ---
+                                            // --- UPDATED: Navigate to the new route with the transactionId ---
                                             val encodedBody = URLEncoder.encode(smsMessage.body, "UTF-8")
-                                            navController.navigate("rule_creation_screen/$encodedBody")
+                                            navController.navigate("rule_creation_screen/$encodedBody?transactionId=${details.transaction.id}")
                                         } else {
                                             Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
                                         }
@@ -456,6 +473,7 @@ fun TransactionDetailScreen(
     }
 }
 
+// ... (rest of the file remains the same) ...
 @Composable
 private fun TransactionEditSheetContent(
     sheetContent: SheetContent,

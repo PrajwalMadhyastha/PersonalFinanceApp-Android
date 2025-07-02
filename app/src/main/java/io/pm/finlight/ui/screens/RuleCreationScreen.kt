@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt
-// REASON: ARCHITECTURAL REFACTOR - The UI is updated for the trigger-based
-// system. A "Mark as Trigger" button has been added, and the summary view now
-// displays the selected trigger. The "Save Rule" button is now enabled only
-// when a trigger and at least one other field (merchant or amount) are marked.
+// REASON: The screen now accepts an optional `transactionId`. If a valid ID is
+// present, it uses the SavedStateHandle to send a "reparse_needed" signal back
+// to the previous screen (TransactionDetailScreen) when a rule is saved. This
+// triggers the automatic update of the transaction.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -58,7 +58,8 @@ class RuleCreationViewModelFactory(private val application: Application) : ViewM
 @Composable
 fun RuleCreationScreen(
     navController: NavController,
-    smsText: String
+    smsText: String,
+    transactionId: Int // --- NEW: Accept the transactionId ---
 ) {
     val context = LocalContext.current.applicationContext as Application
     val viewModel: RuleCreationViewModel = viewModel(factory = RuleCreationViewModelFactory(context))
@@ -93,7 +94,6 @@ fun RuleCreationScreen(
             val selection = textFieldValue.selection
             val isSelectionActive = !selection.collapsed
 
-            // --- NEW: Button to mark the trigger phrase ---
             Button(
                 onClick = {
                     val start = min(selection.start, selection.end)
@@ -138,7 +138,6 @@ fun RuleCreationScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Defined Rule", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     HorizontalDivider()
-                    // --- NEW: Display the selected trigger phrase ---
                     RuleSummaryItem(
                         icon = Icons.Default.Flag,
                         label = "Trigger",
@@ -169,6 +168,12 @@ fun RuleCreationScreen(
                     onClick = {
                         scope.launch {
                             viewModel.saveRule(smsText) {
+                                // --- NEW: If we have a valid ID, send the signal back ---
+                                if (transactionId != -1) {
+                                    navController.previousBackStackEntry
+                                        ?.savedStateHandle
+                                        ?.set("reparse_needed", true)
+                                }
                                 navController.popBackStack()
                             }
                         }
