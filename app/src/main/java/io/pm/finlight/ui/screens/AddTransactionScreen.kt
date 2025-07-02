@@ -1,13 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: Implemented on-the-fly creation of Accounts and Categories. The selection
-// bottom sheets now include a "+ Create New" option, which launches a dialog
-// to add the new item without leaving the screen. The new item is then
-// automatically selected.
-// BUG FIX: Removed local dialog definitions and imported them from the new
-// ui.components package to resolve compilation errors.
-// BUG FIX: The Category picker is now always visible for both Income and Expense
-// types, and is required for saving.
+// REASON: FEATURE - The screen now observes the `defaultAccount` StateFlow from
+// the ViewModel. In a `LaunchedEffect`, it sets the `selectedAccount` state to
+// this default account as soon as it's available, but only for new manual
+// transactions (not for CSV edits). This pre-selects "Cash Spends" for the user.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -103,11 +99,20 @@ fun AddTransactionScreen(
     var showCreateAccountDialog by remember { mutableStateOf(false) }
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
 
-    // --- FIX: The save button is now enabled only when a category is selected for ALL types ---
     val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && selectedCategory != null)
 
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
+
+    // --- NEW: Get the default account from the ViewModel ---
+    val defaultAccount by viewModel.defaultAccount.collectAsState()
+
+    // --- NEW: Set the default account when the screen loads for a new transaction ---
+    LaunchedEffect(defaultAccount, isCsvEdit) {
+        if (!isCsvEdit && selectedAccount == null) {
+            selectedAccount = defaultAccount
+        }
+    }
 
     LaunchedEffect(initialDataJson, accounts, categories) {
         if (isCsvEdit && initialDataJson != null) {
@@ -176,7 +181,6 @@ fun AddTransactionScreen(
                     onAccountClick = { activeSheetContent = AddSheetContent.Account },
                     selectedCategory = selectedCategory,
                     onCategoryClick = { activeSheetContent = AddSheetContent.Category },
-                    // --- FIX: Category is now always visible ---
                     isCategoryVisible = true,
                     selectedDate = selectedDateTime.time,
                     onDateClick = { showDatePicker = true },

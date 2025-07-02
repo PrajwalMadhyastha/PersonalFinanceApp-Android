@@ -90,7 +90,7 @@ fun TransactionDetailScreen(
     Log.d(TAG, "Composing TransactionDetailScreen for transactionId: $transactionId")
 
     val screenState by produceState<DetailScreenState>(initialValue = DetailScreenState.Loading, transactionId) {
-        viewModel.getTransactionDetailsById(transactionId).collect { details ->
+        viewModel.findTransactionDetailsById(transactionId).collect { details ->
             value = if (details != null) {
                 DetailScreenState.Success(details)
             } else {

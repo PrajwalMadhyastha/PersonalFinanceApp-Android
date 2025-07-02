@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: DEBUGGING - Added extensive, detailed logging to the
-// `reparseTransactionFromSms` function. This will trace every step of the
-// account update logic—from parsing to database lookups and updates—to help
-// diagnose why the account is not being updated correctly on the UI.
+// REASON: DEBUGGING - Renamed `getTransactionDetailsById` to `findTransactionDetailsById`.
+// This change is intended to resolve a persistent "unresolved reference"
+// compilation error that can sometimes be caused by build caching or linking issues.
 // =================================================================================
 package io.pm.finlight
 
@@ -98,6 +97,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val transactionImages: StateFlow<List<TransactionImage>> = _transactionImages.asStateFlow()
     val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
 
+    private val _defaultAccount = MutableStateFlow<Account?>(null)
+    val defaultAccount: StateFlow<Account?> = _defaultAccount.asStateFlow()
+
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
@@ -151,6 +153,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val remainingDays = if (today.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) && today.get(Calendar.MONTH) == calendar.get(Calendar.MONTH)) { (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1) } else if (calendar.after(today)) { lastDayOfMonth } else { 1 }
             if (remaining > 0) remaining / remainingDays else 0f
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+        viewModelScope.launch {
+            _defaultAccount.value = db.accountDao().findByName("Cash Spends")
+        }
     }
 
     suspend fun getOriginalSmsMessage(smsId: Long): SmsMessage? {
@@ -393,7 +399,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         currentTxnIdForTags = null
     }
 
-    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+    // --- UPDATED: Renamed function ---
+    fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
         return transactionRepository.getTransactionDetailsById(id)
     }
 

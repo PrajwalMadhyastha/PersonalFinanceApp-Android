@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: UX IMPROVEMENT - Database version is incremented to 14. A new
-// migration (13-14) is added to alter the `custom_sms_rules` table, adding
-// the new `merchantNameExample` and `amountExample` columns to store
-// user-friendly text for the management screen.
+// REASON: FEATURE - A new default account, "Cash Spends," has been added to the
+// initial database seeding in the `populateDatabase` function. This ensures that
+// all new installations of the app will have a default account available for
+// manual transaction entry, streamlining the user experience.
 // =================================================================================
 package io.pm.finlight
 
@@ -32,7 +32,7 @@ import java.util.Calendar
         TransactionImage::class,
         CustomSmsRule::class
     ],
-    version = 15, // --- UPDATED: Incremented version to 15 ---
+    version = 15,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -166,7 +166,7 @@ abstract class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15) // --- UPDATED: Added new migration ---
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -212,11 +212,13 @@ abstract class AppDatabase : RoomDatabase() {
                 categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
 
                 // SECOND, insert accounts.
+                // --- UPDATED: Added "Cash Spends" account ---
                 accountDao.insertAll(
                     listOf(
-                        Account(id = 1, name = "SBI", type = "Savings"),
-                        Account(id = 2, name = "HDFC", type = "Credit Card"),
-                        Account(id = 3, name = "ICICI", type = "Savings"),
+                        Account(id = 1, name = "Cash Spends", type = "Cash"),
+                        Account(id = 2, name = "SBI", type = "Savings"),
+                        Account(id = 3, name = "HDFC", type = "Credit Card"),
+                        Account(id = 4, name = "ICICI", type = "Savings"),
                     ),
                 )
 
@@ -236,7 +238,7 @@ abstract class AppDatabase : RoomDatabase() {
                             categoryId = 12, // "Salary"
                             amount = 75000.0,
                             date = incomeDate,
-                            accountId = 1,
+                            accountId = 2, // SBI
                             notes = "Paycheck",
                             transactionType = "income",
                         ),
@@ -245,7 +247,7 @@ abstract class AppDatabase : RoomDatabase() {
                             categoryId = 6, // "Groceries"
                             amount = 4500.0,
                             date = expenseDate1,
-                            accountId = 2,
+                            accountId = 3, // HDFC
                             notes = "Weekly groceries",
                             transactionType = "expense",
                         ),
@@ -254,7 +256,7 @@ abstract class AppDatabase : RoomDatabase() {
                             categoryId = 4, // "Food & Drinks"
                             amount = 1200.0,
                             date = expenseDate2,
-                            accountId = 2,
+                            accountId = 3, // HDFC
                             notes = null,
                             transactionType = "expense",
                         )
