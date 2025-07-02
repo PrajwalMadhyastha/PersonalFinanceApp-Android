@@ -32,7 +32,7 @@ import java.util.Calendar
         TransactionImage::class,
         CustomSmsRule::class
     ],
-    version = 14, // --- UPDATED: Incremented version to 14 ---
+    version = 15, // --- UPDATED: Incremented version to 15 ---
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -147,11 +147,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add example fields to the rules table ---
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `merchantNameExample` TEXT")
                 db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `amountExample` TEXT")
+            }
+        }
+
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `accountRegex` TEXT")
+                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `accountNameExample` TEXT")
             }
         }
 
@@ -160,7 +166,7 @@ abstract class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14) // --- UPDATED: Added new migration ---
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15) // --- UPDATED: Added new migration ---
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance

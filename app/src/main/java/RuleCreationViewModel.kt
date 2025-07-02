@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
-// REASON: CRASH FIX - The `saveRule` function was incorrectly passing a text
-// snippet instead of the full SMS body to the `generateRegex` function, causing
-// a StringIndexOutOfBoundsException. The function signature has been corrected
-// to accept the `fullSmsText`, resolving the crash.
+// REASON: BUG FIX - The `generateRegex` function was too strict with its
+// whitespace requirements, causing rules to fail if the selected text was
+// adjacent to punctuation. The regex construction is now more flexible, using
+// `\s*` (zero or more whitespace) instead of `\s+` (one or more), making the
+// generated rules much more robust and reliable.
 // =================================================================================
 package io.pm.finlight
 
@@ -20,10 +21,6 @@ import java.util.regex.Pattern
 
 /**
  * Data class to hold the state of a user's selection for a custom rule.
- *
- * @param selectedText The actual text the user has highlighted.
- * @param startIndex The starting index of the selection within the original SMS text.
- * @param endIndex The ending index of the selection within the original SMS text.
  */
 data class RuleSelection(
     val selectedText: String = "",
@@ -38,6 +35,7 @@ data class RuleCreationUiState(
     val triggerSelection: RuleSelection = RuleSelection(),
     val merchantSelection: RuleSelection = RuleSelection(),
     val amountSelection: RuleSelection = RuleSelection(),
+    val accountSelection: RuleSelection = RuleSelection(),
     val transactionType: String? = null
 )
 
@@ -51,10 +49,6 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
 
     private val customSmsRuleDao = AppDatabase.getInstance(application).customSmsRuleDao()
 
-    /**
-     * Initializes the ViewModel's state based on a PotentialTransaction.
-     * This pre-fills any data that was already successfully parsed.
-     */
     fun initializeState(potentialTxn: PotentialTransaction) {
         val amountStr = String.format("%.2f", potentialTxn.amount)
         val amountIndex = potentialTxn.originalMessage.indexOf(amountStr)
@@ -75,7 +69,6 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
         )
     }
 
-
     fun onMarkAsTrigger(selection: RuleSelection) {
         _uiState.update { it.copy(triggerSelection = selection) }
     }
@@ -88,9 +81,10 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
         _uiState.update { it.copy(amountSelection = selection) }
     }
 
-    /**
-     * Generates regex patterns and saves a single consolidated rule to the database.
-     */
+    fun onMarkAsAccount(selection: RuleSelection) {
+        _uiState.update { it.copy(accountSelection = selection) }
+    }
+
     fun saveRule(fullSmsText: String, onComplete: () -> Unit) {
         viewModelScope.launch {
             val currentState = _uiState.value
@@ -108,13 +102,19 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
                 generateRegex(fullSmsText, currentState.amountSelection)
             } else null
 
+            val accountRegex = if (currentState.accountSelection.selectedText.isNotBlank()) {
+                generateRegex(fullSmsText, currentState.accountSelection)
+            } else null
+
             val newRule = CustomSmsRule(
                 triggerPhrase = currentState.triggerSelection.selectedText,
                 merchantRegex = merchantRegex,
                 amountRegex = amountRegex,
+                accountRegex = accountRegex,
                 merchantNameExample = currentState.merchantSelection.selectedText.takeIf { it.isNotBlank() },
                 amountExample = currentState.amountSelection.selectedText.takeIf { it.isNotBlank() },
-                priority = 10 // Default priority
+                accountNameExample = currentState.accountSelection.selectedText.takeIf { it.isNotBlank() },
+                priority = 10
             )
 
             Log.d("RuleCreation", "Saving new trigger-based rule: $newRule")
@@ -141,10 +141,12 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
         val escapedPrefix = if (prefix.isNotBlank()) Pattern.quote(prefix) else ""
         val escapedSuffix = if (suffix.isNotBlank()) Pattern.quote(suffix) else ""
 
+        // --- FIX: Use `\s*` for flexible whitespace matching instead of `\s+` ---
+        // This handles cases where the selection is immediately next to punctuation.
         return when {
-            escapedPrefix.isNotBlank() && escapedSuffix.isNotBlank() -> "$escapedPrefix\\s+(.*?)\\s+$escapedSuffix"
-            escapedPrefix.isNotBlank() -> "$escapedPrefix\\s+(.*)"
-            escapedSuffix.isNotBlank() -> "(.*?)\\s+$escapedSuffix"
+            escapedPrefix.isNotBlank() && escapedSuffix.isNotBlank() -> "$escapedPrefix\\s*(.*?)\\s*$escapedSuffix"
+            escapedPrefix.isNotBlank() -> "$escapedPrefix\\s*(.*)"
+            escapedSuffix.isNotBlank() -> "(.*?)\\s*$escapedSuffix"
             else -> Pattern.quote(selection.selectedText)
         }
     }

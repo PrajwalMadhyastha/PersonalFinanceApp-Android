@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: Added the `reparseTransactionFromSms` function. This new function
-// provides the core logic for the auto-update feature. It fetches the original
-// SMS for a given transaction, re-runs the parser (which will now use the newly
-// saved rule), and updates the transaction's description in the database if a
-// better one is found.
+// REASON: DEBUGGING - Added extensive, detailed logging to the
+// `reparseTransactionFromSms` function. This will trace every step of the
+// account update logic—from parsing to database lookups and updates—to help
+// diagnose why the account is not being updated correctly on the UI.
 // =================================================================================
 package io.pm.finlight
 
@@ -154,42 +153,77 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
     }
 
-    /**
-     * Fetches the original SMS message details from the content provider.
-     * @param smsId The ID of the SMS to fetch.
-     * @return The SmsMessage object, or null if not found.
-     */
     suspend fun getOriginalSmsMessage(smsId: Long): SmsMessage? {
         return withContext(Dispatchers.IO) {
             smsRepository.getSmsDetailsById(smsId)
         }
     }
 
-    // --- NEW: Function to re-parse a transaction and update it ---
     fun reparseTransactionFromSms(transactionId: Int) {
         viewModelScope.launch(Dispatchers.IO) {
+            val logTag = "ReparseLogic"
+            Log.d(logTag, "--- Starting reparse for transactionId: $transactionId ---")
+
             val transaction = transactionRepository.getTransactionById(transactionId).first()
             if (transaction?.sourceSmsId == null) {
-                Log.w(TAG, "Reparse failed: Transaction or sourceSmsId is null for txnId: $transactionId")
+                Log.w(logTag, "FAILURE: Transaction or sourceSmsId is null.")
                 return@launch
             }
+            Log.d(logTag, "Found transaction: $transaction")
 
             val smsMessage = smsRepository.getSmsDetailsById(transaction.sourceSmsId)
             if (smsMessage == null) {
-                Log.w(TAG, "Reparse failed: Could not find original SMS for sourceSmsId: ${transaction.sourceSmsId}")
+                Log.w(logTag, "FAILURE: Could not find original SMS for sourceSmsId: ${transaction.sourceSmsId}")
                 return@launch
             }
+            Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            // Re-run the parser with the latest rules
             val customSmsRuleDao = db.customSmsRuleDao()
             val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), customSmsRuleDao)
+            Log.d(logTag, "SmsParser result: $potentialTxn")
 
-            if (potentialTxn?.merchantName != null && potentialTxn.merchantName != transaction.description) {
-                Log.d(TAG, "Reparsed successfully. Updating description for txnId $transactionId from '${transaction.description}' to '${potentialTxn.merchantName}'")
-                transactionRepository.updateDescription(transactionId, potentialTxn.merchantName)
+            if (potentialTxn != null) {
+                // UPDATE DESCRIPTION
+                if (potentialTxn.merchantName != null && potentialTxn.merchantName != transaction.description) {
+                    Log.d(logTag, "Updating description for txnId $transactionId from '${transaction.description}' to '${potentialTxn.merchantName}'")
+                    transactionRepository.updateDescription(transactionId, potentialTxn.merchantName)
+                }
+
+                // UPDATE ACCOUNT
+                potentialTxn.potentialAccount?.let { parsedAccount ->
+                    Log.d(logTag, "Parsed account found: Name='${parsedAccount.formattedName}', Type='${parsedAccount.accountType}'")
+                    val currentAccount = accountRepository.getAccountById(transaction.accountId).first()
+                    Log.d(logTag, "Current account in DB: Name='${currentAccount?.name}'")
+
+                    if (currentAccount?.name?.equals(parsedAccount.formattedName, ignoreCase = true) == false) {
+                        Log.d(logTag, "Account names differ. Proceeding with find-or-create.")
+
+                        var account = db.accountDao().findByName(parsedAccount.formattedName)
+                        Log.d(logTag, "Attempting to find existing account by name '${parsedAccount.formattedName}'. Found: ${account != null}")
+
+                        if (account == null) {
+                            Log.d(logTag, "Account not found. Creating new one.")
+                            val newAccount = Account(name = parsedAccount.formattedName, type = parsedAccount.accountType)
+                            val newId = accountRepository.insert(newAccount)
+                            Log.d(logTag, "Inserted new account, got ID: $newId")
+                            account = db.accountDao().getAccountById(newId.toInt()).first()
+                            Log.d(logTag, "Re-fetched new account from DB: $account")
+                        }
+
+                        if (account != null) {
+                            Log.d(logTag, "SUCCESS: Updating transaction $transactionId to use accountId ${account.id} ('${account.name}')")
+                            transactionRepository.updateAccountId(transactionId, account.id)
+                        } else {
+                            Log.e(logTag, "FAILURE: Failed to find or create the new account '${parsedAccount.formattedName}'.")
+                        }
+                    } else {
+                        Log.d(logTag, "Account names are the same. No update needed.")
+                    }
+                } ?: Log.d(logTag, "No potential account was parsed from the SMS.")
             } else {
-                Log.d(TAG, "Reparse complete, but no new merchant name found. No update needed.")
+                Log.d(logTag, "SmsParser returned null. No updates to perform.")
             }
+            Log.d(logTag, "--- Reparse finished for transactionId: $transactionId ---")
         }
     }
 
@@ -326,35 +360,16 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun onTagSelected(tag: Tag) {
         Log.d(TAG, "onTagSelected: Toggled tag '${tag.name}' (ID: ${tag.id})")
-        _selectedTags.update { currentTags ->
-            val newSet = if (tag in currentTags) {
-                currentTags - tag
-            } else {
-                currentTags + tag
-            }
-            Log.d(TAG, "onTagSelected: New selected tags: ${newSet.map { it.name }}")
-            newSet
-        }
+        _selectedTags.update { if (tag in it) it - tag else it + tag }
     }
 
     fun addTagOnTheGo(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
-                Log.d(TAG, "addTagOnTheGo: Attempting to add tag '$tagName'")
                 val newTag = Tag(name = tagName)
-                Log.d(TAG, "addTagOnTheGo: Current selected tags before insert: ${_selectedTags.value.map { it.name }}")
-
                 val newId = tagRepository.insert(newTag)
-                Log.d(TAG, "addTagOnTheGo: Inserted tag '$tagName', got new ID: $newId")
-
                 if (newId != -1L) {
-                    _selectedTags.update { currentTags ->
-                        val updatedTags = currentTags + newTag.copy(id = newId.toInt())
-                        Log.d(TAG, "addTagOnTheGo: Updating selected tags. New set: ${updatedTags.map { it.name }}")
-                        updatedTags
-                    }
-                } else {
-                    Log.w(TAG, "addTagOnTheGo: Failed to insert tag '$tagName', it might already exist.")
+                    _selectedTags.update { it + newTag.copy(id = newId.toInt()) }
                 }
             }
         }
@@ -362,17 +377,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun loadTagsForTransaction(transactionId: Int) {
         if (currentTxnIdForTags == transactionId && areTagsLoadedForCurrentTxn) {
-            Log.d(TAG, "loadTagsForTransaction: Skipped DB fetch for txn ID $transactionId, tags already loaded.")
             return
         }
-
         viewModelScope.launch {
-            Log.d(TAG, "loadTagsForTransaction: Loading initial tags for txn ID $transactionId")
             val initialTags = transactionRepository.getTagsForTransaction(transactionId).first()
             _selectedTags.value = initialTags.toSet()
             areTagsLoadedForCurrentTxn = true
             currentTxnIdForTags = transactionId
-            Log.d(TAG, "loadTagsForTransaction: Loaded initial tags: ${initialTags.map { it.name }}. Flag set to true.")
         }
     }
 
@@ -380,7 +391,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _selectedTags.value = emptySet()
         areTagsLoadedForCurrentTxn = false
         currentTxnIdForTags = null
-        Log.d(TAG, "clearSelectedTags: Cleared selected tags and reset loading flag.")
     }
 
     fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
@@ -405,14 +415,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
                 var account = db.accountDao().findByName(accountName)
                 if (account == null) {
-                    Log.d("ViewModel_Approve", "Account '$accountName' not found. Creating new one.")
                     val newAccount = Account(name = accountName, type = accountType)
                     accountRepository.insert(newAccount)
                     account = db.accountDao().findByName(accountName)
                 }
 
                 if (account == null) {
-                    Log.e("ViewModel_Approve", "Failed to find or create account.")
                     return@withContext false
                 }
 
@@ -428,12 +436,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     sourceSmsHash = potentialTxn.sourceSmsHash,
                     source = "Reviewed Import"
                 )
-
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
-                Log.d("ViewModel_Approve", "Successfully approved and saved transaction.")
                 true
             } catch (e: Exception) {
-                Log.e("ViewModel_Approve", "Error approving SMS transaction", e)
                 false
             }
         }
@@ -480,13 +485,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val savedImagePaths = imageUris.mapNotNull { uri ->
                 saveImageToInternalStorage(uri)
             }
-
-            val newTransactionId = transactionRepository.insertTransactionWithTagsAndImages(
+            transactionRepository.insertTransactionWithTagsAndImages(
                 newTransaction,
                 _selectedTags.value,
                 savedImagePaths
             )
-            Log.d(TAG, "Transaction created with ID: $newTransactionId")
         }
         return true
     }

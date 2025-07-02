@@ -1,6 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AccountDao.kt
-// REASON: Updated the insert function to return the new account's ID (Long).
+// REASON: BUG FIX - The `findByName` query is updated to be case-insensitive
+// by adding `COLLATE NOCASE`. This ensures that if a parser extracts "sbi",
+// it will correctly match the existing account named "SBI" in the database,
+// preventing the creation of duplicate accounts.
 // =================================================================================
 package io.pm.finlight
 
@@ -39,7 +42,8 @@ interface AccountDao {
     @Query("SELECT * FROM accounts ORDER BY name ASC")
     fun getAllAccounts(): Flow<List<Account>>
 
-    @Query("SELECT * FROM accounts WHERE name = :name LIMIT 1")
+    // --- UPDATED: Added COLLATE NOCASE for case-insensitive matching ---
+    @Query("SELECT * FROM accounts WHERE name = :name COLLATE NOCASE LIMIT 1")
     suspend fun findByName(name: String): Account?
 
     @Query("SELECT * FROM accounts WHERE id = :accountId")
@@ -51,7 +55,6 @@ interface AccountDao {
     @Query("DELETE FROM accounts")
     suspend fun deleteAll()
 
-    // --- UPDATED: Returns the new row ID ---
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(account: Account): Long
 

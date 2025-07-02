@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt
-// REASON: CRASH FIX - The call to `viewModel.saveRule` is updated to pass the
-// full original SMS message. This provides the necessary context for the
-// `generateRegex` function in the ViewModel and resolves the
-// StringIndexOutOfBoundsException crash.
+// REASON: FEATURE - The UI is enhanced with a "Mark as Account" button and a
+// corresponding summary item. This allows users to define a custom pattern for
+// the account, completing the new feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -14,10 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Pin
-import androidx.compose.material.icons.filled.Title
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -62,18 +58,15 @@ fun RuleCreationScreen(
     val context = LocalContext.current.applicationContext as Application
     val viewModel: RuleCreationViewModel = viewModel(factory = RuleCreationViewModelFactory(context))
 
-    // Deserialize the JSON string back into a PotentialTransaction object
     val potentialTxn = remember { Gson().fromJson(potentialTransactionJson, PotentialTransaction::class.java) }
 
     val uiState by viewModel.uiState.collectAsState()
     var textFieldValue by remember { mutableStateOf(TextFieldValue(potentialTxn.originalMessage)) }
     val scope = rememberCoroutineScope()
 
-    // Initialize the ViewModel's state with the pre-parsed data
     LaunchedEffect(key1 = potentialTxn) {
         viewModel.initializeState(potentialTxn)
     }
-
 
     Scaffold { innerPadding ->
         Column(
@@ -84,7 +77,6 @@ fun RuleCreationScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // --- NEW: Instructional Text ---
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
             ) {
@@ -97,7 +89,6 @@ fun RuleCreationScreen(
                     )
                 }
             }
-
 
             Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -129,32 +120,48 @@ fun RuleCreationScreen(
                 Text("Mark as Trigger Phrase")
             }
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        val start = min(selection.start, selection.end)
-                        val end = max(selection.start, selection.end)
-                        val selectedText = textFieldValue.text.substring(start, end)
-                        viewModel.onMarkAsMerchant(RuleSelection(selectedText, start, end))
-                    },
-                    enabled = isSelectionActive,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Mark as Merchant")
+            // --- UPDATED: Button layout now includes "Mark as Account" ---
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val start = min(selection.start, selection.end)
+                            val end = max(selection.start, selection.end)
+                            val selectedText = textFieldValue.text.substring(start, end)
+                            viewModel.onMarkAsMerchant(RuleSelection(selectedText, start, end))
+                        },
+                        enabled = isSelectionActive,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Mark as Merchant")
+                    }
+                    Button(
+                        onClick = {
+                            val start = min(selection.start, selection.end)
+                            val end = max(selection.start, selection.end)
+                            val selectedText = textFieldValue.text.substring(start, end)
+                            viewModel.onMarkAsAmount(RuleSelection(selectedText, start, end))
+                        },
+                        enabled = isSelectionActive,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Mark as Amount")
+                    }
                 }
                 Button(
                     onClick = {
                         val start = min(selection.start, selection.end)
                         val end = max(selection.start, selection.end)
                         val selectedText = textFieldValue.text.substring(start, end)
-                        viewModel.onMarkAsAmount(RuleSelection(selectedText, start, end))
+                        viewModel.onMarkAsAccount(RuleSelection(selectedText, start, end))
                     },
                     enabled = isSelectionActive,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Mark as Amount")
+                    Text("Mark as Account")
                 }
             }
+
 
             Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -176,6 +183,12 @@ fun RuleCreationScreen(
                         label = "Amount",
                         value = uiState.amountSelection.selectedText.ifBlank { "Not set" }
                     )
+                    // --- NEW: Display the selected Account ---
+                    RuleSummaryItem(
+                        icon = Icons.Default.AccountBalanceWallet,
+                        label = "Account",
+                        value = uiState.accountSelection.selectedText.ifBlank { "Not set" }
+                    )
                 }
             }
 
@@ -184,14 +197,13 @@ fun RuleCreationScreen(
                     Text("Cancel")
                 }
                 val isSaveEnabled = uiState.triggerSelection.selectedText.isNotBlank() &&
-                        (uiState.merchantSelection.selectedText.isNotBlank() || uiState.amountSelection.selectedText.isNotBlank())
+                        (uiState.merchantSelection.selectedText.isNotBlank() || uiState.amountSelection.selectedText.isNotBlank() || uiState.accountSelection.selectedText.isNotBlank())
 
                 Button(
                     onClick = {
                         scope.launch {
-                            // --- FIX: Pass the full original message to the save function ---
                             viewModel.saveRule(potentialTxn.originalMessage) {
-                                if (potentialTxn.sourceSmsId != -1L) { // Check if we came from a real transaction
+                                if (potentialTxn.sourceSmsId != -1L) {
                                     navController.previousBackStackEntry
                                         ?.savedStateHandle
                                         ?.set("reparse_needed", true)

@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRule.kt
-// REASON: UX IMPROVEMENT - Added `merchantNameExample` and `amountExample` fields.
-// These will store the actual text the user selected, allowing the UI to display
-// a user-friendly example (e.g., "STARBUCKS") instead of a cryptic regex pattern
-// on the rule management screen.
+// REASON: FEATURE - Added `accountRegex` and `accountNameExample` fields. This
+// enhances the rule system to allow users to define custom patterns for
+// extracting account information, making parsing even more flexible.
 // =================================================================================
 package io.pm.finlight
 
@@ -20,8 +19,10 @@ import androidx.room.PrimaryKey
  * when this rule should be applied (e.g., "spent on your SBI Credit Card").
  * @param merchantRegex The regex pattern to extract the merchant name. Can be null.
  * @param amountRegex The regex pattern to extract the transaction amount. Can be null.
+ * @param accountRegex The regex pattern to extract the account name/number. Can be null.
  * @param merchantNameExample The user-selected text for the merchant, for display purposes.
  * @param amountExample The user-selected text for the amount, for display purposes.
+ * @param accountNameExample The user-selected text for the account, for display purposes.
  * @param priority The execution priority. Higher numbers are checked first.
  */
 @Entity(
@@ -34,7 +35,9 @@ data class CustomSmsRule(
     val triggerPhrase: String,
     val merchantRegex: String?,
     val amountRegex: String?,
+    val accountRegex: String?,
     val merchantNameExample: String?,
     val amountExample: String?,
+    val accountNameExample: String?,
     val priority: Int
 )
