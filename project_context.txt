@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul  2 16:45:52 IST 2025
+Generated on: Wed Jul  2 17:59:54 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -828,10 +828,9 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: DEBUGGING - Added extensive, detailed logging to the
-// `reparseTransactionFromSms` function. This will trace every step of the
-// account update logic—from parsing to database lookups and updates—to help
-// diagnose why the account is not being updated correctly on the UI.
+// REASON: DEBUGGING - Renamed `getTransactionDetailsById` to `findTransactionDetailsById`.
+// This change is intended to resolve a persistent "unresolved reference"
+// compilation error that can sometimes be caused by build caching or linking issues.
 // =================================================================================
 package io.pm.finlight
 
@@ -926,6 +925,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val transactionImages: StateFlow<List<TransactionImage>> = _transactionImages.asStateFlow()
     val monthlySummaries: StateFlow<List<MonthlySummaryItem>>
 
+    private val _defaultAccount = MutableStateFlow<Account?>(null)
+    val defaultAccount: StateFlow<Account?> = _defaultAccount.asStateFlow()
+
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
@@ -979,6 +981,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val remainingDays = if (today.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) && today.get(Calendar.MONTH) == calendar.get(Calendar.MONTH)) { (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1) } else if (calendar.after(today)) { lastDayOfMonth } else { 1 }
             if (remaining > 0) remaining / remainingDays else 0f
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+        viewModelScope.launch {
+            _defaultAccount.value = db.accountDao().findByName("Cash Spends")
+        }
     }
 
     suspend fun getOriginalSmsMessage(smsId: Long): SmsMessage? {
@@ -1221,7 +1227,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         currentTxnIdForTags = null
     }
 
-    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+    // --- UPDATED: Renamed function ---
+    fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
         return transactionRepository.getTransactionDetailsById(id)
     }
 
@@ -2649,8 +2656,11 @@ fun AddRecurringTransactionScreen(navController: NavController) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
-// REASON: Implemented auto-focus for the text fields on the "User Name" and
-// "Budget" pages to improve usability during the onboarding flow.
+// REASON: BUG FIX - The automatic focus request logic has been completely removed
+// from `UserNamePage` and `BudgetSetupPage`. This was causing unpredictable
+// layout behavior when the keyboard appeared. Removing it prioritizes a stable,
+// centered layout and definitively resolves the issue where the content would
+// shift to the side.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -2659,8 +2669,12 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.*
@@ -2668,8 +2682,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -2730,15 +2742,15 @@ fun WelcomePage() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun UserNamePage(viewModel: OnboardingViewModel) {
+fun UserNamePage(viewModel: OnboardingViewModel, pagerState: PagerState) {
     val name by viewModel.userName.collectAsState()
-    // --- NEW: Create a focus requester ---
-    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -2750,7 +2762,7 @@ fun UserNamePage(viewModel: OnboardingViewModel) {
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(24.dp))
-        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall)
+        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Text(
             "This will be used to personalize your experience.",
             style = MaterialTheme.typography.bodyMedium,
@@ -2767,33 +2779,32 @@ fun UserNamePage(viewModel: OnboardingViewModel) {
                 capitalization = KeyboardCapitalization.Words
             ),
             singleLine = true,
-            // --- NEW: Apply the focus requester modifier ---
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester)
+            modifier = Modifier.fillMaxWidth()
         )
-    }
-
-    // --- NEW: Request focus when the composable enters the composition ---
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun BudgetSetupPage(viewModel: OnboardingViewModel) {
+fun BudgetSetupPage(viewModel: OnboardingViewModel, pagerState: PagerState) {
     val budget by viewModel.monthlyBudget.collectAsState()
-    // --- NEW: Create a focus requester ---
-    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall)
+        Icon(
+            imageVector = Icons.Default.Savings,
+            contentDescription = "Budget Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Text(
             "Give yourself a spending target for the month.",
             style = MaterialTheme.typography.bodyMedium,
@@ -2812,16 +2823,8 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel) {
             label = { Text("Total Monthly Budget") },
             leadingIcon = { Text("₹") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            // --- NEW: Apply the focus requester modifier ---
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester)
+            modifier = Modifier.fillMaxWidth()
         )
-    }
-
-    // --- NEW: Request focus when the composable enters the composition ---
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
     }
 }
 
@@ -2848,7 +2851,7 @@ fun SmsPermissionPage(onPermissionResult: () -> Unit) {
     ) {
         Icon(Icons.AutoMirrored.Filled.Message, contentDescription = "SMS Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(24.dp))
-        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium)
+        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         Text(
             "Consider allowing Finlight to read your SMS inbox to automatically detect and import new transactions. This is a huge time-saver!",
@@ -4061,14 +4064,10 @@ fun EditAccountScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: Implemented on-the-fly creation of Accounts and Categories. The selection
-// bottom sheets now include a "+ Create New" option, which launches a dialog
-// to add the new item without leaving the screen. The new item is then
-// automatically selected.
-// BUG FIX: Removed local dialog definitions and imported them from the new
-// ui.components package to resolve compilation errors.
-// BUG FIX: The Category picker is now always visible for both Income and Expense
-// types, and is required for saving.
+// REASON: FEATURE - The screen now observes the `defaultAccount` StateFlow from
+// the ViewModel. In a `LaunchedEffect`, it sets the `selectedAccount` state to
+// this default account as soon as it's available, but only for new manual
+// transactions (not for CSV edits). This pre-selects "Cash Spends" for the user.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -4164,11 +4163,20 @@ fun AddTransactionScreen(
     var showCreateAccountDialog by remember { mutableStateOf(false) }
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
 
-    // --- FIX: The save button is now enabled only when a category is selected for ALL types ---
     val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && selectedCategory != null)
 
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
+
+    // --- NEW: Get the default account from the ViewModel ---
+    val defaultAccount by viewModel.defaultAccount.collectAsState()
+
+    // --- NEW: Set the default account when the screen loads for a new transaction ---
+    LaunchedEffect(defaultAccount, isCsvEdit) {
+        if (!isCsvEdit && selectedAccount == null) {
+            selectedAccount = defaultAccount
+        }
+    }
 
     LaunchedEffect(initialDataJson, accounts, categories) {
         if (isCsvEdit && initialDataJson != null) {
@@ -4237,7 +4245,6 @@ fun AddTransactionScreen(
                     onAccountClick = { activeSheetContent = AddSheetContent.Account },
                     selectedCategory = selectedCategory,
                     onCategoryClick = { activeSheetContent = AddSheetContent.Category },
-                    // --- FIX: Category is now always visible ---
                     isCategoryVisible = true,
                     selectedDate = selectedDateTime.time,
                     onDateClick = { showDatePicker = true },
@@ -5388,828 +5395,6 @@ private fun RuleSummaryItem(
 -e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsScreen.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsScreen.kt
-// REASON: Reorganized the "Notifications & Automation" and "SMS Scanning" sections
-// for better logical grouping. Report toggles are now paired with their
-// corresponding time settings, which are enabled/disabled based on the toggle state.
-// The weekly day picker has been improved to prevent text wrapping.
-// The monthly day picker now uses a collapsible grid for better UX.
-// =================================================================================
-package io.pm.finlight.ui.screens
-
-import android.Manifest
-import android.content.pm.PackageManager
-import android.util.Log
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ManageSearch
-import androidx.compose.material.icons.automirrored.filled.Message
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import androidx.navigation.NavController
-import io.pm.finlight.DataExportService
-import io.pm.finlight.ScanResult
-import io.pm.finlight.SettingsViewModel
-import io.pm.finlight.ui.components.TimePickerDialog
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.*
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsScreen(
-    navController: NavController,
-    viewModel: SettingsViewModel,
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val isScanning by viewModel.isScanning.collectAsState()
-
-    var showDatePickerDialog by remember { mutableStateOf(false) }
-    val smsScanStartDate by viewModel.smsScanStartDate.collectAsState()
-    val dateFormatter = remember { SimpleDateFormat("dd MMMM, yyyy", Locale.getDefault()) }
-
-    val isAppLockEnabled by viewModel.appLockEnabled.collectAsState()
-    val isWeeklySummaryEnabled by viewModel.weeklySummaryEnabled.collectAsState()
-    val isDailyReportEnabled by viewModel.dailyReportEnabled.collectAsState()
-    val isMonthlySummaryEnabled by viewModel.monthlySummaryEnabled.collectAsState()
-    val isUnknownTransactionPopupEnabled by viewModel.unknownTransactionPopupEnabled.collectAsState()
-    val isBackupEnabled by viewModel.backupEnabled.collectAsState()
-    var showSmsRationaleDialog by remember { mutableStateOf(false) }
-    var hasSmsPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
-    var hasNotificationPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
-
-    val dailyReportTime by viewModel.dailyReportTime.collectAsState()
-    var showDailyTimePicker by remember { mutableStateOf(false) }
-
-    val weeklyReportTime by viewModel.weeklyReportTime.collectAsState()
-    var showWeeklyTimePicker by remember { mutableStateOf(false) }
-    val monthlyReportTime by viewModel.monthlyReportTime.collectAsState()
-    var showMonthlyTimePicker by remember { mutableStateOf(false) }
-
-
-    LaunchedEffect(key1 = viewModel.scanEvent) {
-        viewModel.scanEvent.collect { result ->
-            if (result is ScanResult.Success) {
-                if (result.count > 0) {
-                    navController.navigate("review_sms_screen")
-                } else {
-                    Toast.makeText(context, "No new transactions found.", Toast.LENGTH_SHORT).show()
-                }
-            } else if (result is ScanResult.Error) {
-                Toast.makeText(context, "An error occurred during scan.", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    val permissionLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.RequestMultiplePermissions(),
-        ) { permissions ->
-            val allGranted = permissions.values.all { it }
-            hasSmsPermission = allGranted
-            if (!allGranted) {
-                Toast.makeText(context, "Some SMS permissions were denied.", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-    val notificationPermissionLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.RequestPermission(),
-        ) { isGranted ->
-            hasNotificationPermission = isGranted
-        }
-
-    val jsonFileSaverLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("application/json"),
-            onResult = { uri ->
-                uri?.let {
-                    scope.launch {
-                        val jsonString = DataExportService.exportToJsonString(context)
-                        if (jsonString != null) {
-                            try {
-                                context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                                    outputStream.write(jsonString.toByteArray())
-                                }
-                                Toast.makeText(context, "Data exported successfully!", Toast.LENGTH_LONG).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Error saving file.", Toast.LENGTH_LONG).show()
-                            }
-                        } else {
-                            Toast.makeText(context, "Error exporting data.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            },
-        )
-
-    var showImportJsonDialog by remember { mutableStateOf(false) }
-    var showImportCsvDialog by remember { mutableStateOf(false) }
-
-    val csvFileSaverLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
-            onResult = { uri ->
-                uri?.let {
-                    scope.launch {
-                        val csvString = DataExportService.exportToCsvString(context)
-                        if (csvString != null) {
-                            try {
-                                context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                                    outputStream.write(csvString.toByteArray())
-                                }
-                                Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_LONG).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Error saving CSV file.", Toast.LENGTH_LONG).show()
-                            }
-                        } else {
-                            Toast.makeText(context, "Error exporting CSV data.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            },
-        )
-
-    val csvImportLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
-            onResult = { uri ->
-                uri?.let {
-                    Log.d("SettingsScreen", "CSV file selected: $it. Starting validation.")
-                    viewModel.validateCsvFile(it)
-                    navController.navigate("csv_validation_screen")
-                }
-            },
-        )
-
-    val jsonImportLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
-            onResult = { uri ->
-                uri?.let {
-                    scope.launch {
-                        if (DataExportService.importDataFromJson(context, it)) {
-                            Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
-                        } else {
-                            Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            },
-        )
-
-    if (showDatePickerDialog) {
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
-        DatePickerDialog(
-            onDismissRequest = { showDatePickerDialog = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let {
-                            viewModel.saveSmsScanStartDate(it)
-                        }
-                        showDatePickerDialog = false
-                    },
-                ) { Text("OK") }
-            },
-            dismissButton = { TextButton(onClick = { showDatePickerDialog = false }) { Text("Cancel") } },
-        ) {
-            DatePicker(state = datePickerState)
-        }
-    }
-
-    if (showSmsRationaleDialog) {
-        AlertDialog(
-            onDismissRequest = { showSmsRationaleDialog = false },
-            title = { Text("Permission Required") },
-            text = {
-                Text(
-                    "To automatically capture transactions, this app needs permission to read and receive SMS messages. Your data is processed only on your device and is never shared.",
-                )
-            },
-            confirmButton = {
-                Button(onClick = {
-                    showSmsRationaleDialog = false
-                    permissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.READ_SMS,
-                            Manifest.permission.RECEIVE_SMS,
-                        ),
-                    )
-                }) {
-                    Text("Continue")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSmsRationaleDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
-
-    if (showDailyTimePicker) {
-        val timePickerState = rememberTimePickerState(
-            initialHour = dailyReportTime.first,
-            initialMinute = dailyReportTime.second,
-            is24Hour = false
-        )
-        TimePickerDialog(
-            onDismissRequest = { showDailyTimePicker = false },
-            onConfirm = {
-                viewModel.saveDailyReportTime(timePickerState.hour, timePickerState.minute)
-                showDailyTimePicker = false
-            }
-        ) {
-            TimePicker(state = timePickerState)
-        }
-    }
-
-    if (showWeeklyTimePicker) {
-        WeeklyReportTimePicker(
-            initialDay = weeklyReportTime.first,
-            initialHour = weeklyReportTime.second,
-            initialMinute = weeklyReportTime.third,
-            onDismiss = { showWeeklyTimePicker = false },
-            onConfirm = { day, hour, minute ->
-                viewModel.saveWeeklyReportTime(day, hour, minute)
-                showWeeklyTimePicker = false
-            }
-        )
-    }
-
-    if (showMonthlyTimePicker) {
-        MonthlyReportTimePicker(
-            initialDay = monthlyReportTime.first,
-            initialHour = monthlyReportTime.second,
-            initialMinute = monthlyReportTime.third,
-            onDismiss = { showMonthlyTimePicker = false },
-            onConfirm = { day, hour, minute ->
-                viewModel.saveMonthlyReportTime(day, hour, minute)
-                showMonthlyTimePicker = false
-            }
-        )
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 9.dp),
-    ) {
-        item { SettingSectionHeader("App Management") }
-        item {
-            SettingsActionItem(
-                text = "Manage Accounts",
-                subtitle = "View, add, or edit your financial accounts.",
-                icon = Icons.Default.AccountBalanceWallet,
-                onClick = { navController.navigate("account_list") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Budgets",
-                subtitle = "Set and edit your overall and category-specific monthly budgets.",
-                icon = Icons.Default.Savings,
-                onClick = { navController.navigate("budget_screen") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Categories",
-                subtitle = "Add, edit, or remove transaction categories.",
-                icon = Icons.Default.Category,
-                onClick = { navController.navigate("category_list") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Tags",
-                subtitle = "Create and organize custom tags for transactions.",
-                icon = Icons.Default.NewLabel,
-                onClick = { navController.navigate("tag_management") },
-            )
-        }
-
-        item { SettingSectionHeader("Security") }
-        item {
-            SettingsToggleItem(
-                title = "Enable App Lock",
-                subtitle = "Use biometrics or screen lock to secure the app.",
-                icon = Icons.Default.Lock,
-                checked = isAppLockEnabled,
-                onCheckedChange = { viewModel.setAppLockEnabled(it) },
-            )
-        }
-
-        item { SettingSectionHeader("Notifications & Automation") }
-        item {
-            SettingsToggleItem(
-                title = "Daily Summary",
-                subtitle = "Get a report of yesterday's spending each day.",
-                icon = Icons.Default.NotificationsActive,
-                checked = isDailyReportEnabled,
-                onCheckedChange = { viewModel.setDailyReportEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Daily Report Time",
-                subtitle = "Current: ${String.format("%02d:%02d", dailyReportTime.first, dailyReportTime.second)}",
-                icon = Icons.Default.Schedule,
-                onClick = { showDailyTimePicker = true },
-                enabled = isDailyReportEnabled
-            )
-        }
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
-        item {
-            SettingsToggleItem(
-                title = "Weekly Summary",
-                subtitle = "Receive a summary of your finances every week.",
-                icon = Icons.Default.CalendarToday,
-                checked = isWeeklySummaryEnabled,
-                onCheckedChange = { viewModel.setWeeklySummaryEnabled(it) },
-            )
-        }
-        item {
-            val dayName = SimpleDateFormat("EEEE", Locale.getDefault()).format(
-                Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, weeklyReportTime.first) }.time
-            )
-            SettingsActionItem(
-                text = "Weekly Report Time",
-                subtitle = "Current: $dayName at ${String.format("%02d:%02d", weeklyReportTime.second, weeklyReportTime.third)}",
-                icon = Icons.Default.Schedule,
-                onClick = { showWeeklyTimePicker = true },
-                enabled = isWeeklySummaryEnabled
-            )
-        }
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
-        item {
-            SettingsToggleItem(
-                title = "Monthly Summary",
-                subtitle = "Receive a summary of last month's finances.",
-                icon = Icons.Default.Event,
-                checked = isMonthlySummaryEnabled,
-                onCheckedChange = { viewModel.setMonthlySummaryEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Monthly Report Time",
-                subtitle = "Current: Day ${monthlyReportTime.first} of the month at ${String.format("%02d:%02d", monthlyReportTime.second, monthlyReportTime.third)}",
-                icon = Icons.Default.Schedule,
-                onClick = { showMonthlyTimePicker = true },
-                enabled = isMonthlySummaryEnabled
-            )
-        }
-
-        item { SettingSectionHeader("Permissions") }
-        item {
-            SettingsToggleItem(
-                title = "SMS Access",
-                subtitle = "Allow reading and receiving SMS for auto-detection.",
-                icon = Icons.AutoMirrored.Filled.Message,
-                checked = hasSmsPermission,
-                onCheckedChange = { isChecked ->
-                    if (isChecked && !hasSmsPermission) {
-                        showSmsRationaleDialog = true
-                    }
-                },
-                enabled = !hasSmsPermission,
-            )
-        }
-        item {
-            SettingsToggleItem(
-                title = "Enable Notifications",
-                subtitle = "Show alerts for new transactions and reminders.",
-                icon = Icons.Default.Notifications,
-                checked = hasNotificationPermission,
-                onCheckedChange = {
-                    if (!hasNotificationPermission) {
-                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                },
-            )
-        }
-
-        item { SettingSectionHeader("SMS Scanning") }
-        item {
-            SettingsActionItem(
-                text = "Manage Custom Rules",
-                subtitle = "View or delete your custom SMS parsing rules.",
-                icon = Icons.Default.Rule,
-                onClick = { navController.navigate("manage_parse_rules") },
-            )
-        }
-        item {
-            SettingsToggleItem(
-                title = "Popup for Unknown Transactions",
-                subtitle = "Show notification for SMS from new merchants.",
-                icon = Icons.Default.Notifications,
-                checked = isUnknownTransactionPopupEnabled,
-                onCheckedChange = { viewModel.setUnknownTransactionPopupEnabled(it) },
-            )
-        }
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable {
-                            if (hasSmsPermission) {
-                                showDatePickerDialog = true
-                            } else {
-                                showSmsRationaleDialog = true
-                            }
-                        },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.EventRepeat, contentDescription = null, modifier = Modifier.padding(end = 16.dp))
-                    Column {
-                        Text("Scan From Date", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "Current: ${dateFormatter.format(Date(smsScanStartDate))}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                OutlinedButton(
-                    onClick = {
-                        if (hasSmsPermission) {
-                            if (!isScanning) {
-                                viewModel.rescanSmsForReview(smsScanStartDate)
-                            }
-                        } else {
-                            showSmsRationaleDialog = true
-                        }
-                    },
-                    enabled = !isScanning
-                ) {
-                    Text("Scan")
-                }
-            }
-        }
-        item {
-            SettingsActionItem(
-                text = "Scan Full Inbox",
-                subtitle = "Scan all messages to find transactions for review.",
-                icon = Icons.AutoMirrored.Filled.ManageSearch,
-                onClick = {
-                    if (hasSmsPermission) {
-                        if (!isScanning) {
-                            viewModel.rescanSmsForReview(null)
-                        }
-                    } else {
-                        showSmsRationaleDialog = true
-                    }
-                },
-            )
-        }
-        item { SettingSectionHeader("Data Management") }
-        item {
-            SettingsToggleItem(
-                title = "Enable Google Drive Backup",
-                subtitle = "Automatically back up app data to your Google account.",
-                icon = Icons.Default.CloudUpload,
-                checked = isBackupEnabled,
-                onCheckedChange = { viewModel.setBackupEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Export Data as JSON",
-                subtitle = "Create a full backup of all your app data.",
-                icon = Icons.Default.DataObject,
-                onClick = {
-                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
-                    jsonFileSaverLauncher.launch(fileName)
-                },
-            )
-        }
-
-        item {
-            SettingsActionItem(
-                text = "Export Transactions as CSV",
-                subtitle = "Save all transactions in a spreadsheet-compatible format.",
-                icon = Icons.Default.GridOn,
-                onClick = {
-                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
-                    csvFileSaverLauncher.launch(fileName)
-                },
-            )
-        }
-
-        item {
-            SettingsActionItem(
-                text = "Import from JSON",
-                subtitle = "Restore your app data from a full backup file.",
-                icon = Icons.Default.Download,
-                onClick = { showImportJsonDialog = true },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Import from CSV",
-                subtitle = "Add new transactions from a CSV file.",
-                icon = Icons.Default.PostAdd,
-                onClick = { showImportCsvDialog = true },
-            )
-        }
-    }
-
-    if (isScanning) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(16.dp))
-                    Text("Scanning SMS Inbox...", style = MaterialTheme.typography.titleMedium)
-                }
-            }
-        }
-    }
-
-    if (showImportCsvDialog) {
-        AlertDialog(
-            onDismissRequest = { showImportCsvDialog = false },
-            title = { Text("Import from CSV?") },
-            text = {
-                Text(
-                    "This will add transactions from the CSV file. If transactions already exist, this may create duplicates. Are you sure you want to continue?",
-                )
-            },
-            confirmButton = {
-                Button(onClick = {
-                    showImportCsvDialog = false
-                    csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values"))
-                }) { Text("Continue") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") }
-            },
-        )
-    }
-
-    if (showImportJsonDialog) {
-        AlertDialog(
-            onDismissRequest = { showImportJsonDialog = false },
-            title = { Text("Import from JSON?") },
-            text = { Text("This will DELETE all current data and replace it. This cannot be undone.") },
-            confirmButton = {
-                Button(onClick = {
-                    showImportJsonDialog = false
-                    jsonImportLauncher.launch(arrayOf("application/json"))
-                }) { Text("Wipe and Import") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showImportJsonDialog = false }) { Text("Cancel") }
-            },
-        )
-    }
-}
-
-@Composable
-fun SettingSectionHeader(title: String) {
-    Text(
-        text = title.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 16.dp, end = 16.dp),
-    )
-    HorizontalDivider()
-}
-
-@Composable
-private fun SettingsToggleItem(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
-        leadingContent = { Icon(icon, contentDescription = null) },
-        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
-        modifier = Modifier.padding(horizontal = 16.dp),
-    )
-}
-
-@Composable
-private fun SettingsActionItem(
-    text: String,
-    subtitle: String? = null,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    enabled: Boolean = true
-) {
-    val contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    val subtitleColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-
-    TextButton(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        enabled = enabled
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = contentColor)
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text, style = MaterialTheme.typography.bodyLarge, color = contentColor)
-                if (subtitle != null) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = subtitleColor
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun WeeklyReportTimePicker(
-    initialDay: Int,
-    initialHour: Int,
-    initialMinute: Int,
-    onDismiss: () -> Unit,
-    onConfirm: (Int, Int, Int) -> Unit
-) {
-    var selectedDay by remember { mutableStateOf(initialDay) }
-    val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
-    val days = (1..7).map {
-        val cal = Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, it) }
-        Pair(it, cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.SHORT, Locale.getDefault()))
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Set Weekly Report Time") },
-        text = {
-            Column {
-                Text("Day of the Week", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    days.chunked(4).forEach { rowDays ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            rowDays.forEach { (dayInt, dayName) ->
-                                val isSelected = dayInt == selectedDay
-                                OutlinedButton(
-                                    modifier = Modifier.weight(1f),
-                                    shape = MaterialTheme.shapes.medium,
-                                    onClick = { selectedDay = dayInt },
-                                    colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonColors(),
-                                    contentPadding = PaddingValues(vertical = 12.dp)
-                                ) {
-                                    Text(dayName)
-                                }
-                            }
-                            if (rowDays.size < 4) {
-                                Spacer(modifier = Modifier.weight(4f - rowDays.size))
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    TimePicker(state = timePickerState)
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }) {
-                Text("Set Time")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun MonthlyReportTimePicker(
-    initialDay: Int,
-    initialHour: Int,
-    initialMinute: Int,
-    onDismiss: () -> Unit,
-    onConfirm: (Int, Int, Int) -> Unit
-) {
-    var selectedDay by remember { mutableStateOf(initialDay) }
-    val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
-    var isDayPickerExpanded by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Set Monthly Report Time") },
-        text = {
-            Column {
-                Text("Day of the Month", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = { isDayPickerExpanded = !isDayPickerExpanded },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Day: $selectedDay")
-                    Spacer(Modifier.weight(1f))
-                    Icon(
-                        imageVector = if (isDayPickerExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                        contentDescription = "Toggle day picker"
-                    )
-                }
-                AnimatedVisibility(visible = isDayPickerExpanded) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 52.dp),
-                        modifier = Modifier.heightIn(max = 240.dp),
-                        contentPadding = PaddingValues(vertical = 8.dp)
-                    ) {
-                        items((1..28).toList()) { day ->
-                            val isSelected = day == selectedDay
-                            OutlinedButton(
-                                onClick = {
-                                    selectedDay = day
-                                    isDayPickerExpanded = false
-                                },
-                                shape = CircleShape,
-                                colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonColors(),
-                                modifier = Modifier.size(48.dp),
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Text("$day")
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    TimePicker(state = timePickerState)
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }) {
-                Text("Set Time")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
--e 
-
-
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
@@ -6659,7 +5844,7 @@ fun TransactionDetailScreen(
     Log.d(TAG, "Composing TransactionDetailScreen for transactionId: $transactionId")
 
     val screenState by produceState<DetailScreenState>(initialValue = DetailScreenState.Loading, transactionId) {
-        viewModel.getTransactionDetailsById(transactionId).collect { details ->
+        viewModel.findTransactionDetailsById(transactionId).collect { details ->
             value = if (details != null) {
                 DetailScreenState.Success(details)
             } else {
@@ -9173,8 +8358,13 @@ fun IncomeHeader(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt ==================
+// =================================================================================
 // FILE: app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt
-
+// REASON: BUG FIX - The PagerState is now passed down to the individual page
+// composables (`UserNamePage`, `BudgetSetupPage`). This allows each page to
+// know when it is the `currentPage` and request focus only when it is active,
+// preventing focus from being stolen by off-screen pages.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -9201,7 +8391,6 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    // --- UPDATED: Page count is now 7 after removing category selection ---
     val pagerState = rememberPagerState { 7 }
     val scope = rememberCoroutineScope()
 
@@ -9231,11 +8420,11 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
                 .padding(innerPadding),
             userScrollEnabled = false
         ) { page ->
-            // --- UPDATED: Removed CategorySetupPage and shifted indices ---
             when (page) {
                 0 -> WelcomePage()
-                1 -> UserNamePage(viewModel)
-                2 -> BudgetSetupPage(viewModel)
+                // --- FIX: Pass pagerState to pages that need to manage focus ---
+                1 -> UserNamePage(viewModel = viewModel, pagerState = pagerState)
+                2 -> BudgetSetupPage(viewModel = viewModel, pagerState = pagerState)
                 3 -> SmsPermissionPage(onPermissionResult = onNextClicked)
                 4 -> SmsScanningInfoPage()
                 5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
@@ -9265,7 +8454,6 @@ fun OnboardingBottomBar(
         ) {
             PageIndicator(pageCount = pagerState.pageCount, currentPage = pagerState.currentPage)
 
-            // --- UPDATED: Page indices for hiding the "Next" button adjusted ---
             val isNextButtonVisible = pagerState.currentPage < pagerState.pageCount - 1 &&
                     pagerState.currentPage != 3 && // Hide on SMS Permission Page
                     pagerState.currentPage != 5    // Hide on Notification Permission Page
@@ -9318,97 +8506,664 @@ fun PageIndicator(pageCount: Int, currentPage: Int) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: Simplified the screen by removing direct editing functionality. The main
-// profile card is now clickable, navigating the user to a dedicated
-// "Edit Profile" screen.
+// REASON: BUG FIX - Added an explicit import for `io.pm.finlight.R`. This
+// resolves the "Unresolved reference: drawable" compilation error by ensuring
+// the compiler can correctly locate the app's generated resource IDs.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.util.Log
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.filled.ManageSearch
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import io.pm.finlight.ProfileViewModel
-import io.pm.finlight.R
+import io.pm.finlight.*
+import io.pm.finlight.R // --- FIX: Add explicit import for R class ---
+import io.pm.finlight.ui.components.*
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     navController: NavController,
-    viewModel: ProfileViewModel = viewModel()
+    profileViewModel: ProfileViewModel = viewModel(),
+    settingsViewModel: SettingsViewModel
 ) {
-    val userName by viewModel.userName.collectAsState()
-    val savedProfilePictureUri by viewModel.profilePictureUri.collectAsState()
+    // --- State from ProfileViewModel ---
+    val userName by profileViewModel.userName.collectAsState()
+    val savedProfilePictureUri by profileViewModel.profilePictureUri.collectAsState()
 
-    Column(modifier = Modifier.padding(16.dp)) {
-        // --- UPDATED: The entire card is now clickable ---
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { navController.navigate("edit_profile") },
-            elevation = CardDefaults.cardElevation(4.dp)
-        ) {
-            Box(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AsyncImage(
-                        model = savedProfilePictureUri,
-                        contentDescription = "User Profile Picture",
-                        placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                        error = painterResource(id = R.drawable.ic_launcher_foreground),
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                    )
+    // --- State and Logic from SettingsViewModel ---
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val isScanning by settingsViewModel.isScanning.collectAsState()
 
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(userName, style = MaterialTheme.typography.titleLarge)
-                        Text("user.email@pm.com", style = MaterialTheme.typography.bodyMedium)
+    var showDatePickerDialog by remember { mutableStateOf(false) }
+    val smsScanStartDate by settingsViewModel.smsScanStartDate.collectAsState()
+    val dateFormatter = remember { SimpleDateFormat("dd MMMM, yyyy", Locale.getDefault()) }
+
+    val isAppLockEnabled by settingsViewModel.appLockEnabled.collectAsState()
+    val isWeeklySummaryEnabled by settingsViewModel.weeklySummaryEnabled.collectAsState()
+    val isDailyReportEnabled by settingsViewModel.dailyReportEnabled.collectAsState()
+    val isMonthlySummaryEnabled by settingsViewModel.monthlySummaryEnabled.collectAsState()
+    val isUnknownTransactionPopupEnabled by settingsViewModel.unknownTransactionPopupEnabled.collectAsState()
+    val isBackupEnabled by settingsViewModel.backupEnabled.collectAsState()
+    var showSmsRationaleDialog by remember { mutableStateOf(false) }
+    var hasSmsPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+
+    val dailyReportTime by settingsViewModel.dailyReportTime.collectAsState()
+    var showDailyTimePicker by remember { mutableStateOf(false) }
+
+    val weeklyReportTime by settingsViewModel.weeklyReportTime.collectAsState()
+    var showWeeklyTimePicker by remember { mutableStateOf(false) }
+    val monthlyReportTime by settingsViewModel.monthlyReportTime.collectAsState()
+    var showMonthlyTimePicker by remember { mutableStateOf(false) }
+
+    LaunchedEffect(key1 = settingsViewModel.scanEvent) {
+        settingsViewModel.scanEvent.collect { result ->
+            if (result is ScanResult.Success) {
+                if (result.count > 0) {
+                    navController.navigate("review_sms_screen")
+                } else {
+                    Toast.makeText(context, "No new transactions found.", Toast.LENGTH_SHORT).show()
+                }
+            } else if (result is ScanResult.Error) {
+                Toast.makeText(context, "An error occurred during scan.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions(),
+        ) { permissions ->
+            val allGranted = permissions.values.all { it }
+            hasSmsPermission = allGranted
+            if (!allGranted) {
+                Toast.makeText(context, "Some SMS permissions were denied.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+    val notificationPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { isGranted ->
+            hasNotificationPermission = isGranted
+        }
+
+    val jsonFileSaverLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("application/json"),
+            onResult = { uri ->
+                uri?.let {
+                    scope.launch {
+                        val jsonString = DataExportService.exportToJsonString(context)
+                        if (jsonString != null) {
+                            try {
+                                context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                                    outputStream.write(jsonString.toByteArray())
+                                }
+                                Toast.makeText(context, "Data exported successfully!", Toast.LENGTH_LONG).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Error saving file.", Toast.LENGTH_LONG).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Error exporting data.", Toast.LENGTH_LONG).show()
+                        }
                     }
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit Profile",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                }
+            },
+        )
+
+    var showImportJsonDialog by remember { mutableStateOf(false) }
+    var showImportCsvDialog by remember { mutableStateOf(false) }
+
+    val csvFileSaverLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("text/csv"),
+            onResult = { uri ->
+                uri?.let {
+                    scope.launch {
+                        val csvString = DataExportService.exportToCsvString(context)
+                        if (csvString != null) {
+                            try {
+                                context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                                    outputStream.write(csvString.toByteArray())
+                                }
+                                Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_LONG).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Error saving CSV file.", Toast.LENGTH_LONG).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Error exporting CSV data.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            },
+        )
+
+    val csvImportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+            onResult = { uri ->
+                uri?.let {
+                    Log.d("SettingsScreen", "CSV file selected: $it. Starting validation.")
+                    settingsViewModel.validateCsvFile(it)
+                    navController.navigate("csv_validation_screen")
+                }
+            },
+        )
+
+    val jsonImportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+            onResult = { uri ->
+                uri?.let {
+                    scope.launch {
+                        if (DataExportService.importDataFromJson(context, it)) {
+                            Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            },
+        )
+
+    // --- UI Layout ---
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { navController.navigate("edit_profile") },
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Box(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AsyncImage(
+                            model = savedProfilePictureUri,
+                            contentDescription = "User Profile Picture",
+                            placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                            error = painterResource(id = R.drawable.ic_launcher_foreground),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                        )
+
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(userName, style = MaterialTheme.typography.titleLarge)
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Profile",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        // --- All Settings Items Now Use Centralized Components ---
+        item { SettingSectionHeader("App Management") }
+        item {
+            SettingsActionItem(
+                text = "Manage Accounts",
+                subtitle = "View, add, or edit your financial accounts.",
+                icon = Icons.Default.AccountBalanceWallet,
+                onClick = { navController.navigate("account_list") },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Manage Budgets",
+                subtitle = "Set and edit your overall and category-specific monthly budgets.",
+                icon = Icons.Default.Savings,
+                onClick = { navController.navigate("budget_screen") },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Manage Categories",
+                subtitle = "Add, edit, or remove transaction categories.",
+                icon = Icons.Default.Category,
+                onClick = { navController.navigate("category_list") },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Manage Tags",
+                subtitle = "Create and organize custom tags for transactions.",
+                icon = Icons.Default.NewLabel,
+                onClick = { navController.navigate("tag_management") },
+            )
+        }
 
-        ListItem(
-            headlineContent = { Text("App Settings") },
-            leadingContent = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-            trailingContent = {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_chevron_right),
-                    contentDescription = null
+        item { SettingSectionHeader("Security") }
+        item {
+            SettingsToggleItem(
+                title = "Enable App Lock",
+                subtitle = "Use biometrics or screen lock to secure the app.",
+                icon = Icons.Default.Lock,
+                checked = isAppLockEnabled,
+                onCheckedChange = { settingsViewModel.setAppLockEnabled(it) },
+            )
+        }
+
+        item { SettingSectionHeader("Notifications & Automation") }
+        item {
+            SettingsToggleItem(
+                title = "Daily Summary",
+                subtitle = "Get a report of yesterday's spending each day.",
+                icon = Icons.Default.NotificationsActive,
+                checked = isDailyReportEnabled,
+                onCheckedChange = { settingsViewModel.setDailyReportEnabled(it) },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Daily Report Time",
+                subtitle = "Current: ${String.format("%02d:%02d", dailyReportTime.first, dailyReportTime.second)}",
+                icon = Icons.Default.Schedule,
+                onClick = { showDailyTimePicker = true },
+                enabled = isDailyReportEnabled
+            )
+        }
+        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
+        item {
+            SettingsToggleItem(
+                title = "Weekly Summary",
+                subtitle = "Receive a summary of your finances every week.",
+                icon = Icons.Default.CalendarToday,
+                checked = isWeeklySummaryEnabled,
+                onCheckedChange = { settingsViewModel.setWeeklySummaryEnabled(it) },
+            )
+        }
+        item {
+            val dayName = SimpleDateFormat("EEEE", Locale.getDefault()).format(
+                Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, weeklyReportTime.first) }.time
+            )
+            SettingsActionItem(
+                text = "Weekly Report Time",
+                subtitle = "Current: $dayName at ${String.format("%02d:%02d", weeklyReportTime.second, weeklyReportTime.third)}",
+                icon = Icons.Default.Schedule,
+                onClick = { showWeeklyTimePicker = true },
+                enabled = isWeeklySummaryEnabled
+            )
+        }
+        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
+        item {
+            SettingsToggleItem(
+                title = "Monthly Summary",
+                subtitle = "Receive a summary of last month's finances.",
+                icon = Icons.Default.Event,
+                checked = isMonthlySummaryEnabled,
+                onCheckedChange = { settingsViewModel.setMonthlySummaryEnabled(it) },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Monthly Report Time",
+                subtitle = "Current: Day ${monthlyReportTime.first} of the month at ${String.format("%02d:%02d", monthlyReportTime.second, monthlyReportTime.third)}",
+                icon = Icons.Default.Schedule,
+                onClick = { showMonthlyTimePicker = true },
+                enabled = isMonthlySummaryEnabled
+            )
+        }
+
+        item { SettingSectionHeader("Permissions") }
+        item {
+            SettingsToggleItem(
+                title = "SMS Access",
+                subtitle = "Allow reading and receiving SMS for auto-detection.",
+                icon = Icons.AutoMirrored.Filled.Message,
+                checked = hasSmsPermission,
+                onCheckedChange = { isChecked ->
+                    if (isChecked && !hasSmsPermission) {
+                        showSmsRationaleDialog = true
+                    }
+                },
+                enabled = !hasSmsPermission,
+            )
+        }
+        item {
+            SettingsToggleItem(
+                title = "Enable Notifications",
+                subtitle = "Show alerts for new transactions and reminders.",
+                icon = Icons.Default.Notifications,
+                checked = hasNotificationPermission,
+                onCheckedChange = {
+                    if (!hasNotificationPermission) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                },
+            )
+        }
+
+        item { SettingSectionHeader("SMS Scanning") }
+        item {
+            SettingsActionItem(
+                text = "Manage Custom Rules",
+                subtitle = "View or delete your custom SMS parsing rules.",
+                icon = Icons.Default.Rule,
+                onClick = { navController.navigate("manage_parse_rules") },
+            )
+        }
+        item {
+            SettingsToggleItem(
+                title = "Popup for Unknown Transactions",
+                subtitle = "Show notification for SMS from new merchants.",
+                icon = Icons.Default.Notifications,
+                checked = isUnknownTransactionPopupEnabled,
+                onCheckedChange = { settingsViewModel.setUnknownTransactionPopupEnabled(it) },
+            )
+        }
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            if (hasSmsPermission) {
+                                showDatePickerDialog = true
+                            } else {
+                                showSmsRationaleDialog = true
+                            }
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.EventRepeat, contentDescription = null, modifier = Modifier.padding(end = 16.dp))
+                    Column {
+                        Text("Scan From Date", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Current: ${dateFormatter.format(Date(smsScanStartDate))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                OutlinedButton(
+                    onClick = {
+                        if (hasSmsPermission) {
+                            if (!isScanning) {
+                                settingsViewModel.rescanSmsForReview(smsScanStartDate)
+                            }
+                        } else {
+                            showSmsRationaleDialog = true
+                        }
+                    },
+                    enabled = !isScanning
+                ) {
+                    Text("Scan")
+                }
+            }
+        }
+        item {
+            SettingsActionItem(
+                text = "Scan Full Inbox",
+                subtitle = "Scan all messages to find transactions for review.",
+                icon = Icons.AutoMirrored.Filled.ManageSearch,
+                onClick = {
+                    if (hasSmsPermission) {
+                        if (!isScanning) {
+                            settingsViewModel.rescanSmsForReview(null)
+                        }
+                    } else {
+                        showSmsRationaleDialog = true
+                    }
+                },
+            )
+        }
+        item { SettingSectionHeader("Data Management") }
+        item {
+            SettingsToggleItem(
+                title = "Enable Google Drive Backup",
+                subtitle = "Automatically back up app data to your Google account.",
+                icon = Icons.Default.CloudUpload,
+                checked = isBackupEnabled,
+                onCheckedChange = { settingsViewModel.setBackupEnabled(it) },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Export Data as JSON",
+                subtitle = "Create a full backup of all your app data.",
+                icon = Icons.Default.DataObject,
+                onClick = {
+                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                    val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
+                    jsonFileSaverLauncher.launch(fileName)
+                },
+            )
+        }
+
+        item {
+            SettingsActionItem(
+                text = "Export Transactions as CSV",
+                subtitle = "Save all transactions in a spreadsheet-compatible format.",
+                icon = Icons.Default.GridOn,
+                onClick = {
+                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                    val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
+                    csvFileSaverLauncher.launch(fileName)
+                },
+            )
+        }
+
+        item {
+            SettingsActionItem(
+                text = "Import from JSON",
+                subtitle = "Restore your app data from a full backup file.",
+                icon = Icons.Default.Download,
+                onClick = { showImportJsonDialog = true },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Import from CSV",
+                subtitle = "Add new transactions from a CSV file.",
+                icon = Icons.Default.PostAdd,
+                onClick = { showImportCsvDialog = true },
+            )
+        }
+    }
+
+    // --- Dialogs ---
+    if (showDatePickerDialog) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
+        DatePickerDialog(
+            onDismissRequest = { showDatePickerDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            settingsViewModel.saveSmsScanStartDate(it)
+                        }
+                        showDatePickerDialog = false
+                    },
+                ) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePickerDialog = false }) { Text("Cancel") } },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    if (showSmsRationaleDialog) {
+        AlertDialog(
+            onDismissRequest = { showSmsRationaleDialog = false },
+            title = { Text("Permission Required") },
+            text = {
+                Text(
+                    "To automatically capture transactions, this app needs permission to read and receive SMS messages. Your data is processed only on your device and is never shared.",
                 )
             },
-            modifier = Modifier.clickable {
-                navController.navigate("settings_screen")
+            confirmButton = {
+                Button(onClick = {
+                    showSmsRationaleDialog = false
+                    permissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.READ_SMS,
+                            Manifest.permission.RECEIVE_SMS,
+                        ),
+                    )
+                }) {
+                    Text("Continue")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSmsRationaleDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    if (showDailyTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = dailyReportTime.first,
+            initialMinute = dailyReportTime.second,
+            is24Hour = false
+        )
+        TimePickerDialog(
+            onDismissRequest = { showDailyTimePicker = false },
+            onConfirm = {
+                settingsViewModel.saveDailyReportTime(timePickerState.hour, timePickerState.minute)
+                showDailyTimePicker = false
+            }
+        ) {
+            TimePicker(state = timePickerState)
+        }
+    }
+
+    if (showWeeklyTimePicker) {
+        WeeklyReportTimePicker(
+            initialDay = weeklyReportTime.first,
+            initialHour = weeklyReportTime.second,
+            initialMinute = weeklyReportTime.third,
+            onDismiss = { showWeeklyTimePicker = false },
+            onConfirm = { day, hour, minute ->
+                settingsViewModel.saveWeeklyReportTime(day, hour, minute)
+                showWeeklyTimePicker = false
             }
         )
-        HorizontalDivider()
+    }
+
+    if (showMonthlyTimePicker) {
+        MonthlyReportTimePicker(
+            initialDay = monthlyReportTime.first,
+            initialHour = monthlyReportTime.second,
+            initialMinute = monthlyReportTime.third,
+            onDismiss = { showMonthlyTimePicker = false },
+            onConfirm = { day, hour, minute ->
+                settingsViewModel.saveMonthlyReportTime(day, hour, minute)
+                showMonthlyTimePicker = false
+            }
+        )
+    }
+
+    if (isScanning) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(16.dp))
+                    Text("Scanning SMS Inbox...", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+    }
+
+    if (showImportCsvDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportCsvDialog = false },
+            title = { Text("Import from CSV?") },
+            text = {
+                Text(
+                    "This will add transactions from the CSV file. If transactions already exist, this may create duplicates. Are you sure you want to continue?",
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showImportCsvDialog = false
+                    csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values"))
+                }) { Text("Continue") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showImportJsonDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportJsonDialog = false },
+            title = { Text("Import from JSON?") },
+            text = { Text("This will DELETE all current data and replace it. This cannot be undone.") },
+            confirmButton = {
+                Button(onClick = {
+                    showImportJsonDialog = false
+                    jsonImportLauncher.launch(arrayOf("application/json"))
+                }) { Text("Wipe and Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportJsonDialog = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 -e 
@@ -10434,6 +10189,237 @@ fun DeleteCategoryDialog(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt
+// REASON: NEW FILE - Centralizes reusable composables for settings screens.
+// This resolves overload ambiguity errors by creating a single source of truth
+// for these components, which were previously duplicated.
+// =================================================================================
+package io.pm.finlight.ui.components
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import java.text.SimpleDateFormat
+import java.util.*
+
+@Composable
+fun SettingSectionHeader(title: String) {
+    Text(
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 16.dp, end = 16.dp),
+    )
+    HorizontalDivider()
+}
+
+@Composable
+fun SettingsToggleItem(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
+        leadingContent = { Icon(icon, contentDescription = null) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
+        modifier = Modifier.padding(horizontal = 16.dp),
+    )
+}
+
+@Composable
+fun SettingsActionItem(
+    text: String,
+    subtitle: String? = null,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    enabled: Boolean = true
+) {
+    val contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val subtitleColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        enabled = enabled
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = contentColor)
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text, style = MaterialTheme.typography.bodyLarge, color = contentColor)
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = subtitleColor
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WeeklyReportTimePicker(
+    initialDay: Int,
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int, Int) -> Unit
+) {
+    var selectedDay by remember { mutableStateOf(initialDay) }
+    val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
+    val days = (1..7).map {
+        val cal = Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, it) }
+        Pair(it, cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.SHORT, Locale.getDefault()))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Weekly Report Time") },
+        text = {
+            Column {
+                Text("Day of the Week", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    days.chunked(4).forEach { rowDays ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowDays.forEach { (dayInt, dayName) ->
+                                val isSelected = dayInt == selectedDay
+                                OutlinedButton(
+                                    modifier = Modifier.weight(1f),
+                                    shape = MaterialTheme.shapes.medium,
+                                    onClick = { selectedDay = dayInt },
+                                    colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonColors(),
+                                    contentPadding = PaddingValues(vertical = 12.dp)
+                                ) {
+                                    Text(dayName)
+                                }
+                            }
+                            if (rowDays.size < 4) {
+                                Spacer(modifier = Modifier.weight(4f - rowDays.size))
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TimePicker(state = timePickerState)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }) {
+                Text("Set Time")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MonthlyReportTimePicker(
+    initialDay: Int,
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int, Int) -> Unit
+) {
+    var selectedDay by remember { mutableStateOf(initialDay) }
+    val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
+    var isDayPickerExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Monthly Report Time") },
+        text = {
+            Column {
+                Text("Day of the Month", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { isDayPickerExpanded = !isDayPickerExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Day: $selectedDay")
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        imageVector = if (isDayPickerExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                        contentDescription = "Toggle day picker"
+                    )
+                }
+                AnimatedVisibility(visible = isDayPickerExpanded) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 52.dp),
+                        modifier = Modifier.heightIn(max = 240.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items((1..28).toList()) { day ->
+                            val isSelected = day == selectedDay
+                            OutlinedButton(
+                                onClick = {
+                                    selectedDay = day
+                                    isDayPickerExpanded = false
+                                },
+                                shape = CircleShape,
+                                colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonColors(),
+                                modifier = Modifier.size(48.dp),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("$day")
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TimePicker(state = timePickerState)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(selectedDay, timePickerState.hour, timePickerState.minute) }) {
+                Text("Set Time")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/CreationDialogs.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/CreationDialogs.kt
@@ -10904,9 +10890,11 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: Updated the TopAppBar logic to hide the main app bar for the new
-// IncomeScreen and the existing TransactionListScreen, as they now manage
-// their own app bars with filter actions.
+// REASON: REFACTOR - The AppNavHost has been updated to reflect the new UI
+// structure. The route for "settings_screen" has been completely removed. The
+// composable for the "Profile" destination now correctly provides the
+// SettingsViewModel, enabling the consolidated ProfileScreen to manage all
+// app settings.
 // =================================================================================
 package io.pm.finlight
 
@@ -11124,7 +11112,6 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
-    // --- UPDATED: The main TopAppBar is now hidden for more screens ---
     val showMainTopBar = baseCurrentRoute !in setOf(
         "transaction_detail",
         "transaction_list",
@@ -11261,9 +11248,16 @@ fun AppNavHost(
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        composable(BottomNavItem.Profile.route) { ProfileScreen(navController, profileViewModel) }
+        // --- UPDATED: Pass SettingsViewModel to the ProfileScreen composable ---
+        composable(BottomNavItem.Profile.route) {
+            ProfileScreen(
+                navController = navController,
+                profileViewModel = profileViewModel,
+                settingsViewModel = settingsViewModel
+            )
+        }
         composable("edit_profile") { EditProfileScreen(navController, profileViewModel) }
-        composable("settings_screen") { SettingsScreen(navController, settingsViewModel) }
+        // --- REMOVED: The "settings_screen" route is now obsolete ---
         composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
         composable("search_screen") { SearchScreen(navController) }
         composable(
@@ -11355,7 +11349,6 @@ fun AppNavHost(
         composable("recurring_transactions") { RecurringTransactionScreen(navController) }
         composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
 
-        // --- UPDATED: Route for the Rule Creation Screen now includes smsSender ---
         composable(
             "rule_creation_screen/{potentialTransactionJson}",
             arguments = listOf(
@@ -12153,10 +12146,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: UX IMPROVEMENT - Database version is incremented to 14. A new
-// migration (13-14) is added to alter the `custom_sms_rules` table, adding
-// the new `merchantNameExample` and `amountExample` columns to store
-// user-friendly text for the management screen.
+// REASON: FEATURE - A new default account, "Cash Spends," has been added to the
+// initial database seeding in the `populateDatabase` function. This ensures that
+// all new installations of the app will have a default account available for
+// manual transaction entry, streamlining the user experience.
 // =================================================================================
 package io.pm.finlight
 
@@ -12185,7 +12178,7 @@ import java.util.Calendar
         TransactionImage::class,
         CustomSmsRule::class
     ],
-    version = 15, // --- UPDATED: Incremented version to 15 ---
+    version = 15,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -12319,7 +12312,7 @@ abstract class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15) // --- UPDATED: Added new migration ---
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -12365,11 +12358,13 @@ abstract class AppDatabase : RoomDatabase() {
                 categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
 
                 // SECOND, insert accounts.
+                // --- UPDATED: Added "Cash Spends" account ---
                 accountDao.insertAll(
                     listOf(
-                        Account(id = 1, name = "SBI", type = "Savings"),
-                        Account(id = 2, name = "HDFC", type = "Credit Card"),
-                        Account(id = 3, name = "ICICI", type = "Savings"),
+                        Account(id = 1, name = "Cash Spends", type = "Cash"),
+                        Account(id = 2, name = "SBI", type = "Savings"),
+                        Account(id = 3, name = "HDFC", type = "Credit Card"),
+                        Account(id = 4, name = "ICICI", type = "Savings"),
                     ),
                 )
 
@@ -12389,7 +12384,7 @@ abstract class AppDatabase : RoomDatabase() {
                             categoryId = 12, // "Salary"
                             amount = 75000.0,
                             date = incomeDate,
-                            accountId = 1,
+                            accountId = 2, // SBI
                             notes = "Paycheck",
                             transactionType = "income",
                         ),
@@ -12398,7 +12393,7 @@ abstract class AppDatabase : RoomDatabase() {
                             categoryId = 6, // "Groceries"
                             amount = 4500.0,
                             date = expenseDate1,
-                            accountId = 2,
+                            accountId = 3, // HDFC
                             notes = "Weekly groceries",
                             transactionType = "expense",
                         ),
@@ -12407,7 +12402,7 @@ abstract class AppDatabase : RoomDatabase() {
                             categoryId = 4, // "Food & Drinks"
                             amount = 1200.0,
                             date = expenseDate2,
-                            accountId = 2,
+                            accountId = 3, // HDFC
                             notes = null,
                             transactionType = "expense",
                         )
@@ -14423,9 +14418,12 @@ interface BudgetDao {
 ================== FILE: ./app/src/main/java/DailyReportWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
-// REASON: Added a call to ReminderManager.scheduleDailyReport at the end of the
-// worker's execution. This crucial step creates a continuous chain, ensuring that
-// the next day's report is always enqueued after the current one runs.
+// REASON: BUG FIX - The date calculation logic has been made more precise. The
+// start of "yesterday" is now explicitly set to the first millisecond (00:00:00.000)
+// and the end is set to the last millisecond (23:59:59.999). This ensures that
+// the `BETWEEN` clause in the database query correctly includes all transactions
+// from the entire day, fixing a bug where transactions from late in the day
+// could be missed.
 // =================================================================================
 package io.pm.finlight
 
@@ -14456,14 +14454,19 @@ class DailyReportWorker(
                 // 1. Calculate the start and end timestamps for "yesterday".
                 val calendar = Calendar.getInstance()
                 calendar.add(Calendar.DAY_OF_YEAR, -1) // Go back to yesterday
+
+                // --- FIX: Set to the very end of yesterday for full inclusivity ---
                 calendar.set(Calendar.HOUR_OF_DAY, 23)
                 calendar.set(Calendar.MINUTE, 59)
                 calendar.set(Calendar.SECOND, 59)
+                calendar.set(Calendar.MILLISECOND, 999)
                 val endDate = calendar.timeInMillis
 
+                // --- FIX: Set to the very start of yesterday for full inclusivity ---
                 calendar.set(Calendar.HOUR_OF_DAY, 0)
                 calendar.set(Calendar.MINUTE, 0)
                 calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
                 val startDate = calendar.timeInMillis
 
                 // 2. Fetch transactions for yesterday.

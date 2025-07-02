@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: DEBUGGING - Renamed `getTransactionDetailsById` to `findTransactionDetailsById`.
-// This change is intended to resolve a persistent "unresolved reference"
-// compilation error that can sometimes be caused by build caching or linking issues.
+// REASON: FEATURE - Added logic to fetch and expose the original SMS message
+// for a given transaction. A new StateFlow `originalSmsText` holds the message
+// body, which is loaded via `loadOriginalSms` and cleared with `clearOriginalSms`
+// to support the new UI feature on the transaction detail screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -100,6 +101,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _defaultAccount = MutableStateFlow<Account?>(null)
     val defaultAccount: StateFlow<Account?> = _defaultAccount.asStateFlow()
 
+    // --- NEW: StateFlow to hold the original SMS text for the detail screen ---
+    private val _originalSmsText = MutableStateFlow<String?>(null)
+    val originalSmsText: StateFlow<String?> = _originalSmsText.asStateFlow()
+
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
@@ -157,6 +162,24 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _defaultAccount.value = db.accountDao().findByName("Cash Spends")
         }
+    }
+
+    // --- NEW: Function to load the original SMS message body ---
+    fun loadOriginalSms(sourceSmsId: Long?) {
+        if (sourceSmsId == null) {
+            _originalSmsText.value = null
+            return
+        }
+        viewModelScope.launch {
+            val sms = getOriginalSmsMessage(sourceSmsId)
+            _originalSmsText.value = sms?.body
+            Log.d(TAG, "Loaded SMS for ID $sourceSmsId. Found: ${sms != null}")
+        }
+    }
+
+    // --- NEW: Function to clear the SMS text when leaving the detail screen ---
+    fun clearOriginalSms() {
+        _originalSmsText.value = null
     }
 
     suspend fun getOriginalSmsMessage(smsId: Long): SmsMessage? {
@@ -399,7 +422,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         currentTxnIdForTags = null
     }
 
-    // --- UPDATED: Renamed function ---
     fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
         return transactionRepository.getTransactionDetailsById(id)
     }

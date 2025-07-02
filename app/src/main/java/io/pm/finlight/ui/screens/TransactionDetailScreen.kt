@@ -1,10 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: Implemented the final piece of the auto-update flow. The screen now
-// passes the current `transactionId` when navigating to the rule creation screen.
-// It also uses a `LaunchedEffect` to listen for the "reparse_needed" signal
-// from the navigation back stack, triggering the new `reparseTransactionFromSms`
-// function in the ViewModel to provide instant feedback to the user.
+// REASON: FEATURE - The screen now displays the original SMS message for imported
+// transactions. It collects the new `originalSmsText` StateFlow from the
+// ViewModel. A `LaunchedEffect` triggers the loading of the SMS, and a
+// `DisposableEffect` ensures the state is cleared on exit. A new Card has been
+// added to the UI to conditionally display the fetched SMS body, providing
+// users with full context.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -99,7 +101,6 @@ fun TransactionDetailScreen(
         }
     }
 
-    // --- NEW: Listen for the result from the RuleCreationScreen ---
     val reparseResult = navController.currentBackStackEntry
         ?.savedStateHandle
         ?.getLiveData<Boolean>("reparse_needed")
@@ -109,7 +110,6 @@ fun TransactionDetailScreen(
         if (reparseResult?.value == true) {
             Log.d("DetailScreen", "Reparse needed signal received for txn ID: $transactionId")
             viewModel.reparseTransactionFromSms(transactionId)
-            // Clear the signal to prevent re-triggering on config change
             navController.currentBackStackEntry?.savedStateHandle?.set("reparse_needed", false)
         }
     }
@@ -120,6 +120,8 @@ fun TransactionDetailScreen(
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
     val attachedImages by viewModel.transactionImages.collectAsState()
+    // --- NEW: Collect the original SMS text state ---
+    val originalSms by viewModel.originalSmsText.collectAsState()
     val scope = rememberCoroutineScope()
 
     var showMenu by remember { mutableStateOf(false) }
@@ -150,9 +152,11 @@ fun TransactionDetailScreen(
         viewModel.loadImagesForTransaction(transactionId)
     }
 
+    // --- UPDATED: Clear SMS text state on dispose ---
     DisposableEffect(Unit) {
         onDispose {
             viewModel.clearSelectedTags()
+            viewModel.clearOriginalSms()
         }
     }
 
@@ -176,6 +180,11 @@ fun TransactionDetailScreen(
                 else -> "Transaction Details"
             }
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
+
+            // --- NEW: Trigger SMS loading when details are available ---
+            LaunchedEffect(details.transaction.sourceSmsId) {
+                viewModel.loadOriginalSms(details.transaction.sourceSmsId)
+            }
 
             Scaffold(
                 topBar = {
@@ -324,7 +333,6 @@ fun TransactionDetailScreen(
                                     scope.launch {
                                         val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
                                         if (smsMessage != null) {
-                                            // Construct a PotentialTransaction object to pass to the next screen
                                             val potentialTxn = PotentialTransaction(
                                                 sourceSmsId = smsMessage.id,
                                                 smsSender = smsMessage.sender,
@@ -347,6 +355,43 @@ fun TransactionDetailScreen(
                                 Icon(Icons.Default.Build, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
                                 Text("Fix Parsing")
+                            }
+                        }
+                    }
+
+                    // --- NEW: Card to display the original SMS message ---
+                    if (!originalSms.isNullOrBlank()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                elevation = CardDefaults.cardElevation(2.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            ) {
+                                Column(Modifier.padding(16.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Message,
+                                            contentDescription = "Original SMS",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            "Original SMS Message",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        text = originalSms!!,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 20.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -484,7 +529,6 @@ fun TransactionDetailScreen(
     }
 }
 
-// ... (rest of the file remains the same) ...
 @Composable
 private fun TransactionEditSheetContent(
     sheetContent: SheetContent,
