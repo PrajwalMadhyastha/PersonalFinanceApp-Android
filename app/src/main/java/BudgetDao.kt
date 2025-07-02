@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/BudgetDao.kt
+// REASON: FEATURE - The queries `getBudgetsWithSpendingForMonth` and
+// `getActualSpendingForCategory` have been updated with `AND T.isExcluded = 0`.
+// This ensures that transactions marked as excluded do not count towards budget
+// spending, providing users with an accurate view of their budget status.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -11,11 +18,6 @@ interface BudgetDao {
         year: Int,
     ): Flow<List<Budget>>
 
-    // --- PERFORMANCE OPTIMIZATION ---
-    // This new query calculates the actual spending for each category budget directly in the database.
-    // It is much more efficient than fetching all transactions and all budgets into memory and combining them in the ViewModel.
-    // It joins Budgets with an aggregate sum from Transactions for a given month and year.
-    // --- FIX: The @Transaction annotation was removed as it's illegal on a @Query that returns a Flow. ---
     @Query(
         """
         SELECT
@@ -31,7 +33,7 @@ interface BudgetDao {
                 SUM(T.amount) as totalSpent
              FROM transactions AS T
              JOIN categories AS C ON T.categoryId = C.id
-             WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch') = :yearMonth
+             WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch') = :yearMonth AND T.isExcluded = 0
              GROUP BY C.name) AS TxSums
         ON B.categoryName = TxSums.categoryName
         LEFT JOIN categories AS Cat ON B.categoryName = Cat.name
@@ -50,9 +52,8 @@ interface BudgetDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(budget: Budget)
 
-    // This query is more efficient as it performs the calculation in the database.
     @Query(
-        "SELECT SUM(amount) FROM transactions WHERE categoryId = (SELECT id FROM categories WHERE name = :categoryName) AND strftime('%m', date / 1000, 'unixepoch') + 0 = :month AND strftime('%Y', date / 1000, 'unixepoch') + 0 = :year AND transactionType = 'expense'",
+        "SELECT SUM(amount) FROM transactions WHERE categoryId = (SELECT id FROM categories WHERE name = :categoryName) AND strftime('%m', date / 1000, 'unixepoch') + 0 = :month AND strftime('%Y', date / 1000, 'unixepoch') + 0 = :year AND transactionType = 'expense' AND isExcluded = 0",
     )
     fun getActualSpendingForCategory(
         categoryName: String,

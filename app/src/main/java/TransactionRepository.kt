@@ -1,7 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: Updated function signatures to pass the new filter parameters down
-// to the corresponding DAO methods.
+// REASON: BUG FIX - The `allTransactions` property now correctly calls the
+// `getAllTransactions()` function, which was re-added to the DAO. This resolves
+// the "Unresolved reference" compilation error.
 // =================================================================================
 package io.pm.finlight
 
@@ -51,6 +52,7 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     suspend fun updateCategoryId(id: Int, categoryId: Int?) = transactionDao.updateCategoryId(id, categoryId)
     suspend fun updateAccountId(id: Int, accountId: Int) = transactionDao.updateAccountId(id, accountId)
     suspend fun updateDate(id: Int, date: Long) = transactionDao.updateDate(id, date)
+    suspend fun updateExclusionStatus(id: Int, isExcluded: Boolean) = transactionDao.updateExclusionStatus(id, isExcluded)
 
     fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
         return transactionDao.getTransactionDetailsById(id)

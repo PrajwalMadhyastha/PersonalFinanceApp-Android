@@ -1,22 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE - The description editing sheet now includes a "Save for future"
-// checkbox for SMS-imported transactions. This allows users to create a
-// persistent MerchantMapping, teaching the app how to name merchants from that
-// sender in the future. The state for this checkbox is managed within the sheet
-// and passed up to the ViewModel upon saving.
-// BUG FIX: The call to the suspend function `getOriginalSmsMessage` is now
-// correctly wrapped in a `rememberCoroutineScope` launch block to prevent
-// compilation errors.
-// REFACTOR: The logic for saving a merchant name has been updated to create a
-// `MerchantRenameRule` based on the original parsed text, rather than the SMS
-// sender, for a more accurate and intelligent parsing system.
-// BUG FIX: Removed the default `viewModel()` parameter for the SettingsViewModel
-// to resolve a compile-time "Unresolved reference" error by making the
-// dependency explicit and unambiguous for the navigation graph.
-// BUG FIX: Refactored to accept an `onSaveRenameRule` lambda instead of the
-// entire SettingsViewModel, which definitively resolves the "Unresolved reference"
-// error by removing dependency scope ambiguity.
+// REASON: FEATURE - Added a new `Switch` component to the `TransactionHeaderCard`.
+// This UI element allows users to toggle the `isExcluded` property of a
+// transaction. The switch is bound to the transaction's state and calls the
+// new `updateTransactionExclusion` function in the ViewModel on change.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -240,7 +227,10 @@ fun TransactionDetailScreen(
                             onDescriptionClick = { activeSheetContent = SheetContent.Description },
                             onAmountClick = { activeSheetContent = SheetContent.Amount },
                             onCategoryClick = { activeSheetContent = SheetContent.Category },
-                            onDateTimeClick = { showDatePicker = true }
+                            onDateTimeClick = { showDatePicker = true },
+                            onExcludeToggled = { isExcluded ->
+                                viewModel.updateTransactionExclusion(details.transaction.id, isExcluded)
+                            }
                         )
                     }
                     item {
@@ -890,6 +880,7 @@ private fun TransactionHeaderCard(
     onAmountClick: () -> Unit,
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit,
+    onExcludeToggled: (Boolean) -> Unit
 ) {
     val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy, h:mm a", Locale.getDefault()) }
 
@@ -965,6 +956,23 @@ private fun TransactionHeaderCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Exclude from totals",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Switch(
+                    checked = details.transaction.isExcluded,
+                    onCheckedChange = onExcludeToggled
+                )
             }
         }
     }

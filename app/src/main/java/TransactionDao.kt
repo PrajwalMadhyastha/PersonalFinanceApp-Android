@@ -1,7 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: Added a new query to efficiently calculate the total income and expenses
-// for a given date range, which will be used by the new MonthlySummaryWorker.
+// REASON: BUG FIX - The `getAllTransactions()` function, which returns a detailed
+// list of transactions (`Flow<List<TransactionDetails>>`), has been added back.
+// This function was mistakenly removed and is required by both the
+// TransactionRepository and the DataExportService, resolving the "Unresolved
+// reference" compilation errors in those files.
 // =================================================================================
 package io.pm.finlight
 
@@ -10,6 +13,29 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
+
+    @Query("UPDATE transactions SET isExcluded = :isExcluded WHERE id = :id")
+    suspend fun updateExclusionStatus(id: Int, isExcluded: Boolean)
+
+    @Query(
+        """
+        SELECT
+            T.*,
+            A.name as accountName,
+            C.name as categoryName,
+            C.iconKey as categoryIconKey,
+            C.colorKey as categoryColorKey
+        FROM
+            transactions AS T
+        LEFT JOIN
+            accounts AS A ON T.accountId = A.id
+        LEFT JOIN
+            categories AS C ON T.categoryId = C.id
+        ORDER BY
+            T.date DESC
+    """
+    )
+    fun getAllTransactions(): Flow<List<TransactionDetails>>
 
     @Query("""
         SELECT
@@ -25,6 +51,7 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
+          AND T.isExcluded = 0
           AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
@@ -42,6 +69,7 @@ interface TransactionDao {
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
+          AND T.isExcluded = 0
           AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
@@ -57,6 +85,7 @@ interface TransactionDao {
             COUNT(id) as transactionCount
         FROM transactions
         WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
+          AND isExcluded = 0
           AND (:keyword IS NULL OR description LIKE '%' || :keyword || '%' OR notes LIKE '%' || :keyword || '%')
           AND (:accountId IS NULL OR accountId = :accountId)
           AND (:categoryId IS NULL OR categoryId = :categoryId)
@@ -132,26 +161,6 @@ interface TransactionDao {
     """
     )
     fun getRecentTransactionDetails(): Flow<List<TransactionDetails>>
-
-    @Query(
-        """
-        SELECT
-            T.*,
-            A.name as accountName,
-            C.name as categoryName,
-            C.iconKey as categoryIconKey,
-            C.colorKey as categoryColorKey
-        FROM
-            transactions AS T
-        LEFT JOIN
-            accounts AS A ON T.accountId = A.id
-        LEFT JOIN
-            categories AS C ON T.categoryId = C.id
-        ORDER BY
-            T.date DESC
-    """
-    )
-    fun getAllTransactions(): Flow<List<TransactionDetails>>
 
     @Query("SELECT sourceSmsHash FROM transactions WHERE sourceSmsHash IS NOT NULL")
     fun getAllSmsHashes(): Flow<List<String>>
@@ -240,6 +249,7 @@ interface TransactionDao {
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
+          AND T.isExcluded = 0
           AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
@@ -262,7 +272,7 @@ interface TransactionDao {
             SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
         FROM transactions
-        WHERE date >= :startDate
+        WHERE date >= :startDate AND isExcluded = 0
         GROUP BY monthYear
         ORDER BY monthYear ASC
     """
@@ -300,13 +310,12 @@ interface TransactionDao {
     @Query("SELECT COUNT(*) FROM transaction_tag_cross_ref WHERE tagId = :tagId")
     suspend fun countTransactionsForTag(tagId: Int): Int
 
-    // --- NEW: Query to get a financial summary for a date range ---
     @Query("""
         SELECT
             SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
         FROM transactions
-        WHERE date BETWEEN :startDate AND :endDate
+        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
     """)
     suspend fun getFinancialSummaryForRange(startDate: Long, endDate: Long): FinancialSummary?
 

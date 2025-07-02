@@ -1,3 +1,12 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DataExportService.kt
+// REASON: BUG FIX - The `forEach` loop in `exportToCsvString` now explicitly
+// specifies the type of the loop variable (`details: TransactionDetails`). This
+// resolves the compiler's type inference ambiguity and fixes all related
+// "Unresolved reference" errors.
+// FEATURE - The CSV export has been enhanced to include the new `isExcluded`
+// field, providing a more complete data export.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -86,11 +95,13 @@ object DataExportService {
                 val transactions = db.transactionDao().getAllTransactions().first()
                 val csvBuilder = StringBuilder()
 
-                csvBuilder.append("Date,Description,Amount,Type,Category,Account,Notes\n")
+                // Add the new isExcluded column to the header
+                csvBuilder.append("Date,Description,Amount,Type,Category,Account,Notes,IsExcluded\n")
 
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
-                transactions.forEach { details ->
+                // Explicitly define the type of 'details' to resolve compiler ambiguity
+                transactions.forEach { details: TransactionDetails ->
                     val date = dateFormat.format(Date(details.transaction.date))
                     val description = escapeCsvField(details.transaction.description)
                     val amount = details.transaction.amount.toString()
@@ -98,8 +109,9 @@ object DataExportService {
                     val category = escapeCsvField(details.categoryName ?: "N/A")
                     val account = escapeCsvField(details.accountName ?: "N/A")
                     val notes = escapeCsvField(details.transaction.notes ?: "")
+                    val isExcluded = details.transaction.isExcluded.toString()
 
-                    csvBuilder.append("$date,$description,$amount,$type,$category,$account,$notes\n")
+                    csvBuilder.append("$date,$description,$amount,$type,$category,$account,$notes,$isExcluded\n")
                 }
                 csvBuilder.toString()
             } catch (e: Exception) {

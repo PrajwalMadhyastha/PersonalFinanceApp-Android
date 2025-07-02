@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: REFACTOR - The call to `SmsParser.parse` has been updated to pass the
-// individual DAOs (`customSmsRuleDao`, `merchantRenameRuleDao`) instead of the
-// entire database instance, aligning with the parser's new, decoupled signature.
+// REASON: FEATURE - Added the `updateTransactionExclusion` function. This new
+// function is called from the TransactionDetailScreen when the user toggles the
+// "Exclude from totals" switch, and it updates the `isExcluded` flag for the
+// corresponding transaction in the database.
 // =================================================================================
 package io.pm.finlight
 
@@ -375,6 +376,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun updateTransactionDate(id: Int, date: Long) = viewModelScope.launch {
         transactionRepository.updateDate(id, date)
+    }
+
+    fun updateTransactionExclusion(id: Int, isExcluded: Boolean) = viewModelScope.launch {
+        transactionRepository.updateExclusionStatus(id, isExcluded)
     }
 
     fun updateTagsForTransaction(transactionId: Int) = viewModelScope.launch {

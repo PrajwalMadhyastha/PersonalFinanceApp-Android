@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AccountDao.kt
-// REASON: BUG FIX - The `findByName` query is updated to be case-insensitive
-// by adding `COLLATE NOCASE`. This ensures that if a parser extracts "sbi",
-// it will correctly match the existing account named "SBI" in the database,
-// preventing the creation of duplicate accounts.
+// REASON: FEATURE - The subquery within `getAccountsWithBalance` has been updated
+// with `WHERE isExcluded = 0`. This ensures that transactions marked as excluded
+// are not factored into the on-the-fly balance calculations, providing an
+// accurate net worth and account summary.
 // =================================================================================
 package io.pm.finlight
 
@@ -31,6 +31,7 @@ interface AccountDao {
                 accountId,
                 SUM(CASE WHEN transactionType = 'income' THEN amount ELSE -amount END) as balance
              FROM transactions
+             WHERE isExcluded = 0
              GROUP BY accountId) AS TxSums
         ON A.id = TxSums.accountId
         ORDER BY
@@ -42,7 +43,6 @@ interface AccountDao {
     @Query("SELECT * FROM accounts ORDER BY name ASC")
     fun getAllAccounts(): Flow<List<Account>>
 
-    // --- UPDATED: Added COLLATE NOCASE for case-insensitive matching ---
     @Query("SELECT * FROM accounts WHERE name = :name COLLATE NOCASE LIMIT 1")
     suspend fun findByName(name: String): Account?
 

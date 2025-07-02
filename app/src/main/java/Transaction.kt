@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/Transaction.kt
-// REASON: FEATURE - Added a new nullable field, `originalDescription`. This field
-// will store the merchant name exactly as it was first parsed from an SMS,
-// preserving it even if the user later edits the main `description`. This is
-// crucial for the new "merchant rename" feature.
+// REASON: FEATURE - Added a new Boolean field, `isExcluded`, with a default value
+// of false. This field will be used to mark transactions that should be
+// ignored in all financial calculations (e.g., summaries, budgets, net worth).
 // =================================================================================
 package io.pm.finlight
 
@@ -48,5 +47,6 @@ data class Transaction(
     val sourceSmsId: Long? = null,
     val sourceSmsHash: String? = null,
     val source: String = "Manual Entry",
-    val originalDescription: String? = null
+    val originalDescription: String? = null,
+    val isExcluded: Boolean = false
 )

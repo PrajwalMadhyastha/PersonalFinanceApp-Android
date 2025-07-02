@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: BUG FIX - Added the `open` keyword to the class definition. By default,
-// Kotlin classes are final, which prevents Mockito from creating mock objects for
-// them. Making the class `open` allows it to be subclassed by the mocking
-// framework, resolving the "Mockito cannot mock this class" error in unit tests.
+// REASON: FEATURE - The database version has been incremented to 17. A new
+// migration, MIGRATION_16_17, has been added to alter the `transactions` table,
+// adding the new `isExcluded` column with a default value of 0 (false).
 // =================================================================================
 package io.pm.finlight
 
@@ -33,7 +32,7 @@ import java.util.Calendar
         CustomSmsRule::class,
         MerchantRenameRule::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -168,12 +167,18 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN isExcluded INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
