@@ -1,7 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: Added a new function, showMonthlySummaryNotification, to create and
-// display the formatted notification for the user's end-of-month report.
+// REASON: FIX - Added a unique group key to the `showAutoSaveConfirmationNotification`
+// builder using `.setGroup()`. This prevents the Android system from stacking
+// multiple auto-save notifications, ensuring each one is displayed individually
+// for better visibility.
 // =================================================================================
 package io.pm.finlight
 
@@ -44,6 +46,8 @@ object NotificationHelper {
             getPendingIntent(transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
+        // --- NEW: Define a unique group key for each notification ---
+        val groupKey = "finlight_transaction_group_${transaction.id}"
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
@@ -52,6 +56,8 @@ object NotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            // --- NEW: Set the unique group key to prevent stacking ---
+            .setGroup(groupKey)
             .addAction(android.R.drawable.ic_menu_edit, "Edit", pendingIntent)
 
         with(NotificationManagerCompat.from(context)) {
@@ -167,7 +173,6 @@ object NotificationHelper {
         NotificationManagerCompat.from(context).notify(3, notification)
     }
 
-    // --- NEW: Function to show the monthly summary notification ---
     fun showMonthlySummaryNotification(
         context: Context,
         totalIncome: Double,
