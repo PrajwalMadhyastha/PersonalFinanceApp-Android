@@ -1,7 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: Added StateFlow and a corresponding save function for the new monthly
-// summary toggle to manage its state and trigger worker scheduling.
+// REASON: FEATURE - Added the `saveMerchantMapping` function. This new function
+// allows the UI to create a persistent mapping between an SMS sender and a
+// user-defined merchant name, which will be used by the parser to improve
+// auto-categorization.
 // =================================================================================
 package io.pm.finlight
 
@@ -60,7 +62,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = true,
         )
 
-    // --- NEW: StateFlow for the monthly summary toggle ---
     val monthlySummaryEnabled: StateFlow<Boolean> =
         settingsRepository.getMonthlySummaryEnabled().stateIn(
             scope = viewModelScope,
@@ -163,11 +164,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     transactionRepository.getAllSmsHashes().first().toSet()
                 }
 
-                val customSmsRuleDao = db.customSmsRuleDao() // Get DAO instance
+                val customSmsRuleDao = db.customSmsRuleDao()
 
                 val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { sms ->
-                        // --- UPDATED: Pass the custom rule DAO to the parser ---
                         SmsParser.parse(sms, existingMappings, customSmsRuleDao)
                     }
                 }
@@ -241,7 +241,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- NEW: Function to handle the monthly summary toggle ---
     fun setMonthlySummaryEnabled(enabled: Boolean) {
         settingsRepository.saveMonthlySummaryEnabled(enabled)
         if (enabled) {

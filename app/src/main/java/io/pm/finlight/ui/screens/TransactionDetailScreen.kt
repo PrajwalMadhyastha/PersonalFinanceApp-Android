@@ -1,11 +1,13 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE - The screen now displays the original SMS message for imported
-// transactions. It collects the new `originalSmsText` StateFlow from the
-// ViewModel. A `LaunchedEffect` triggers the loading of the SMS, and a
-// `DisposableEffect` ensures the state is cleared on exit. A new Card has been
-// added to the UI to conditionally display the fetched SMS body, providing
-// users with full context.
+// REASON: FEATURE - The description editing sheet now includes a "Save for future"
+// checkbox for SMS-imported transactions. This allows users to create a
+// persistent MerchantMapping, teaching the app how to name merchants from that
+// sender in the future. The state for this checkbox is managed within the sheet
+// and passed up to the ViewModel upon saving.
+// BUG FIX: The call to the suspend function `getOriginalSmsMessage` is now
+// correctly wrapped in a `rememberCoroutineScope` launch block to prevent
+// compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -87,7 +89,8 @@ private sealed interface DetailScreenState {
 fun TransactionDetailScreen(
     navController: NavController,
     transactionId: Int,
-    viewModel: TransactionViewModel = viewModel()
+    viewModel: TransactionViewModel = viewModel(),
+    settingsViewModel: SettingsViewModel = viewModel()
 ) {
     Log.d(TAG, "Composing TransactionDetailScreen for transactionId: $transactionId")
 
@@ -120,7 +123,6 @@ fun TransactionDetailScreen(
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
     val attachedImages by viewModel.transactionImages.collectAsState()
-    // --- NEW: Collect the original SMS text state ---
     val originalSms by viewModel.originalSmsText.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -152,7 +154,6 @@ fun TransactionDetailScreen(
         viewModel.loadImagesForTransaction(transactionId)
     }
 
-    // --- UPDATED: Clear SMS text state on dispose ---
     DisposableEffect(Unit) {
         onDispose {
             viewModel.clearSelectedTags()
@@ -181,7 +182,6 @@ fun TransactionDetailScreen(
             }
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
 
-            // --- NEW: Trigger SMS loading when details are available ---
             LaunchedEffect(details.transaction.sourceSmsId) {
                 viewModel.loadOriginalSms(details.transaction.sourceSmsId)
             }
@@ -359,7 +359,6 @@ fun TransactionDetailScreen(
                         }
                     }
 
-                    // --- NEW: Card to display the original SMS message ---
                     if (!originalSms.isNullOrBlank()) {
                         item {
                             Card(
@@ -406,6 +405,7 @@ fun TransactionDetailScreen(
                             sheetContent = activeSheetContent!!,
                             details = details,
                             viewModel = viewModel,
+                            settingsViewModel = settingsViewModel,
                             accounts = accounts,
                             categories = categories,
                             allTags = allTags,
@@ -534,6 +534,7 @@ private fun TransactionEditSheetContent(
     sheetContent: SheetContent,
     details: TransactionDetails,
     viewModel: TransactionViewModel,
+    settingsViewModel: SettingsViewModel,
     accounts: List<Account>,
     categories: List<Category>,
     allTags: List<Tag>,
@@ -543,15 +544,43 @@ private fun TransactionEditSheetContent(
     onAddNewCategory: () -> Unit
 ) {
     val transactionId = details.transaction.id
+    val scope = rememberCoroutineScope()
 
     when (sheetContent) {
         is SheetContent.Description -> {
+            var saveForFuture by remember { mutableStateOf(false) }
             EditTextFieldSheet(
                 title = "Edit Description",
                 initialValue = details.transaction.description,
-                onConfirm = { viewModel.updateTransactionDescription(transactionId, it) },
+                onConfirm = { newDescription ->
+                    scope.launch {
+                        viewModel.updateTransactionDescription(transactionId, newDescription)
+                        if (saveForFuture) {
+                            details.transaction.sourceSmsId?.let { smsId ->
+                                val smsMessage = viewModel.getOriginalSmsMessage(smsId)
+                                smsMessage?.sender?.let { sender ->
+                                    settingsViewModel.saveMerchantMapping(sender, newDescription)
+                                }
+                            }
+                        }
+                    }
+                },
                 onDismiss = onDismiss
-            )
+            ) {
+                if (details.transaction.sourceSmsId != null) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { saveForFuture = !saveForFuture }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = saveForFuture, onCheckedChange = { saveForFuture = it })
+                        Spacer(Modifier.width(8.dp))
+                        Text("Apply this name to all future transactions from this sender.")
+                    }
+                }
+            }
         }
         is SheetContent.Amount -> {
             EditTextFieldSheet(
@@ -611,7 +640,8 @@ private fun EditTextFieldSheet(
     initialValue: String,
     keyboardType: KeyboardType = KeyboardType.Text,
     onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    additionalContent: @Composable (() -> Unit)? = null
 ) {
     var text by remember { mutableStateOf(initialValue) }
 
@@ -633,6 +663,8 @@ private fun EditTextFieldSheet(
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("value_input")
         )
+        additionalContent?.invoke()
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
@@ -851,7 +883,7 @@ private fun TransactionHeaderCard(
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit,
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy, h:mm a", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMMyyyy, h:mm a", Locale.getDefault()) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
