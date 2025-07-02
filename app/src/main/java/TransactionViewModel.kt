@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: BUG FIX - The call to `SmsParser.parse` was updated to pass the
-// full `db` instance instead of just the `customSmsRuleDao`. This resolves the
-// argument type mismatch and allows the parser to access all necessary DAOs
-// for applying custom parsing and renaming rules.
+// REASON: REFACTOR - The call to `SmsParser.parse` has been updated to pass the
+// individual DAOs (`customSmsRuleDao`, `merchantRenameRuleDao`) instead of the
+// entire database instance, aligning with the parser's new, decoupled signature.
 // =================================================================================
 package io.pm.finlight
 
@@ -204,8 +203,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            // --- FIX: Pass the full db instance to the parser ---
-            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db)
+            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db.customSmsRuleDao(), db.merchantRenameRuleDao())
             Log.d(logTag, "SmsParser result: $potentialTxn")
 
             if (potentialTxn != null) {

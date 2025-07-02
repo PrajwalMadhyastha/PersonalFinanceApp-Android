@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: FEATURE - Added the `saveMerchantRenameRule` function. This new function
-// allows the UI to create a persistent rule to rename a parsed merchant name to a
-// user-defined one, which will be used by the parser to improve
-// auto-categorization. This function is called from the Transaction Detail screen.
+// REASON: REFACTOR - The call to `SmsParser.parse` has been updated to pass the
+// individual DAOs (`customSmsRuleDao`, `merchantRenameRuleDao`) instead of the
+// entire database instance, aligning with the parser's new, decoupled signature.
 // =================================================================================
 package io.pm.finlight
 
@@ -166,7 +165,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { sms ->
-                        SmsParser.parse(sms, existingMappings, db)
+                        SmsParser.parse(sms, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao())
                     }
                 }
 
@@ -195,7 +194,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- NEW: Function to save a merchant rename rule ---
     fun saveMerchantRenameRule(originalName: String, newName: String) {
         if (originalName.isBlank() || newName.isBlank() || originalName.equals(newName, ignoreCase = true)) return
         viewModelScope.launch(Dispatchers.IO) {

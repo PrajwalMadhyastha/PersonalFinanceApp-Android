@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - Added the new MerchantRenameRule entity and its corresponding
-// DAO to the database configuration. Also added a new migration (15 -> 16) to
-// create the `merchant_rename_rules` table and add the `originalDescription`
-// column to the `transactions` table.
+// REASON: BUG FIX - Added the `open` keyword to the class definition. By default,
+// Kotlin classes are final, which prevents Mockito from creating mock objects for
+// them. Making the class `open` allows it to be subclassed by the mocking
+// framework, resolving the "Mockito cannot mock this class" error in unit tests.
 // =================================================================================
 package io.pm.finlight
 
@@ -36,7 +36,7 @@ import java.util.Calendar
     version = 16,
     exportSchema = true,
 )
-abstract class AppDatabase : RoomDatabase() {
+abstract open class AppDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun accountDao(): AccountDao
     abstract fun categoryDao(): CategoryDao

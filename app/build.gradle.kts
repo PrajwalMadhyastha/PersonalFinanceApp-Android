@@ -92,6 +92,8 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            // --- FIX: Return default values for Android framework methods in unit tests ---
+            isReturnDefaultValues = true
         }
     }
 }
@@ -136,11 +138,11 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:$coilVersion")
 
-    // --- NEW: Add the image cropper dependency ---
     implementation("com.vanniktech:android-image-cropper:$imageCropperVersion")
 
     // Local unit tests
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.mockito:mockito-inline:5.2.0")
     testImplementation("androidx.test:core-ktx:$androidxTestVersion")
     testImplementation("androidx.test.ext:junit:$testExtJunitVersion")
     testImplementation("org.robolectric:robolectric:$robolectricVersion")

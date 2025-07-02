@@ -1,10 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
 // REASON: REFACTOR - The call to `SmsParser.parse` has been updated to pass the
-// full database instance instead of just a single DAO, enabling the parser to
-// access all necessary rule tables.
-// FEATURE: When creating a new `Transaction` from a parsed SMS, the new
-// `originalDescription` field is now populated with the parsed merchant name.
+// individual DAOs (`customSmsRuleDao`, `merchantRenameRuleDao`) instead of the
+// entire database instance, aligning with the parser's new, decoupled signature.
 // =================================================================================
 package io.pm.finlight
 
@@ -51,7 +49,7 @@ class SmsReceiver : BroadcastReceiver() {
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
                         val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
-                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db)
+                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao())
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
