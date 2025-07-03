@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
-// REASON: FIX - Added a `!it.transaction.isExcluded` filter to the `totalExpenses`
-// calculation. The underlying DAO query now returns all transactions for display
-// flexibility, so this worker must now explicitly filter out excluded transactions
-// to ensure the daily report is accurate.
+// REASON: REFACTOR - The date calculation logic has been updated to use a
+// rolling 24-hour window instead of a fixed "yesterday". The worker now fetches
+// data from the last 24 hours and compares it against the 24 hours prior to that.
+// This makes the daily report more timely and relevant to the user.
 // =================================================================================
 package io.pm.finlight
 
@@ -12,15 +12,10 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 import kotlin.math.roundToInt
 
-/**
- * A background worker that calculates the user's total expenses from the previous day
- * and displays it as a system notification.
- */
 class DailyReportWorker(
     private val context: Context,
     workerParams: WorkerParameters,
@@ -28,30 +23,30 @@ class DailyReportWorker(
     override suspend fun doWork(): Result {
         return withContext(Dispatchers.IO) {
             try {
-                Log.d("DailyReportWorker", "Worker starting...")
+                Log.d("DailyReportWorker", "Worker starting for last 24 hours...")
                 val transactionDao = AppDatabase.getInstance(context).transactionDao()
 
-                // Date range for YESTERDAY
-                val yesterdayEnd = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
-                val yesterdayStart = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+                // --- REFACTORED: Calculate a rolling 24-hour window ---
+                val endDate = Calendar.getInstance().timeInMillis
+                val startDate = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -24) }.timeInMillis
 
-                // Date range for THE DAY BEFORE YESTERDAY
-                val dayBeforeEnd = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -2); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
-                val dayBeforeStart = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -2); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+                // --- REFACTORED: Calculate the previous 24-hour window (24-48 hours ago) for comparison ---
+                val previousPeriodEndDate = startDate - 1
+                val previousPeriodStartDate = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -48) }.timeInMillis
 
-                val yesterdaySummary = transactionDao.getFinancialSummaryForRange(yesterdayStart, yesterdayEnd)
-                val yesterdayExpenses = yesterdaySummary?.totalExpenses ?: 0.0
+                val currentPeriodSummary = transactionDao.getFinancialSummaryForRange(startDate, endDate)
+                val currentPeriodExpenses = currentPeriodSummary?.totalExpenses ?: 0.0
 
-                val dayBeforeSummary = transactionDao.getFinancialSummaryForRange(dayBeforeStart, dayBeforeEnd)
-                val dayBeforeExpenses = dayBeforeSummary?.totalExpenses ?: 0.0
+                val previousPeriodSummary = transactionDao.getFinancialSummaryForRange(previousPeriodStartDate, previousPeriodEndDate)
+                val previousPeriodExpenses = previousPeriodSummary?.totalExpenses ?: 0.0
 
-                val topCategories = transactionDao.getTopSpendingCategoriesForRange(yesterdayStart, yesterdayEnd)
+                val topCategories = transactionDao.getTopSpendingCategoriesForRange(startDate, endDate)
 
-                val percentageChange = if (dayBeforeExpenses > 0) {
-                    ((yesterdayExpenses - dayBeforeExpenses) / dayBeforeExpenses * 100).roundToInt()
+                val percentageChange = if (previousPeriodExpenses > 0) {
+                    ((currentPeriodExpenses - previousPeriodExpenses) / previousPeriodExpenses * 100).roundToInt()
                 } else null
 
-                NotificationHelper.showDailyReportNotification(context, yesterdayExpenses, percentageChange, topCategories)
+                NotificationHelper.showDailyReportNotification(context, currentPeriodExpenses, percentageChange, topCategories)
 
                 ReminderManager.scheduleDailyReport(context)
                 Log.d("DailyReportWorker", "Worker finished and rescheduled.")

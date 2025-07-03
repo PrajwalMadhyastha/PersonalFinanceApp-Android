@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt
-// REASON: BUG FIX - The test has been refactored to no longer mock the `AppDatabase`
-// class, which was causing the "Mockito cannot mock this class" error. Instead,
-// it now mocks the individual DAOs (`CustomSmsRuleDao`, `MerchantRenameRuleDao`)
-// and passes them directly to the refactored `SmsParser.parse` function. This
-// resolves the testing error and creates a more focused, robust unit test.
+// REASON: FEATURE - Added the `test_ignores_bharat_bill_pay_confirmation` unit
+// test. This new test case specifically verifies that the parser correctly
+// ignores credit card payment confirmation messages sent via the "Bharat Bill
+// Payment System", ensuring the new negative keyword regex is effective.
 // =================================================================================
 package io.pm.finlight
 
@@ -208,5 +207,14 @@ class SmsParserTest {
         val mockSms = SmsMessage(id = 13L, sender = "DM-SBICRD", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
         assertNull("Parser should ignore credit card payment confirmations", result)
+    }
+
+    @Test
+    fun `test ignores bharat bill pay confirmation`() = runBlocking {
+        setupTest()
+        val smsBody = "Payment of Rs 356.33 has been received on your ICICI Bank Credit Card XX2529 through Bharat Bill Payment System on 03-JUL-25."
+        val mockSms = SmsMessage(id = 14L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        assertNull("Parser should ignore Bharat Bill Pay confirmations", result)
     }
 }

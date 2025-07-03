@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: REFACTOR - The `parse` function signature has been changed to accept
-// the required DAOs (`CustomSmsRuleDao`, `MerchantRenameRuleDao`) directly,
-// instead of the entire `AppDatabase` instance. This decouples the parser from
-// the database implementation, improves testability, and resolves the "Mockito
-// cannot mock this class" error in unit tests.
+// REASON: FEATURE - Added a new pattern to the `NEGATIVE_KEYWORDS_REGEX`. The
+// new pattern, `Payment of.*has been received on your.*Credit Card`, specifically
+// targets and ignores credit card payment confirmations made through systems
+// like Bharat Bill Pay, further improving parsing accuracy.
 // =================================================================================
 package io.pm.finlight
 
@@ -23,7 +22,7 @@ object SmsParser {
     private val KEYWORD_AMOUNT_REGEX = "(?:purchase of|payment of|spent|charged|credited with|debited for|credit of|for)\\s+([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
-    private val NEGATIVE_KEYWORDS_REGEX = "\\b(invoice of|payment of.*is successful|has been credited to|payment of.*has been received towards|credited to your.*card)\\b".toRegex(RegexOption.IGNORE_CASE)
+    private val NEGATIVE_KEYWORDS_REGEX = "\\b(invoice of|payment of.*is successful|has been credited to|payment of.*has been received towards|credited to your.*card|Payment of.*has been received on your.*Credit Card)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val ACCOUNT_PATTERNS =
         listOf(
             "(ICICI Bank) Account XX(\\d{3,4}) credited".toRegex(RegexOption.IGNORE_CASE),
