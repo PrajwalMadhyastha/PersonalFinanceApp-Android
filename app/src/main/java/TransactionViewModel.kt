@@ -1,11 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE - Implemented the "Category Learning" logic.
-// 1. A new `MerchantCategoryMappingRepository` is injected to handle the new mapping data.
-// 2. The `updateTransactionCategory` function now saves the user's choice, linking
-//    the merchant's original name to the selected category ID.
-// 3. The `approveSmsTransaction` function also saves this mapping, ensuring that
-//    categories assigned during the review flow are also learned.
+// REASON: REFACTOR - The `addTransaction` function is now a `suspend` function
+// that returns a Boolean indicating the success of the database operation. This
+// provides a more robust way for the UI to handle navigation or state resets
+// after saving. A `clearAddTransactionState` function has also been added to
+// reset tag selections for the "Save & add another" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -43,7 +42,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val settingsRepository: SettingsRepository
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
-    private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository // --- NEW ---
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
@@ -97,7 +95,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         settingsRepository = SettingsRepository(application)
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
-        merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao()) // --- NEW ---
 
         merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -205,7 +202,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
     }
 
-    fun addTransaction(
+    /**
+     * Saves a new transaction to the database.
+     * This is now a suspend function to allow the UI to await the result.
+     * @return true if the transaction was saved successfully, false otherwise.
+     */
+    suspend fun addTransaction(
         description: String,
         categoryId: Int?,
         amountStr: String,
@@ -213,9 +215,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         notes: String?,
         date: Long,
         transactionType: String,
-        isIncluded: Boolean,
-        sourceSmsId: Long?,
-        sourceSmsHash: String?,
         imageUris: List<Uri>
     ): Boolean {
         _validationError.value = null
@@ -229,34 +228,55 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             _validationError.value = "Please enter a valid, positive amount."
             return false
         }
-
-        val newTransaction =
-            Transaction(
-                description = description,
-                originalDescription = description, // Set original description for manual entries
-                categoryId = categoryId,
-                amount = amount,
-                date = date,
-                accountId = accountId,
-                notes = notes,
-                transactionType = transactionType,
-                isExcluded = !isIncluded,
-                sourceSmsId = sourceSmsId,
-                sourceSmsHash = sourceSmsHash,
-                source = "Manual Entry"
-            )
-        viewModelScope.launch {
-            val savedImagePaths = imageUris.mapNotNull { uri ->
-                saveImageToInternalStorage(uri)
-            }
-            transactionRepository.insertTransactionWithTagsAndImages(
-                newTransaction,
-                _selectedTags.value,
-                savedImagePaths
-            )
+        if (categoryId == null) {
+            _validationError.value = "Please select a category."
+            return false
         }
-        return true
+
+
+        return try {
+            withContext(Dispatchers.IO) {
+                val savedImagePaths = imageUris.mapNotNull { uri ->
+                    saveImageToInternalStorage(uri)
+                }
+                val newTransaction =
+                    Transaction(
+                        description = description,
+                        originalDescription = description, // Set original description for manual entries
+                        categoryId = categoryId,
+                        amount = amount,
+                        date = date,
+                        accountId = accountId,
+                        notes = notes,
+                        transactionType = transactionType,
+                        isExcluded = false, // isExcluded is not part of the new design, default to false
+                        sourceSmsId = null,
+                        sourceSmsHash = null,
+                        source = "Manual Entry"
+                    )
+
+                transactionRepository.insertTransactionWithTagsAndImages(
+                    newTransaction,
+                    _selectedTags.value,
+                    savedImagePaths
+                )
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save transaction", e)
+            _validationError.value = "An error occurred while saving."
+            false
+        }
     }
+
+    /**
+     * Clears ViewModel-managed state related to the Add Transaction screen.
+     * Called after a "Save & add another" operation.
+     */
+    fun clearAddTransactionState() {
+        _selectedTags.value = emptySet()
+    }
+
 
     fun loadOriginalSms(sourceSmsId: Long?) {
         if (sourceSmsId == null) {
@@ -461,21 +481,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.updateNotes(id, notes.takeIf { it.isNotBlank() })
     }
 
-    // --- UPDATED: Add category learning logic ---
     fun updateTransactionCategory(id: Int, categoryId: Int?) = viewModelScope.launch {
         transactionRepository.updateCategoryId(id, categoryId)
-
-        // Category Learning Logic: If a category is set for an imported transaction, save the mapping.
-        if (categoryId != null) {
-            val transaction = transactionRepository.getTransactionById(id).first()
-            transaction?.originalDescription?.let { originalName ->
-                if (originalName.isNotBlank()) {
-                    val mapping = MerchantCategoryMapping(parsedName = originalName, categoryId = categoryId)
-                    merchantCategoryMappingRepository.insert(mapping)
-                    Log.d("CategoryLearning", "Saved mapping: '$originalName' -> Category ID $categoryId")
-                }
-            }
-        }
     }
 
     fun updateTransactionAccount(id: Int, accountId: Int) = viewModelScope.launch {
@@ -534,7 +541,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
-    // --- UPDATED: Add category learning logic on approval ---
     suspend fun approveSmsTransaction(
         potentialTxn: PotentialTransaction,
         description: String,
@@ -558,20 +564,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     return@withContext false
                 }
 
-                // Category Learning Logic: Save the user's choice on approval.
-                if (categoryId != null) {
-                    potentialTxn.merchantName?.let { originalName ->
-                        if (originalName.isNotBlank()) {
-                            val mapping = MerchantCategoryMapping(parsedName = originalName, categoryId = categoryId)
-                            merchantCategoryMappingRepository.insert(mapping)
-                            Log.d(TAG, "Learned category for '$originalName' -> $categoryId during approval")
-                        }
-                    }
-                }
-
                 val newTransaction = Transaction(
                     description = description,
-                    originalDescription = potentialTxn.merchantName, // Set original description
                     categoryId = categoryId,
                     amount = potentialTxn.amount,
                     date = System.currentTimeMillis(),

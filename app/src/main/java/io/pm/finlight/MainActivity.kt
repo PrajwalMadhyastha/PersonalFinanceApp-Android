@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - Removed `BottomNavItem.Profile` from the `bottomNavItems`
-// list. This simplifies the main navigation by removing the "Profile" tab from
-// the bottom navigation bar, making the clickable profile picture on the
-// dashboard the sole entry point to the user's profile.
+// REASON: REFACTOR - The main Scaffold now includes logic to show a new, custom
+// `AddTransactionTopBar` when the current route is "add_transaction". This
+// replaces the old behavior of simply hiding the default TopAppBar and allows
+// for a screen-specific design as per the new UI requirements.
 // =================================================================================
 package io.pm.finlight
 
@@ -201,7 +201,6 @@ fun MainAppScreen() {
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
 
-    // --- REFACTOR: Removed BottomNavItem.Profile from this list ---
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
@@ -230,17 +229,22 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
+    // --- REFACTOR: Updated logic to conditionally show a custom top bar ---
     val showMainTopBar = baseCurrentRoute !in setOf(
         "transaction_detail",
         "transaction_list",
         "income_screen",
-        "splash_screen"
+        "splash_screen",
+        "add_transaction" // Hide default bar for add_transaction
     )
+    val showAddTransactionTopBar = baseCurrentRoute == "add_transaction"
+
 
     val activity = LocalContext.current as AppCompatActivity
 
     Scaffold(
         topBar = {
+            // --- REFACTOR: Conditionally display the correct TopAppBar ---
             if (showMainTopBar) {
                 TopAppBar(
                     title = { Text(currentTitle) },
@@ -257,7 +261,7 @@ fun MainAppScreen() {
                                     .size(36.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable { navController.navigate("profile") } // Navigate to the profile route
+                                    .clickable { navController.navigate("profile") }
                             )
                         } else if (!showBottomBar) {
                             IconButton(onClick = { navController.popBackStack() }) {
@@ -274,6 +278,7 @@ fun MainAppScreen() {
                     }
                 )
             }
+            // The AddTransactionScreen will now provide its own TopAppBar via its own Scaffold
         },
         bottomBar = {
             if (showBottomBar) {
@@ -372,7 +377,7 @@ fun AppNavHost(
             )
         }
         composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        composable("profile") { // The route "profile" is still valid
+        composable("profile") {
             ProfileScreen(
                 navController = navController,
                 profileViewModel = profileViewModel,
