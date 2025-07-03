@@ -1,3 +1,5 @@
+// FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
+
 package io.pm.finlight
 
 import android.app.Application
@@ -62,10 +64,8 @@ class TimePeriodReportViewModel(
                     val dayFormat = SimpleDateFormat("EEE", Locale.getDefault())
                     val fullDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
-                    // Create a map of date strings to total amounts
                     val totalsMap = dailyTotals.associateBy { it.date }
 
-                    // Iterate through the last 7 days to ensure all days are present
                     for (i in 0..6) {
                         val dayCal = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -6 + i) }
                         val dateString = fullDateFormat.format(dayCal.time)
@@ -83,9 +83,77 @@ class TimePeriodReportViewModel(
                     Pair(BarData(dataSet), labels)
                 }
             }
-            TimePeriod.WEEKLY, TimePeriod.MONTHLY -> {
-                // Placeholder for future implementation
-                flowOf(null)
+            // --- NEW: Implementation for Weekly Chart Data ---
+            TimePeriod.WEEKLY -> {
+                val endCal = (calendar.clone() as Calendar).apply {
+                    set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
+                    add(Calendar.WEEK_OF_YEAR, 1)
+                    add(Calendar.DAY_OF_YEAR, -1)
+                }
+                val startCal = (calendar.clone() as Calendar).apply {
+                    add(Calendar.WEEK_OF_YEAR, -7) // 8 weeks total
+                    set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
+                }
+
+                transactionDao.getWeeklySpendingForDateRange(startCal.timeInMillis, endCal.timeInMillis).map { weeklyTotals ->
+                    if (weeklyTotals.isEmpty()) return@map null
+
+                    val entries = mutableListOf<BarEntry>()
+                    val labels = mutableListOf<String>()
+                    val totalsMap = weeklyTotals.associateBy { it.period }
+
+                    for (i in 0..7) {
+                        val weekCal = (startCal.clone() as Calendar).apply { add(Calendar.WEEK_OF_YEAR, i) }
+                        val yearWeek = "${weekCal.get(Calendar.YEAR)}-${weekCal.get(Calendar.WEEK_OF_YEAR).toString().padStart(2, '0')}"
+
+                        val total = totalsMap[yearWeek]?.totalAmount?.toFloat() ?: 0f
+                        entries.add(BarEntry(i.toFloat(), total))
+                        labels.add("W${weekCal.get(Calendar.WEEK_OF_YEAR)}")
+                    }
+
+                    val dataSet = BarDataSet(entries, "Weekly Spending").apply {
+                        color = 0xFF9575CD.toInt() // Deep Purple
+                        setDrawValues(true)
+                        valueTextColor = 0xFFFFFFFF.toInt()
+                    }
+                    Pair(BarData(dataSet), labels)
+                }
+            }
+            // --- NEW: Implementation for Monthly Chart Data ---
+            TimePeriod.MONTHLY -> {
+                val endCal = (calendar.clone() as Calendar).apply {
+                    set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+                }
+                val startCal = (calendar.clone() as Calendar).apply {
+                    add(Calendar.MONTH, -5) // 6 months total
+                    set(Calendar.DAY_OF_MONTH, 1)
+                }
+
+                transactionDao.getMonthlySpendingForDateRange(startCal.timeInMillis, endCal.timeInMillis).map { monthlyTotals ->
+                    if (monthlyTotals.isEmpty()) return@map null
+
+                    val entries = mutableListOf<BarEntry>()
+                    val labels = mutableListOf<String>()
+                    val monthFormat = SimpleDateFormat("MMM", Locale.getDefault())
+                    val yearMonthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+                    val totalsMap = monthlyTotals.associateBy { it.period }
+
+                    for (i in 0..5) {
+                        val monthCal = (startCal.clone() as Calendar).apply { add(Calendar.MONTH, i) }
+                        val yearMonth = yearMonthFormat.format(monthCal.time)
+
+                        val total = totalsMap[yearMonth]?.totalAmount?.toFloat() ?: 0f
+                        entries.add(BarEntry(i.toFloat(), total))
+                        labels.add(monthFormat.format(monthCal.time))
+                    }
+
+                    val dataSet = BarDataSet(entries, "Monthly Spending").apply {
+                        color = 0xFF4DB6AC.toInt() // Teal
+                        setDrawValues(true)
+                        valueTextColor = 0xFFFFFFFF.toInt()
+                    }
+                    Pair(BarData(dataSet), labels)
+                }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)

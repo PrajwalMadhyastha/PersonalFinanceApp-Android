@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Thu Jul  3 19:21:53 IST 2025
+Generated on: Fri Jul  4 00:05:20 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -807,6 +807,155 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 -e 
 
 
+================== FILE: ./app/src/main/java/TimePeriodReportViewModel.kt ==================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.*
+import java.text.SimpleDateFormat
+import java.util.*
+
+class TimePeriodReportViewModelFactory(
+    private val application: Application,
+    private val timePeriod: TimePeriod
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(TimePeriodReportViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return TimePeriodReportViewModel(application, timePeriod) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class TimePeriodReportViewModel(
+    application: Application,
+    private val timePeriod: TimePeriod
+) : androidx.lifecycle.AndroidViewModel(application) {
+
+    private val transactionDao = AppDatabase.getInstance(application).transactionDao()
+
+    private val _selectedDate = MutableStateFlow(Calendar.getInstance())
+    val selectedDate: StateFlow<Calendar> = _selectedDate.asStateFlow()
+
+    val transactionsForPeriod: StateFlow<List<TransactionDetails>> = _selectedDate.flatMapLatest { calendar ->
+        val (start, end) = getPeriodDateRange(calendar)
+        transactionDao.getTransactionsForDateRange(start, end)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val chartData: StateFlow<Pair<BarData, List<String>>?> = _selectedDate.flatMapLatest { calendar ->
+        when (timePeriod) {
+            TimePeriod.DAILY -> {
+                val end = (calendar.clone() as Calendar).apply {
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                }.timeInMillis
+                val start = (calendar.clone() as Calendar).apply {
+                    add(Calendar.DAY_OF_YEAR, -6)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                }.timeInMillis
+
+                transactionDao.getDailySpendingForDateRange(start, end).map { dailyTotals ->
+                    if (dailyTotals.isEmpty()) return@map null
+
+                    val entries = mutableListOf<BarEntry>()
+                    val labels = mutableListOf<String>()
+                    val dayFormat = SimpleDateFormat("EEE", Locale.getDefault())
+                    val fullDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+
+                    // Create a map of date strings to total amounts
+                    val totalsMap = dailyTotals.associateBy { it.date }
+
+                    // Iterate through the last 7 days to ensure all days are present
+                    for (i in 0..6) {
+                        val dayCal = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -6 + i) }
+                        val dateString = fullDateFormat.format(dayCal.time)
+
+                        val total = totalsMap[dateString]?.totalAmount?.toFloat() ?: 0f
+                        entries.add(BarEntry(i.toFloat(), total))
+                        labels.add(dayFormat.format(dayCal.time))
+                    }
+
+                    val dataSet = BarDataSet(entries, "Daily Spending").apply {
+                        color = 0xFF81D4FA.toInt() // Light Blue
+                        setDrawValues(true)
+                        valueTextColor = 0xFFFFFFFF.toInt()
+                    }
+                    Pair(BarData(dataSet), labels)
+                }
+            }
+            TimePeriod.WEEKLY, TimePeriod.MONTHLY -> {
+                // Placeholder for future implementation
+                flowOf(null)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+
+    fun selectPreviousPeriod() {
+        _selectedDate.update {
+            (it.clone() as Calendar).apply {
+                add(
+                    when (timePeriod) {
+                        TimePeriod.DAILY -> Calendar.DAY_OF_YEAR
+                        TimePeriod.WEEKLY -> Calendar.WEEK_OF_YEAR
+                        TimePeriod.MONTHLY -> Calendar.MONTH
+                    }, -1
+                )
+            }
+        }
+    }
+
+    fun selectNextPeriod() {
+        _selectedDate.update {
+            (it.clone() as Calendar).apply {
+                add(
+                    when (timePeriod) {
+                        TimePeriod.DAILY -> Calendar.DAY_OF_YEAR
+                        TimePeriod.WEEKLY -> Calendar.WEEK_OF_YEAR
+                        TimePeriod.MONTHLY -> Calendar.MONTH
+                    }, 1
+                )
+            }
+        }
+    }
+
+    private fun getPeriodDateRange(calendar: Calendar): Pair<Long, Long> {
+        val startCal = calendar.clone() as Calendar
+        val endCal = calendar.clone() as Calendar
+
+        when (timePeriod) {
+            TimePeriod.DAILY -> {
+                startCal.set(Calendar.HOUR_OF_DAY, 0)
+                startCal.set(Calendar.MINUTE, 0)
+                endCal.set(Calendar.HOUR_OF_DAY, 23)
+                endCal.set(Calendar.MINUTE, 59)
+            }
+            TimePeriod.WEEKLY -> {
+                startCal.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
+                endCal.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
+                endCal.add(Calendar.WEEK_OF_YEAR, 1)
+                endCal.add(Calendar.DAY_OF_YEAR, -1)
+            }
+            TimePeriod.MONTHLY -> {
+                startCal.set(Calendar.DAY_OF_MONTH, 1)
+                endCal.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+            }
+        }
+        return Pair(startCal.timeInMillis, endCal.timeInMillis)
+    }
+}-e 
+
+
 ================== FILE: ./app/src/main/java/CustomSmsRuleDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRuleDao.kt
@@ -862,15 +1011,11 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - The ViewModel now correctly handles merchant aliases for all
-// transaction types.
-// 1. In `addTransaction`, `originalDescription` is now set to the initial
-//    description for manually created transactions.
-// 2. The data flows (`transactionsForSelectedMonth`, `allTransactions`,
-//    `findTransactionDetailsById`) now use a more robust mapping logic. They
-//    prioritize `originalDescription` as the key for the alias map, falling
-//    back to `description` only if necessary. This ensures aliases are applied
-//    consistently everywhere.
+// REASON: REFACTOR - The `addTransaction` function is now a `suspend` function
+// that returns a Boolean indicating the success of the database operation. This
+// provides a more robust way for the UI to handle navigation or state resets
+// after saving. A `clearAddTransactionState` function has also been added to
+// reset tag selections for the "Save & add another" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -1068,7 +1213,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
     }
 
-    fun addTransaction(
+    /**
+     * Saves a new transaction to the database.
+     * This is now a suspend function to allow the UI to await the result.
+     * @return true if the transaction was saved successfully, false otherwise.
+     */
+    suspend fun addTransaction(
         description: String,
         categoryId: Int?,
         amountStr: String,
@@ -1076,9 +1226,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         notes: String?,
         date: Long,
         transactionType: String,
-        isIncluded: Boolean,
-        sourceSmsId: Long?,
-        sourceSmsHash: String?,
         imageUris: List<Uri>
     ): Boolean {
         _validationError.value = null
@@ -1092,34 +1239,55 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             _validationError.value = "Please enter a valid, positive amount."
             return false
         }
-
-        val newTransaction =
-            Transaction(
-                description = description,
-                originalDescription = description, // Set original description for manual entries
-                categoryId = categoryId,
-                amount = amount,
-                date = date,
-                accountId = accountId,
-                notes = notes,
-                transactionType = transactionType,
-                isExcluded = !isIncluded,
-                sourceSmsId = sourceSmsId,
-                sourceSmsHash = sourceSmsHash,
-                source = "Manual Entry"
-            )
-        viewModelScope.launch {
-            val savedImagePaths = imageUris.mapNotNull { uri ->
-                saveImageToInternalStorage(uri)
-            }
-            transactionRepository.insertTransactionWithTagsAndImages(
-                newTransaction,
-                _selectedTags.value,
-                savedImagePaths
-            )
+        if (categoryId == null) {
+            _validationError.value = "Please select a category."
+            return false
         }
-        return true
+
+
+        return try {
+            withContext(Dispatchers.IO) {
+                val savedImagePaths = imageUris.mapNotNull { uri ->
+                    saveImageToInternalStorage(uri)
+                }
+                val newTransaction =
+                    Transaction(
+                        description = description,
+                        originalDescription = description, // Set original description for manual entries
+                        categoryId = categoryId,
+                        amount = amount,
+                        date = date,
+                        accountId = accountId,
+                        notes = notes,
+                        transactionType = transactionType,
+                        isExcluded = false, // isExcluded is not part of the new design, default to false
+                        sourceSmsId = null,
+                        sourceSmsHash = null,
+                        source = "Manual Entry"
+                    )
+
+                transactionRepository.insertTransactionWithTagsAndImages(
+                    newTransaction,
+                    _selectedTags.value,
+                    savedImagePaths
+                )
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save transaction", e)
+            _validationError.value = "An error occurred while saving."
+            false
+        }
     }
+
+    /**
+     * Clears ViewModel-managed state related to the Add Transaction screen.
+     * Called after a "Save & add another" operation.
+     */
+    fun clearAddTransactionState() {
+        _selectedTags.value = emptySet()
+    }
+
 
     fun loadOriginalSms(sourceSmsId: Long?) {
         if (sourceSmsId == null) {
@@ -1515,6 +1683,41 @@ data class CsvValidationReport(
     val reviewableRows: List<ReviewableRow> = emptyList(),
     val totalRowCount: Int = 0,
 )
+-e 
+
+
+================== FILE: ./app/src/main/java/MerchantCategoryMappingDao.kt ==================
+package io.pm.finlight
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+
+/**
+ * Data Access Object (DAO) for the MerchantCategoryMapping entity.
+ */
+@Dao
+interface MerchantCategoryMappingDao {
+
+    /**
+     * Inserts a new merchant-category mapping. If a mapping for the merchant
+     * already exists, it will be replaced with the new one.
+     *
+     * @param mapping The MerchantCategoryMapping object to insert or update.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(mapping: MerchantCategoryMapping)
+
+    /**
+     * Retrieves the learned category ID for a given merchant name.
+     *
+     * @param parsedName The name of the merchant to look up.
+     * @return The associated category ID (Int), or null if no mapping exists.
+     */
+    @Query("SELECT categoryId FROM merchant_category_mapping WHERE parsedName = :parsedName")
+    suspend fun getCategoryIdForMerchant(parsedName: String): Int?
+}
 -e 
 
 
@@ -4152,6 +4355,261 @@ fun EditAccountScreen(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
+// REASON: NEW FILE - This screen replaces the old DailyReportScreen. It is now
+// a generic component that can display reports for any `TimePeriod` (daily,
+// weekly, monthly), making the UI more reusable and scalable.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import android.app.Application
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ShoppingBasket
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.github.mikephil.charting.charts.BarChart
+import com.github.mikephil.charting.components.XAxis
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
+import io.pm.finlight.TimePeriod
+import io.pm.finlight.TimePeriodReportViewModel
+import io.pm.finlight.TimePeriodReportViewModelFactory
+import io.pm.finlight.ui.components.TransactionItem
+import java.text.SimpleDateFormat
+import java.util.*
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TimePeriodReportScreen(
+    navController: NavController,
+    timePeriod: TimePeriod
+) {
+    val application = LocalContext.current.applicationContext as Application
+    val factory = TimePeriodReportViewModelFactory(application, timePeriod)
+    val viewModel: TimePeriodReportViewModel = viewModel(factory = factory)
+
+    val selectedDate by viewModel.selectedDate.collectAsState()
+    val transactions by viewModel.transactionsForPeriod.collectAsState()
+    val weeklyChartData by viewModel.chartData.collectAsState()
+
+    val totalSpent = transactions.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount }
+
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        if (timePeriod == TimePeriod.DAILY) {
+            NotificationManagerCompat.from(context).cancel(2) // Daily Report Notification ID
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            ReportTopAppBar(
+                selectedDate = selectedDate.time,
+                timePeriod = timePeriod,
+                onBack = { navController.popBackStack() },
+                onPrevious = { viewModel.selectPreviousPeriod() },
+                onNext = { viewModel.selectNextPeriod() }
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                PeriodSummaryCard(totalSpent = totalSpent, timePeriod = timePeriod)
+            }
+
+            item {
+                WeeklySpendingChart(chartData = weeklyChartData)
+            }
+
+            if (transactions.isNotEmpty()) {
+                item {
+                    Text(
+                        "Top Spends",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                items(transactions) { transaction ->
+                    TransactionItem(
+                        transactionDetails = transaction,
+                        onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") }
+                    )
+                }
+            } else {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No transactions for this period.")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReportTopAppBar(
+    selectedDate: Date,
+    timePeriod: TimePeriod,
+    onBack: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit
+) {
+    val dateFormatter = remember(timePeriod) {
+        when (timePeriod) {
+            TimePeriod.DAILY -> SimpleDateFormat("dd MMMM, yyyy", Locale.getDefault())
+            TimePeriod.WEEKLY -> SimpleDateFormat("'Week of' dd MMMM", Locale.getDefault())
+            TimePeriod.MONTHLY -> SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+        }
+    }
+
+    TopAppBar(
+        title = {
+            Text(
+                text = dateFormatter.format(selectedDate),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+        },
+        actions = {
+            Row {
+                IconButton(onClick = onPrevious) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period")
+                }
+                IconButton(onClick = onNext) {
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Next Period")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun PeriodSummaryCard(totalSpent: Double, timePeriod: TimePeriod) {
+    val title = when (timePeriod) {
+        TimePeriod.DAILY -> "Today"
+        TimePeriod.WEEKLY -> "This Week"
+        TimePeriod.MONTHLY -> "This Month"
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.ShoppingBasket,
+                contentDescription = "Spending",
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+            )
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "₹${"%,.2f".format(totalSpent)}",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun WeeklySpendingChart(chartData: Pair<BarData, List<String>>?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (chartData != null) {
+                AndroidView(
+                    factory = { context ->
+                        BarChart(context).apply {
+                            description.isEnabled = false
+                            legend.isEnabled = false
+                            setDrawGridBackground(false)
+                            setDrawValueAboveBar(true)
+
+                            xAxis.apply {
+                                position = XAxis.XAxisPosition.BOTTOM
+                                setDrawGridLines(false)
+                                granularity = 1f
+                                valueFormatter = IndexAxisValueFormatter(chartData.second)
+                            }
+                            axisLeft.apply {
+                                setDrawGridLines(false)
+                                axisMinimum = 0f
+                            }
+                            axisRight.isEnabled = false
+                        }
+                    },
+                    update = { chart ->
+                        chart.data = chartData.first
+                        chart.invalidate()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Not enough data for trend.")
+                }
+            }
+        }
+    }
+}-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
@@ -4163,13 +4621,13 @@ fun EditAccountScreen(
 package io.pm.finlight.ui.screens
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -4179,6 +4637,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -4186,23 +4645,26 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.CreateAccountDialog
 import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.TimePickerDialog
+import kotlinx.coroutines.launch
+import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -4210,6 +4672,7 @@ private sealed class AddSheetContent {
     object Account : AddSheetContent()
     object Category : AddSheetContent()
     object Tags : AddSheetContent()
+    object Notes : AddSheetContent()
 }
 
 
@@ -4222,44 +4685,63 @@ fun AddTransactionScreen(
     csvLineNumber: Int = -1,
     initialDataJson: String? = null
 ) {
-    var description by remember { mutableStateOf("") }
+    // region State Variables
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var amount by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
     var transactionType by remember { mutableStateOf("expense") }
-    var isIncluded by remember { mutableStateOf(true) }
-
-    val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
-    var selectedAccount by remember { mutableStateOf<Account?>(null) }
-
-    val categories by viewModel.allCategories.collectAsState(initial = emptyList())
-    var selectedCategory by remember { mutableStateOf<Category?>(null) }
-
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showTimePicker by remember { mutableStateOf(false) }
-    val selectedDateTime by remember { mutableStateOf(Calendar.getInstance()) }
-
-    val snackbarHostState = remember { SnackbarHostState() }
-    val validationError by viewModel.validationError.collectAsState()
-
+    var notes by remember { mutableStateOf("") }
     var attachedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         attachedImageUris = attachedImageUris + uris
     }
 
-    var activeSheetContent by remember { mutableStateOf<AddSheetContent?>(null) }
-    val sheetState = rememberModalBottomSheetState()
-
-    var showCreateAccountDialog by remember { mutableStateOf(false) }
-    var showCreateCategoryDialog by remember { mutableStateOf(false) }
-
-    val isSaveEnabled = (description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && selectedCategory != null)
-
+    val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
+    val categories by viewModel.allCategories.collectAsState(initial = emptyList())
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
-
     val defaultAccount by viewModel.defaultAccount.collectAsState()
+    val validationError by viewModel.validationError.collectAsState()
+
+    var selectedAccount by remember { mutableStateOf<Account?>(null) }
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    val selectedDateTime by remember { mutableStateOf(Calendar.getInstance()) }
+
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    var activeSheetContent by remember { mutableStateOf<AddSheetContent?>(null) }
+    val sheetState = rememberModalBottomSheetState()
+    var showCreateAccountDialog by remember { mutableStateOf(false) }
+    var showCreateCategoryDialog by remember { mutableStateOf(false) }
+    var showTypeDropdown by remember { mutableStateOf(false) }
+
+    val amountFocusRequester = remember { FocusRequester() }
+
+    val isSaveEnabled = amount.isNotBlank() && description.isNotBlank() && selectedAccount != null && selectedCategory != null
+    // endregion
+
+    // region Helper Functions & Effects
+    fun resetAllState() {
+        amount = ""
+        description = ""
+        transactionType = "expense"
+        notes = ""
+        attachedImageUris = emptyList()
+        selectedCategory = null
+        selectedDateTime.timeInMillis = System.currentTimeMillis()
+        viewModel.clearAddTransactionState()
+        // Keep selected account for convenience
+    }
+
+    LaunchedEffect(Unit) {
+        amountFocusRequester.requestFocus()
+        viewModel.clearAddTransactionState()
+    }
 
     LaunchedEffect(defaultAccount, isCsvEdit) {
         if (!isCsvEdit && selectedAccount == null) {
@@ -4267,11 +4749,12 @@ fun AddTransactionScreen(
         }
     }
 
+    // Handle initial data for CSV editing
     LaunchedEffect(initialDataJson, accounts, categories) {
         if (isCsvEdit && initialDataJson != null) {
             try {
                 val gson = Gson()
-                val initialData: List<String> = gson.fromJson(initialDataJson, object : TypeToken<List<String>>() {}.type)
+                val initialData: List<String> = gson.fromJson(URLDecoder.decode(initialDataJson, "UTF-8"), object : TypeToken<List<String>>() {}.type)
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
                 initialData.getOrNull(0)?.let {
@@ -4285,502 +4768,560 @@ fun AddTransactionScreen(
                 val categoryName = initialData.getOrElse(4) { "" }
                 val accountName = initialData.getOrElse(5) { "" }
                 notes = initialData.getOrElse(6) { "" }
-                isIncluded = initialData.getOrNull(7)?.toBooleanStrictOrNull()?.not() ?: true
-
 
                 selectedCategory = categories.find { it.name.equals(categoryName, ignoreCase = true) }
                 selectedAccount = accounts.find { it.name.equals(accountName, ignoreCase = true) }
 
             } catch (e: Exception) {
-                // Log error or show a toast if JSON parsing fails
+                Toast.makeText(context, "Error loading row data", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    DisposableEffect(Unit) { onDispose { viewModel.clearSelectedTags() } }
-
-    LaunchedEffect(validationError) { validationError?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() } }
+    // Display validation errors
+    LaunchedEffect(validationError) {
+        validationError?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            viewModel.clearError()
+        }
+    }
+    // endregion
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        topBar = {
+            AddTransactionTopBar(
+                transactionType = transactionType,
+                onTypeChange = { transactionType = it },
+                onClose = { navController.popBackStack() }
+            )
+        },
+        bottomBar = {
+            AddTransactionBottomBar(
+                isSaveEnabled = isSaveEnabled,
+                onSave = {
+                    scope.launch {
+                        val success = viewModel.addTransaction(
+                            description = description,
+                            categoryId = selectedCategory?.id,
+                            amountStr = amount,
+                            accountId = selectedAccount!!.id,
+                            notes = notes.takeIf { it.isNotBlank() },
+                            date = selectedDateTime.timeInMillis,
+                            transactionType = transactionType,
+                            imageUris = attachedImageUris
+                        )
+                        if (success) {
+                            navController.popBackStack()
+                        }
+                    }
+                },
+                onSaveAndAddAnother = {
+                    scope.launch {
+                        val success = viewModel.addTransaction(
+                            description = description,
+                            categoryId = selectedCategory?.id,
+                            amountStr = amount,
+                            accountId = selectedAccount!!.id,
+                            notes = notes.takeIf { it.isNotBlank() },
+                            date = selectedDateTime.timeInMillis,
+                            transactionType = transactionType,
+                            imageUris = attachedImageUris
+                        )
+                        if (success) {
+                            resetAllState()
+                            amountFocusRequester.requestFocus()
+                        }
+                    }
+                }
+            )
+        }
     ) { innerPadding ->
+        // region Main Layout
         LazyColumn(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                SegmentedButton(
-                    options = listOf("Expense", "Income"),
-                    selectedOption = transactionType.replaceFirstChar { it.uppercase() },
-                    onOptionSelected = {
-                        transactionType = it.lowercase(Locale.getDefault())
-                    }
-                )
-            }
-
-            item {
-                PrimaryInfoCard(
+                AmountInput(
                     amount = amount,
                     onAmountChange = { amount = it },
+                    focusRequester = amountFocusRequester
+                )
+            }
+
+            item {
+                DescriptionDateTimeCard(
                     description = description,
-                    onDescriptionChange = { description = it }
+                    onDescriptionChange = { description = it },
+                    dateTime = selectedDateTime.time,
+                    onDateTimeClick = { showDatePicker = true }
                 )
             }
 
             item {
-                DetailsCard(
+                AccountTypeCard(
                     selectedAccount = selectedAccount,
-                    onAccountClick = { activeSheetContent = AddSheetContent.Account },
-                    selectedCategory = selectedCategory,
-                    onCategoryClick = { activeSheetContent = AddSheetContent.Category },
-                    isCategoryVisible = true,
-                    selectedDate = selectedDateTime.time,
-                    onDateClick = { showDatePicker = true },
-                    tags = selectedTags,
-                    onTagsClick = { activeSheetContent = AddSheetContent.Tags },
-                    notes = notes,
-                    onNotesChange = { notes = it },
-                    attachmentsCount = attachedImageUris.size,
-                    onAttachmentsClick = { imagePickerLauncher.launch("image/*") },
                     transactionType = transactionType,
-                    isIncluded = isIncluded,
-                    onIncludeChange = { isIncluded = it }
+                    onAccountClick = { activeSheetContent = AddSheetContent.Account },
+                    onTypeChange = { newType -> transactionType = newType }
                 )
-            }
-
-            if (attachedImageUris.isNotEmpty()) {
-                item {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(attachedImageUris) { uri ->
-                            Box {
-                                AsyncImage(
-                                    model = uri,
-                                    contentDescription = "Selected image",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(80.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                )
-                                IconButton(
-                                    onClick = { attachedImageUris = attachedImageUris - uri },
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(4.dp)
-                                        .size(24.dp)
-                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Close,
-                                        contentDescription = "Remove attachment",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
             }
 
             item {
+                DetailActionRow(
+                    icon = Icons.Default.Category,
+                    label = "Category",
+                    value = selectedCategory?.name,
+                    onClick = { activeSheetContent = AddSheetContent.Category }
+                )
+            }
+
+            item {
+                DetailActionRow(
+                    icon = Icons.AutoMirrored.Filled.Notes,
+                    label = "Notes",
+                    value = notes.ifBlank { null },
+                    onClick = { activeSheetContent = AddSheetContent.Notes }
+                )
+            }
+
+            item {
+                DetailActionRow(
+                    icon = Icons.Default.NewLabel,
+                    label = "Tags",
+                    value = if (selectedTags.isEmpty()) null else selectedTags.joinToString { it.name },
+                    onClick = { activeSheetContent = AddSheetContent.Tags }
+                )
+            }
+
+            item {
+                DetailActionRow(
+                    icon = Icons.Default.Attachment,
+                    label = "Attachment",
+                    value = if (attachedImageUris.isEmpty()) "Photo of a receipt/warranty" else "${attachedImageUris.size} image(s)",
+                    onClick = {
+                        imagePickerLauncher.launch("image/*")
+                    }
+                )
+            }
+        }
+        // endregion
+
+        // region Modals and Dialogs
+        if (activeSheetContent != null) {
+            ModalBottomSheet(
+                onDismissRequest = { activeSheetContent = null },
+                sheetState = sheetState
+            ) {
+                when (val sheet = activeSheetContent) {
+                    is AddSheetContent.Account -> AddAccountPickerSheet(
+                        items = accounts,
+                        onItemSelected = { selectedAccount = it; activeSheetContent = null },
+                        onAddNew = { showCreateAccountDialog = true; activeSheetContent = null },
+                        onDismiss = { activeSheetContent = null }
+                    )
+                    is AddSheetContent.Category -> AddCategoryPickerSheet(
+                        items = categories,
+                        onItemSelected = { selectedCategory = it; activeSheetContent = null },
+                        onAddNew = { showCreateCategoryDialog = true; activeSheetContent = null },
+                        onDismiss = { activeSheetContent = null }
+                    )
+                    is AddSheetContent.Tags -> AddTagPickerSheet(
+                        allTags = allTags,
+                        selectedTags = selectedTags,
+                        onTagSelected = viewModel::onTagSelected,
+                        onAddNewTag = viewModel::addTagOnTheGo,
+                        onConfirm = { activeSheetContent = null },
+                        onDismiss = { activeSheetContent = null }
+                    )
+                    is AddSheetContent.Notes -> NotesInputSheet(
+                        initialValue = notes,
+                        onConfirm = { notes = it; activeSheetContent = null },
+                        onDismiss = { activeSheetContent = null }
+                    )
+                    null -> { /* This case is added to make the 'when' exhaustive */ }
+                }
+            }
+        }
+
+        if (showDatePicker) {
+            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            val cal = Calendar.getInstance().apply { timeInMillis = it }
+                            selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR))
+                            selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH))
+                            selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH))
+                        }
+                        showDatePicker = false
+                        showTimePicker = true
+                    }) { Text("OK") }
+                },
+                dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
+            ) { DatePicker(state = datePickerState) }
+        }
+
+        if (showTimePicker) {
+            val timePickerState = rememberTimePickerState(
+                initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
+                initialMinute = selectedDateTime.get(Calendar.MINUTE)
+            )
+            TimePickerDialog(
+                onDismissRequest = { showTimePicker = false },
+                onConfirm = {
+                    selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                    selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
+                    showTimePicker = false
+                }
+            ) { TimePicker(state = timePickerState) }
+        }
+
+        if (showCreateAccountDialog) {
+            CreateAccountDialog(
+                onDismiss = { showCreateAccountDialog = false },
+                onConfirm = { name, type ->
+                    viewModel.createAccount(name, type) { newAccount ->
+                        selectedAccount = newAccount
+                    }
+                    showCreateAccountDialog = false
+                }
+            )
+        }
+
+        if (showCreateCategoryDialog) {
+            CreateCategoryDialog(
+                onDismiss = { showCreateCategoryDialog = false },
+                onConfirm = { name, iconKey, colorKey ->
+                    viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
+                        selectedCategory = newCategory
+                    }
+                    showCreateCategoryDialog = false
+                }
+            )
+        }
+        // endregion
+    }
+}
+
+// region New UI Components
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddTransactionTopBar(
+    transactionType: String,
+    onTypeChange: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    var showDropdown by remember { mutableStateOf(false) }
+    val icon = if (transactionType == "expense") Icons.Default.NorthEast else Icons.Default.SouthWest
+
+    CenterAlignedTopAppBar(
+        title = {
+            Box {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier.clickable { showDropdown = true },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
-                        Text("Cancel")
-                    }
-                    Button(
-                        onClick = {
-                            if (isCsvEdit) {
-                                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-                                val correctedData = listOf(
-                                    dateFormat.format(selectedDateTime.time),
-                                    description,
-                                    amount,
-                                    transactionType,
-                                    selectedCategory?.name ?: "",
-                                    selectedAccount?.name ?: "",
-                                    notes,
-                                    (!isIncluded).toString()
-                                )
-                                val gson = Gson()
-                                navController.previousBackStackEntry
-                                    ?.savedStateHandle
-                                    ?.set("corrected_row", gson.toJson(correctedData))
-                                navController.previousBackStackEntry
-                                    ?.savedStateHandle
-                                    ?.set("corrected_row_line", csvLineNumber)
-                                navController.popBackStack()
-                            } else {
-                                val success = viewModel.addTransaction(
-                                    description = description,
-                                    categoryId = selectedCategory!!.id,
-                                    amountStr = amount,
-                                    accountId = selectedAccount!!.id,
-                                    notes = notes.takeIf { it.isNotBlank() },
-                                    date = selectedDateTime.timeInMillis,
-                                    transactionType = transactionType,
-                                    isIncluded = isIncluded,
-                                    sourceSmsId = null,
-                                    sourceSmsHash = null,
-                                    imageUris = attachedImageUris
-                                )
-                                if (success) navController.popBackStack()
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        enabled = isSaveEnabled
-                    ) {
-                        Text(if (isCsvEdit) "Update Row" else "Save")
-                    }
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text(
+                        text = transactionType.replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Change transaction type")
+                }
+                DropdownMenu(
+                    expanded = showDropdown,
+                    onDismissRequest = { showDropdown = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Expense") },
+                        onClick = { onTypeChange("expense"); showDropdown = false },
+                        leadingIcon = { Icon(Icons.Default.NorthEast, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Income") },
+                        onClick = { onTypeChange("income"); showDropdown = false },
+                        leadingIcon = { Icon(Icons.Default.SouthWest, contentDescription = null) }
+                    )
                 }
             }
-        }
-    }
-
-    if (activeSheetContent != null) {
-        ModalBottomSheet(
-            onDismissRequest = { activeSheetContent = null },
-            sheetState = sheetState
-        ) {
-            when (activeSheetContent) {
-                is AddSheetContent.Account -> AddAccountPickerSheet(
-                    items = accounts,
-                    onItemSelected = { selectedAccount = it; activeSheetContent = null },
-                    onAddNew = {
-                        activeSheetContent = null
-                        showCreateAccountDialog = true
-                    },
-                    onDismiss = { activeSheetContent = null }
-                )
-                is AddSheetContent.Category -> AddCategoryPickerSheet(
-                    items = categories,
-                    onItemSelected = { selectedCategory = it; activeSheetContent = null },
-                    onAddNew = {
-                        activeSheetContent = null
-                        showCreateCategoryDialog = true
-                    },
-                    onDismiss = { activeSheetContent = null }
-                )
-                is AddSheetContent.Tags -> AddTagPickerSheet(
-                    allTags = allTags,
-                    selectedTags = selectedTags,
-                    onTagSelected = viewModel::onTagSelected,
-                    onAddNewTag = viewModel::addTagOnTheGo,
-                    onConfirm = { activeSheetContent = null },
-                    onDismiss = { activeSheetContent = null }
-                )
-                else -> {}
+        },
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
-        }
-    }
-
-    if (showCreateAccountDialog) {
-        CreateAccountDialog(
-            onDismiss = { showCreateAccountDialog = false },
-            onConfirm = { name, type ->
-                viewModel.createAccount(name, type) { newAccount ->
-                    selectedAccount = newAccount
-                }
-                showCreateAccountDialog = false
+        },
+        actions = {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
             }
+        },
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            containerColor = Color.Transparent
         )
-    }
+    )
+}
 
-    if (showCreateCategoryDialog) {
-        CreateCategoryDialog(
-            onDismiss = { showCreateCategoryDialog = false },
-            onConfirm = { name, iconKey, colorKey ->
-                viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
-                    selectedCategory = newCategory
-                }
-                showCreateCategoryDialog = false
-            }
-        )
-    }
-
-
-    if (showDatePicker) {
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let {
-                        val cal = Calendar.getInstance().apply { timeInMillis = it }
-                        selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR))
-                        selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH))
-                        selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH))
+@Composable
+private fun AmountInput(
+    amount: String,
+    onAmountChange: (String) -> Unit,
+    focusRequester: FocusRequester
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Text("Amount spent", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        BasicTextField(
+            value = amount,
+            onValueChange = onAmountChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            textStyle = MaterialTheme.typography.displayMedium.copy(
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface
+            ),
+            decorationBox = { innerTextField ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "₹",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (amount.isEmpty()) {
+                            Text(
+                                "Enter amount",
+                                style = MaterialTheme.typography.displayMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        innerTextField()
                     }
-                    showDatePicker = false
-                    showTimePicker = true
-                }) { Text("OK") }
-            },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
-        ) { DatePicker(state = datePickerState) }
-    }
-
-    if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(
-            initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
-            initialMinute = selectedDateTime.get(Calendar.MINUTE)
-        )
-        TimePickerDialog(
-            onDismissRequest = { showTimePicker = false },
-            onConfirm = {
-                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
-                showTimePicker = false
+                    // Spacer for the right side to keep it centered
+                    Spacer(Modifier.width(32.dp))
+                }
             }
-        ) { TimePicker(state = timePickerState) }
+        )
+        HorizontalDivider(modifier = Modifier.padding(top = 16.dp))
     }
 }
 
 @Composable
-fun PrimaryInfoCard(
-    amount: String,
-    onAmountChange: (String) -> Unit,
+private fun DescriptionDateTimeCard(
     description: String,
-    onDescriptionChange: (String) -> Unit
+    onDescriptionChange: (String) -> Unit,
+    dateTime: Date,
+    onDateTimeClick: () -> Unit
 ) {
-    Card(elevation = CardDefaults.cardElevation(2.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            BasicTextField(
-                value = amount,
-                onValueChange = onAmountChange,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                textStyle = MaterialTheme.typography.displayMedium.copy(
-                    textAlign = TextAlign.End,
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                decorationBox = { innerTextField ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "₹",
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Box(modifier = Modifier.weight(1f)) {
-                            if (amount.isEmpty()) {
-                                Text(
-                                    "0.00",
-                                    style = MaterialTheme.typography.displayMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = TextAlign.End
-                                )
-                            }
-                            innerTextField()
-                        }
-                    }
-                }
-            )
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+    val dateFormatter = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Date & time", modifier = Modifier.weight(1f))
+                Text(
+                    text = dateFormatter.format(dateTime),
+                    modifier = Modifier.clickable(onClick = onDateTimeClick),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            HorizontalDivider()
             OutlinedTextField(
                 value = description,
                 onValueChange = onDescriptionChange,
-                label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth().testTag("description_input"),
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Paid to") },
+                placeholder = { Text("Enter the name or place") },
+                singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
                     unfocusedBorderColor = Color.Transparent,
                     focusedBorderColor = Color.Transparent
-                ),
-                placeholder = { Text("What did you spend on?") }
+                )
             )
         }
     }
 }
 
 @Composable
-fun DetailsCard(
+private fun AccountTypeCard(
     selectedAccount: Account?,
+    transactionType: String,
     onAccountClick: () -> Unit,
-    selectedCategory: Category?,
-    onCategoryClick: () -> Unit,
-    isCategoryVisible: Boolean,
-    selectedDate: Date,
-    onDateClick: () -> Unit,
-    tags: Set<Tag>,
-    onTagsClick: () -> Unit,
-    notes: String,
-    onNotesChange: (String) -> Unit,
-    attachmentsCount: Int,
-    onAttachmentsClick: () -> Unit,
-    transactionType: String,
-    isIncluded: Boolean,
-    onIncludeChange: (Boolean) -> Unit
+    onTypeChange: (String) -> Unit
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMMyyyy", Locale.getDefault()) }
-
-    Card(elevation = CardDefaults.cardElevation(2.dp)) {
-        Column {
-            AccountRowWithSwitch(
-                selectedAccount = selectedAccount,
-                onClick = onAccountClick,
-                transactionType = transactionType,
-                isIncluded = isIncluded,
-                onIncludeChange = onIncludeChange
-            )
-            if (isCategoryVisible) {
-                HorizontalDivider()
-                DetailRow(
-                    icon = Icons.Default.Category,
-                    label = "Category",
-                    value = selectedCategory?.name ?: "Select category",
-                    onClick = onCategoryClick,
-                    valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                    leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
-                )
-            }
-            HorizontalDivider()
-            DetailRow(
-                icon = Icons.Default.DateRange,
-                label = "Date",
-                value = dateFormatter.format(selectedDate),
-                onClick = onDateClick
-            )
-            HorizontalDivider()
-            DetailRow(
-                icon = Icons.Default.NewLabel,
-                label = "Tags",
-                value = if (tags.isEmpty()) "Add tags" else tags.joinToString { it.name },
-                onClick = onTagsClick
-            )
-            HorizontalDivider()
-            DetailRow(
-                icon = Icons.Default.Attachment,
-                label = "Attach Photo",
-                value = if (attachmentsCount > 0) "$attachmentsCount image(s)" else "Add receipt",
-                onClick = onAttachmentsClick
-            )
-            HorizontalDivider()
-            OutlinedTextField(
-                value = notes,
-                onValueChange = onNotesChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Add notes...") },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = "Notes") },
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedBorderColor = Color.Transparent,
-                )
-            )
-        }
-    }
-}
-
-@Composable
-private fun AccountRowWithSwitch(
-    selectedAccount: Account?,
-    onClick: () -> Unit,
-    transactionType: String,
-    isIncluded: Boolean,
-    onIncludeChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        onClick = onAccountClick
     ) {
-        Icon(Icons.Default.AccountBalanceWallet, contentDescription = "Account")
-        Spacer(Modifier.width(16.dp))
         Row(
             modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onClick),
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Icon(Icons.Default.AccountBalanceWallet, contentDescription = "Account")
+            Spacer(Modifier.width(16.dp))
             Text(
-                selectedAccount?.name ?: "Select account",
-                color = if (selectedAccount == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                text = selectedAccount?.name ?: "Select Account",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold
             )
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = transactionType.replaceFirstChar { it.uppercase() },
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+            Switch(
+                checked = transactionType == "expense",
+                onCheckedChange = { isChecked ->
+                    onTypeChange(if (isChecked) "expense" else "income")
+                },
+                thumbContent = {
+                    Icon(
+                        if (transactionType == "expense") Icons.Default.NorthEast else Icons.Default.SouthWest,
+                        contentDescription = null,
+                        modifier = Modifier.size(SwitchDefaults.IconSize)
+                    )
+                }
+            )
         }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = transactionType.replaceFirstChar { it.titlecase(Locale.getDefault()) },
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(end = 8.dp)
-        )
-        Switch(
-            checked = isIncluded,
-            onCheckedChange = onIncludeChange
-        )
+    }
+}
+
+@Composable
+private fun DetailActionRow(
+    icon: ImageVector,
+    label: String,
+    value: String?,
+    onClick: () -> Unit
+) {
+    val hasValue = !value.isNullOrBlank()
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = label)
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = if (hasValue) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,
+                    color = if (hasValue) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                )
+                if (hasValue) {
+                    Text(
+                        text = value!!,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+            Icon(Icons.Default.Add, contentDescription = "Add $label")
+        }
     }
 }
 
 
 @Composable
-private fun DetailRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    value: String,
-    onClick: () -> Unit,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface,
-    leadingIcon: (@Composable () -> Unit)? = null
+private fun AddTransactionBottomBar(
+    isSaveEnabled: Boolean,
+    onSave: () -> Unit,
+    onSaveAndAddAnother: () -> Unit
 ) {
-    Row(
+    Surface(shadowElevation = 8.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .navigationBarsPadding(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedButton(
+                onClick = onSaveAndAddAnother,
+                modifier = Modifier.weight(1f),
+                enabled = isSaveEnabled
+            ) {
+                Text("Save & add another")
+            }
+            Button(
+                onClick = onSave,
+                modifier = Modifier.weight(1f),
+                enabled = isSaveEnabled
+            ) {
+                Text("Save")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotesInputSheet(
+    initialValue: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initialValue) }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(16.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        if (leadingIcon != null) {
-            leadingIcon()
-        } else {
-            Icon(icon, contentDescription = label)
-        }
-        Spacer(Modifier.width(16.dp))
-        Text(label, modifier = Modifier.weight(1f))
-        Text(value, color = valueColor, fontWeight = FontWeight.SemiBold)
-        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-
-@Composable
-private fun SegmentedButton(
-    options: List<String>,
-    selectedOption: String,
-    onOptionSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(4.dp)
-    ) {
-        options.forEach { option ->
-            Button(
-                onClick = { onOptionSelected(option) },
-                modifier = Modifier.weight(1f),
-                shape = CircleShape,
-                colors = if (option == selectedOption) {
-                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                } else {
-                    ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface)
-                },
-                elevation = if (option == selectedOption) ButtonDefaults.buttonElevation(defaultElevation = 2.dp) else null
-            ) {
-                Text(option)
-            }
+        Text("Add Notes", style = MaterialTheme.typography.titleLarge)
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            label = { Text("Your notes") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = { onConfirm(text) }) { Text("Done") }
         }
     }
 }
@@ -4972,7 +5513,9 @@ private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountListScreen.kt ==================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -4985,8 +5528,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.AccountViewModel
+import io.pm.finlight.BankLogoHelper
 
 @Composable
 fun AccountListScreen(
@@ -4996,16 +5542,23 @@ fun AccountListScreen(
     val accounts by viewModel.accountsWithBalance.collectAsState(initial = emptyList())
 
     LazyColumn {
-        items(accounts) { account ->
+        items(accounts) { accountWithBalance ->
             ListItem(
-                headlineContent = { Text(account.account.name) },
-                supportingContent = { Text("Balance: ₹${"%.2f".format(account.balance)}") },
+                headlineContent = { Text(accountWithBalance.account.name) },
+                supportingContent = { Text("Balance: ₹${"%,.2f".format(accountWithBalance.balance)}") },
+                leadingContent = {
+                    Image(
+                        painter = painterResource(id = BankLogoHelper.getLogoForAccount(accountWithBalance.account.name)),
+                        contentDescription = "${accountWithBalance.account.name} Logo",
+                        modifier = Modifier.size(40.dp)
+                    )
+                },
                 trailingContent = {
-                    IconButton(onClick = { navController.navigate("edit_account/${account.account.id}") }) {
+                    IconButton(onClick = { navController.navigate("edit_account/${accountWithBalance.account.id}") }) {
                         Icon(Icons.Filled.Edit, contentDescription = "Edit Account")
                     }
                 },
-                modifier = Modifier.clickable { navController.navigate("account_detail/${account.account.id}") },
+                modifier = Modifier.clickable { navController.navigate("account_detail/${accountWithBalance.account.id}") },
             )
         }
     }
@@ -7150,27 +7703,27 @@ fun createPieData(spendingList: List<CategorySpending>): PieData {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountDetailScreen.kt
-// REASON: UX IMPROVEMENT - The `AccountTransactionItem` composable, used within
-// this screen, has been updated. It now checks the `isExcluded` flag of a
-// transaction and applies a lower alpha to the text and amount, visually dimming
-// it to indicate its excluded status. This brings its appearance in line with
-// other transaction lists in the app.
+// REASON: FEATURE - The screen now prominently displays the bank's logo at the
+// top, fetched using the new `BankLogoHelper`. This creates a more visually
+// appealing and identifiable header for the account details view.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -7180,10 +7733,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.AccountViewModel
+import io.pm.finlight.BankLogoHelper
 import io.pm.finlight.ui.components.AccountTransactionItem
 
 @Composable
@@ -7214,6 +7769,16 @@ fun AccountDetailScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
+                // --- NEW: Display Bank Logo ---
+                account?.let {
+                    Image(
+                        painter = painterResource(id = BankLogoHelper.getLogoForAccount(it.name)),
+                        contentDescription = "${it.name} Logo",
+                        modifier = Modifier
+                            .size(50.dp)
+                            .padding(bottom = 8.dp)
+                    )
+                }
                 Text(
                     text = "Current Balance",
                     style = MaterialTheme.typography.titleMedium,
@@ -7221,7 +7786,7 @@ fun AccountDetailScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "₹${"%.2f".format(balance)}",
+                    text = "₹${"%,.2f".format(balance)}",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
                     color = if (balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
@@ -9444,22 +10009,27 @@ fun ProfileScreen(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
+// REASON: FEATURE - Added new cards for navigating to the generic
+// TimePeriodReportScreen with the appropriate TimePeriod enum (DAILY, WEEKLY,
+// MONTHLY), enabling the new reporting features.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.graphics.Color
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarViewDay
+import androidx.compose.material.icons.filled.CalendarViewMonth
+import androidx.compose.material.icons.filled.CalendarViewWeek
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -9469,11 +10039,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.ReportsViewModel
+import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GroupedBarChart
 import com.github.mikephil.charting.charts.PieChart
@@ -9492,6 +10064,39 @@ fun ReportsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item {
+            Text("Spending Reports", style = MaterialTheme.typography.headlineSmall)
+        }
+        item {
+            ReportNavigationCard(
+                title = "Daily Report",
+                subtitle = "View a breakdown of any day's spending.",
+                icon = Icons.Default.CalendarViewDay,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.DAILY}") }
+            )
+        }
+        item {
+            ReportNavigationCard(
+                title = "Weekly Report",
+                subtitle = "Analyze your spending week by week.",
+                icon = Icons.Default.CalendarViewWeek,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.WEEKLY}") }
+            )
+        }
+        item {
+            ReportNavigationCard(
+                title = "Monthly Report",
+                subtitle = "Get a high-level overview of your monthly habits.",
+                icon = Icons.Default.CalendarViewMonth,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.MONTHLY}") }
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(16.dp))
+            Text("Analysis", style = MaterialTheme.typography.headlineSmall)
+        }
+
         // --- Pie Chart Card ---
         item {
             Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
@@ -9518,9 +10123,6 @@ fun ReportsScreen(
                             },
                             update = { chart ->
                                 chart.data = pieData
-                                // --- BUG FIX: Explicitly notify the chart that the data has changed ---
-                                // This forces a full redraw, ensuring that all properties of the
-                                // new dataset, including the custom colors, are applied correctly.
                                 chart.notifyDataSetChanged()
                                 chart.invalidate()
                             },
@@ -9547,6 +10149,33 @@ fun ReportsScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun ReportNavigationCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(imageVector = icon, contentDescription = title, modifier = Modifier.size(32.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = title, style = MaterialTheme.typography.titleMedium)
+                Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -9767,18 +10396,17 @@ fun Modifier.pagerTabIndicatorOffset(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt
-// REASON: BUG FIX - The `BudgetGauge` composable has been corrected. The call to
-// `MaterialTheme.colorScheme.surfaceVariant` was moved out of the `Canvas`'s
-// `DrawScope` and into the main body of the composable function. This resolves
-// the "@Composable invocations can only happen from the context of a @Composable
-// function" error by ensuring theme colors are read in the correct context
-// before being used for drawing.
+// REASON: FEATURE - The `AccountSummaryCard` has been updated to display bank
+// logos. It now uses the new `BankLogoHelper` to fetch the appropriate drawable
+// for each account, providing a richer and more intuitive visual representation
+// of the user's accounts directly on the dashboard.
 // =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9812,6 +10440,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -9819,6 +10448,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.AccountWithBalance
+import io.pm.finlight.BankLogoHelper
 import io.pm.finlight.BottomNavItem
 import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
@@ -10029,7 +10659,8 @@ fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavCon
                 Text("No accounts found. Add one from the Settings.", modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 Column {
-                    for ((index, accountWithBalance) in accounts.withIndex()) {
+                    // --- UPDATED: Loop through accounts and display with logos ---
+                    for ((index, accountWithBalance) in accounts.take(3).withIndex()) { // Show max 3
                         if (index > 0) {
                             HorizontalDivider()
                         }
@@ -10039,8 +10670,13 @@ fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavCon
                                 .clickable { navController.navigate("account_detail/${accountWithBalance.account.id}") }
                                 .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
+                            Image(
+                                painter = painterResource(id = BankLogoHelper.getLogoForAccount(accountWithBalance.account.name)),
+                                contentDescription = "${accountWithBalance.account.name} Logo",
+                                modifier = Modifier.size(40.dp)
+                            )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = accountWithBalance.account.name,
@@ -11169,10 +11805,20 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - Removed `BottomNavItem.Profile` from the `bottomNavItems`
-// list. This simplifies the main navigation by removing the "Profile" tab from
-// the bottom navigation bar, making the clickable profile picture on the
-// dashboard the sole entry point to the user's profile.
+// REASON: REFACTOR - The main Scaffold now includes logic to show a new, custom
+// `AddTransactionTopBar` when the current route is "add_transaction". This
+// replaces the old behavior of simply hiding the default TopAppBar and allows
+// for a screen-specific design as per the new UI requirements.
+// FEATURE - Added the route for the new `daily_report_screen`.
+// BUG FIX - Added a `deepLinks` parameter to the ReportsScreen composable in the
+// NavHost. This correctly maps the "app://finlight.pm.io/reports" URI to its
+// destination, resolving the IllegalArgumentException crash on startup when
+// handling a deep link from a notification.
+// BUG FIX - Added a `deepLinks` parameter to the `daily_report_screen` composable
+// to handle incoming notification intents correctly.
+// REFACTOR - Replaced the specific `daily_report_screen` route with a generic
+// `time_period_report_screen/{timePeriod}` route to support the new reusable
+// reporting architecture.
 // =================================================================================
 package io.pm.finlight
 
@@ -11370,7 +12016,6 @@ fun MainAppScreen() {
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
 
-    // --- REFACTOR: Removed BottomNavItem.Profile from this list ---
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
@@ -11403,7 +12048,9 @@ fun MainAppScreen() {
         "transaction_detail",
         "transaction_list",
         "income_screen",
-        "splash_screen"
+        "splash_screen",
+        "add_transaction",
+        "time_period_report_screen" // Hide default bar for the generic report screen
     )
 
     val activity = LocalContext.current as AppCompatActivity
@@ -11426,7 +12073,7 @@ fun MainAppScreen() {
                                     .size(36.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable { navController.navigate("profile") } // Navigate to the profile route
+                                    .clickable { navController.navigate("profile") }
                             )
                         } else if (!showBottomBar) {
                             IconButton(onClick = { navController.popBackStack() }) {
@@ -11540,8 +12187,11 @@ fun AppNavHost(
                 viewModel = transactionViewModel
             )
         }
-        composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
-        composable("profile") { // The route "profile" is still valid
+        composable(
+            route = BottomNavItem.Reports.route,
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/reports" })
+        ) { ReportsScreen(navController, viewModel()) }
+        composable("profile") {
             ProfileScreen(
                 navController = navController,
                 profileViewModel = profileViewModel,
@@ -11659,6 +12309,18 @@ fun AppNavHost(
                 potentialTransactionJson = URLDecoder.decode(json, "UTF-8")
             )
         }
+
+        // --- REFACTOR: Replaced daily_report_screen with a generic route ---
+        composable(
+            "time_period_report_screen/{timePeriod}",
+            arguments = listOf(navArgument("timePeriod") {
+                type = NavType.EnumType(TimePeriod::class.java)
+            }),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}" })
+        ) { backStackEntry ->
+            val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod") as TimePeriod
+            TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
+        }
     }
 }
 
@@ -11731,6 +12393,60 @@ class OnboardingViewModelFactory(private val application: Application) : ViewMod
             return OnboardingViewModel(categoryRepository, settingsRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/BankLogoHelper.kt ==================
+package io.pm.finlight
+
+import androidx.annotation.DrawableRes
+
+/**
+ * A helper object to provide logos for various Indian banks.
+ */
+object BankLogoHelper {
+
+    /**
+     * Returns the drawable resource ID for a bank's logo based on the account name.
+     *
+     * @param accountName The name of the account (e.g., "HDFC Bank Savings", "My SBI Card").
+     * @return The resource ID for the matching logo, or a default bank icon if no match is found.
+     */
+    @DrawableRes
+    fun getLogoForAccount(accountName: String): Int {
+        val lowerCaseName = accountName.lowercase()
+        return when {
+            "hdfc" in lowerCaseName -> R.drawable.ic_hdfc_logo
+            "icici" in lowerCaseName -> R.drawable.ic_icici_logo
+            "sbi" in lowerCaseName || "state bank" in lowerCaseName -> R.drawable.ic_sbi_logo
+            "axis" in lowerCaseName -> R.drawable.ic_axis_logo
+            "kotak" in lowerCaseName || "kotak mahindra" in lowerCaseName -> R.drawable.ic_kotak_logo
+            "pnb" in lowerCaseName || "punjab national" in lowerCaseName -> R.drawable.ic_pnb_logo
+            "baroda" in lowerCaseName -> R.drawable.ic_bob_logo
+            "canara" in lowerCaseName -> R.drawable.ic_canara_logo
+            "yes" in lowerCaseName -> R.drawable.ic_yes_logo
+            "indusind" in lowerCaseName -> R.drawable.ic_indusind_logo
+            "idfc" in lowerCaseName -> R.drawable.ic_idfc_logo
+            "citi" in lowerCaseName -> R.drawable.ic_citi_logo
+            "bandan" in lowerCaseName -> R.drawable.ic_bandan_logo
+            "bank of america" in lowerCaseName || "boa" in lowerCaseName -> R.drawable.ic_boa_logo
+            "bank of india" in lowerCaseName || "boi" in lowerCaseName -> R.drawable.ic_boi_logo
+            "bank of maharastra" in lowerCaseName || "bom" in lowerCaseName -> R.drawable.ic_bom_logo
+            "central" in lowerCaseName -> R.drawable.ic_cbi_logo
+            "union" in lowerCaseName -> R.drawable.ic_cub_logo
+            "credit suisse" in lowerCaseName -> R.drawable.ic_creditsuisse_logo
+            "hsbc" in lowerCaseName -> R.drawable.ic_hsbc_logo
+            "idbi" in lowerCaseName -> R.drawable.ic_idbi_logo
+            "indian overseas" in lowerCaseName || "iob" in lowerCaseName -> R.drawable.ic_iob_logo
+            "jpmorgan chase" in lowerCaseName || "jpm" in lowerCaseName -> R.drawable.ic_jpm_logo
+            "karnataka" in lowerCaseName -> R.drawable.ic_kb_logo
+            "natwest" in lowerCaseName -> R.drawable.ic_natwest_logo
+            "standard chartered" in lowerCaseName -> R.drawable.ic_standardchartered_logo
+            "cash" in lowerCaseName -> R.drawable.ic_cash_spends
+            else -> R.drawable.ic_default_bank_logo // Default fallback icon
+        }
     }
 }
 -e 
@@ -12444,9 +13160,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 17. A new
-// migration, MIGRATION_16_17, has been added to alter the `transactions` table,
-// adding the new `isExcluded` column with a default value of 0 (false).
+// REASON: FEATURE - The database version has been incremented to 18. A new
+// entity, `MerchantCategoryMapping`, has been added, along with its corresponding
+// DAO and a migration (MIGRATION_17_18) to create the new table. This table
+// is the foundation for the new "Category Learning" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -12474,9 +13191,10 @@ import java.util.Calendar
         TransactionTagCrossRef::class,
         TransactionImage::class,
         CustomSmsRule::class,
-        MerchantRenameRule::class
+        MerchantRenameRule::class,
+        MerchantCategoryMapping::class // --- NEW: Add new entity ---
     ],
-    version = 17,
+    version = 18, // --- UPDATED: Database version incremented ---
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -12489,6 +13207,7 @@ abstract open class AppDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun customSmsRuleDao(): CustomSmsRuleDao
     abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
+    abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao // --- NEW: Add new DAO ---
 
     companion object {
         @Volatile
@@ -12617,12 +13336,19 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to add the merchant_category_mapping table ---
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_category_mapping` (`parsedName` TEXT NOT NULL, `categoryId` INTEGER NOT NULL, PRIMARY KEY(`parsedName`))")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18) // Add new migration
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -12915,6 +13641,27 @@ object SmsParser {
         )
     }
 }
+-e 
+
+
+================== FILE: ./app/src/main/java/PeriodTotal.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/PeriodTotal.kt
+// REASON: NEW FILE - This data class is required by the new DAO queries to hold
+// the aggregated results for weekly and monthly spending totals.
+// =================================================================================
+package io.pm.finlight
+
+/**
+ * A simple data class to hold the results of a GROUP BY query for weekly or monthly totals.
+ *
+ * @param period The period identifier (e.g., "2025-27" for week 27, or "2025-07" for July).
+ * @param totalAmount The sum of all expenses for this period.
+ */
+data class PeriodTotal(
+    val period: String,
+    val totalAmount: Double
+)
 -e 
 
 
@@ -14087,6 +14834,11 @@ data class TransactionImage(
 // function is essential for the redesigned summary notifications, allowing them
 // to fetch and display the top spending categories for any given period (daily,
 // weekly, or monthly).
+// REFACTOR - Replaced specific queries like `getTransactionsForDay` with more
+// generic versions like `getTransactionsForDateRange` to support the new
+// reusable TimePeriodReportScreen.
+// FEATURE - Added `getWeeklySpendingForDateRange` and `getMonthlySpendingForDateRange`
+// to provide data for the context charts on the weekly and monthly report screens.
 // =================================================================================
 package io.pm.finlight
 
@@ -14445,6 +15197,50 @@ interface TransactionDao {
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
 
+    @Query("""
+        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
+        FROM transactions AS T
+        LEFT JOIN accounts AS A ON T.accountId = A.id
+        LEFT JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.date BETWEEN :startDate AND :endDate
+        ORDER BY T.date DESC
+    """)
+    fun getTransactionsForDateRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
+
+    @Query("""
+        SELECT
+            strftime('%Y-%m-%d', date / 1000, 'unixepoch') as date,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
+        FROM transactions
+        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+        GROUP BY date
+        ORDER BY date ASC
+    """)
+    fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>>
+
+    // --- NEW: Query to get total spending grouped by week ---
+    @Query("""
+        SELECT
+            strftime('%Y-%W', date / 1000, 'unixepoch') as period,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
+        FROM transactions
+        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getWeeklySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
+
+    // --- NEW: Query to get total spending grouped by month ---
+    @Query("""
+        SELECT
+            strftime('%Y-%m', date / 1000, 'unixepoch') as period,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
+        FROM transactions
+        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getMonthlySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
 }
 -e 
 
@@ -14671,6 +15467,37 @@ interface CategoryDao {
 -e 
 
 
+================== FILE: ./app/src/main/java/MerchantCategoryMappingRepository.kt ==================
+package io.pm.finlight
+
+/**
+ * Repository that abstracts access to the MerchantCategoryMapping data source.
+ * This provides a clean API for the ViewModel to interact with the learning feature.
+ */
+class MerchantCategoryMappingRepository(private val dao: MerchantCategoryMappingDao) {
+
+    /**
+     * Inserts or updates a merchant-category mapping.
+     *
+     * @param mapping The mapping to save.
+     */
+    suspend fun insert(mapping: MerchantCategoryMapping) {
+        dao.insert(mapping)
+    }
+
+    /**
+     * Retrieves the learned category ID for a given merchant name.
+     *
+     * @param parsedName The name of the merchant.
+     * @return The associated category ID, or null if none is found.
+     */
+    suspend fun getCategoryIdForMerchant(parsedName: String): Int? {
+        return dao.getCategoryIdForMerchant(parsedName)
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/BudgetDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/BudgetDao.kt
@@ -14748,6 +15575,21 @@ interface BudgetDao {
     suspend fun delete(budget: Budget)
 }
 -e 
+
+
+================== FILE: ./app/src/main/java/TimePeriod.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TimePeriod.kt
+// REASON: NEW FILE - Defines a simple enum to represent the different time
+// periods for reporting, making the new generic report system type-safe.
+// =================================================================================
+package io.pm.finlight
+
+enum class TimePeriod {
+    DAILY,
+    WEEKLY,
+    MONTHLY
+}-e 
 
 
 ================== FILE: ./app/src/main/java/DailyReportWorker.kt ==================
@@ -14847,6 +15689,28 @@ class MerchantRenameRuleRepository(private val dao: MerchantRenameRuleDao) {
         }
     }
 }
+-e 
+
+
+================== FILE: ./app/src/main/java/MerchantCategoryMapping.kt ==================
+package io.pm.finlight
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+/**
+ * Stores a user-defined mapping between a parsed merchant name and a specific category.
+ * This allows the app to "learn" user preferences and auto-categorize future transactions.
+ *
+ * @param parsedName The merchant name as it was originally parsed from an SMS or other source. This is the key.
+ * @param categoryId The ID of the Category the user has associated with this merchant.
+ */
+@Entity(tableName = "merchant_category_mapping")
+data class MerchantCategoryMapping(
+    @PrimaryKey
+    val parsedName: String,
+    val categoryId: Int
+)
 -e 
 
 
@@ -15205,9 +16069,10 @@ data class Transaction(
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: REFACTOR - The call to `SmsParser.parse` has been updated to pass the
-// individual DAOs (`customSmsRuleDao`, `merchantRenameRuleDao`) instead of the
-// entire database instance, aligning with the parser's new, decoupled signature.
+// REASON: FEATURE - The receiver now queries the new `merchant_category_mapping`
+// table after a transaction is parsed. If a category has been previously
+// associated with the parsed merchant name, that category ID is automatically
+// assigned to the new transaction, fulfilling the "Category Learning" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -15249,6 +16114,7 @@ class SmsReceiver : BroadcastReceiver() {
                         val transactionDao = db.transactionDao()
                         val accountDao = db.accountDao()
                         val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
+                        val merchantCategoryMappingDao = db.merchantCategoryMappingDao() // --- NEW ---
 
                         val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
@@ -15258,6 +16124,15 @@ class SmsReceiver : BroadcastReceiver() {
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
+
+                            // --- NEW: Apply learned category ---
+                            var mappedCategoryId: Int? = null
+                            potentialTxn.merchantName?.let { merchantName ->
+                                mappedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
+                                if (mappedCategoryId != null) {
+                                    Log.d(TAG, "Found learned category ID $mappedCategoryId for merchant '$merchantName'")
+                                }
+                            }
 
                             val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                             val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
@@ -15276,7 +16151,7 @@ class SmsReceiver : BroadcastReceiver() {
                                     amount = potentialTxn.amount,
                                     date = System.currentTimeMillis(),
                                     accountId = account.id,
-                                    categoryId = null,
+                                    categoryId = mappedCategoryId, // --- UPDATED: Use the learned category ID
                                     notes = "", // Keep notes empty for user
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
@@ -15315,6 +16190,10 @@ class SmsReceiver : BroadcastReceiver() {
 // small icon is now the app's launcher icon for consistency, and the action
 // icon is now a standard system icon (`ic_menu_view`). This resolves the
 // "Unresolved reference" compiler errors.
+// BUG FIX - The `createEnhancedSummaryNotification` function now accepts a `deepLinkUri`
+// parameter, making it flexible. `showDailyReportNotification` now passes the correct
+// URI for the new daily report screen, fixing the navigation bug.
+// REFACTOR - Updated to use the new generic report deep link structure.
 // =================================================================================
 package io.pm.finlight
 
@@ -15338,7 +16217,8 @@ import kotlin.math.abs
 object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
-    private const val DEEP_LINK_URI_REPORTS = "app://finlight.pm.io/reports"
+    // --- REFACTOR: Use a generic base URI for reports ---
+    private const val DEEP_LINK_URI_REPORT = "app://finlight.pm.io/report"
 
 
     private fun createEnhancedSummaryNotification(
@@ -15348,21 +16228,22 @@ object NotificationHelper {
         periodText: String,
         totalExpenses: Double,
         percentageChange: Int?,
-        topCategories: List<CategorySpending>
+        topCategories: List<CategorySpending>,
+        deepLinkUri: String
     ) {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return
         }
 
-        val reportsIntent = Intent(
+        val intent = Intent(
             Intent.ACTION_VIEW,
-            DEEP_LINK_URI_REPORTS.toUri(),
+            deepLinkUri.toUri(),
             context,
             MainActivity::class.java
         )
 
         val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
-            addNextIntentWithParentStack(reportsIntent)
+            addNextIntentWithParentStack(intent)
             getPendingIntent(notificationId, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
@@ -15390,14 +16271,14 @@ object NotificationHelper {
         }
 
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Use a standard, available icon
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(bigContentText)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
             .setStyle(inboxStyle)
             .setAutoCancel(true)
-            .addAction(android.R.drawable.ic_menu_view, "Review", pendingIntent) // Use a standard, available icon
+            .addAction(android.R.drawable.ic_menu_view, "Review", pendingIntent)
 
         with(NotificationManagerCompat.from(context)) {
             notify(notificationId, builder.build())
@@ -15418,7 +16299,9 @@ object NotificationHelper {
             "Day",
             totalExpenses,
             percentageChange,
-            topCategories
+            topCategories,
+            // --- FIX: Pass the correct URI for the daily report ---
+            "$DEEP_LINK_URI_REPORT/${TimePeriod.DAILY}"
         )
     }
 
@@ -15435,7 +16318,9 @@ object NotificationHelper {
             "Week",
             totalExpenses,
             percentageChange,
-            topCategories
+            topCategories,
+            // --- REFACTOR: Use the new generic URI ---
+            "$DEEP_LINK_URI_REPORT/${TimePeriod.WEEKLY}"
         )
     }
 
@@ -15454,7 +16339,9 @@ object NotificationHelper {
             monthName,
             totalExpenses,
             percentageChange,
-            topCategories
+            topCategories,
+            // --- REFACTOR: Use the new generic URI ---
+            "$DEEP_LINK_URI_REPORT/${TimePeriod.MONTHLY}"
         )
     }
 
@@ -15737,6 +16624,19 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     }
 }
 -e 
+
+
+================== FILE: ./app/src/main/java/DailyTotal.kt ==================
+package io.pm.finlight
+
+/**
+ * A simple data class to hold the results of a GROUP BY query,
+ * containing a date string and the total amount spent on that day.
+ */
+data class DailyTotal(
+    val date: String, // Format: "YYYY-MM-DD"
+    val totalAmount: Double
+)-e 
 
 
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
