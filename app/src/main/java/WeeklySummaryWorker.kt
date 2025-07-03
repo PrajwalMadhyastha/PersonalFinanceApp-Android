@@ -1,7 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/WeeklySummaryWorker.kt
-// REASON: Added a call to ReminderManager.scheduleWeeklySummary at the end of the
-// worker's execution to create a continuous chain of precisely scheduled tasks.
+// REASON: FIX - The calculation logic has been updated to explicitly filter out
+// excluded transactions. The `forEach` loop was replaced with more efficient
+// `filter` and `sumOf` calls, which now include the `!details.transaction.isExcluded`
+// condition. This ensures the weekly summary report is accurate.
 // =================================================================================
 package io.pm.finlight
 
@@ -39,19 +41,18 @@ class WeeklySummaryWorker(
                 ).first()
                 Log.d("WeeklySummaryWorker", "Found ${transactions.size} transactions in the last 7 days.")
 
-                var totalIncome = 0.0
-                var totalExpenses = 0.0
-                transactions.forEach { details ->
-                    if (details.transaction.transactionType == "income") {
-                        totalIncome += details.transaction.amount
-                    } else {
-                        totalExpenses += details.transaction.amount
-                    }
-                }
+                val totalIncome = transactions
+                    .filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }
+                    .sumOf { it.transaction.amount }
+
+                val totalExpenses = transactions
+                    .filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }
+                    .sumOf { it.transaction.amount }
+
 
                 NotificationHelper.showWeeklySummaryNotification(context, totalIncome, totalExpenses)
 
-                // --- NEW: Re-schedule the next week's report ---
+                // Re-schedule the next week's report
                 ReminderManager.scheduleWeeklySummary(context)
 
                 Log.d("WeeklySummaryWorker", "Worker finished successfully and rescheduled.")

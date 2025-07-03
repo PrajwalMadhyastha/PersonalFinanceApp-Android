@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AccountDao.kt
-// REASON: FEATURE - The subquery within `getAccountsWithBalance` has been updated
-// with `WHERE isExcluded = 0`. This ensures that transactions marked as excluded
-// are not factored into the on-the-fly balance calculations, providing an
-// accurate net worth and account summary.
+// REASON: FIX - No changes were needed here. The `isExcluded = 0` filter was
+// already correctly applied to the subquery in `getAccountsWithBalance`. This
+// ensures that excluded transactions do not affect balance calculations, which
+// is the desired behavior for this financial aggregation.
 // =================================================================================
 package io.pm.finlight
 
@@ -31,7 +31,7 @@ interface AccountDao {
                 accountId,
                 SUM(CASE WHEN transactionType = 'income' THEN amount ELSE -amount END) as balance
              FROM transactions
-             WHERE isExcluded = 0
+             WHERE isExcluded = 0 -- This is correct for a balance calculation
              GROUP BY accountId) AS TxSums
         ON A.id = TxSums.accountId
         ORDER BY

@@ -1,11 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
-// REASON: BUG FIX - The date calculation logic has been made more precise. The
-// start of "yesterday" is now explicitly set to the first millisecond (00:00:00.000)
-// and the end is set to the last millisecond (23:59:59.999). This ensures that
-// the `BETWEEN` clause in the database query correctly includes all transactions
-// from the entire day, fixing a bug where transactions from late in the day
-// could be missed.
+// REASON: FIX - Added a `!it.transaction.isExcluded` filter to the `totalExpenses`
+// calculation. The underlying DAO query now returns all transactions for display
+// flexibility, so this worker must now explicitly filter out excluded transactions
+// to ensure the daily report is accurate.
 // =================================================================================
 package io.pm.finlight
 
@@ -37,14 +35,14 @@ class DailyReportWorker(
                 val calendar = Calendar.getInstance()
                 calendar.add(Calendar.DAY_OF_YEAR, -1) // Go back to yesterday
 
-                // --- FIX: Set to the very end of yesterday for full inclusivity ---
+                // Set to the very end of yesterday for full inclusivity
                 calendar.set(Calendar.HOUR_OF_DAY, 23)
                 calendar.set(Calendar.MINUTE, 59)
                 calendar.set(Calendar.SECOND, 59)
                 calendar.set(Calendar.MILLISECOND, 999)
                 val endDate = calendar.timeInMillis
 
-                // --- FIX: Set to the very start of yesterday for full inclusivity ---
+                // Set to the very start of yesterday for full inclusivity
                 calendar.set(Calendar.HOUR_OF_DAY, 0)
                 calendar.set(Calendar.MINUTE, 0)
                 calendar.set(Calendar.SECOND, 0)
@@ -61,10 +59,10 @@ class DailyReportWorker(
                 ).first()
                 Log.d("DailyReportWorker", "Found ${transactions.size} transactions for yesterday.")
 
-                // 3. Calculate total expenses.
+                // 3. Calculate total expenses, ignoring excluded transactions.
                 val totalExpenses =
                     transactions
-                        .filter { it.transaction.transactionType == "expense" }
+                        .filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }
                         .sumOf { it.transaction.amount }
 
                 // 4. Send the summary notification via the helper.

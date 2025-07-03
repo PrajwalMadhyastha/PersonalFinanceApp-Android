@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE - Added the `updateTransactionExclusion` function. This new
-// function is called from the TransactionDetailScreen when the user toggles the
-// "Exclude from totals" switch, and it updates the `isExcluded` flag for the
-// corresponding transaction in the database.
+// REASON: FIX - Added a `!it.transaction.isExcluded` filter to the `map`
+// functions for `monthlyIncome` and `monthlyExpenses`. This mirrors the fix
+// made in the DashboardViewModel and ensures that the summary totals on the
+// main transaction list screen are now accurate and respect the exclusion flag.
 // =================================================================================
 package io.pm.finlight
 
@@ -64,11 +64,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val monthlyIncome: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
-        txns.filter { it.transaction.transactionType == "income" }.sumOf { it.transaction.amount }
+        txns.filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     val monthlyExpenses: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
-        txns.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount }
+        txns.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>> = combinedState.flatMapLatest { (calendar, filters) ->

@@ -1,7 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: Corrected the call to getTransactionDetailsForRange by passing null
-// for the new, unused filter parameters to resolve the compilation error.
+// REASON: FIX - Added a `!it.transaction.isExcluded` filter to the `map`
+// functions for `monthlyIncome` and `monthlyExpenses`. The underlying DAO query
+// was previously changed to fetch all transactions (including excluded ones) for
+// display purposes. This change ensures that when those transactions are used for
+// calculations in the ViewModel, the excluded ones are correctly ignored, fixing
+// the bug where they were being counted in the dashboard's budget card.
 // =================================================================================
 package io.pm.finlight
 
@@ -70,7 +74,6 @@ class DashboardViewModel(
                 set(Calendar.MILLISECOND, 999)
             }.timeInMillis
 
-        // --- FIX: Pass null for the new filter parameters ---
         val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(
             startDate = monthStart,
             endDate = monthEnd,
@@ -82,14 +85,14 @@ class DashboardViewModel(
         monthlyIncome =
             transactionsThisMonth.map { transactions ->
                 transactions
-                    .filter { it.transaction.transactionType == "income" }
+                    .filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }
                     .sumOf { it.transaction.amount }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
         monthlyExpenses =
             transactionsThisMonth.map { transactions ->
                 transactions
-                    .filter { it.transaction.transactionType == "expense" }
+                    .filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }
                     .sumOf { it.transaction.amount }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 

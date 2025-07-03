@@ -1,10 +1,12 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: BUG FIX - The `getAllTransactions()` function, which returns a detailed
-// list of transactions (`Flow<List<TransactionDetails>>`), has been added back.
-// This function was mistakenly removed and is required by both the
-// TransactionRepository and the DataExportService, resolving the "Unresolved
-// reference" compilation errors in those files.
+// REASON: FIX - The `isExcluded = 0` filter has been systematically reviewed.
+// It has been REMOVED from queries that fetch lists of transactions for display
+// (e.g., getAllTransactions, getTransactionDetailsForRange, getRecentTransactionDetails,
+// searchTransactions). This ensures that excluded transactions remain visible in lists.
+// The filter has been KEPT on all queries that perform financial aggregations
+// (e.g., getFinancialSummaryForRange, getSpendingByCategoryForMonth, getMonthlyTrends)
+// to ensure calculations are accurate.
 // =================================================================================
 package io.pm.finlight
 
@@ -51,7 +53,7 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0
+          AND T.isExcluded = 0 -- Keep filter for income summary
           AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
@@ -69,7 +71,7 @@ interface TransactionDao {
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0
+          AND T.isExcluded = 0 -- Keep filter for aggregation
           AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
@@ -85,7 +87,7 @@ interface TransactionDao {
             COUNT(id) as transactionCount
         FROM transactions
         WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
-          AND isExcluded = 0
+          AND isExcluded = 0 -- Keep filter for aggregation
           AND (:keyword IS NULL OR description LIKE '%' || :keyword || '%' OR notes LIKE '%' || :keyword || '%')
           AND (:accountId IS NULL OR accountId = :accountId)
           AND (:categoryId IS NULL OR categoryId = :categoryId)
@@ -180,6 +182,7 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.date BETWEEN :startDate AND :endDate
+          -- REMOVED: T.isExcluded = 0 filter to ensure all transactions are displayed
           AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
@@ -206,6 +209,7 @@ interface TransactionDao {
         LEFT JOIN accounts AS A ON T.accountId = A.id
         LEFT JOIN categories AS C ON T.categoryId = C.id
         WHERE T.accountId = :accountId
+        -- REMOVED: isExcluded filter to show all transactions for an account
         ORDER BY T.date DESC
     """
     )
@@ -230,7 +234,7 @@ interface TransactionDao {
         """
         SELECT SUM(T.amount) FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
-        WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate AND T.transactionType = 'expense'
+        WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate AND T.transactionType = 'expense' AND T.isExcluded = 0 -- Keep filter for aggregation
     """
     )
     fun getSpendingForCategory(
@@ -249,7 +253,7 @@ interface TransactionDao {
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0
+          AND T.isExcluded = 0 -- Keep filter for aggregation
           AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
@@ -272,7 +276,7 @@ interface TransactionDao {
             SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
         FROM transactions
-        WHERE date >= :startDate AND isExcluded = 0
+        WHERE date >= :startDate AND isExcluded = 0 -- Keep filter for aggregation
         GROUP BY monthYear
         ORDER BY monthYear ASC
     """
@@ -286,6 +290,7 @@ interface TransactionDao {
         LEFT JOIN accounts a ON t.accountId = a.id
         LEFT JOIN categories c ON t.categoryId = c.id
         WHERE
+            -- REMOVED: isExcluded filter to ensure all transactions can be searched
             (:keyword = '' OR t.description LIKE '%' || :keyword || '%' OR t.notes LIKE '%' || :keyword || '%') AND
             (:accountId IS NULL OR t.accountId = :accountId) AND
             (:categoryId IS NULL OR t.categoryId = :categoryId) AND
@@ -315,7 +320,7 @@ interface TransactionDao {
             SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
         FROM transactions
-        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0 -- Keep filter for aggregation
     """)
     suspend fun getFinancialSummaryForRange(startDate: Long, endDate: Long): FinancialSummary?
 
