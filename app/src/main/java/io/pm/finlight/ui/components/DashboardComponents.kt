@@ -1,10 +1,15 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt
+// REASON: BUG FIX - The `BudgetGauge` composable has been corrected. The call to
+// `MaterialTheme.colorScheme.surfaceVariant` was moved out of the `Canvas`'s
+// `DrawScope` and into the main body of the composable function. This resolves
+// the "@Composable invocations can only happen from the context of a @Composable
+// function" error by ensuring theme colors are read in the correct context
+// before being used for drawing.
+// =================================================================================
 package io.pm.finlight.ui.components
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,36 +27,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -60,13 +53,10 @@ import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.AccountWithBalance
 import io.pm.finlight.BottomNavItem
-import io.pm.finlight.Budget
 import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
-import kotlinx.coroutines.flow.map
-import kotlin.math.sin
 
 private fun formatAmountCompact(amount: Float): String {
     return when {
@@ -109,6 +99,53 @@ fun StatCard(
         }
     }
 }
+
+@Composable
+fun BudgetGauge(
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 1000),
+        label = "BudgetGaugeAnimation"
+    )
+
+    val progressColor = when {
+        animatedProgress > 1f -> MaterialTheme.colorScheme.error
+        animatedProgress > 0.8f -> Color(0xFFFBC02D) // Amber
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    // Read the color from the theme within the composable scope, before the Canvas
+    val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidth = size.width / 10f
+            drawArc(
+                color = surfaceVariantColor, // Use the variable here
+                startAngle = 135f,
+                sweepAngle = 270f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = progressColor,
+                startAngle = 135f,
+                sweepAngle = 270 * animatedProgress,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+        }
+        Text(
+            text = "${(animatedProgress * 100).toInt()}%",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
 
 @Composable
 fun OverallBudgetCard(
@@ -160,14 +197,14 @@ fun OverallBudgetCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
-                    LiquidTumbler(
+                    BudgetGauge(
                         progress = (amountSpent / totalBudget),
                         modifier = Modifier.size(120.dp)
                     )
                     Column {
                         Text("Spent", style = MaterialTheme.typography.labelLarge)
                         Text(
-                            text = "₹${"%.2f".format(amountSpent)}",
+                            text = "₹${"%,.2f".format(amountSpent)}",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error
@@ -175,7 +212,7 @@ fun OverallBudgetCard(
                         Spacer(modifier = Modifier.height(16.dp))
                         Text("Remaining", style = MaterialTheme.typography.labelLarge)
                         Text(
-                            text = "₹${"%.2f".format(totalBudget - amountSpent)}",
+                            text = "₹${"%,.2f".format(totalBudget - amountSpent)}",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -187,100 +224,13 @@ fun OverallBudgetCard(
     }
 }
 
-
-@Composable
-fun LiquidTumbler(progress: Float, modifier: Modifier = Modifier) {
-    val clampedProgress = progress.coerceIn(0f, 1f)
-
-    val animatedProgress by animateFloatAsState(
-        targetValue = clampedProgress,
-        animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
-        label = "LiquidFillAnimation"
-    )
-
-    val infiniteTransition = rememberInfiniteTransition(label = "WaveAnimation")
-    val waveOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1500, easing = LinearEasing)
-        ), label = "WaveOffset"
-    )
-
-    val waterColor = when {
-        clampedProgress >= 1f -> MaterialTheme.colorScheme.error
-        clampedProgress > 0.8f -> Color(0xFFFBC02D) // Amber
-        else -> MaterialTheme.colorScheme.primary
-    }
-    val glassColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val strokeWidthPx = with(LocalDensity.current) { 4.dp.toPx() }
-
-
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-
-            val glassPath = Path().apply {
-                moveTo(width * 0.1f, height * 0.05f)
-                lineTo(width * 0.2f, height * 0.95f)
-                quadraticBezierTo(width * 0.5f, height * 1.05f, width * 0.8f, height * 0.95f)
-                lineTo(width * 0.9f, height * 0.05f)
-                close()
-            }
-
-            drawPath(
-                path = glassPath,
-                color = glassColor,
-                style = Stroke(width = strokeWidthPx)
-            )
-
-            clipPath(glassPath) {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(waterColor.copy(alpha = 0.5f), waterColor),
-                        startY = height * (1 - animatedProgress),
-                        endY = height
-                    ),
-                    topLeft = Offset(0f, height * (1 - animatedProgress)),
-                    size = size
-                )
-
-                val wavePath = Path().apply {
-                    moveTo(-width, height * (1 - animatedProgress))
-                    for (i in 0..width.toInt() * 2) {
-                        lineTo(
-                            i.toFloat(),
-                            height * (1 - animatedProgress) + sin((i * 0.03f) + (waveOffset * Math.PI.toFloat())) * 5f
-                        )
-                    }
-                    lineTo(width * 2, height)
-                    lineTo(-width, height)
-                    close()
-                }
-                drawPath(path = wavePath, color = waterColor)
-            }
-        }
-        Text(
-            text = "${(clampedProgress * 100).toInt()}%",
-            color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-
 @Composable
 fun NetWorthCard(netWorth: Double) {
     Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Net Worth", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "₹${"%.2f".format(netWorth)}",
+                text = "₹${"%,.2f".format(netWorth)}",
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold
             )
@@ -312,8 +262,10 @@ fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavCon
                 Text("No accounts found. Add one from the Settings.", modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 Column {
-                    accounts.forEachIndexed { index, accountWithBalance ->
-                        if (index > 0) HorizontalDivider()
+                    for ((index, accountWithBalance) in accounts.withIndex()) {
+                        if (index > 0) {
+                            HorizontalDivider()
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -335,7 +287,7 @@ fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavCon
                                 )
                             }
                             Text(
-                                text = "₹${"%.2f".format(accountWithBalance.balance)}",
+                                text = "₹${"%,.2f".format(accountWithBalance.balance)}",
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (accountWithBalance.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
@@ -368,14 +320,15 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
             if(transactions.isEmpty()){
                 Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp))
             } else {
-                transactions.forEach { details ->
-                    TransactionItem(
-                        transactionDetails = details,
-                        // --- UPDATED: Navigate to the new detail screen ---
-                        onClick = {
-                            navController.navigate("transaction_detail/${details.transaction.id}")
-                        }
-                    )
+                Column {
+                    for (details in transactions) {
+                        TransactionItem(
+                            transactionDetails = details,
+                            onClick = {
+                                navController.navigate("transaction_detail/${details.transaction.id}")
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -398,8 +351,10 @@ fun BudgetWatchCard(
             if (budgetStatus.isEmpty()) {
                 Text("No category-specific budgets set for this month.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
             } else {
-                budgetStatus.forEach { budgetWithSpendingItem ->
-                    BudgetItem(budgetWithSpending = budgetWithSpendingItem)
+                Column {
+                    for (budgetWithSpendingItem in budgetStatus) {
+                        BudgetItem(budgetWithSpending = budgetWithSpendingItem)
+                    }
                 }
             }
         }
