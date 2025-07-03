@@ -8,6 +8,7 @@
 // BUG FIX - The `createEnhancedSummaryNotification` function now accepts a `deepLinkUri`
 // parameter, making it flexible. `showDailyReportNotification` now passes the correct
 // URI for the new daily report screen, fixing the navigation bug.
+// REFACTOR - Updated to use the new generic report deep link structure.
 // =================================================================================
 package io.pm.finlight
 
@@ -31,9 +32,8 @@ import kotlin.math.abs
 object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
-    private const val DEEP_LINK_URI_REPORTS = "app://finlight.pm.io/reports"
-    // --- NEW: Add a deep link for the daily report screen ---
-    private const val DEEP_LINK_URI_DAILY_REPORT = "app://finlight.pm.io/daily_report"
+    // --- REFACTOR: Use a generic base URI for reports ---
+    private const val DEEP_LINK_URI_REPORT = "app://finlight.pm.io/report"
 
 
     private fun createEnhancedSummaryNotification(
@@ -44,7 +44,6 @@ object NotificationHelper {
         totalExpenses: Double,
         percentageChange: Int?,
         topCategories: List<CategorySpending>,
-        // --- NEW: Accept the URI as a parameter ---
         deepLinkUri: String
     ) {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -53,7 +52,6 @@ object NotificationHelper {
 
         val intent = Intent(
             Intent.ACTION_VIEW,
-            // --- FIX: Use the passed-in URI ---
             deepLinkUri.toUri(),
             context,
             MainActivity::class.java
@@ -88,14 +86,14 @@ object NotificationHelper {
         }
 
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Use a standard, available icon
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(bigContentText)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
             .setStyle(inboxStyle)
             .setAutoCancel(true)
-            .addAction(android.R.drawable.ic_menu_view, "Review", pendingIntent) // Use a standard, available icon
+            .addAction(android.R.drawable.ic_menu_view, "Review", pendingIntent)
 
         with(NotificationManagerCompat.from(context)) {
             notify(notificationId, builder.build())
@@ -118,7 +116,7 @@ object NotificationHelper {
             percentageChange,
             topCategories,
             // --- FIX: Pass the correct URI for the daily report ---
-            DEEP_LINK_URI_DAILY_REPORT
+            "$DEEP_LINK_URI_REPORT/${TimePeriod.DAILY}"
         )
     }
 
@@ -136,8 +134,8 @@ object NotificationHelper {
             totalExpenses,
             percentageChange,
             topCategories,
-            // Pass the general reports URI for weekly/monthly
-            DEEP_LINK_URI_REPORTS
+            // --- REFACTOR: Use the new generic URI ---
+            "$DEEP_LINK_URI_REPORT/${TimePeriod.WEEKLY}"
         )
     }
 
@@ -157,8 +155,8 @@ object NotificationHelper {
             totalExpenses,
             percentageChange,
             topCategories,
-            // Pass the general reports URI for weekly/monthly
-            DEEP_LINK_URI_REPORTS
+            // --- REFACTOR: Use the new generic URI ---
+            "$DEEP_LINK_URI_REPORT/${TimePeriod.MONTHLY}"
         )
     }
 

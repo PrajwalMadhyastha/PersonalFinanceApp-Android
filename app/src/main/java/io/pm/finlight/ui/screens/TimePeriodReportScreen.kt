@@ -1,5 +1,12 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
+// REASON: NEW FILE - This screen replaces the old DailyReportScreen. It is now
+// a generic component that can display reports for any `TimePeriod` (daily,
+// weekly, monthly), making the UI more reusable and scalable.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -7,75 +14,62 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.ShoppingBasket
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
-import io.pm.finlight.DailyReportViewModel
-import io.pm.finlight.DailyTotal
-import io.pm.finlight.TransactionDetails
+import io.pm.finlight.TimePeriod
+import io.pm.finlight.TimePeriodReportViewModel
+import io.pm.finlight.TimePeriodReportViewModelFactory
 import io.pm.finlight.ui.components.TransactionItem
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.app.NotificationManagerCompat
 import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DailyReportScreen(
+fun TimePeriodReportScreen(
     navController: NavController,
-    viewModel: DailyReportViewModel = viewModel()
+    timePeriod: TimePeriod
 ) {
-    val selectedDate by viewModel.selectedDate.collectAsState()
-    val transactions by viewModel.dailyTransactions.collectAsState()
-    val weeklyChartData by viewModel.weeklyBarChartData.collectAsState()
+    val application = LocalContext.current.applicationContext as Application
+    val factory = TimePeriodReportViewModelFactory(application, timePeriod)
+    val viewModel: TimePeriodReportViewModel = viewModel(factory = factory)
 
-    val dateFormatter = remember { SimpleDateFormat("dd MMMM, yyyy", Locale.getDefault()) }
+    val selectedDate by viewModel.selectedDate.collectAsState()
+    val transactions by viewModel.transactionsForPeriod.collectAsState()
+    val weeklyChartData by viewModel.chartData.collectAsState()
+
     val totalSpent = transactions.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount }
 
     val context = LocalContext.current
     LaunchedEffect(Unit) {
-        NotificationManagerCompat.from(context).cancel(2) // Daily Report Notification ID is 2
+        if (timePeriod == TimePeriod.DAILY) {
+            NotificationManagerCompat.from(context).cancel(2) // Daily Report Notification ID
+        }
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = dateFormatter.format(selectedDate.time),
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    Row {
-                        IconButton(onClick = { viewModel.selectPreviousDay() }) {
-                            Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Day")
-                        }
-                        IconButton(onClick = { viewModel.selectNextDay() }) {
-                            Icon(Icons.Default.ChevronRight, contentDescription = "Next Day")
-                        }
-                    }
-                }
+            ReportTopAppBar(
+                selectedDate = selectedDate.time,
+                timePeriod = timePeriod,
+                onBack = { navController.popBackStack() },
+                onPrevious = { viewModel.selectPreviousPeriod() },
+                onNext = { viewModel.selectNextPeriod() }
             )
         }
     ) { innerPadding ->
@@ -87,7 +81,7 @@ fun DailyReportScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                DailySummaryCard(totalSpent = totalSpent)
+                PeriodSummaryCard(totalSpent = totalSpent, timePeriod = timePeriod)
             }
 
             item {
@@ -116,7 +110,7 @@ fun DailyReportScreen(
                             .padding(vertical = 32.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No transactions for this day.")
+                        Text("No transactions for this period.")
                     }
                 }
             }
@@ -124,35 +118,81 @@ fun DailyReportScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DailySummaryCard(totalSpent: Double) {
+private fun ReportTopAppBar(
+    selectedDate: Date,
+    timePeriod: TimePeriod,
+    onBack: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit
+) {
+    val dateFormatter = remember(timePeriod) {
+        when (timePeriod) {
+            TimePeriod.DAILY -> SimpleDateFormat("dd MMMM, yyyy", Locale.getDefault())
+            TimePeriod.WEEKLY -> SimpleDateFormat("'Week of' dd MMMM", Locale.getDefault())
+            TimePeriod.MONTHLY -> SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+        }
+    }
+
+    TopAppBar(
+        title = {
+            Text(
+                text = dateFormatter.format(selectedDate),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+        },
+        actions = {
+            Row {
+                IconButton(onClick = onPrevious) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period")
+                }
+                IconButton(onClick = onNext) {
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Next Period")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun PeriodSummaryCard(totalSpent: Double, timePeriod: TimePeriod) {
+    val title = when (timePeriod) {
+        TimePeriod.DAILY -> "Today"
+        TimePeriod.WEEKLY -> "This Week"
+        TimePeriod.MONTHLY -> "This Month"
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.ShoppingCart,
+                imageVector = Icons.Default.ShoppingBasket,
                 contentDescription = "Spending",
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
             )
-            Column {
-                Text(
-                    "Today",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "₹${"%,.2f".format(totalSpent)}",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "₹${"%,.2f".format(totalSpent)}",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -204,7 +244,7 @@ private fun WeeklySpendingChart(chartData: Pair<BarData, List<String>>?) {
                         .height(200.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Not enough data for weekly trend.")
+                    Text("Not enough data for trend.")
                 }
             }
         }

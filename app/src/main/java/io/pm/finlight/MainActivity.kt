@@ -11,6 +11,9 @@
 // handling a deep link from a notification.
 // BUG FIX - Added a `deepLinks` parameter to the `daily_report_screen` composable
 // to handle incoming notification intents correctly.
+// REFACTOR - Replaced the specific `daily_report_screen` route with a generic
+// `time_period_report_screen/{timePeriod}` route to support the new reusable
+// reporting architecture.
 // =================================================================================
 package io.pm.finlight
 
@@ -242,7 +245,7 @@ fun MainAppScreen() {
         "income_screen",
         "splash_screen",
         "add_transaction",
-        "daily_report_screen" // Hide default bar for daily report
+        "time_period_report_screen" // Hide default bar for the generic report screen
     )
 
     val activity = LocalContext.current as AppCompatActivity
@@ -379,7 +382,6 @@ fun AppNavHost(
                 viewModel = transactionViewModel
             )
         }
-        // BUG FIX: Added deep link to handle notification intents
         composable(
             route = BottomNavItem.Reports.route,
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/reports" })
@@ -503,12 +505,16 @@ fun AppNavHost(
             )
         }
 
-        // --- BUG FIX: Add deep link to handle notification intents ---
+        // --- REFACTOR: Replaced daily_report_screen with a generic route ---
         composable(
-            "daily_report_screen",
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/daily_report" })
-        ) {
-            DailyReportScreen(navController = navController)
+            "time_period_report_screen/{timePeriod}",
+            arguments = listOf(navArgument("timePeriod") {
+                type = NavType.EnumType(TimePeriod::class.java)
+            }),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}" })
+        ) { backStackEntry ->
+            val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod") as TimePeriod
+            TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
         }
     }
 }
