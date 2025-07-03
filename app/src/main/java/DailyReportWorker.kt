@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import kotlin.math.roundToInt
 
 /**
  * A background worker that calculates the user's total expenses from the previous day
@@ -28,54 +29,36 @@ class DailyReportWorker(
         return withContext(Dispatchers.IO) {
             try {
                 Log.d("DailyReportWorker", "Worker starting...")
-                val db = AppDatabase.getInstance(context)
-                val transactionDao = db.transactionDao()
+                val transactionDao = AppDatabase.getInstance(context).transactionDao()
 
-                // 1. Calculate the start and end timestamps for "yesterday".
-                val calendar = Calendar.getInstance()
-                calendar.add(Calendar.DAY_OF_YEAR, -1) // Go back to yesterday
+                // Date range for YESTERDAY
+                val yesterdayEnd = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+                val yesterdayStart = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
 
-                // Set to the very end of yesterday for full inclusivity
-                calendar.set(Calendar.HOUR_OF_DAY, 23)
-                calendar.set(Calendar.MINUTE, 59)
-                calendar.set(Calendar.SECOND, 59)
-                calendar.set(Calendar.MILLISECOND, 999)
-                val endDate = calendar.timeInMillis
+                // Date range for THE DAY BEFORE YESTERDAY
+                val dayBeforeEnd = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -2); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+                val dayBeforeStart = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -2); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
 
-                // Set to the very start of yesterday for full inclusivity
-                calendar.set(Calendar.HOUR_OF_DAY, 0)
-                calendar.set(Calendar.MINUTE, 0)
-                calendar.set(Calendar.SECOND, 0)
-                calendar.set(Calendar.MILLISECOND, 0)
-                val startDate = calendar.timeInMillis
+                val yesterdaySummary = transactionDao.getFinancialSummaryForRange(yesterdayStart, yesterdayEnd)
+                val yesterdayExpenses = yesterdaySummary?.totalExpenses ?: 0.0
 
-                // 2. Fetch transactions for yesterday.
-                val transactions = transactionDao.getTransactionDetailsForRange(
-                    startDate = startDate,
-                    endDate = endDate,
-                    keyword = null,
-                    accountId = null,
-                    categoryId = null
-                ).first()
-                Log.d("DailyReportWorker", "Found ${transactions.size} transactions for yesterday.")
+                val dayBeforeSummary = transactionDao.getFinancialSummaryForRange(dayBeforeStart, dayBeforeEnd)
+                val dayBeforeExpenses = dayBeforeSummary?.totalExpenses ?: 0.0
 
-                // 3. Calculate total expenses, ignoring excluded transactions.
-                val totalExpenses =
-                    transactions
-                        .filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }
-                        .sumOf { it.transaction.amount }
+                val topCategories = transactionDao.getTopSpendingCategoriesForRange(yesterdayStart, yesterdayEnd)
 
-                // 4. Send the summary notification via the helper.
-                NotificationHelper.showDailyReportNotification(context, totalExpenses)
+                val percentageChange = if (dayBeforeExpenses > 0) {
+                    ((yesterdayExpenses - dayBeforeExpenses) / dayBeforeExpenses * 100).roundToInt()
+                } else null
 
-                // 5. Re-schedule the next day's report.
+                NotificationHelper.showDailyReportNotification(context, yesterdayExpenses, percentageChange, topCategories)
+
                 ReminderManager.scheduleDailyReport(context)
-
-                Log.d("DailyReportWorker", "Worker finished successfully and rescheduled.")
+                Log.d("DailyReportWorker", "Worker finished and rescheduled.")
                 Result.success()
             } catch (e: Exception) {
                 Log.e("DailyReportWorker", "Worker failed", e)
-                Result.retry() // Retry the job if it fails
+                Result.retry()
             }
         }
     }

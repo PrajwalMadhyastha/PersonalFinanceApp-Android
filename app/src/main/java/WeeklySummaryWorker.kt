@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import kotlin.math.roundToInt
 
 class WeeklySummaryWorker(
     private val context: Context,
@@ -24,38 +25,32 @@ class WeeklySummaryWorker(
         return withContext(Dispatchers.IO) {
             try {
                 Log.d("WeeklySummaryWorker", "Worker starting...")
-                val db = AppDatabase.getInstance(context)
-                val transactionDao = db.transactionDao()
+                val transactionDao = AppDatabase.getInstance(context).transactionDao()
 
-                val calendar = Calendar.getInstance()
-                val endDate = calendar.timeInMillis
-                calendar.add(Calendar.DAY_OF_YEAR, -7)
-                val startDate = calendar.timeInMillis
+                // Date range for LAST 7 DAYS
+                val thisWeekEnd = Calendar.getInstance().timeInMillis
+                val thisWeekStart = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -7) }.timeInMillis
 
-                val transactions = transactionDao.getTransactionDetailsForRange(
-                    startDate = startDate,
-                    endDate = endDate,
-                    keyword = null,
-                    accountId = null,
-                    categoryId = null
-                ).first()
-                Log.d("WeeklySummaryWorker", "Found ${transactions.size} transactions in the last 7 days.")
+                // Date range for PREVIOUS 7 DAYS (8-14 days ago)
+                val lastWeekEnd = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -8) }.timeInMillis
+                val lastWeekStart = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -14) }.timeInMillis
 
-                val totalIncome = transactions
-                    .filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }
-                    .sumOf { it.transaction.amount }
+                val thisWeekSummary = transactionDao.getFinancialSummaryForRange(thisWeekStart, thisWeekEnd)
+                val thisWeekExpenses = thisWeekSummary?.totalExpenses ?: 0.0
 
-                val totalExpenses = transactions
-                    .filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }
-                    .sumOf { it.transaction.amount }
+                val lastWeekSummary = transactionDao.getFinancialSummaryForRange(lastWeekStart, lastWeekEnd)
+                val lastWeekExpenses = lastWeekSummary?.totalExpenses ?: 0.0
 
+                val topCategories = transactionDao.getTopSpendingCategoriesForRange(thisWeekStart, thisWeekEnd)
 
-                NotificationHelper.showWeeklySummaryNotification(context, totalIncome, totalExpenses)
+                val percentageChange = if (lastWeekExpenses > 0) {
+                    ((thisWeekExpenses - lastWeekExpenses) / lastWeekExpenses * 100).roundToInt()
+                } else null
 
-                // Re-schedule the next week's report
+                NotificationHelper.showWeeklySummaryNotification(context, thisWeekExpenses, percentageChange, topCategories)
+
                 ReminderManager.scheduleWeeklySummary(context)
-
-                Log.d("WeeklySummaryWorker", "Worker finished successfully and rescheduled.")
+                Log.d("WeeklySummaryWorker", "Worker finished and rescheduled.")
                 Result.success()
             } catch (e: Exception) {
                 Log.e("WeeklySummaryWorker", "Worker failed", e)

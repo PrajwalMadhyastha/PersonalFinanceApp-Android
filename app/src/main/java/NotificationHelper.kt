@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: FIX - Added a unique group key to the `showAutoSaveConfirmationNotification`
-// builder using `.setGroup()`. This prevents the Android system from stacking
-// multiple auto-save notifications, ensuring each one is displayed individually
-// for better visibility.
+// REASON: BUG FIX - Replaced references to non-existent drawable resources
+// (`ic_shopping_cart_24`, `ic_review_24`) with standard, available ones. The
+// small icon is now the app's launcher icon for consistency, and the action
+// icon is now a standard system icon (`ic_menu_view`). This resolves the
+// "Unresolved reference" compiler errors.
 // =================================================================================
 package io.pm.finlight
 
@@ -19,12 +20,134 @@ import androidx.core.app.TaskStackBuilder
 import androidx.core.net.toUri
 import com.google.gson.Gson
 import java.net.URLEncoder
+import java.text.NumberFormat
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.abs
 
 object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
+    private const val DEEP_LINK_URI_REPORTS = "app://finlight.pm.io/reports"
+
+
+    private fun createEnhancedSummaryNotification(
+        context: Context,
+        channelId: String,
+        notificationId: Int,
+        periodText: String,
+        totalExpenses: Double,
+        percentageChange: Int?,
+        topCategories: List<CategorySpending>
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val reportsIntent = Intent(
+            Intent.ACTION_VIEW,
+            DEEP_LINK_URI_REPORTS.toUri(),
+            context,
+            MainActivity::class.java
+        )
+
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(reportsIntent)
+            getPendingIntent(notificationId, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        val title = when {
+            percentageChange == null -> "Your $periodText Summary"
+            percentageChange == 0 -> "Spends same as last period"
+            percentageChange > 0 -> "Spends up by $percentageChange% this $periodText"
+            else -> "Spends down by ${abs(percentageChange)}% this $periodText"
+        }
+
+        val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+        val bigContentText = "You spent ${currencyFormat.format(totalExpenses)} in total."
+
+        val inboxStyle = NotificationCompat.InboxStyle()
+            .setBigContentTitle(title)
+            .setSummaryText("Got 2 mins to review?")
+
+        if (topCategories.isNotEmpty()) {
+            inboxStyle.addLine("Top spends:")
+            for (category in topCategories) {
+                inboxStyle.addLine("• ${category.categoryName}: ${currencyFormat.format(category.totalAmount)}")
+            }
+        } else {
+            inboxStyle.addLine("No expenses recorded for this period.")
+        }
+
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground) // Use a standard, available icon
+            .setContentTitle(title)
+            .setContentText(bigContentText)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setStyle(inboxStyle)
+            .setAutoCancel(true)
+            .addAction(android.R.drawable.ic_menu_view, "Review", pendingIntent) // Use a standard, available icon
+
+        with(NotificationManagerCompat.from(context)) {
+            notify(notificationId, builder.build())
+        }
+    }
+
+
+    fun showDailyReportNotification(
+        context: Context,
+        totalExpenses: Double,
+        percentageChange: Int?,
+        topCategories: List<CategorySpending>
+    ) {
+        createEnhancedSummaryNotification(
+            context,
+            MainApplication.DAILY_REPORT_CHANNEL_ID,
+            2,
+            "Day",
+            totalExpenses,
+            percentageChange,
+            topCategories
+        )
+    }
+
+    fun showWeeklySummaryNotification(
+        context: Context,
+        totalExpenses: Double,
+        percentageChange: Int?,
+        topCategories: List<CategorySpending>
+    ) {
+        createEnhancedSummaryNotification(
+            context,
+            MainApplication.SUMMARY_CHANNEL_ID,
+            3,
+            "Week",
+            totalExpenses,
+            percentageChange,
+            topCategories
+        )
+    }
+
+    fun showMonthlySummaryNotification(
+        context: Context,
+        calendar: Calendar, // To get the month name
+        totalExpenses: Double,
+        percentageChange: Int?,
+        topCategories: List<CategorySpending>
+    ) {
+        val monthName = calendar.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault()) ?: "Month"
+        createEnhancedSummaryNotification(
+            context,
+            MainApplication.MONTHLY_SUMMARY_CHANNEL_ID,
+            4,
+            monthName,
+            totalExpenses,
+            percentageChange,
+            topCategories
+        )
+    }
+
 
     fun showAutoSaveConfirmationNotification(
         context: Context,
@@ -46,7 +169,6 @@ object NotificationHelper {
             getPendingIntent(transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
-        // --- NEW: Define a unique group key for each notification ---
         val groupKey = "finlight_transaction_group_${transaction.id}"
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
@@ -56,7 +178,6 @@ object NotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
-            // --- NEW: Set the unique group key to prevent stacking ---
             .setGroup(groupKey)
             .addAction(android.R.drawable.ic_menu_edit, "Edit", pendingIntent)
 
@@ -105,104 +226,5 @@ object NotificationHelper {
         with(NotificationManagerCompat.from(context)) {
             notify(potentialTransaction.sourceSmsId.toInt(), builder.build())
         }
-    }
-    fun showDailyReportNotification(
-        context: Context,
-        totalExpenses: Double,
-    ) {
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
-
-        val intent =
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            }
-
-        val pendingIntent = PendingIntent.getActivity(context, 100, intent, PendingIntent.FLAG_IMMUTABLE)
-
-        val reportText =
-            if (totalExpenses > 0) {
-                "You spent a total of ₹${"%.2f".format(totalExpenses)} yesterday."
-            } else {
-                "Great job! You had no expenses yesterday."
-            }
-
-        val notification =
-            NotificationCompat.Builder(context, MainApplication.DAILY_REPORT_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle("Your Daily Report")
-                .setContentText(reportText)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .build()
-
-        NotificationManagerCompat.from(context).notify(2, notification)
-    }
-
-    fun showWeeklySummaryNotification(
-        context: Context,
-        totalIncome: Double,
-        totalExpenses: Double,
-    ) {
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
-
-        val intent =
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            }
-
-        val pendingIntent = PendingIntent.getActivity(context, 101, intent, PendingIntent.FLAG_IMMUTABLE)
-
-        val summaryText = "Income: ₹${"%.2f".format(totalIncome)} | Expenses: ₹${"%.2f".format(totalExpenses)}"
-
-        val notification =
-            NotificationCompat.Builder(context, MainApplication.SUMMARY_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle("Your Weekly Financial Summary")
-                .setContentText(summaryText)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(summaryText))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .build()
-
-        NotificationManagerCompat.from(context).notify(3, notification)
-    }
-
-    fun showMonthlySummaryNotification(
-        context: Context,
-        totalIncome: Double,
-        totalExpenses: Double,
-        calendar: Calendar // To get the month name
-    ) {
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
-
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        }
-
-        val pendingIntent = PendingIntent.getActivity(context, 200, intent, PendingIntent.FLAG_IMMUTABLE)
-
-        val monthName = calendar.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
-        val summaryText = "Income: ₹${"%,.2f".format(totalIncome)} | Expenses: ₹${"%,.2f".format(totalExpenses)}"
-
-        val notification =
-            NotificationCompat.Builder(context, MainApplication.MONTHLY_SUMMARY_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle("Your Financial Summary for $monthName")
-                .setContentText(summaryText)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(summaryText))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .build()
-
-        NotificationManagerCompat.from(context).notify(4, notification) // Use a new ID
     }
 }

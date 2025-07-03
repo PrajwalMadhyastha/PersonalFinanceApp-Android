@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import kotlin.math.roundToInt
 
 class MonthlySummaryWorker(
     private val context: Context,
@@ -22,40 +23,34 @@ class MonthlySummaryWorker(
         return withContext(Dispatchers.IO) {
             try {
                 Log.d("MonthlySummaryWorker", "Worker starting...")
-                val db = AppDatabase.getInstance(context)
-                val transactionDao = db.transactionDao()
+                val transactionDao = AppDatabase.getInstance(context).transactionDao()
 
-                val calendar = Calendar.getInstance()
-                calendar.set(Calendar.DAY_OF_MONTH, 1)
-                calendar.set(Calendar.HOUR_OF_DAY, 0)
-                calendar.set(Calendar.MINUTE, 0)
-                calendar.set(Calendar.SECOND, 0)
-                calendar.set(Calendar.MILLISECOND, 0)
+                // --- Date range for LAST MONTH ---
+                val lastMonthCalendar = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }
+                val lastMonthEnd = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59) }.timeInMillis
+                val lastMonthStart = Calendar.getInstance().apply { add(Calendar.MONTH, -1); set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0) }.timeInMillis
 
-                calendar.add(Calendar.MILLISECOND, -1)
-                val endDate = calendar.timeInMillis
+                // --- Date range for PREVIOUS-TO-LAST MONTH ---
+                val prevMonthEnd = Calendar.getInstance().apply { add(Calendar.MONTH, -1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59) }.timeInMillis
+                val prevMonthStart = Calendar.getInstance().apply { add(Calendar.MONTH, -2); set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0) }.timeInMillis
 
-                calendar.set(Calendar.DAY_OF_MONTH, 1)
-                val startDate = calendar.timeInMillis
 
-                val summary = transactionDao.getFinancialSummaryForRange(startDate, endDate)
+                val lastMonthSummary = transactionDao.getFinancialSummaryForRange(lastMonthStart, lastMonthEnd)
+                val lastMonthExpenses = lastMonthSummary?.totalExpenses ?: 0.0
 
-                if (summary != null) {
-                    NotificationHelper.showMonthlySummaryNotification(
-                        context,
-                        summary.totalIncome,
-                        summary.totalExpenses,
-                        calendar
-                    )
-                    Log.d("MonthlySummaryWorker", "Summary found for ${calendar.time}: Income=${summary.totalIncome}, Expenses=${summary.totalExpenses}")
-                } else {
-                    Log.d("MonthlySummaryWorker", "No summary data found for the previous month.")
-                }
+                val prevMonthSummary = transactionDao.getFinancialSummaryForRange(prevMonthStart, prevMonthEnd)
+                val prevMonthExpenses = prevMonthSummary?.totalExpenses ?: 0.0
 
-                // --- NEW: Re-schedule the next month's report ---
+                val topCategories = transactionDao.getTopSpendingCategoriesForRange(lastMonthStart, lastMonthEnd)
+
+                val percentageChange = if (prevMonthExpenses > 0) {
+                    ((lastMonthExpenses - prevMonthExpenses) / prevMonthExpenses * 100).roundToInt()
+                } else null
+
+                NotificationHelper.showMonthlySummaryNotification(context, lastMonthCalendar, lastMonthExpenses, percentageChange, topCategories)
+
                 ReminderManager.scheduleMonthlySummary(context)
-
-                Log.d("MonthlySummaryWorker", "Worker finished successfully and rescheduled.")
+                Log.d("MonthlySummaryWorker", "Worker finished and rescheduled.")
                 Result.success()
             } catch (e: Exception) {
                 Log.e("MonthlySummaryWorker", "Worker failed", e)
