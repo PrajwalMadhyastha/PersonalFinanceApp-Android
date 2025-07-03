@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE - Added a new `Switch` component to the `TransactionHeaderCard`.
-// This UI element allows users to toggle the `isExcluded` property of a
-// transaction. The switch is bound to the transaction's state and calls the
-// new `updateTransactionExclusion` function in the ViewModel on change.
+// REASON: UX IMPROVEMENT - The switch label has been simplified from "Count as
+// Expense" to just "Expense" (or "Income"), making the UI cleaner and more direct,
+// as per user feedback.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -883,6 +882,7 @@ private fun TransactionHeaderCard(
     onExcludeToggled: (Boolean) -> Unit
 ) {
     val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy, h:mm a", Locale.getDefault()) }
+    val switchLabel = details.transaction.transactionType.replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -966,12 +966,15 @@ private fun TransactionHeaderCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Exclude from totals",
+                    text = switchLabel,
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Switch(
-                    checked = details.transaction.isExcluded,
-                    onCheckedChange = onExcludeToggled
+                    checked = !details.transaction.isExcluded,
+                    onCheckedChange = { isChecked ->
+                        // When the switch is turned OFF (isChecked = false), we set isExcluded to TRUE.
+                        onExcludeToggled(!isChecked)
+                    }
                 )
             }
         }

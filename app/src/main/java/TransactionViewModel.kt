@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - Added a `!it.transaction.isExcluded` filter to the `map`
-// functions for `monthlyIncome` and `monthlyExpenses`. This mirrors the fix
-// made in the DashboardViewModel and ensures that the summary totals on the
-// main transaction list screen are now accurate and respect the exclusion flag.
+// REASON: FEATURE - The `addTransaction` function has been updated to accept a
+// new `isIncluded` parameter. This allows the `AddTransactionScreen` to pass the
+// state of its new switch, ensuring that the `isExcluded` property on the
+// `Transaction` object is set correctly upon creation.
 // =================================================================================
 package io.pm.finlight
 
@@ -481,6 +481,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         notes: String?,
         date: Long,
         transactionType: String,
+        isIncluded: Boolean, // New parameter
         sourceSmsId: Long?,
         sourceSmsHash: String?,
         imageUris: List<Uri>
@@ -506,6 +507,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 accountId = accountId,
                 notes = notes,
                 transactionType = transactionType,
+                isExcluded = !isIncluded, // Set the exclusion flag based on the switch state
                 sourceSmsId = sourceSmsId,
                 sourceSmsHash = sourceSmsHash,
                 source = "Manual Entry"

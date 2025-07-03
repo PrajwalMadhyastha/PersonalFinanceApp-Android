@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: FEATURE - The screen now observes the `defaultAccount` StateFlow from
-// the ViewModel. In a `LaunchedEffect`, it sets the `selectedAccount` state to
-// this default account as soon as it's available, but only for new manual
-// transactions (not for CSV edits). This pre-selects "Cash Spends" for the user.
+// REASON: FEATURE - Added a new Switch component to this screen, allowing users
+// to mark a new transaction as included or excluded from calculations right at
+// the time of creation. This brings consistency with the TransactionDetailScreen.
+// The state for this switch (`isIncluded`) is now passed to the ViewModel.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -70,8 +70,8 @@ fun AddTransactionScreen(
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
-
     var transactionType by remember { mutableStateOf("expense") }
+    var isIncluded by remember { mutableStateOf(true) } // State for the new switch
 
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
@@ -104,10 +104,8 @@ fun AddTransactionScreen(
     val allTags by viewModel.allTags.collectAsState()
     val selectedTags by viewModel.selectedTags.collectAsState()
 
-    // --- NEW: Get the default account from the ViewModel ---
     val defaultAccount by viewModel.defaultAccount.collectAsState()
 
-    // --- NEW: Set the default account when the screen loads for a new transaction ---
     LaunchedEffect(defaultAccount, isCsvEdit) {
         if (!isCsvEdit && selectedAccount == null) {
             selectedAccount = defaultAccount
@@ -132,6 +130,9 @@ fun AddTransactionScreen(
                 val categoryName = initialData.getOrElse(4) { "" }
                 val accountName = initialData.getOrElse(5) { "" }
                 notes = initialData.getOrElse(6) { "" }
+                // Assuming isExcluded is the 7th column if it exists
+                isIncluded = initialData.getOrNull(7)?.toBooleanStrictOrNull()?.not() ?: true
+
 
                 selectedCategory = categories.find { it.name.equals(categoryName, ignoreCase = true) }
                 selectedAccount = accounts.find { it.name.equals(accountName, ignoreCase = true) }
@@ -192,6 +193,29 @@ fun AddTransactionScreen(
                     onAttachmentsClick = { imagePickerLauncher.launch("image/*") }
                 )
             }
+
+            // --- NEW: Added the switch for including/excluding the transaction ---
+            item {
+                Card(elevation = CardDefaults.cardElevation(2.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = transactionType.replaceFirstChar { it.titlecase(Locale.getDefault()) },
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Switch(
+                            checked = isIncluded,
+                            onCheckedChange = { isIncluded = it }
+                        )
+                    }
+                }
+            }
+
 
             if (attachedImageUris.isNotEmpty()) {
                 item {
@@ -267,6 +291,7 @@ fun AddTransactionScreen(
                                     notes = notes.takeIf { it.isNotBlank() },
                                     date = selectedDateTime.timeInMillis,
                                     transactionType = transactionType,
+                                    isIncluded = isIncluded, // Pass the switch state
                                     sourceSmsId = null,
                                     sourceSmsHash = null,
                                     imageUris = attachedImageUris
