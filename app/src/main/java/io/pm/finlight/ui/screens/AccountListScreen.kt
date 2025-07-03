@@ -1,6 +1,8 @@
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -13,8 +15,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.AccountViewModel
+import io.pm.finlight.BankLogoHelper
 
 @Composable
 fun AccountListScreen(
@@ -24,16 +29,23 @@ fun AccountListScreen(
     val accounts by viewModel.accountsWithBalance.collectAsState(initial = emptyList())
 
     LazyColumn {
-        items(accounts) { account ->
+        items(accounts) { accountWithBalance ->
             ListItem(
-                headlineContent = { Text(account.account.name) },
-                supportingContent = { Text("Balance: ₹${"%.2f".format(account.balance)}") },
+                headlineContent = { Text(accountWithBalance.account.name) },
+                supportingContent = { Text("Balance: ₹${"%,.2f".format(accountWithBalance.balance)}") },
+                leadingContent = {
+                    Image(
+                        painter = painterResource(id = BankLogoHelper.getLogoForAccount(accountWithBalance.account.name)),
+                        contentDescription = "${accountWithBalance.account.name} Logo",
+                        modifier = Modifier.size(40.dp)
+                    )
+                },
                 trailingContent = {
-                    IconButton(onClick = { navController.navigate("edit_account/${account.account.id}") }) {
+                    IconButton(onClick = { navController.navigate("edit_account/${accountWithBalance.account.id}") }) {
                         Icon(Icons.Filled.Edit, contentDescription = "Edit Account")
                     }
                 },
-                modifier = Modifier.clickable { navController.navigate("account_detail/${account.account.id}") },
+                modifier = Modifier.clickable { navController.navigate("account_detail/${accountWithBalance.account.id}") },
             )
         }
     }

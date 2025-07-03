@@ -1,26 +1,26 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountDetailScreen.kt
-// REASON: UX IMPROVEMENT - The `AccountTransactionItem` composable, used within
-// this screen, has been updated. It now checks the `isExcluded` flag of a
-// transaction and applies a lower alpha to the text and amount, visually dimming
-// it to indicate its excluded status. This brings its appearance in line with
-// other transaction lists in the app.
+// REASON: FEATURE - The screen now prominently displays the bank's logo at the
+// top, fetched using the new `BankLogoHelper`. This creates a more visually
+// appealing and identifiable header for the account details view.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,10 +30,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.pm.finlight.AccountViewModel
+import io.pm.finlight.BankLogoHelper
 import io.pm.finlight.ui.components.AccountTransactionItem
 
 @Composable
@@ -64,6 +66,16 @@ fun AccountDetailScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
+                // --- NEW: Display Bank Logo ---
+                account?.let {
+                    Image(
+                        painter = painterResource(id = BankLogoHelper.getLogoForAccount(it.name)),
+                        contentDescription = "${it.name} Logo",
+                        modifier = Modifier
+                            .size(50.dp)
+                            .padding(bottom = 8.dp)
+                    )
+                }
                 Text(
                     text = "Current Balance",
                     style = MaterialTheme.typography.titleMedium,
@@ -71,7 +83,7 @@ fun AccountDetailScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "₹${"%.2f".format(balance)}",
+                    text = "₹${"%,.2f".format(balance)}",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
                     color = if (balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,

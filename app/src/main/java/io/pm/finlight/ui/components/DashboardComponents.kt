@@ -1,17 +1,16 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt
-// REASON: BUG FIX - The `BudgetGauge` composable has been corrected. The call to
-// `MaterialTheme.colorScheme.surfaceVariant` was moved out of the `Canvas`'s
-// `DrawScope` and into the main body of the composable function. This resolves
-// the "@Composable invocations can only happen from the context of a @Composable
-// function" error by ensuring theme colors are read in the correct context
-// before being used for drawing.
+// REASON: FEATURE - The `AccountSummaryCard` has been updated to display bank
+// logos. It now uses the new `BankLogoHelper` to fetch the appropriate drawable
+// for each account, providing a richer and more intuitive visual representation
+// of the user's accounts directly on the dashboard.
 // =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.AccountWithBalance
+import io.pm.finlight.BankLogoHelper
 import io.pm.finlight.BottomNavItem
 import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
@@ -262,7 +263,8 @@ fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavCon
                 Text("No accounts found. Add one from the Settings.", modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 Column {
-                    for ((index, accountWithBalance) in accounts.withIndex()) {
+                    // --- UPDATED: Loop through accounts and display with logos ---
+                    for ((index, accountWithBalance) in accounts.take(3).withIndex()) { // Show max 3
                         if (index > 0) {
                             HorizontalDivider()
                         }
@@ -272,8 +274,13 @@ fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavCon
                                 .clickable { navController.navigate("account_detail/${accountWithBalance.account.id}") }
                                 .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
+                            Image(
+                                painter = painterResource(id = BankLogoHelper.getLogoForAccount(accountWithBalance.account.name)),
+                                contentDescription = "${accountWithBalance.account.name} Logo",
+                                modifier = Modifier.size(40.dp)
+                            )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = accountWithBalance.account.name,
