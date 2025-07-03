@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: UX IMPROVEMENT - The switch label has been simplified from "Count as
-// Expense" to just "Expense" (or "Income"), making the UI cleaner and more direct,
-// as per user feedback.
+// REASON: UX REFINEMENT - The "Expense"/"Income" switch has been moved from the
+// main header card into the "Account" info card. This groups the account information
+// and its inclusion status together for better contextual clarity. The Edit icon
+// was also moved next to the account name to make space for the switch.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -226,18 +227,16 @@ fun TransactionDetailScreen(
                             onDescriptionClick = { activeSheetContent = SheetContent.Description },
                             onAmountClick = { activeSheetContent = SheetContent.Amount },
                             onCategoryClick = { activeSheetContent = SheetContent.Category },
-                            onDateTimeClick = { showDatePicker = true },
-                            onExcludeToggled = { isExcluded ->
-                                viewModel.updateTransactionExclusion(details.transaction.id, isExcluded)
-                            }
+                            onDateTimeClick = { showDatePicker = true }
                         )
                     }
                     item {
-                        InfoCard(
-                            icon = Icons.Default.AccountBalanceWallet,
-                            label = "Account",
-                            value = details.accountName ?: "N/A",
-                            onClick = { activeSheetContent = SheetContent.Account }
+                        AccountCardWithSwitch(
+                            details = details,
+                            onAccountClick = { activeSheetContent = SheetContent.Account },
+                            onExcludeToggled = { isExcluded ->
+                                viewModel.updateTransactionExclusion(details.transaction.id, isExcluded)
+                            }
                         )
                     }
                     item {
@@ -878,11 +877,9 @@ private fun TransactionHeaderCard(
     onDescriptionClick: () -> Unit,
     onAmountClick: () -> Unit,
     onCategoryClick: () -> Unit,
-    onDateTimeClick: () -> Unit,
-    onExcludeToggled: (Boolean) -> Unit
+    onDateTimeClick: () -> Unit
 ) {
     val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy, h:mm a", Locale.getDefault()) }
-    val switchLabel = details.transaction.transactionType.replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -957,29 +954,63 @@ private fun TransactionHeaderCard(
                     )
                 }
             }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = switchLabel,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Switch(
-                    checked = !details.transaction.isExcluded,
-                    onCheckedChange = { isChecked ->
-                        // When the switch is turned OFF (isChecked = false), we set isExcluded to TRUE.
-                        onExcludeToggled(!isChecked)
-                    }
-                )
-            }
         }
     }
 }
+
+@Composable
+private fun AccountCardWithSwitch(
+    details: TransactionDetails,
+    onAccountClick: () -> Unit,
+    onExcludeToggled: (Boolean) -> Unit
+) {
+    val switchLabel = details.transaction.transactionType.replaceFirstChar { it.titlecase(Locale.getDefault()) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.AccountBalanceWallet,
+                contentDescription = "Account",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(16.dp))
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onAccountClick),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(details.accountName ?: "N/A", style = MaterialTheme.typography.bodyLarge)
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Edit Account",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Text(
+                text = switchLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+            Switch(
+                checked = !details.transaction.isExcluded,
+                onCheckedChange = { isChecked ->
+                    onExcludeToggled(!isChecked)
+                }
+            )
+        }
+    }
+}
+
 
 private fun TransactionDetails.toCategory(): Category {
     return Category(

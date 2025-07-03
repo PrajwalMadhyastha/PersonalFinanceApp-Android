@@ -1,3 +1,11 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountDetailScreen.kt
+// REASON: UX IMPROVEMENT - The `AccountTransactionItem` composable, used within
+// this screen, has been updated. It now checks the `isExcluded` flag of a
+// transaction and applies a lower alpha to the text and amount, visually dimming
+// it to indicate its excluded status. This brings its appearance in line with
+// other transaction lists in the app.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement

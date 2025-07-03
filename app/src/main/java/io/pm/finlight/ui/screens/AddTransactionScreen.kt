@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: FEATURE - Added a new Switch component to this screen, allowing users
-// to mark a new transaction as included or excluded from calculations right at
-// the time of creation. This brings consistency with the TransactionDetailScreen.
-// The state for this switch (`isIncluded`) is now passed to the ViewModel.
+// REASON: UX REFINEMENT - The "Expense"/"Income" switch has been moved from its
+// own separate card into the "Account" row within the DetailsCard. This provides
+// a more integrated and contextually relevant UI, consistent with the changes
+// made to the TransactionDetailScreen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -71,7 +71,7 @@ fun AddTransactionScreen(
     var amount by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var transactionType by remember { mutableStateOf("expense") }
-    var isIncluded by remember { mutableStateOf(true) } // State for the new switch
+    var isIncluded by remember { mutableStateOf(true) }
 
     val accounts by viewModel.allAccounts.collectAsState(initial = emptyList())
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
@@ -130,7 +130,6 @@ fun AddTransactionScreen(
                 val categoryName = initialData.getOrElse(4) { "" }
                 val accountName = initialData.getOrElse(5) { "" }
                 notes = initialData.getOrElse(6) { "" }
-                // Assuming isExcluded is the 7th column if it exists
                 isIncluded = initialData.getOrNull(7)?.toBooleanStrictOrNull()?.not() ?: true
 
 
@@ -190,32 +189,12 @@ fun AddTransactionScreen(
                     notes = notes,
                     onNotesChange = { notes = it },
                     attachmentsCount = attachedImageUris.size,
-                    onAttachmentsClick = { imagePickerLauncher.launch("image/*") }
+                    onAttachmentsClick = { imagePickerLauncher.launch("image/*") },
+                    transactionType = transactionType,
+                    isIncluded = isIncluded,
+                    onIncludeChange = { isIncluded = it }
                 )
             }
-
-            // --- NEW: Added the switch for including/excluding the transaction ---
-            item {
-                Card(elevation = CardDefaults.cardElevation(2.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = transactionType.replaceFirstChar { it.titlecase(Locale.getDefault()) },
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        Switch(
-                            checked = isIncluded,
-                            onCheckedChange = { isIncluded = it }
-                        )
-                    }
-                }
-            }
-
 
             if (attachedImageUris.isNotEmpty()) {
                 item {
@@ -272,7 +251,8 @@ fun AddTransactionScreen(
                                     transactionType,
                                     selectedCategory?.name ?: "",
                                     selectedAccount?.name ?: "",
-                                    notes
+                                    notes,
+                                    (!isIncluded).toString()
                                 )
                                 val gson = Gson()
                                 navController.previousBackStackEntry
@@ -285,13 +265,13 @@ fun AddTransactionScreen(
                             } else {
                                 val success = viewModel.addTransaction(
                                     description = description,
-                                    categoryId = selectedCategory!!.id, // It can't be null here due to isSaveEnabled
+                                    categoryId = selectedCategory!!.id,
                                     amountStr = amount,
                                     accountId = selectedAccount!!.id,
                                     notes = notes.takeIf { it.isNotBlank() },
                                     date = selectedDateTime.timeInMillis,
                                     transactionType = transactionType,
-                                    isIncluded = isIncluded, // Pass the switch state
+                                    isIncluded = isIncluded,
                                     sourceSmsId = null,
                                     sourceSmsHash = null,
                                     imageUris = attachedImageUris
@@ -483,18 +463,21 @@ fun DetailsCard(
     notes: String,
     onNotesChange: (String) -> Unit,
     attachmentsCount: Int,
-    onAttachmentsClick: () -> Unit
+    onAttachmentsClick: () -> Unit,
+    transactionType: String,
+    isIncluded: Boolean,
+    onIncludeChange: (Boolean) -> Unit
 ) {
     val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMMyyyy", Locale.getDefault()) }
 
     Card(elevation = CardDefaults.cardElevation(2.dp)) {
         Column {
-            DetailRow(
-                icon = Icons.Default.AccountBalanceWallet,
-                label = "Account",
-                value = selectedAccount?.name ?: "Select account",
+            AccountRowWithSwitch(
+                selectedAccount = selectedAccount,
                 onClick = onAccountClick,
-                valueColor = if (selectedAccount == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                transactionType = transactionType,
+                isIncluded = isIncluded,
+                onIncludeChange = onIncludeChange
             )
             if (isCategoryVisible) {
                 HorizontalDivider()
@@ -541,6 +524,47 @@ fun DetailsCard(
                 )
             )
         }
+    }
+}
+
+@Composable
+private fun AccountRowWithSwitch(
+    selectedAccount: Account?,
+    onClick: () -> Unit,
+    transactionType: String,
+    isIncluded: Boolean,
+    onIncludeChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.AccountBalanceWallet, contentDescription = "Account")
+        Spacer(Modifier.width(16.dp))
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onClick),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                selectedAccount?.name ?: "Select account",
+                color = if (selectedAccount == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            )
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = transactionType.replaceFirstChar { it.titlecase(Locale.getDefault()) },
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(end = 8.dp)
+        )
+        Switch(
+            checked = isIncluded,
+            onCheckedChange = onIncludeChange
+        )
     }
 }
 

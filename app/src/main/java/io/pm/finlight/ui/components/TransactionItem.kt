@@ -1,3 +1,11 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
+// REASON: UX IMPROVEMENT - Added logic to visually dim transactions that are
+// excluded from calculations. If `transaction.isExcluded` is true, a lower
+// alpha is applied to the category icon's background, the icon itself, and the
+// transaction amount text. This provides an immediate, at-a-glance indicator
+// of the transaction's status directly in the list view.
+// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
@@ -30,6 +38,9 @@ fun TransactionItem(
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
 ) {
+    // Determine the alpha based on the exclusion status for a dimmed effect
+    val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
+
     Card(
         modifier =
             Modifier
@@ -42,7 +53,10 @@ fun TransactionItem(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")),
+                    .background(
+                        CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")
+                            .copy(alpha = contentAlpha) // Apply alpha to background
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 if (transactionDetails.categoryIconKey == "letter_default") {
@@ -50,35 +64,64 @@ fun TransactionItem(
                         text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
-                        color = Color.Black
+                        color = Color.Black.copy(alpha = contentAlpha) // Apply alpha to text
                     )
                 } else {
                     Icon(
                         imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
                         contentDescription = transactionDetails.categoryName,
-                        tint = Color.Black,
+                        tint = Color.Black.copy(alpha = contentAlpha), // Apply alpha to icon
                         modifier = Modifier.size(22.dp)
                     )
                 }
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = transactionDetails.transaction.description, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    text = transactionDetails.transaction.description,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = LocalContentColor.current.copy(alpha = contentAlpha) // Apply alpha
+                )
                 if (!transactionDetails.transaction.notes.isNullOrBlank()) {
-                    Text(text = transactionDetails.transaction.notes!!, style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = transactionDetails.transaction.notes!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha) // Apply alpha
+                    )
                 }
-                Text(text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-                Text(text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = contentAlpha) // Apply alpha
+                )
+                Text(
+                    text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha) // Apply alpha
+                )
             }
 
             val isIncome = transactionDetails.transaction.transactionType == "income"
-            val amountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
+            val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
+            val amountColor = baseAmountColor.copy(alpha = contentAlpha) // Apply alpha
             val icon = if (isIncome) Icons.Default.SouthWest else Icons.Default.NorthEast
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "₹${"%.2f".format(transactionDetails.transaction.amount)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = amountColor)
+                Text(
+                    text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = amountColor
+                )
                 Spacer(modifier = Modifier.width(4.dp))
-                Icon(imageVector = icon, contentDescription = transactionDetails.transaction.transactionType, tint = amountColor, modifier = Modifier.size(20.dp))
+                Icon(
+                    imageVector = icon,
+                    contentDescription = transactionDetails.transaction.transactionType,
+                    tint = amountColor,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
@@ -86,6 +129,9 @@ fun TransactionItem(
 
 @Composable
 fun AccountTransactionItem(transactionDetails: TransactionDetails) {
+    // Determine the alpha based on the exclusion status for a dimmed effect
+    val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
+
     Row(
         modifier =
             Modifier
@@ -94,15 +140,20 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = transactionDetails.transaction.description, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = transactionDetails.transaction.description,
+                style = MaterialTheme.typography.bodyLarge,
+                color = LocalContentColor.current.copy(alpha = contentAlpha) // Apply alpha
+            )
             Text(
                 text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha) // Apply alpha
             )
         }
         val isIncome = transactionDetails.transaction.transactionType == "income"
-        val amountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
+        val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
+        val amountColor = baseAmountColor.copy(alpha = contentAlpha) // Apply alpha
 
         Text(
             text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
@@ -135,7 +186,6 @@ fun TransactionList(
                 TransactionItem(
                     transactionDetails = details,
                     onClick = {
-                        // --- FIX: Ensure navigation is to the detail screen ---
                         navController.navigate("transaction_detail/${details.transaction.id}")
                     }
                 )
