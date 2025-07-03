@@ -5,6 +5,9 @@
 // small icon is now the app's launcher icon for consistency, and the action
 // icon is now a standard system icon (`ic_menu_view`). This resolves the
 // "Unresolved reference" compiler errors.
+// BUG FIX - The `createEnhancedSummaryNotification` function now accepts a `deepLinkUri`
+// parameter, making it flexible. `showDailyReportNotification` now passes the correct
+// URI for the new daily report screen, fixing the navigation bug.
 // =================================================================================
 package io.pm.finlight
 
@@ -29,6 +32,8 @@ object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
     private const val DEEP_LINK_URI_REPORTS = "app://finlight.pm.io/reports"
+    // --- NEW: Add a deep link for the daily report screen ---
+    private const val DEEP_LINK_URI_DAILY_REPORT = "app://finlight.pm.io/daily_report"
 
 
     private fun createEnhancedSummaryNotification(
@@ -38,21 +43,24 @@ object NotificationHelper {
         periodText: String,
         totalExpenses: Double,
         percentageChange: Int?,
-        topCategories: List<CategorySpending>
+        topCategories: List<CategorySpending>,
+        // --- NEW: Accept the URI as a parameter ---
+        deepLinkUri: String
     ) {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return
         }
 
-        val reportsIntent = Intent(
+        val intent = Intent(
             Intent.ACTION_VIEW,
-            DEEP_LINK_URI_REPORTS.toUri(),
+            // --- FIX: Use the passed-in URI ---
+            deepLinkUri.toUri(),
             context,
             MainActivity::class.java
         )
 
         val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
-            addNextIntentWithParentStack(reportsIntent)
+            addNextIntentWithParentStack(intent)
             getPendingIntent(notificationId, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
@@ -108,7 +116,9 @@ object NotificationHelper {
             "Day",
             totalExpenses,
             percentageChange,
-            topCategories
+            topCategories,
+            // --- FIX: Pass the correct URI for the daily report ---
+            DEEP_LINK_URI_DAILY_REPORT
         )
     }
 
@@ -125,7 +135,9 @@ object NotificationHelper {
             "Week",
             totalExpenses,
             percentageChange,
-            topCategories
+            topCategories,
+            // Pass the general reports URI for weekly/monthly
+            DEEP_LINK_URI_REPORTS
         )
     }
 
@@ -144,7 +156,9 @@ object NotificationHelper {
             monthName,
             totalExpenses,
             percentageChange,
-            topCategories
+            topCategories,
+            // Pass the general reports URI for weekly/monthly
+            DEEP_LINK_URI_REPORTS
         )
     }
 

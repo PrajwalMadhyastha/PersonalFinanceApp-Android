@@ -4,6 +4,8 @@
 // function is essential for the redesigned summary notifications, allowing them
 // to fetch and display the top spending categories for any given period (daily,
 // weekly, or monthly).
+// FEATURE - Added `getTransactionsForDay` and `getDailySpendingForLastSevenDays`
+// to support the new Daily Report screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -362,4 +364,27 @@ interface TransactionDao {
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
 
+    // --- NEW: Query to get all transactions for a specific day ---
+    @Query("""
+        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
+        FROM transactions AS T
+        LEFT JOIN accounts AS A ON T.accountId = A.id
+        LEFT JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.date BETWEEN :startOfDay AND :endOfDay
+        ORDER BY T.date DESC
+    """)
+    fun getTransactionsForDay(startOfDay: Long, endOfDay: Long): Flow<List<TransactionDetails>>
+
+    // --- NEW: Query to get total spending for the last 7 days for the bar chart ---
+    @Query("""
+        SELECT
+            strftime('%Y-%m-%d', date / 1000, 'unixepoch') as date,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
+        FROM transactions
+        WHERE date >= (:endDate - 604800000) AND date <= :endDate AND isExcluded = 0
+        GROUP BY date
+        ORDER BY date ASC
+        LIMIT 7
+    """)
+    fun getDailySpendingForLastSevenDays(endDate: Long): Flow<List<DailyTotal>>
 }

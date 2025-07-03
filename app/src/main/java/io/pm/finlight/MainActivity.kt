@@ -4,6 +4,13 @@
 // `AddTransactionTopBar` when the current route is "add_transaction". This
 // replaces the old behavior of simply hiding the default TopAppBar and allows
 // for a screen-specific design as per the new UI requirements.
+// FEATURE - Added the route for the new `daily_report_screen`.
+// BUG FIX - Added a `deepLinks` parameter to the ReportsScreen composable in the
+// NavHost. This correctly maps the "app://finlight.pm.io/reports" URI to its
+// destination, resolving the IllegalArgumentException crash on startup when
+// handling a deep link from a notification.
+// BUG FIX - Added a `deepLinks` parameter to the `daily_report_screen` composable
+// to handle incoming notification intents correctly.
 // =================================================================================
 package io.pm.finlight
 
@@ -229,22 +236,19 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
-    // --- REFACTOR: Updated logic to conditionally show a custom top bar ---
     val showMainTopBar = baseCurrentRoute !in setOf(
         "transaction_detail",
         "transaction_list",
         "income_screen",
         "splash_screen",
-        "add_transaction" // Hide default bar for add_transaction
+        "add_transaction",
+        "daily_report_screen" // Hide default bar for daily report
     )
-    val showAddTransactionTopBar = baseCurrentRoute == "add_transaction"
-
 
     val activity = LocalContext.current as AppCompatActivity
 
     Scaffold(
         topBar = {
-            // --- REFACTOR: Conditionally display the correct TopAppBar ---
             if (showMainTopBar) {
                 TopAppBar(
                     title = { Text(currentTitle) },
@@ -278,7 +282,6 @@ fun MainAppScreen() {
                     }
                 )
             }
-            // The AddTransactionScreen will now provide its own TopAppBar via its own Scaffold
         },
         bottomBar = {
             if (showBottomBar) {
@@ -376,7 +379,11 @@ fun AppNavHost(
                 viewModel = transactionViewModel
             )
         }
-        composable(BottomNavItem.Reports.route) { ReportsScreen(navController, viewModel()) }
+        // BUG FIX: Added deep link to handle notification intents
+        composable(
+            route = BottomNavItem.Reports.route,
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/reports" })
+        ) { ReportsScreen(navController, viewModel()) }
         composable("profile") {
             ProfileScreen(
                 navController = navController,
@@ -494,6 +501,14 @@ fun AppNavHost(
                 navController = navController,
                 potentialTransactionJson = URLDecoder.decode(json, "UTF-8")
             )
+        }
+
+        // --- BUG FIX: Add deep link to handle notification intents ---
+        composable(
+            "daily_report_screen",
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/daily_report" })
+        ) {
+            DailyReportScreen(navController = navController)
         }
     }
 }
