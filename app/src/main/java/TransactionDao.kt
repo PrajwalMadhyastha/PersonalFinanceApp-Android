@@ -7,6 +7,8 @@
 // REFACTOR - Replaced specific queries like `getTransactionsForDay` with more
 // generic versions like `getTransactionsForDateRange` to support the new
 // reusable TimePeriodReportScreen.
+// FEATURE - Added `getWeeklySpendingForDateRange` and `getMonthlySpendingForDateRange`
+// to provide data for the context charts on the weekly and monthly report screens.
 // =================================================================================
 package io.pm.finlight
 
@@ -365,7 +367,6 @@ interface TransactionDao {
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
 
-    // --- REFACTOR: Replaced getTransactionsForDay with a more generic version ---
     @Query("""
         SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
         FROM transactions AS T
@@ -376,7 +377,6 @@ interface TransactionDao {
     """)
     fun getTransactionsForDateRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
 
-    // --- REFACTOR: Replaced getDailySpendingForLastSevenDays with a more generic version ---
     @Query("""
         SELECT
             strftime('%Y-%m-%d', date / 1000, 'unixepoch') as date,
@@ -387,4 +387,28 @@ interface TransactionDao {
         ORDER BY date ASC
     """)
     fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>>
+
+    // --- NEW: Query to get total spending grouped by week ---
+    @Query("""
+        SELECT
+            strftime('%Y-%W', date / 1000, 'unixepoch') as period,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
+        FROM transactions
+        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getWeeklySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
+
+    // --- NEW: Query to get total spending grouped by month ---
+    @Query("""
+        SELECT
+            strftime('%Y-%m', date / 1000, 'unixepoch') as period,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
+        FROM transactions
+        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getMonthlySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
 }

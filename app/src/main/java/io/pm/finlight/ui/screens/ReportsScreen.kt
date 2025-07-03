@@ -1,19 +1,24 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
+// REASON: FEATURE - Added new cards for navigating to the generic
+// TimePeriodReportScreen with the appropriate TimePeriod enum (DAILY, WEEKLY,
+// MONTHLY), enabling the new reporting features.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.graphics.Color
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarViewDay
+import androidx.compose.material.icons.filled.CalendarViewMonth
+import androidx.compose.material.icons.filled.CalendarViewWeek
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -23,11 +28,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.ReportsViewModel
+import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GroupedBarChart
 import com.github.mikephil.charting.charts.PieChart
@@ -46,6 +53,39 @@ fun ReportsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item {
+            Text("Spending Reports", style = MaterialTheme.typography.headlineSmall)
+        }
+        item {
+            ReportNavigationCard(
+                title = "Daily Report",
+                subtitle = "View a breakdown of any day's spending.",
+                icon = Icons.Default.CalendarViewDay,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.DAILY}") }
+            )
+        }
+        item {
+            ReportNavigationCard(
+                title = "Weekly Report",
+                subtitle = "Analyze your spending week by week.",
+                icon = Icons.Default.CalendarViewWeek,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.WEEKLY}") }
+            )
+        }
+        item {
+            ReportNavigationCard(
+                title = "Monthly Report",
+                subtitle = "Get a high-level overview of your monthly habits.",
+                icon = Icons.Default.CalendarViewMonth,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.MONTHLY}") }
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(16.dp))
+            Text("Analysis", style = MaterialTheme.typography.headlineSmall)
+        }
+
         // --- Pie Chart Card ---
         item {
             Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
@@ -72,9 +112,6 @@ fun ReportsScreen(
                             },
                             update = { chart ->
                                 chart.data = pieData
-                                // --- BUG FIX: Explicitly notify the chart that the data has changed ---
-                                // This forces a full redraw, ensuring that all properties of the
-                                // new dataset, including the custom colors, are applied correctly.
                                 chart.notifyDataSetChanged()
                                 chart.invalidate()
                             },
@@ -101,6 +138,33 @@ fun ReportsScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun ReportNavigationCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(imageVector = icon, contentDescription = title, modifier = Modifier.size(32.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = title, style = MaterialTheme.typography.titleMedium)
+                Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
