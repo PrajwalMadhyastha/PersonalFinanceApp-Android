@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 17. A new
-// migration, MIGRATION_16_17, has been added to alter the `transactions` table,
-// adding the new `isExcluded` column with a default value of 0 (false).
+// REASON: FEATURE - The database version has been incremented to 18. A new
+// entity, `MerchantCategoryMapping`, has been added, along with its corresponding
+// DAO and a migration (MIGRATION_17_18) to create the new table. This table
+// is the foundation for the new "Category Learning" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -30,9 +31,10 @@ import java.util.Calendar
         TransactionTagCrossRef::class,
         TransactionImage::class,
         CustomSmsRule::class,
-        MerchantRenameRule::class
+        MerchantRenameRule::class,
+        MerchantCategoryMapping::class // --- NEW: Add new entity ---
     ],
-    version = 17,
+    version = 18, // --- UPDATED: Database version incremented ---
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -45,6 +47,7 @@ abstract open class AppDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun customSmsRuleDao(): CustomSmsRuleDao
     abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
+    abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao // --- NEW: Add new DAO ---
 
     companion object {
         @Volatile
@@ -173,12 +176,19 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to add the merchant_category_mapping table ---
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_category_mapping` (`parsedName` TEXT NOT NULL, `categoryId` INTEGER NOT NULL, PRIMARY KEY(`parsedName`))")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18) // Add new migration
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance

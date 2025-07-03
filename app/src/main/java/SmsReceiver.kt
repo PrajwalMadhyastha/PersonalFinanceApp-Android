@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: REFACTOR - The call to `SmsParser.parse` has been updated to pass the
-// individual DAOs (`customSmsRuleDao`, `merchantRenameRuleDao`) instead of the
-// entire database instance, aligning with the parser's new, decoupled signature.
+// REASON: FEATURE - The receiver now queries the new `merchant_category_mapping`
+// table after a transaction is parsed. If a category has been previously
+// associated with the parsed merchant name, that category ID is automatically
+// assigned to the new transaction, fulfilling the "Category Learning" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -44,6 +45,7 @@ class SmsReceiver : BroadcastReceiver() {
                         val transactionDao = db.transactionDao()
                         val accountDao = db.accountDao()
                         val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
+                        val merchantCategoryMappingDao = db.merchantCategoryMappingDao() // --- NEW ---
 
                         val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
@@ -53,6 +55,15 @@ class SmsReceiver : BroadcastReceiver() {
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
+
+                            // --- NEW: Apply learned category ---
+                            var mappedCategoryId: Int? = null
+                            potentialTxn.merchantName?.let { merchantName ->
+                                mappedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
+                                if (mappedCategoryId != null) {
+                                    Log.d(TAG, "Found learned category ID $mappedCategoryId for merchant '$merchantName'")
+                                }
+                            }
 
                             val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                             val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
@@ -71,7 +82,7 @@ class SmsReceiver : BroadcastReceiver() {
                                     amount = potentialTxn.amount,
                                     date = System.currentTimeMillis(),
                                     accountId = account.id,
-                                    categoryId = null,
+                                    categoryId = mappedCategoryId, // --- UPDATED: Use the learned category ID
                                     notes = "", // Keep notes empty for user
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,

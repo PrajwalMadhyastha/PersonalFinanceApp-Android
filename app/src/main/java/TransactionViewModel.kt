@@ -1,14 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - The ViewModel now correctly handles merchant aliases for all
-// transaction types.
-// 1. In `addTransaction`, `originalDescription` is now set to the initial
-//    description for manually created transactions.
-// 2. The data flows (`transactionsForSelectedMonth`, `allTransactions`,
-//    `findTransactionDetailsById`) now use a more robust mapping logic. They
-//    prioritize `originalDescription` as the key for the alias map, falling
-//    back to `description` only if necessary. This ensures aliases are applied
-//    consistently everywhere.
+// REASON: FEATURE - Implemented the "Category Learning" logic.
+// 1. A new `MerchantCategoryMappingRepository` is injected to handle the new mapping data.
+// 2. The `updateTransactionCategory` function now saves the user's choice, linking
+//    the merchant's original name to the selected category ID.
+// 3. The `approveSmsTransaction` function also saves this mapping, ensuring that
+//    categories assigned during the review flow are also learned.
 // =================================================================================
 package io.pm.finlight
 
@@ -46,6 +43,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val settingsRepository: SettingsRepository
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
+    private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository // --- NEW ---
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
@@ -99,6 +97,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         settingsRepository = SettingsRepository(application)
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
+        merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao()) // --- NEW ---
 
         merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -462,8 +461,21 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.updateNotes(id, notes.takeIf { it.isNotBlank() })
     }
 
+    // --- UPDATED: Add category learning logic ---
     fun updateTransactionCategory(id: Int, categoryId: Int?) = viewModelScope.launch {
         transactionRepository.updateCategoryId(id, categoryId)
+
+        // Category Learning Logic: If a category is set for an imported transaction, save the mapping.
+        if (categoryId != null) {
+            val transaction = transactionRepository.getTransactionById(id).first()
+            transaction?.originalDescription?.let { originalName ->
+                if (originalName.isNotBlank()) {
+                    val mapping = MerchantCategoryMapping(parsedName = originalName, categoryId = categoryId)
+                    merchantCategoryMappingRepository.insert(mapping)
+                    Log.d("CategoryLearning", "Saved mapping: '$originalName' -> Category ID $categoryId")
+                }
+            }
+        }
     }
 
     fun updateTransactionAccount(id: Int, accountId: Int) = viewModelScope.launch {
@@ -522,6 +534,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         return transactionRepository.getTransactionById(id)
     }
 
+    // --- UPDATED: Add category learning logic on approval ---
     suspend fun approveSmsTransaction(
         potentialTxn: PotentialTransaction,
         description: String,
@@ -545,8 +558,20 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     return@withContext false
                 }
 
+                // Category Learning Logic: Save the user's choice on approval.
+                if (categoryId != null) {
+                    potentialTxn.merchantName?.let { originalName ->
+                        if (originalName.isNotBlank()) {
+                            val mapping = MerchantCategoryMapping(parsedName = originalName, categoryId = categoryId)
+                            merchantCategoryMappingRepository.insert(mapping)
+                            Log.d(TAG, "Learned category for '$originalName' -> $categoryId during approval")
+                        }
+                    }
+                }
+
                 val newTransaction = Transaction(
                     description = description,
+                    originalDescription = potentialTxn.merchantName, // Set original description
                     categoryId = categoryId,
                     amount = potentialTxn.amount,
                     date = System.currentTimeMillis(),
