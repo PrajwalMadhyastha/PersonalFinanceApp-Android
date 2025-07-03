@@ -1,9 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: UX REFINEMENT - The "Expense"/"Income" switch has been moved from the
-// main header card into the "Account" info card. This groups the account information
-// and its inclusion status together for better contextual clarity. The Edit icon
-// was also moved next to the account name to make space for the switch.
+// REASON: FIX - The logic for creating a rename rule has been made more robust.
+// 1. The "Always rename" checkbox is now always visible when editing a description.
+// 2. The `originalNameForRule` is now correctly determined by using the
+//    `originalDescription` if it exists, otherwise falling back to the current
+//    `description` (the value before the edit). This ensures that rules can be
+//    created for any transaction, not just imported ones.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -551,30 +553,28 @@ private fun TransactionEditSheetContent(
                 initialValue = details.transaction.description,
                 onConfirm = { newDescription ->
                     scope.launch {
+                        val originalNameForRule = details.transaction.originalDescription ?: details.transaction.description
                         viewModel.updateTransactionDescription(transactionId, newDescription)
                         if (saveForFuture) {
-                            details.transaction.originalDescription?.let { originalName ->
-                                if (originalName.isNotBlank() && newDescription.isNotBlank()) {
-                                    onSaveRenameRule(originalName, newDescription)
-                                }
+                            if (originalNameForRule.isNotBlank() && newDescription.isNotBlank()) {
+                                onSaveRenameRule(originalNameForRule, newDescription)
                             }
                         }
                     }
                 },
                 onDismiss = onDismiss
             ) {
-                if (details.transaction.originalDescription != null) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { saveForFuture = !saveForFuture }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(checked = saveForFuture, onCheckedChange = { saveForFuture = it })
-                        Spacer(Modifier.width(8.dp))
-                        Text("Always rename '${details.transaction.originalDescription}' to this")
-                    }
+                val originalNameForRule = details.transaction.originalDescription ?: details.transaction.description
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { saveForFuture = !saveForFuture }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = saveForFuture, onCheckedChange = { saveForFuture = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("Always rename '$originalNameForRule' to this")
                 }
             }
         }

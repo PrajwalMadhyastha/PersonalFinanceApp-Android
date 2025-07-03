@@ -1,9 +1,14 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE - The `addTransaction` function has been updated to accept a
-// new `isIncluded` parameter. This allows the `AddTransactionScreen` to pass the
-// state of its new switch, ensuring that the `isExcluded` property on the
-// `Transaction` object is set correctly upon creation.
+// REASON: FIX - The ViewModel now correctly handles merchant aliases for all
+// transaction types.
+// 1. In `addTransaction`, `originalDescription` is now set to the initial
+//    description for manually created transactions.
+// 2. The data flows (`transactionsForSelectedMonth`, `allTransactions`,
+//    `findTransactionDetailsById`) now use a more robust mapping logic. They
+//    prioritize `originalDescription` as the key for the alias map, falling
+//    back to `description` only if necessary. This ensures aliases are applied
+//    consistently everywhere.
 // =================================================================================
 package io.pm.finlight
 
@@ -40,6 +45,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val tagRepository: TagRepository
     private val settingsRepository: SettingsRepository
     private val smsRepository: SmsRepository
+    private val merchantRenameRuleRepository: MerchantRenameRuleRepository
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
@@ -57,32 +63,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             Pair(month, filters)
         }
 
-    val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>> = combinedState.flatMapLatest { (calendar, filters) ->
-        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
-        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
-        transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val merchantAliases: StateFlow<Map<String, String>>
 
-    val monthlyIncome: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
-        txns.filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
-
-    val monthlyExpenses: StateFlow<Double> = transactionsForSelectedMonth.map { txns ->
-        txns.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
-
-    val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>> = combinedState.flatMapLatest { (calendar, filters) ->
-        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
-        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
-        transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>> = combinedState.flatMapLatest { (calendar, filters) ->
-        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
-        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
-        transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
+    val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>>
+    val monthlyIncome: StateFlow<Double>
+    val monthlyExpenses: StateFlow<Double>
+    val categorySpendingForSelectedMonth: StateFlow<List<CategorySpending>>
+    val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>>
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
     val safeToSpendPerDay: StateFlow<Float>
@@ -111,11 +98,48 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         tagRepository = TagRepository(db.tagDao(), db.transactionDao())
         settingsRepository = SettingsRepository(application)
         smsRepository = SmsRepository(application)
-        allTransactions = transactionRepository.allTransactions.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+        merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
+
+        merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+        transactionsForSelectedMonth = combinedState.flatMapLatest { (calendar, filters) ->
+            val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+            val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+            transactionRepository.getTransactionDetailsForRange(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+        }.combine(merchantAliases) { transactions, aliases ->
+            applyAliases(transactions, aliases)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        monthlyIncome = transactionsForSelectedMonth.map { txns ->
+            txns.filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+        monthlyExpenses = transactionsForSelectedMonth.map { txns ->
+            txns.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+        categorySpendingForSelectedMonth = combinedState.flatMapLatest { (calendar, filters) ->
+            val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+            val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+            transactionRepository.getSpendingByCategoryForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        merchantSpendingForSelectedMonth = combinedState.flatMapLatest { (calendar, filters) ->
+            val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+            val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+            transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        allTransactions = transactionRepository.allTransactions
+            .combine(merchantAliases) { transactions, aliases ->
+                applyAliases(transactions, aliases)
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
         allAccounts = accountRepository.allAccounts.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -161,6 +185,78 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _defaultAccount.value = db.accountDao().findByName("Cash Spends")
         }
+    }
+
+    private fun applyAliases(transactions: List<TransactionDetails>, aliases: Map<String, String>): List<TransactionDetails> {
+        return transactions.map { details ->
+            val key = details.transaction.originalDescription ?: details.transaction.description
+            val newDescription = aliases[key] ?: details.transaction.description
+            details.copy(transaction = details.transaction.copy(description = newDescription))
+        }
+    }
+
+    fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+        return transactionRepository.getTransactionDetailsById(id)
+            .combine(merchantAliases) { details, aliases ->
+                details?.let {
+                    val key = it.transaction.originalDescription ?: it.transaction.description
+                    val newDescription = aliases[key] ?: it.transaction.description
+                    it.copy(transaction = it.transaction.copy(description = newDescription))
+                }
+            }
+    }
+
+    fun addTransaction(
+        description: String,
+        categoryId: Int?,
+        amountStr: String,
+        accountId: Int,
+        notes: String?,
+        date: Long,
+        transactionType: String,
+        isIncluded: Boolean,
+        sourceSmsId: Long?,
+        sourceSmsHash: String?,
+        imageUris: List<Uri>
+    ): Boolean {
+        _validationError.value = null
+
+        if (description.isBlank()) {
+            _validationError.value = "Description cannot be empty."
+            return false
+        }
+        val amount = amountStr.toDoubleOrNull()
+        if (amount == null || amount <= 0.0) {
+            _validationError.value = "Please enter a valid, positive amount."
+            return false
+        }
+
+        val newTransaction =
+            Transaction(
+                description = description,
+                originalDescription = description, // Set original description for manual entries
+                categoryId = categoryId,
+                amount = amount,
+                date = date,
+                accountId = accountId,
+                notes = notes,
+                transactionType = transactionType,
+                isExcluded = !isIncluded,
+                sourceSmsId = sourceSmsId,
+                sourceSmsHash = sourceSmsHash,
+                source = "Manual Entry"
+            )
+        viewModelScope.launch {
+            val savedImagePaths = imageUris.mapNotNull { uri ->
+                saveImageToInternalStorage(uri)
+            }
+            transactionRepository.insertTransactionWithTagsAndImages(
+                newTransaction,
+                _selectedTags.value,
+                savedImagePaths
+            )
+        }
+        return true
     }
 
     fun loadOriginalSms(sourceSmsId: Long?) {
@@ -422,10 +518,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         currentTxnIdForTags = null
     }
 
-    fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
-        return transactionRepository.getTransactionDetailsById(id)
-    }
-
     fun getTransactionById(id: Int): Flow<Transaction?> {
         return transactionRepository.getTransactionById(id)
     }
@@ -471,58 +563,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 false
             }
         }
-    }
-
-    fun addTransaction(
-        description: String,
-        categoryId: Int?,
-        amountStr: String,
-        accountId: Int,
-        notes: String?,
-        date: Long,
-        transactionType: String,
-        isIncluded: Boolean, // New parameter
-        sourceSmsId: Long?,
-        sourceSmsHash: String?,
-        imageUris: List<Uri>
-    ): Boolean {
-        _validationError.value = null
-
-        if (description.isBlank()) {
-            _validationError.value = "Description cannot be empty."
-            return false
-        }
-        val amount = amountStr.toDoubleOrNull()
-        if (amount == null || amount <= 0.0) {
-            _validationError.value = "Please enter a valid, positive amount."
-            return false
-        }
-
-        val newTransaction =
-            Transaction(
-                description = description,
-                categoryId = categoryId,
-                amount = amount,
-                date = date,
-                accountId = accountId,
-                notes = notes,
-                transactionType = transactionType,
-                isExcluded = !isIncluded, // Set the exclusion flag based on the switch state
-                sourceSmsId = sourceSmsId,
-                sourceSmsHash = sourceSmsHash,
-                source = "Manual Entry"
-            )
-        viewModelScope.launch {
-            val savedImagePaths = imageUris.mapNotNull { uri ->
-                saveImageToInternalStorage(uri)
-            }
-            transactionRepository.insertTransactionWithTagsAndImages(
-                newTransaction,
-                _selectedTags.value,
-                savedImagePaths
-            )
-        }
-        return true
     }
 
     fun updateTransaction(transaction: Transaction): Boolean {
