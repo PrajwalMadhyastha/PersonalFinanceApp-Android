@@ -14,6 +14,8 @@
 // REFACTOR - Replaced the specific `daily_report_screen` route with a generic
 // `time_period_report_screen/{timePeriod}` route to support the new reusable
 // reporting architecture.
+// FEATURE - Added the new "manage_ignore_rules" route to the NavHost to make
+// the new screen accessible within the app's navigation graph.
 // =================================================================================
 package io.pm.finlight
 
@@ -370,6 +372,10 @@ fun AppNavHost(
         composable("manage_parse_rules") {
             ManageParseRulesScreen()
         }
+        // --- NEW: Route for the ignore rules screen ---
+        composable("manage_ignore_rules") {
+            ManageIgnoreRulesScreen()
+        }
 
         composable(BottomNavItem.Dashboard.route) {
             DashboardScreen(navController, dashboardViewModel, budgetViewModel)
@@ -505,7 +511,6 @@ fun AppNavHost(
             )
         }
 
-        // --- REFACTOR: Replaced daily_report_screen with a generic route ---
         composable(
             "time_period_report_screen/{timePeriod}",
             arguments = listOf(navArgument("timePeriod") {

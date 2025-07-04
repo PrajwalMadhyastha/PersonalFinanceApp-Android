@@ -3,6 +3,8 @@
 // REASON: BUG FIX - Added an explicit import for `io.pm.finlight.R`. This
 // resolves the "Unresolved reference: drawable" compilation error by ensuring
 // the compiler can correctly locate the app's generated resource IDs.
+// FEATURE - Added a new `SettingsActionItem` to navigate to the new
+// "Manage Parser Ignore List" screen, making the feature accessible to users.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -387,6 +389,15 @@ fun ProfileScreen(
                 subtitle = "View or delete your custom SMS parsing rules.",
                 icon = Icons.Default.Rule,
                 onClick = { navController.navigate("manage_parse_rules") },
+            )
+        }
+        // --- NEW: Navigation item for the ignore list screen ---
+        item {
+            SettingsActionItem(
+                text = "Manage Parser Ignore List",
+                subtitle = "Add or remove phrases to ignore during SMS parsing.",
+                icon = Icons.Default.Block,
+                onClick = { navController.navigate("manage_ignore_rules") },
             )
         }
         item {

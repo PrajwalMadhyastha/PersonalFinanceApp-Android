@@ -1,3 +1,9 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
+// REASON: FEATURE - Added a title for the new "manage_ignore_rules" route to
+// ensure the TopAppBar displays the correct title when the user navigates to
+// the new screen.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.compose.material.icons.Icons
@@ -37,7 +43,8 @@ val screenTitles = mapOf(
     "tag_management" to "Manage Tags",
     "edit_profile" to "Edit Profile",
     "income_screen" to "Income",
-    // --- UPDATED: Route no longer needs smsSender ---
     "rule_creation_screen/{potentialTransactionJson}" to "Create Parsing Rule",
-    "manage_parse_rules" to "Manage Parsing Rules"
+    "manage_parse_rules" to "Manage Parsing Rules",
+    // --- NEW: Title for the ignore rules screen ---
+    "manage_ignore_rules" to "Manage Ignore List"
 )
