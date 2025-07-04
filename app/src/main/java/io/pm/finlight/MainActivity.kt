@@ -16,6 +16,8 @@
 // reporting architecture.
 // FEATURE - Added the new "manage_ignore_rules" route to the NavHost to make
 // the new screen accessible within the app's navigation graph.
+// FEATURE - Added the new "link_transaction_screen" route to the NavHost to
+// enable the transaction linking UI.
 // =================================================================================
 package io.pm.finlight
 
@@ -247,7 +249,7 @@ fun MainAppScreen() {
         "income_screen",
         "splash_screen",
         "add_transaction",
-        "time_period_report_screen" // Hide default bar for the generic report screen
+        "time_period_report_screen"
     )
 
     val activity = LocalContext.current as AppCompatActivity
@@ -372,7 +374,6 @@ fun AppNavHost(
         composable("manage_parse_rules") {
             ManageParseRulesScreen()
         }
-        // --- NEW: Route for the ignore rules screen ---
         composable("manage_ignore_rules") {
             ManageIgnoreRulesScreen()
         }
@@ -508,6 +509,20 @@ fun AppNavHost(
             RuleCreationScreen(
                 navController = navController,
                 potentialTransactionJson = URLDecoder.decode(json, "UTF-8")
+            )
+        }
+
+        // --- NEW: Route for the linking screen ---
+        composable(
+            "link_transaction_screen/{potentialTransactionJson}",
+            arguments = listOf(
+                navArgument("potentialTransactionJson") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
+            LinkTransactionScreen(
+                navController = navController,
+                potentialTransactionJson = json
             )
         }
 

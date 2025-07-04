@@ -4,6 +4,10 @@
 // obsolete `saveMerchantMapping` to the new `saveMerchantRenameRule`. This
 // aligns the approval screen with the new intelligent renaming feature, passing
 // the originally parsed name and the user's final description to create a rule.
+// FEATURE - A new "Link to Existing" button has been added to the
+// `PotentialTransactionItem`. This button navigates to the new
+// `link_transaction_screen`, passing the details of the parsed SMS to find
+// potential matches.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -106,6 +110,11 @@ fun ReviewSmsScreen(
                         val json = Gson().toJson(transaction)
                         val encodedJson = URLEncoder.encode(json, "UTF-8")
                         navController.navigate("rule_creation_screen/$encodedJson")
+                    },
+                    onLink = { transaction ->
+                        val json = Gson().toJson(transaction)
+                        val encodedJson = URLEncoder.encode(json, "UTF-8")
+                        navController.navigate("link_transaction_screen/$encodedJson")
                     }
                 )
             }
@@ -118,7 +127,8 @@ fun PotentialTransactionItem(
     transaction: PotentialTransaction,
     onDismiss: (PotentialTransaction) -> Unit,
     onApprove: (PotentialTransaction) -> Unit,
-    onCreateRule: (PotentialTransaction) -> Unit
+    onCreateRule: (PotentialTransaction) -> Unit,
+    onLink: (PotentialTransaction) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -161,8 +171,8 @@ fun PotentialTransactionItem(
             )
             Spacer(Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { onCreateRule(transaction) }) {
-                    Text("Create Rule")
+                TextButton(onClick = { onLink(transaction) }) {
+                    Text("Link to Existing")
                 }
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = { onDismiss(transaction) }) { Text("Dismiss") }
@@ -305,7 +315,6 @@ fun ApproveTransactionScreen(
                                 )
                                 if (success) {
                                     settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
-                                    // --- FIX: Call the correct function with the correct parameters ---
                                     potentialTxn.merchantName?.let { originalName ->
                                         settingsViewModel.saveMerchantRenameRule(originalName, description)
                                     }

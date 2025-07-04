@@ -3,6 +3,7 @@
 // REASON: FEATURE - Added a title for the new "manage_ignore_rules" route to
 // ensure the TopAppBar displays the correct title when the user navigates to
 // the new screen.
+// FEATURE - Added a title for the new "link_transaction_screen" route.
 // =================================================================================
 package io.pm.finlight
 
@@ -45,6 +46,7 @@ val screenTitles = mapOf(
     "income_screen" to "Income",
     "rule_creation_screen/{potentialTransactionJson}" to "Create Parsing Rule",
     "manage_parse_rules" to "Manage Parsing Rules",
-    // --- NEW: Title for the ignore rules screen ---
-    "manage_ignore_rules" to "Manage Ignore List"
+    "manage_ignore_rules" to "Manage Ignore List",
+    // --- NEW: Title for the linking screen ---
+    "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction"
 )
