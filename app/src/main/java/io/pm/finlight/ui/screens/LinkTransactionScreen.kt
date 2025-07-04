@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkTransactionScreen.kt
-// REASON: NEW FILE - This screen provides the user interface for linking a
-// parsed SMS to an existing manually-entered transaction. It displays the
-// details of the SMS and a list of potential matching transactions that the
-// user can select from.
+// REASON: FEATURE - The screen now includes an AlertDialog to confirm the user's
+// choice before linking. The onClick handler has been updated to show this
+// dialog. Upon confirmation, it calls the ViewModel to perform the link, passes
+// a signal back to the previous screen to remove the item from the review list,
+// and then navigates away, completing the feature's workflow.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12,10 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -28,7 +26,6 @@ import io.pm.finlight.LinkTransactionViewModel
 import io.pm.finlight.LinkTransactionViewModelFactory
 import io.pm.finlight.PotentialTransaction
 import io.pm.finlight.Transaction
-import io.pm.finlight.ui.components.TransactionItem
 import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.*
@@ -47,6 +44,8 @@ fun LinkTransactionScreen(
     val viewModel: LinkTransactionViewModel = viewModel(factory = factory)
 
     val candidates by viewModel.linkableTransactions.collectAsState()
+    var showConfirmationDialog by remember { mutableStateOf(false) }
+    var transactionToLink by remember { mutableStateOf<Transaction?>(null) }
 
     Column(
         modifier = Modifier
@@ -68,15 +67,40 @@ fun LinkTransactionScreen(
                     LinkCandidateItem(
                         transaction = transaction,
                         onClick = {
-                            viewModel.linkTransaction(transaction.id) {
-                                // Pop back to the screen before the review screen
-                                navController.popBackStack("review_sms_screen", inclusive = true)
-                            }
+                            transactionToLink = transaction
+                            showConfirmationDialog = true
                         }
                     )
                 }
             }
         }
+    }
+
+    if (showConfirmationDialog && transactionToLink != null) {
+        AlertDialog(
+            onDismissRequest = { showConfirmationDialog = false },
+            title = { Text("Confirm Link") },
+            text = { Text("Link this SMS to the transaction for '${transactionToLink!!.description}'?") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.linkTransaction(transactionToLink!!.id) {
+                        // Pass the ID of the linked SMS back to the review screen
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set("linked_sms_id", potentialTxn.sourceSmsId)
+                        navController.popBackStack()
+                    }
+                    showConfirmationDialog = false
+                }) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmationDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

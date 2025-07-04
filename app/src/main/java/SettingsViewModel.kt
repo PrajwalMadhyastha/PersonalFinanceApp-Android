@@ -3,6 +3,9 @@
 // REASON: FEATURE - The `rescanSmsForReview` function now passes the `ignoreRuleDao`
 // to the SmsParser. This ensures that manual SMS scans from the settings screen
 // will also respect the user's defined list of ignore phrases.
+// FEATURE - Added the `onTransactionLinked` function to remove a potential
+// transaction from the review list after it has been successfully linked to an
+// existing manual entry, completing the feature's cleanup workflow.
 // =================================================================================
 package io.pm.finlight
 
@@ -165,7 +168,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { sms ->
-                        // --- UPDATED: Pass the ignoreRuleDao to the parser ---
                         SmsParser.parse(sms, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
                     }
                 }
@@ -190,6 +192,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun onTransactionApproved(smsId: Long) {
+        _potentialTransactions.update { currentList ->
+            currentList.filterNot { it.sourceSmsId == smsId }
+        }
+    }
+
+    // --- NEW: Function to remove a linked transaction from the review list ---
+    fun onTransactionLinked(smsId: Long) {
         _potentialTransactions.update { currentList ->
             currentList.filterNot { it.sourceSmsId == smsId }
         }

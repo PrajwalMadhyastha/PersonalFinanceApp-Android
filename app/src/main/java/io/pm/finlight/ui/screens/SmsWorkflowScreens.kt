@@ -8,6 +8,11 @@
 // `PotentialTransactionItem`. This button navigates to the new
 // `link_transaction_screen`, passing the details of the parsed SMS to find
 // potential matches.
+// FEATURE - The `ReviewSmsScreen` now observes the navigation back stack for a
+// "linked_sms_id" signal. When received, it calls the ViewModel to remove the
+// corresponding item from the list, completing the cleanup process.
+// BUG FIX - Corrected the way `linkedSmsId` is observed from navigation state
+// to resolve a property delegate compilation error on a nullable type.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -30,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +71,21 @@ fun ReviewSmsScreen(
     val isScanning by viewModel.isScanning.collectAsState()
 
     var hasLoadedOnce by remember { mutableStateOf(false) }
+
+    // --- FIX: Correctly observe the nullable state from the SavedStateHandle ---
+    val linkedSmsIdState = navController.currentBackStackEntry
+        ?.savedStateHandle
+        ?.getLiveData<Long>("linked_sms_id")
+        ?.observeAsState()
+    val linkedSmsId = linkedSmsIdState?.value
+
+    LaunchedEffect(linkedSmsId) {
+        linkedSmsId?.let {
+            viewModel.onTransactionLinked(it)
+            // Clear the value from the state handle so it's not processed again
+            navController.currentBackStackEntry?.savedStateHandle?.set("linked_sms_id", null)
+        }
+    }
 
     LaunchedEffect(isScanning, potentialTransactions) {
         if (!isScanning) {
