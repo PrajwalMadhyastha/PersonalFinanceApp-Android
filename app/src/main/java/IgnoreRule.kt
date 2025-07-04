@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/IgnoreRule.kt
-// REASON: NEW FILE - This entity class defines the schema for the new
-// `ignore_rules` table, which will store user-defined phrases to prevent
-// non-transactional SMS messages from being parsed.
+// REASON: FEATURE - The entity has been updated with `isEnabled` and `isDefault`
+// fields. This allows the app to distinguish between pre-populated default
+// rules and user-added rules, and gives users the ability to toggle the
+// default rules on or off without deleting them.
 // =================================================================================
 package io.pm.finlight
 
@@ -16,6 +17,8 @@ import androidx.room.PrimaryKey
  *
  * @param id The unique identifier for the rule.
  * @param phrase The text that, if found, will cause the SMS to be ignored (e.g., "invoice of").
+ * @param isEnabled Whether this rule is currently active.
+ * @param isDefault True if this is a pre-populated rule, false if user-added.
  */
 @Entity(
     tableName = "ignore_rules",
@@ -24,5 +27,7 @@ import androidx.room.PrimaryKey
 data class IgnoreRule(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val phrase: String
+    val phrase: String,
+    var isEnabled: Boolean = true,
+    val isDefault: Boolean = false
 )

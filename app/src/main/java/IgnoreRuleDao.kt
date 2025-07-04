@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/IgnoreRuleDao.kt
-// REASON: NEW FILE - This DAO provides the necessary methods for the application
-// to interact with the new `ignore_rules` table, including fetching all rules,
-// inserting a new one, and deleting an existing one.
+// REASON: FEATURE - The DAO has been updated with new methods to support the
+// enhanced ignore rule management. It can now insert a list of default rules,
+// update the enabled status of a rule, and fetch only the active phrases for
+// the parser to use.
 // =================================================================================
 package io.pm.finlight
 
@@ -11,6 +12,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -27,12 +29,33 @@ interface IgnoreRuleDao {
     fun getAll(): Flow<List<IgnoreRule>>
 
     /**
+     * Retrieves all enabled ignore phrases.
+     * @return A list of strings containing the active ignore phrases.
+     */
+    @Query("SELECT phrase FROM ignore_rules WHERE isEnabled = 1")
+    suspend fun getEnabledPhrases(): List<String>
+
+    /**
      * Inserts a new ignore rule. If a rule with the same phrase already exists,
      * it will be ignored.
      * @param rule The IgnoreRule object to insert.
      */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(rule: IgnoreRule)
+
+    /**
+     * Inserts a list of ignore rules. Used for seeding the database.
+     * @param rules The list of IgnoreRule objects to insert.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(rules: List<IgnoreRule>)
+
+    /**
+     * Updates an existing ignore rule.
+     * @param rule The IgnoreRule object to update.
+     */
+    @Update
+    suspend fun update(rule: IgnoreRule)
 
     /**
      * Deletes a specific ignore rule from the database.

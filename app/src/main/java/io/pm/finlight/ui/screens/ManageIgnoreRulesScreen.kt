@@ -1,8 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt
-// REASON: NEW FILE - This screen provides the user interface for managing the
-// SMS parser's ignore list. It allows users to view all existing ignore phrases,
-// add new ones via a text field, and delete unwanted phrases from the list.
+// REASON: FEATURE - The UI has been enhanced to differentiate between default
+// and user-added ignore rules. Default rules are now displayed with a toggle
+// Switch to enable/disable them, while user-added rules have a delete button,
+// providing a more intuitive and powerful management interface.
+// BUG FIX - Corrected the function call to `updateIgnoreRule` to match the
+// function name in the ViewModel, resolving the persistent compilation error.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -30,6 +33,8 @@ fun ManageIgnoreRulesScreen(
     var newPhrase by remember { mutableStateOf("") }
     var ruleToDelete by remember { mutableStateOf<IgnoreRule?>(null) }
 
+    val (defaultRules, customRules) = rules.partition { it.isDefault }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -41,7 +46,7 @@ fun ManageIgnoreRulesScreen(
             modifier = Modifier.padding(bottom = 8.dp)
         )
         Text(
-            "Add phrases that, if found in an SMS, will cause the message to be ignored by the parser. This is useful for filtering out non-transactional messages like OTPs or ads.",
+            "Add phrases that, if found in an SMS, will cause the message to be ignored by the parser. You can also toggle the app's default ignore rules.",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
@@ -54,7 +59,7 @@ fun ManageIgnoreRulesScreen(
             OutlinedTextField(
                 value = newPhrase,
                 onValueChange = { newPhrase = it },
-                label = { Text("Phrase to ignore") },
+                label = { Text("Add custom phrase to ignore") },
                 modifier = Modifier.weight(1f)
             )
             Button(
@@ -69,18 +74,13 @@ fun ManageIgnoreRulesScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider()
 
-        if (rules.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No ignore rules defined yet.")
-            }
-        } else {
-            LazyColumn {
-                items(rules, key = { it.id }) { rule ->
+        LazyColumn {
+            if (customRules.isNotEmpty()) {
+                item {
+                    Text("Your Custom Rules", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp))
+                }
+                items(customRules, key = { "custom-${it.id}" }) { rule ->
                     ListItem(
                         headlineContent = { Text(rule.phrase) },
                         trailingContent = {
@@ -91,6 +91,26 @@ fun ManageIgnoreRulesScreen(
                                     tint = MaterialTheme.colorScheme.error
                                 )
                             }
+                        }
+                    )
+                    HorizontalDivider()
+                }
+            }
+
+            if (defaultRules.isNotEmpty()) {
+                item {
+                    Text("Default App Rules", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+                }
+                items(defaultRules, key = { "default-${it.id}" }) { rule ->
+                    ListItem(
+                        headlineContent = { Text(rule.phrase) },
+                        trailingContent = {
+                            Switch(
+                                checked = rule.isEnabled,
+                                onCheckedChange = { isEnabled ->
+                                    viewModel.updateIgnoreRule(rule.copy(isEnabled = isEnabled))
+                                }
+                            )
                         }
                     )
                     HorizontalDivider()

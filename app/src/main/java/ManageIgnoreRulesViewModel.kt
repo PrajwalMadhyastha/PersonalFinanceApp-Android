@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ManageIgnoreRulesViewModel.kt
-// REASON: NEW FILE - This ViewModel provides the business logic for the new
-// "Manage Ignore Rules" screen. It fetches all ignore rules from the database,
-// exposes them to the UI, and provides methods for adding and deleting rules.
+// REASON: FEATURE - The ViewModel is updated to handle the new distinction
+// between default and user-added rules. It now includes a method to update a
+// rule's `isEnabled` status, allowing users to toggle the default rules.
+// BUG FIX - Renamed `updateRule` to `updateIgnoreRule` to provide a more
+// specific function name and resolve a persistent compilation error.
 // =================================================================================
 package io.pm.finlight
 
@@ -35,18 +37,33 @@ class ManageIgnoreRulesViewModel(application: Application) : AndroidViewModel(ap
     fun addIgnoreRule(phrase: String) {
         if (phrase.isNotBlank()) {
             viewModelScope.launch {
-                ignoreRuleDao.insert(IgnoreRule(phrase = phrase.trim()))
+                // User-added rules are not default rules
+                ignoreRuleDao.insert(IgnoreRule(phrase = phrase.trim(), isDefault = false))
             }
         }
     }
 
     /**
-     * Deletes a given ignore rule from the database.
+     * Updates an existing ignore rule, typically to toggle its enabled status.
+     * @param rule The rule to be updated.
+     */
+    fun updateIgnoreRule(rule: IgnoreRule) {
+        viewModelScope.launch {
+            ignoreRuleDao.update(rule)
+        }
+    }
+
+    /**
+     * Deletes a given ignore rule from the database. This should only be called
+     * for non-default rules.
      * @param rule The rule to be deleted.
      */
     fun deleteIgnoreRule(rule: IgnoreRule) {
-        viewModelScope.launch {
-            ignoreRuleDao.delete(rule)
+        // Safety check to prevent deleting default rules
+        if (!rule.isDefault) {
+            viewModelScope.launch {
+                ignoreRuleDao.delete(rule)
+            }
         }
     }
 }

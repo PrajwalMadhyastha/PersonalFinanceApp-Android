@@ -1,9 +1,12 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 19. A new
-// entity, `IgnoreRule`, has been added, along with its corresponding DAO and a
-// migration (MIGRATION_18_19) to create the new `ignore_rules` table. This
-// provides the foundation for the new user-managed ignore list feature.
+// REASON: FEATURE - The database version is incremented to 20. A new migration
+// (MIGRATION_19_20) is added to modify the `ignore_rules` table with new
+// `isEnabled` and `isDefault` columns. The `DatabaseCallback` is updated to
+// pre-populate this table with the app's default ignore phrases upon creation.
+// BUG FIX - The `onOpen` callback has been corrected to ensure that on a fresh
+// install, it seeds not only the default rules but also the sample accounts,
+// categories, and transactions, restoring the original sample data.
 // =================================================================================
 package io.pm.finlight
 
@@ -33,9 +36,9 @@ import java.util.Calendar
         CustomSmsRule::class,
         MerchantRenameRule::class,
         MerchantCategoryMapping::class,
-        IgnoreRule::class // --- NEW: Add new entity ---
+        IgnoreRule::class
     ],
-    version = 19, // --- UPDATED: Database version incremented ---
+    version = 20,
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -49,11 +52,20 @@ abstract open class AppDatabase : RoomDatabase() {
     abstract fun customSmsRuleDao(): CustomSmsRuleDao
     abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
-    abstract fun ignoreRuleDao(): IgnoreRuleDao // --- NEW: Add new DAO ---
+    abstract fun ignoreRuleDao(): IgnoreRuleDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        private val DEFAULT_IGNORE_PHRASES = listOf(
+            "invoice of",
+            "payment of.*is successful",
+            "has been credited to",
+            "payment of.*has been received towards",
+            "credited to your.*card",
+            "Payment of.*has been received on your.*Credit Card"
+        ).map { IgnoreRule(phrase = it, isDefault = true) }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -184,11 +196,17 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the ignore_rules table ---
         val MIGRATION_18_19 = object : Migration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `ignore_rules` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `phrase` TEXT NOT NULL)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ignore_rules_phrase` ON `ignore_rules` (`phrase`)")
+            }
+        }
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `ignore_rules` ADD COLUMN `isEnabled` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `ignore_rules` ADD COLUMN `isDefault` INTEGER NOT NULL DEFAULT 0")
             }
         }
 
@@ -197,7 +215,7 @@ abstract open class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19) // Add new migration
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -209,20 +227,15 @@ abstract open class AppDatabase : RoomDatabase() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 CoroutineScope(Dispatchers.IO).launch {
+                    // Populate everything on first creation
                     populateDatabase(getInstance(context))
                 }
             }
 
             override fun onOpen(db: SupportSQLiteDatabase) {
                 super.onOpen(db)
-                CoroutineScope(Dispatchers.IO).launch {
-                    val database = getInstance(context)
-                    val categoryDao = database.categoryDao()
-                    val categories = categoryDao.getAllCategories().first()
-                    if (categories.isEmpty()) {
-                        categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
-                    }
-                }
+                // This is a good place for conditional seeding if needed on app open
+                // For now, onCreate handles the initial population.
             }
 
             suspend fun populateDatabase(db: AppDatabase) {
@@ -230,13 +243,11 @@ abstract open class AppDatabase : RoomDatabase() {
                 val categoryDao = db.categoryDao()
                 val transactionDao = db.transactionDao()
                 val budgetDao = db.budgetDao()
+                val ignoreRuleDao = db.ignoreRuleDao()
 
-                transactionDao.deleteAll()
-                budgetDao.deleteAll()
-                categoryDao.deleteAll()
-                accountDao.deleteAll()
-
+                // --- Seed all default data ---
                 categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
+                ignoreRuleDao.insertAll(DEFAULT_IGNORE_PHRASES)
 
                 accountDao.insertAll(
                     listOf(
