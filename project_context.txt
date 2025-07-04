@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Fri Jul  4 00:05:20 IST 2025
+Generated on: Fri Jul  4 22:51:31 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -808,6 +808,8 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 
 
 ================== FILE: ./app/src/main/java/TimePeriodReportViewModel.kt ==================
+// FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
+
 package io.pm.finlight
 
 import android.app.Application
@@ -872,10 +874,8 @@ class TimePeriodReportViewModel(
                     val dayFormat = SimpleDateFormat("EEE", Locale.getDefault())
                     val fullDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
-                    // Create a map of date strings to total amounts
                     val totalsMap = dailyTotals.associateBy { it.date }
 
-                    // Iterate through the last 7 days to ensure all days are present
                     for (i in 0..6) {
                         val dayCal = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -6 + i) }
                         val dateString = fullDateFormat.format(dayCal.time)
@@ -893,9 +893,77 @@ class TimePeriodReportViewModel(
                     Pair(BarData(dataSet), labels)
                 }
             }
-            TimePeriod.WEEKLY, TimePeriod.MONTHLY -> {
-                // Placeholder for future implementation
-                flowOf(null)
+            // --- NEW: Implementation for Weekly Chart Data ---
+            TimePeriod.WEEKLY -> {
+                val endCal = (calendar.clone() as Calendar).apply {
+                    set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
+                    add(Calendar.WEEK_OF_YEAR, 1)
+                    add(Calendar.DAY_OF_YEAR, -1)
+                }
+                val startCal = (calendar.clone() as Calendar).apply {
+                    add(Calendar.WEEK_OF_YEAR, -7) // 8 weeks total
+                    set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
+                }
+
+                transactionDao.getWeeklySpendingForDateRange(startCal.timeInMillis, endCal.timeInMillis).map { weeklyTotals ->
+                    if (weeklyTotals.isEmpty()) return@map null
+
+                    val entries = mutableListOf<BarEntry>()
+                    val labels = mutableListOf<String>()
+                    val totalsMap = weeklyTotals.associateBy { it.period }
+
+                    for (i in 0..7) {
+                        val weekCal = (startCal.clone() as Calendar).apply { add(Calendar.WEEK_OF_YEAR, i) }
+                        val yearWeek = "${weekCal.get(Calendar.YEAR)}-${weekCal.get(Calendar.WEEK_OF_YEAR).toString().padStart(2, '0')}"
+
+                        val total = totalsMap[yearWeek]?.totalAmount?.toFloat() ?: 0f
+                        entries.add(BarEntry(i.toFloat(), total))
+                        labels.add("W${weekCal.get(Calendar.WEEK_OF_YEAR)}")
+                    }
+
+                    val dataSet = BarDataSet(entries, "Weekly Spending").apply {
+                        color = 0xFF9575CD.toInt() // Deep Purple
+                        setDrawValues(true)
+                        valueTextColor = 0xFFFFFFFF.toInt()
+                    }
+                    Pair(BarData(dataSet), labels)
+                }
+            }
+            // --- NEW: Implementation for Monthly Chart Data ---
+            TimePeriod.MONTHLY -> {
+                val endCal = (calendar.clone() as Calendar).apply {
+                    set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+                }
+                val startCal = (calendar.clone() as Calendar).apply {
+                    add(Calendar.MONTH, -5) // 6 months total
+                    set(Calendar.DAY_OF_MONTH, 1)
+                }
+
+                transactionDao.getMonthlySpendingForDateRange(startCal.timeInMillis, endCal.timeInMillis).map { monthlyTotals ->
+                    if (monthlyTotals.isEmpty()) return@map null
+
+                    val entries = mutableListOf<BarEntry>()
+                    val labels = mutableListOf<String>()
+                    val monthFormat = SimpleDateFormat("MMM", Locale.getDefault())
+                    val yearMonthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+                    val totalsMap = monthlyTotals.associateBy { it.period }
+
+                    for (i in 0..5) {
+                        val monthCal = (startCal.clone() as Calendar).apply { add(Calendar.MONTH, i) }
+                        val yearMonth = yearMonthFormat.format(monthCal.time)
+
+                        val total = totalsMap[yearMonth]?.totalAmount?.toFloat() ?: 0f
+                        entries.add(BarEntry(i.toFloat(), total))
+                        labels.add(monthFormat.format(monthCal.time))
+                    }
+
+                    val dataSet = BarDataSet(entries, "Monthly Spending").apply {
+                        color = 0xFF4DB6AC.toInt() // Teal
+                        setDrawValues(true)
+                        valueTextColor = 0xFFFFFFFF.toInt()
+                    }
+                    Pair(BarData(dataSet), labels)
+                }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -953,7 +1021,8 @@ class TimePeriodReportViewModel(
         }
         return Pair(startCal.timeInMillis, endCal.timeInMillis)
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/CustomSmsRuleDao.kt ==================
@@ -1016,6 +1085,9 @@ interface CustomSmsRuleDao {
 // provides a more robust way for the UI to handle navigation or state resets
 // after saving. A `clearAddTransactionState` function has also been added to
 // reset tag selections for the "Save & add another" feature.
+// BUG FIX - The call to `SmsParser.parse` within the `reparseTransactionFromSms`
+// function has been updated to include the new `ignoreRuleDao` parameter,
+// resolving a compilation error.
 // =================================================================================
 package io.pm.finlight
 
@@ -1330,7 +1402,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db.customSmsRuleDao(), db.merchantRenameRuleDao())
+            // --- FIX: Pass the ignoreRuleDao to the parser ---
+            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
             Log.d(logTag, "SmsParser result: $potentialTxn")
 
             if (potentialTxn != null) {
@@ -1787,6 +1860,13 @@ class MonthlySummaryWorker(
 
 
 ================== FILE: ./app/src/main/java/NavItems.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
+// REASON: FEATURE - Added a title for the new "manage_ignore_rules" route to
+// ensure the TopAppBar displays the correct title when the user navigates to
+// the new screen.
+// FEATURE - Added a title for the new "link_transaction_screen" route.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.compose.material.icons.Icons
@@ -1826,10 +1906,13 @@ val screenTitles = mapOf(
     "tag_management" to "Manage Tags",
     "edit_profile" to "Edit Profile",
     "income_screen" to "Income",
-    // --- UPDATED: Route no longer needs smsSender ---
     "rule_creation_screen/{potentialTransactionJson}" to "Create Parsing Rule",
-    "manage_parse_rules" to "Manage Parsing Rules"
-)-e 
+    "manage_parse_rules" to "Manage Parsing Rules",
+    "manage_ignore_rules" to "Manage Ignore List",
+    // --- NEW: Title for the linking screen ---
+    "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction"
+)
+-e 
 
 
 ================== FILE: ./app/src/main/java/WeeklySummaryWorker.kt ==================
@@ -2138,6 +2221,79 @@ class SearchViewModel(
 -e 
 
 
+================== FILE: ./app/src/main/java/ManageIgnoreRulesViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ManageIgnoreRulesViewModel.kt
+// REASON: FEATURE - The ViewModel is updated to handle the new distinction
+// between default and user-added rules. It now includes a method to update a
+// rule's `isEnabled` status, allowing users to toggle the default rules.
+// BUG FIX - Renamed `updateRule` to `updateIgnoreRule` to provide a more
+// specific function name and resolve a persistent compilation error.
+// =================================================================================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class ManageIgnoreRulesViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val ignoreRuleDao = AppDatabase.getInstance(application).ignoreRuleDao()
+
+    /**
+     * A flow of all ignore rules, collected as a StateFlow for the UI.
+     */
+    val allRules: StateFlow<List<IgnoreRule>> = ignoreRuleDao.getAll()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    /**
+     * Adds a new ignore phrase to the database.
+     * @param phrase The phrase to be added.
+     */
+    fun addIgnoreRule(phrase: String) {
+        if (phrase.isNotBlank()) {
+            viewModelScope.launch {
+                // User-added rules are not default rules
+                ignoreRuleDao.insert(IgnoreRule(phrase = phrase.trim(), isDefault = false))
+            }
+        }
+    }
+
+    /**
+     * Updates an existing ignore rule, typically to toggle its enabled status.
+     * @param rule The rule to be updated.
+     */
+    fun updateIgnoreRule(rule: IgnoreRule) {
+        viewModelScope.launch {
+            ignoreRuleDao.update(rule)
+        }
+    }
+
+    /**
+     * Deletes a given ignore rule from the database. This should only be called
+     * for non-default rules.
+     * @param rule The rule to be deleted.
+     */
+    fun deleteIgnoreRule(rule: IgnoreRule) {
+        // Safety check to prevent deleting default rules
+        if (!rule.isDefault) {
+            viewModelScope.launch {
+                ignoreRuleDao.delete(rule)
+            }
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/RecurringTransactionDao.kt ==================
 package io.pm.finlight
 
@@ -2291,6 +2447,76 @@ data class RecurringTransaction(
     val accountId: Int,
     val categoryId: Int?,
 )
+-e 
+
+
+================== FILE: ./app/src/main/java/LinkTransactionViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/LinkTransactionViewModel.kt
+// REASON: NEW FILE - This ViewModel provides the logic for the new "Link
+// Transaction" screen. It takes a PotentialTransaction, finds linkable
+// existing transactions using the repository's smart query, and exposes them
+// to the UI. It also contains the logic to perform the link by updating the
+// chosen transaction with the SMS hash.
+// =================================================================================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+class LinkTransactionViewModelFactory(
+    private val application: Application,
+    private val potentialTransaction: PotentialTransaction
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(LinkTransactionViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return LinkTransactionViewModel(application, potentialTransaction) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+class LinkTransactionViewModel(
+    application: Application,
+    private val potentialTransaction: PotentialTransaction
+) : AndroidViewModel(application) {
+
+    private val transactionRepository: TransactionRepository = TransactionRepository(AppDatabase.getInstance(application).transactionDao())
+
+    private val _linkableTransactions = MutableStateFlow<List<Transaction>>(emptyList())
+    val linkableTransactions = _linkableTransactions.asStateFlow()
+
+    init {
+        findMatches()
+    }
+
+    private fun findMatches() {
+        viewModelScope.launch {
+            val results = transactionRepository.findLinkableTransactions(
+                smsDate = potentialTransaction.sourceSmsId,
+                smsAmount = potentialTransaction.amount,
+                transactionType = potentialTransaction.transactionType
+            )
+            _linkableTransactions.value = results
+        }
+    }
+
+    fun linkTransaction(selectedTransactionId: Int, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            potentialTransaction.sourceSmsHash?.let { hash ->
+                transactionRepository.setSmsHash(selectedTransactionId, hash)
+            }
+            onComplete()
+        }
+    }
+}
 -e 
 
 
@@ -3723,6 +3949,151 @@ fun AddEditBudgetScreen(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt
+// REASON: FEATURE - The UI has been enhanced to differentiate between default
+// and user-added ignore rules. Default rules are now displayed with a toggle
+// Switch to enable/disable them, while user-added rules have a delete button,
+// providing a more intuitive and powerful management interface.
+// BUG FIX - Corrected the function call to `updateIgnoreRule` to match the
+// function name in the ViewModel, resolving the persistent compilation error.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import io.pm.finlight.IgnoreRule
+import io.pm.finlight.ManageIgnoreRulesViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ManageIgnoreRulesScreen(
+    viewModel: ManageIgnoreRulesViewModel = viewModel()
+) {
+    val rules by viewModel.allRules.collectAsState()
+    var newPhrase by remember { mutableStateOf("") }
+    var ruleToDelete by remember { mutableStateOf<IgnoreRule?>(null) }
+
+    val (defaultRules, customRules) = rules.partition { it.isDefault }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text(
+            "Manage Ignore Phrases",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Text(
+            "Add phrases that, if found in an SMS, will cause the message to be ignored by the parser. You can also toggle the app's default ignore rules.",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = newPhrase,
+                onValueChange = { newPhrase = it },
+                label = { Text("Add custom phrase to ignore") },
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    viewModel.addIgnoreRule(newPhrase)
+                    newPhrase = "" // Clear input
+                },
+                enabled = newPhrase.isNotBlank()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Phrase")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LazyColumn {
+            if (customRules.isNotEmpty()) {
+                item {
+                    Text("Your Custom Rules", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp))
+                }
+                items(customRules, key = { "custom-${it.id}" }) { rule ->
+                    ListItem(
+                        headlineContent = { Text(rule.phrase) },
+                        trailingContent = {
+                            IconButton(onClick = { ruleToDelete = rule }) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Delete rule",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                }
+            }
+
+            if (defaultRules.isNotEmpty()) {
+                item {
+                    Text("Default App Rules", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+                }
+                items(defaultRules, key = { "default-${it.id}" }) { rule ->
+                    ListItem(
+                        headlineContent = { Text(rule.phrase) },
+                        trailingContent = {
+                            Switch(
+                                checked = rule.isEnabled,
+                                onCheckedChange = { isEnabled ->
+                                    viewModel.updateIgnoreRule(rule.copy(isEnabled = isEnabled))
+                                }
+                            )
+                        }
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+
+    if (ruleToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { ruleToDelete = null },
+            title = { Text("Delete Ignore Phrase?") },
+            text = { Text("Are you sure you want to delete the phrase \"${ruleToDelete!!.phrase}\"?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteIgnoreRule(ruleToDelete!!)
+                        ruleToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { ruleToDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
@@ -3730,6 +4101,15 @@ fun AddEditBudgetScreen(
 // obsolete `saveMerchantMapping` to the new `saveMerchantRenameRule`. This
 // aligns the approval screen with the new intelligent renaming feature, passing
 // the originally parsed name and the user's final description to create a rule.
+// FEATURE - A new "Link to Existing" button has been added to the
+// `PotentialTransactionItem`. This button navigates to the new
+// `link_transaction_screen`, passing the details of the parsed SMS to find
+// potential matches.
+// FEATURE - The `ReviewSmsScreen` now observes the navigation back stack for a
+// "linked_sms_id" signal. When received, it calls the ViewModel to remove the
+// corresponding item from the list, completing the cleanup process.
+// BUG FIX - Corrected the way `linkedSmsId` is observed from navigation state
+// to resolve a property delegate compilation error on a nullable type.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -3752,6 +4132,7 @@ import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -3787,6 +4168,21 @@ fun ReviewSmsScreen(
     val isScanning by viewModel.isScanning.collectAsState()
 
     var hasLoadedOnce by remember { mutableStateOf(false) }
+
+    // --- FIX: Correctly observe the nullable state from the SavedStateHandle ---
+    val linkedSmsIdState = navController.currentBackStackEntry
+        ?.savedStateHandle
+        ?.getLiveData<Long>("linked_sms_id")
+        ?.observeAsState()
+    val linkedSmsId = linkedSmsIdState?.value
+
+    LaunchedEffect(linkedSmsId) {
+        linkedSmsId?.let {
+            viewModel.onTransactionLinked(it)
+            // Clear the value from the state handle so it's not processed again
+            navController.currentBackStackEntry?.savedStateHandle?.set("linked_sms_id", null)
+        }
+    }
 
     LaunchedEffect(isScanning, potentialTransactions) {
         if (!isScanning) {
@@ -3832,6 +4228,11 @@ fun ReviewSmsScreen(
                         val json = Gson().toJson(transaction)
                         val encodedJson = URLEncoder.encode(json, "UTF-8")
                         navController.navigate("rule_creation_screen/$encodedJson")
+                    },
+                    onLink = { transaction ->
+                        val json = Gson().toJson(transaction)
+                        val encodedJson = URLEncoder.encode(json, "UTF-8")
+                        navController.navigate("link_transaction_screen/$encodedJson")
                     }
                 )
             }
@@ -3844,7 +4245,8 @@ fun PotentialTransactionItem(
     transaction: PotentialTransaction,
     onDismiss: (PotentialTransaction) -> Unit,
     onApprove: (PotentialTransaction) -> Unit,
-    onCreateRule: (PotentialTransaction) -> Unit
+    onCreateRule: (PotentialTransaction) -> Unit,
+    onLink: (PotentialTransaction) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -3887,8 +4289,8 @@ fun PotentialTransactionItem(
             )
             Spacer(Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { onCreateRule(transaction) }) {
-                    Text("Create Rule")
+                TextButton(onClick = { onLink(transaction) }) {
+                    Text("Link to Existing")
                 }
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = { onDismiss(transaction) }) { Text("Dismiss") }
@@ -4031,7 +4433,6 @@ fun ApproveTransactionScreen(
                                 )
                                 if (success) {
                                     settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
-                                    // --- FIX: Call the correct function with the correct parameters ---
                                     potentialTxn.merchantName?.let { originalName ->
                                         settingsViewModel.saveMerchantRenameRule(originalName, description)
                                     }
@@ -4358,30 +4759,35 @@ fun EditAccountScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
-// REASON: NEW FILE - This screen replaces the old DailyReportScreen. It is now
-// a generic component that can display reports for any `TimePeriod` (daily,
-// weekly, monthly), making the UI more reusable and scalable.
+// REASON: MAJOR REFACTOR - This screen has been completely redesigned to match
+// a modern, visually appealing layout. It now features a new summary header,
+// a restyled bar chart with a highlighted selected day, and swipe-based
+// navigation to move between periods, removing the old navigation arrows.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
+import android.graphics.Typeface
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ShoppingBasket
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -4389,6 +4795,8 @@ import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import io.pm.finlight.TimePeriod
 import io.pm.finlight.TimePeriodReportViewModel
@@ -4396,6 +4804,7 @@ import io.pm.finlight.TimePeriodReportViewModelFactory
 import io.pm.finlight.ui.components.TransactionItem
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -4409,9 +4818,9 @@ fun TimePeriodReportScreen(
 
     val selectedDate by viewModel.selectedDate.collectAsState()
     val transactions by viewModel.transactionsForPeriod.collectAsState()
-    val weeklyChartData by viewModel.chartData.collectAsState()
+    val chartDataPair by viewModel.chartData.collectAsState()
 
-    val totalSpent = transactions.filter { it.transaction.transactionType == "expense" }.sumOf { it.transaction.amount }
+    val totalSpent = transactions.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
 
     val context = LocalContext.current
     LaunchedEffect(Unit) {
@@ -4422,53 +4831,93 @@ fun TimePeriodReportScreen(
 
     Scaffold(
         topBar = {
-            ReportTopAppBar(
-                selectedDate = selectedDate.time,
-                timePeriod = timePeriod,
-                onBack = { navController.popBackStack() },
-                onPrevious = { viewModel.selectPreviousPeriod() },
-                onNext = { viewModel.selectNextPeriod() }
+            TopAppBar(
+                title = { Text(
+                    text = when(timePeriod) {
+                        TimePeriod.DAILY -> "Daily Report"
+                        TimePeriod.WEEKLY -> "Weekly Report"
+                        TimePeriod.MONTHLY -> "Monthly Report"
+                    }
+                ) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        var dragAmount by remember { mutableStateOf(0f) }
+
+        Box(
             modifier = Modifier
                 .padding(innerPadding)
-                .fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { },
+                        onDragEnd = {
+                            if (dragAmount > 150) { // Swipe Right
+                                viewModel.selectPreviousPeriod()
+                            } else if (dragAmount < -150) { // Swipe Left
+                                viewModel.selectNextPeriod()
+                            }
+                            dragAmount = 0f
+                        },
+                        onDragCancel = { dragAmount = 0f }
+                    ) { change, drag ->
+                        dragAmount += drag
+                        change.consume()
+                    }
+                }
         ) {
-            item {
-                PeriodSummaryCard(totalSpent = totalSpent, timePeriod = timePeriod)
-            }
-
-            item {
-                WeeklySpendingChart(chartData = weeklyChartData)
-            }
-
-            if (transactions.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 item {
-                    Text(
-                        "Top Spends",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                    ReportHeader(
+                        totalSpent = totalSpent,
+                        timePeriod = timePeriod,
+                        selectedDate = selectedDate.time
                     )
                 }
-                items(transactions) { transaction ->
-                    TransactionItem(
-                        transactionDetails = transaction,
-                        onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") }
-                    )
-                }
-            } else {
+
                 item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("No transactions for this period.")
+                    chartDataPair?.let {
+                        SpendingBarChart(
+                            chartData = it,
+                            timePeriod = timePeriod
+                        )
+                    }
+                }
+
+                if (transactions.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Top Spends",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    items(transactions) { transaction ->
+                        TransactionItem(
+                            transactionDetails = transaction,
+                            onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") }
+                        )
+                    }
+                } else {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No transactions for this period.")
+                        }
                     }
                 }
             }
@@ -4476,138 +4925,118 @@ fun TimePeriodReportScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReportTopAppBar(
-    selectedDate: Date,
-    timePeriod: TimePeriod,
-    onBack: () -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit
-) {
-    val dateFormatter = remember(timePeriod) {
-        when (timePeriod) {
-            TimePeriod.DAILY -> SimpleDateFormat("dd MMMM, yyyy", Locale.getDefault())
-            TimePeriod.WEEKLY -> SimpleDateFormat("'Week of' dd MMMM", Locale.getDefault())
-            TimePeriod.MONTHLY -> SimpleDateFormat("MMMM yyyy", Locale.getDefault())
-        }
-    }
-
-    TopAppBar(
-        title = {
-            Text(
-                text = dateFormatter.format(selectedDate),
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
-        },
-        navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-        },
-        actions = {
-            Row {
-                IconButton(onClick = onPrevious) {
-                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period")
-                }
-                IconButton(onClick = onNext) {
-                    Icon(Icons.Default.ChevronRight, contentDescription = "Next Period")
-                }
-            }
-        }
-    )
-}
-
-@Composable
-private fun PeriodSummaryCard(totalSpent: Double, timePeriod: TimePeriod) {
+private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDate: Date) {
     val title = when (timePeriod) {
-        TimePeriod.DAILY -> "Today"
-        TimePeriod.WEEKLY -> "This Week"
-        TimePeriod.MONTHLY -> "This Month"
+        TimePeriod.DAILY -> "Today's Spend"
+        TimePeriod.WEEKLY -> "This Week's Spend"
+        TimePeriod.MONTHLY -> "This Month's Spend"
     }
-    Card(
+
+    val subtitle = when(timePeriod) {
+        TimePeriod.DAILY -> "since 11 pm yesterday" // As per screenshot
+        TimePeriod.WEEKLY -> {
+            val cal = Calendar.getInstance().apply { time = selectedDate }
+            val startOfWeek = cal.apply { set(Calendar.DAY_OF_WEEK, firstDayOfWeek) }.time
+            "Since ${SimpleDateFormat("dd MMM", Locale.getDefault()).format(startOfWeek)}"
+        }
+        TimePeriod.MONTHLY -> "For ${SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(selectedDate)}"
+    }
+
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(4.dp)
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.ShoppingBasket,
-                contentDescription = "Spending",
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-            )
+        Icon(
+            imageVector = Icons.Default.ShoppingBasket,
+            contentDescription = "Spending",
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Column {
             Text(
-                title,
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "₹${"%,.2f".format(totalSpent)}",
+                text = "₹${"%,.0f".format(totalSpent)}",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
 
 @Composable
-private fun WeeklySpendingChart(chartData: Pair<BarData, List<String>>?) {
+private fun SpendingBarChart(chartData: Pair<BarData, List<String>>, timePeriod: TimePeriod) {
+    val (barData, labels) = chartData
+    val selectedIndex = labels.size - 1 // The last item is the current period
+
+    // --- FIX: Read theme colors in the composable scope, not in the factory lambda ---
+    val highlightColor = MaterialTheme.colorScheme.primary.toArgb()
+    val defaultColor = MaterialTheme.colorScheme.surfaceVariant.toArgb()
+    val axisTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
+
+    val colors = labels.indices.map { if (it == selectedIndex) highlightColor else defaultColor }
+    (barData.dataSets.first() as BarDataSet).colors = colors
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(4.dp)
+        elevation = CardDefaults.cardElevation(0.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (chartData != null) {
-                AndroidView(
-                    factory = { context ->
-                        BarChart(context).apply {
-                            description.isEnabled = false
-                            legend.isEnabled = false
-                            setDrawGridBackground(false)
-                            setDrawValueAboveBar(true)
+            AndroidView(
+                factory = { context ->
+                    BarChart(context).apply {
+                        description.isEnabled = false
+                        legend.isEnabled = false
+                        setDrawGridBackground(false)
+                        setDrawValueAboveBar(true)
+                        setTouchEnabled(false)
 
-                            xAxis.apply {
-                                position = XAxis.XAxisPosition.BOTTOM
-                                setDrawGridLines(false)
-                                granularity = 1f
-                                valueFormatter = IndexAxisValueFormatter(chartData.second)
-                            }
-                            axisLeft.apply {
-                                setDrawGridLines(false)
-                                axisMinimum = 0f
-                            }
-                            axisRight.isEnabled = false
+                        xAxis.apply {
+                            position = XAxis.XAxisPosition.BOTTOM
+                            setDrawGridLines(false)
+                            setDrawAxisLine(false)
+                            granularity = 1f
+                            valueFormatter = IndexAxisValueFormatter(labels)
+                            // --- FIX: Use the color variable read from the theme ---
+                            textColor = axisTextColor
+                            textSize = 12f
+                            typeface = Typeface.DEFAULT_BOLD
                         }
-                    },
-                    update = { chart ->
-                        chart.data = chartData.first
-                        chart.invalidate()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Not enough data for trend.")
-                }
-            }
+                        axisLeft.apply {
+                            setDrawGridLines(false)
+                            setDrawLabels(false)
+                            setDrawAxisLine(false)
+                            axisMinimum = 0f
+                        }
+                        axisRight.isEnabled = false
+                    }
+                },
+                update = { chart ->
+                    chart.data = barData
+                    chart.invalidate()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+            )
         }
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
@@ -6453,6 +6882,17 @@ fun PlaceholderTabContent(title: String) {
 //    `originalDescription` if it exists, otherwise falling back to the current
 //    `description` (the value before the edit). This ensures that rules can be
 //    created for any transaction, not just imported ones.
+// FEATURE - The `TransactionHeaderCard` has been redesigned to display a large,
+// semi-transparent background image corresponding to the transaction's category,
+// creating a more visually engaging and contextual header.
+// BUG FIX - The `TransactionHeaderCard` has been refactored to use a layered
+// Box layout. This ensures the background image always crops and fills the
+// available space uniformly, fixing inconsistent sizing issues. The image alpha
+// and text colors have also been adjusted for better visibility.
+// VISUAL - Increased the minimum height of the TransactionHeaderCard and adjusted
+// the background image alpha for a more prominent and visually appealing look.
+// VISUAL - The content layout within the `TransactionHeaderCard` has been updated
+// to spread the elements vertically, making better use of the larger card size.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -6461,6 +6901,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -6488,6 +6929,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -7333,72 +7775,107 @@ private fun TransactionHeaderCard(
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
-        Column(
+        Box(
             modifier = Modifier
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                .fillMaxWidth()
+                .heightIn(min = 400.dp), // User-specified height
+        ) {
+            // Layer 1: The Background Image
+            Image(
+                painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+                alpha = 0.5f // User-specified alpha
+            )
+
+            // Layer 2: A darkening scrim
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.2f),
+                                Color.Black.copy(alpha = 0.7f)
+                            )
                         )
                     )
-                )
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = details.transaction.description,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.clickable(onClick = onDescriptionClick)
             )
 
-            Text(
-                text = "₹${"%,.2f".format(details.transaction.amount)}",
-                fontSize = 48.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.clickable(onClick = onAmountClick)
-            )
-
-            ChipWithIcon(
-                text = details.categoryName ?: "Uncategorized",
-                icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
-                colorKey = details.categoryColorKey ?: "gray_light",
-                onClick = onCategoryClick,
-                category = details.toCategory()
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // Layer 3: The actual content
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
             ) {
+                // Top Content (Description)
                 Text(
-                    text = dateFormatter.format(Date(details.transaction.date)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable(onClick = onDateTimeClick)
+                    text = details.transaction.description,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .clickable(onClick = onDescriptionClick)
                 )
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // Spacer to push content to center and bottom
+                Spacer(Modifier.weight(1f))
+
+                // Center Content (Amount and Category)
+                Column(
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Transaction Source",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
                     Text(
-                        text = details.transaction.source,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "₹${"%,.2f".format(details.transaction.amount)}",
+                        fontSize = 48.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.clickable(onClick = onAmountClick)
                     )
+                    Spacer(Modifier.height(12.dp))
+                    ChipWithIcon(
+                        text = details.categoryName ?: "Uncategorized",
+                        icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
+                        colorKey = details.categoryColorKey ?: "gray_light",
+                        onClick = onCategoryClick,
+                        category = details.toCategory()
+                    )
+                }
+
+                // Spacer to push content to bottom
+                Spacer(Modifier.weight(1f))
+
+                // Bottom Content (Date and Source)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = dateFormatter.format(Date(details.transaction.date)),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.clickable(onClick = onDateTimeClick)
+                    )
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Transaction Source",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = details.transaction.source,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
                 }
             }
         }
@@ -9342,17 +9819,175 @@ fun PageIndicator(pageCount: Int, currentPage: Int) {
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkTransactionScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkTransactionScreen.kt
+// REASON: FEATURE - The screen now includes an AlertDialog to confirm the user's
+// choice before linking. The onClick handler has been updated to show this
+// dialog. Upon confirmation, it calls the ViewModel to perform the link, passes
+// a signal back to the previous screen to remove the item from the review list,
+// and then navigates away, completing the feature's workflow.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import android.app.Application
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.google.gson.Gson
+import io.pm.finlight.LinkTransactionViewModel
+import io.pm.finlight.LinkTransactionViewModelFactory
+import io.pm.finlight.PotentialTransaction
+import io.pm.finlight.Transaction
+import java.net.URLDecoder
+import java.text.SimpleDateFormat
+import java.util.*
+
+@Composable
+fun LinkTransactionScreen(
+    navController: NavController,
+    potentialTransactionJson: String
+) {
+    val potentialTxn = remember(potentialTransactionJson) {
+        Gson().fromJson(URLDecoder.decode(potentialTransactionJson, "UTF-8"), PotentialTransaction::class.java)
+    }
+
+    val application = LocalContext.current.applicationContext as Application
+    val factory = LinkTransactionViewModelFactory(application, potentialTxn)
+    val viewModel: LinkTransactionViewModel = viewModel(factory = factory)
+
+    val candidates by viewModel.linkableTransactions.collectAsState()
+    var showConfirmationDialog by remember { mutableStateOf(false) }
+    var transactionToLink by remember { mutableStateOf<Transaction?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        SmsDetailsCard(potentialTxn)
+
+        Text("Select a transaction to link:", style = MaterialTheme.typography.titleMedium)
+
+        if (candidates.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No potential matches found.")
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(candidates, key = { it.id }) { transaction ->
+                    LinkCandidateItem(
+                        transaction = transaction,
+                        onClick = {
+                            transactionToLink = transaction
+                            showConfirmationDialog = true
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showConfirmationDialog && transactionToLink != null) {
+        AlertDialog(
+            onDismissRequest = { showConfirmationDialog = false },
+            title = { Text("Confirm Link") },
+            text = { Text("Link this SMS to the transaction for '${transactionToLink!!.description}'?") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.linkTransaction(transactionToLink!!.id) {
+                        // Pass the ID of the linked SMS back to the review screen
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set("linked_sms_id", potentialTxn.sourceSmsId)
+                        navController.popBackStack()
+                    }
+                    showConfirmationDialog = false
+                }) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmationDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SmsDetailsCard(pt: PotentialTransaction) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("SMS Details", style = MaterialTheme.typography.titleLarge)
+            HorizontalDivider()
+            Text("Amount: ₹${"%,.2f".format(pt.amount)}", fontWeight = FontWeight.Bold)
+            Text("Type: ${pt.transactionType.replaceFirstChar { it.uppercase() }}")
+            Text("Original Message: ${pt.originalMessage}", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
+    val dateFormatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(transaction.description, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                Text(dateFormatter.format(Date(transaction.date)), style = MaterialTheme.typography.bodySmall)
+            }
+            Text("₹${"%,.2f".format(transaction.amount)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: BUG FIX - Added an explicit import for `io.pm.finlight.R`. This
-// resolves the "Unresolved reference: drawable" compilation error by ensuring
-// the compiler can correctly locate the app's generated resource IDs.
+// REASON: REFACTOR - The settings items have been completely reorganized into
+// logical groups (General, Automation & AI, etc.) for improved clarity and
+// usability.
+// FEATURE - Added new entry points for "Manage Custom Parse Rules" and "Manage
+// Parser Ignore List" to make these features accessible to the user.
+// REFACTOR - Consolidated individual permission toggles into a single "Manage
+// App Permissions" item that navigates the user to the system settings screen
+// for the app, which is a more standard and robust approach.
+// REFACTOR - Adjusted LazyColumn spacing for better control within list items.
+// The primary visual alignment fix is in the `SettingsComponents.kt` file.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -9365,7 +10000,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ManageSearch
-import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -9380,7 +10014,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import io.pm.finlight.*
-import io.pm.finlight.R // --- FIX: Add explicit import for R class ---
+import io.pm.finlight.R
 import io.pm.finlight.ui.components.*
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -9413,18 +10047,6 @@ fun ProfileScreen(
     val isMonthlySummaryEnabled by settingsViewModel.monthlySummaryEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by settingsViewModel.unknownTransactionPopupEnabled.collectAsState()
     val isBackupEnabled by settingsViewModel.backupEnabled.collectAsState()
-    var showSmsRationaleDialog by remember { mutableStateOf(false) }
-    var hasSmsPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
-    var hasNotificationPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
 
     val dailyReportTime by settingsViewModel.dailyReportTime.collectAsState()
     var showDailyTimePicker by remember { mutableStateOf(false) }
@@ -9447,24 +10069,6 @@ fun ProfileScreen(
             }
         }
     }
-
-    val permissionLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.RequestMultiplePermissions(),
-        ) { permissions ->
-            val allGranted = permissions.values.all { it }
-            hasSmsPermission = allGranted
-            if (!allGranted) {
-                Toast.makeText(context, "Some SMS permissions were denied.", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-    val notificationPermissionLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.RequestPermission(),
-        ) { isGranted ->
-            hasNotificationPermission = isGranted
-        }
 
     val jsonFileSaverLauncher =
         rememberLauncherForActivityResult(
@@ -9548,13 +10152,14 @@ fun ProfileScreen(
     // --- UI Layout ---
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp) // Let items control their own padding
     ) {
         item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(16.dp)
                     .clickable { navController.navigate("edit_profile") },
                 elevation = CardDefaults.cardElevation(4.dp)
             ) {
@@ -9589,58 +10194,90 @@ fun ProfileScreen(
             }
         }
 
-        // --- All Settings Items Now Use Centralized Components ---
-        item { SettingSectionHeader("App Management") }
+        item { SettingSectionHeader("General") }
         item {
             SettingsActionItem(
                 text = "Manage Accounts",
-                subtitle = "View, add, or edit your financial accounts.",
+                subtitle = "View, add, or edit your financial accounts",
                 icon = Icons.Default.AccountBalanceWallet,
                 onClick = { navController.navigate("account_list") },
             )
         }
         item {
             SettingsActionItem(
-                text = "Manage Budgets",
-                subtitle = "Set and edit your overall and category-specific monthly budgets.",
-                icon = Icons.Default.Savings,
-                onClick = { navController.navigate("budget_screen") },
-            )
-        }
-        item {
-            SettingsActionItem(
                 text = "Manage Categories",
-                subtitle = "Add, edit, or remove transaction categories.",
+                subtitle = "Add, edit, or remove transaction categories",
                 icon = Icons.Default.Category,
                 onClick = { navController.navigate("category_list") },
             )
         }
         item {
             SettingsActionItem(
+                text = "Manage Budgets",
+                subtitle = "Set and edit your monthly budgets",
+                icon = Icons.Default.Savings,
+                onClick = { navController.navigate("budget_screen") },
+            )
+        }
+        item {
+            SettingsActionItem(
                 text = "Manage Tags",
-                subtitle = "Create and organize custom tags for transactions.",
+                subtitle = "Create and organize custom tags",
                 icon = Icons.Default.NewLabel,
                 onClick = { navController.navigate("tag_management") },
             )
         }
 
-        item { SettingSectionHeader("Security") }
+        item { SettingSectionHeader("Automation & AI") }
+        item {
+            SettingsActionItem(
+                text = "Scan Full Inbox",
+                subtitle = "Scan all messages to find transactions for review",
+                icon = Icons.AutoMirrored.Filled.ManageSearch,
+                onClick = {
+                    if (hasSmsPermission(context)) {
+                        if (!isScanning) {
+                            settingsViewModel.rescanSmsForReview(null)
+                        }
+                    } else {
+                        Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
+                    }
+                },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Manage Custom Parse Rules",
+                subtitle = "View or delete your custom SMS parsing rules",
+                icon = Icons.Default.Rule,
+                onClick = { navController.navigate("manage_parse_rules") },
+            )
+        }
+        item {
+            SettingsActionItem(
+                text = "Manage Parser Ignore List",
+                subtitle = "Add or remove phrases to ignore during parsing",
+                icon = Icons.Default.Block,
+                onClick = { navController.navigate("manage_ignore_rules") },
+            )
+        }
         item {
             SettingsToggleItem(
-                title = "Enable App Lock",
-                subtitle = "Use biometrics or screen lock to secure the app.",
-                icon = Icons.Default.Lock,
-                checked = isAppLockEnabled,
-                onCheckedChange = { settingsViewModel.setAppLockEnabled(it) },
+                title = "Popup for Unknown Transactions",
+                subtitle = "Show notification for SMS from new merchants",
+                icon = Icons.Default.HelpOutline,
+                checked = isUnknownTransactionPopupEnabled,
+                onCheckedChange = { settingsViewModel.setUnknownTransactionPopupEnabled(it) },
             )
         }
 
-        item { SettingSectionHeader("Notifications & Automation") }
+
+        item { SettingSectionHeader("Notifications") }
         item {
             SettingsToggleItem(
                 title = "Daily Summary",
-                subtitle = "Get a report of yesterday's spending each day.",
-                icon = Icons.Default.NotificationsActive,
+                subtitle = "Get a report of yesterday's spending each day",
+                icon = Icons.Default.Notifications,
                 checked = isDailyReportEnabled,
                 onCheckedChange = { settingsViewModel.setDailyReportEnabled(it) },
             )
@@ -9658,7 +10295,7 @@ fun ProfileScreen(
         item {
             SettingsToggleItem(
                 title = "Weekly Summary",
-                subtitle = "Receive a summary of your finances every week.",
+                subtitle = "Receive a summary of your finances every week",
                 icon = Icons.Default.CalendarToday,
                 checked = isWeeklySummaryEnabled,
                 onCheckedChange = { settingsViewModel.setWeeklySummaryEnabled(it) },
@@ -9680,7 +10317,7 @@ fun ProfileScreen(
         item {
             SettingsToggleItem(
                 title = "Monthly Summary",
-                subtitle = "Receive a summary of last month's finances.",
+                subtitle = "Receive a summary of last month's finances",
                 icon = Icons.Default.Event,
                 checked = isMonthlySummaryEnabled,
                 onCheckedChange = { settingsViewModel.setMonthlySummaryEnabled(it) },
@@ -9696,119 +10333,36 @@ fun ProfileScreen(
             )
         }
 
-        item { SettingSectionHeader("Permissions") }
+        item { SettingSectionHeader("Security & Privacy") }
         item {
             SettingsToggleItem(
-                title = "SMS Access",
-                subtitle = "Allow reading and receiving SMS for auto-detection.",
-                icon = Icons.AutoMirrored.Filled.Message,
-                checked = hasSmsPermission,
-                onCheckedChange = { isChecked ->
-                    if (isChecked && !hasSmsPermission) {
-                        showSmsRationaleDialog = true
-                    }
-                },
-                enabled = !hasSmsPermission,
+                title = "Enable App Lock",
+                subtitle = "Use biometrics or screen lock to secure the app",
+                icon = Icons.Default.Fingerprint,
+                checked = isAppLockEnabled,
+                onCheckedChange = { settingsViewModel.setAppLockEnabled(it) },
             )
         }
         item {
-            SettingsToggleItem(
-                title = "Enable Notifications",
-                subtitle = "Show alerts for new transactions and reminders.",
-                icon = Icons.Default.Notifications,
-                checked = hasNotificationPermission,
-                onCheckedChange = {
-                    if (!hasNotificationPermission) {
-                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                },
+            SettingsActionItem(
+                text = "Manage App Permissions",
+                subtitle = "Control access to SMS, notifications, etc.",
+                icon = Icons.Default.Shield,
+                onClick = {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    val uri = Uri.fromParts("package", context.packageName, null)
+                    intent.data = uri
+                    context.startActivity(intent)
+                }
             )
         }
 
-        item { SettingSectionHeader("SMS Scanning") }
-        item {
-            SettingsActionItem(
-                text = "Manage Custom Rules",
-                subtitle = "View or delete your custom SMS parsing rules.",
-                icon = Icons.Default.Rule,
-                onClick = { navController.navigate("manage_parse_rules") },
-            )
-        }
-        item {
-            SettingsToggleItem(
-                title = "Popup for Unknown Transactions",
-                subtitle = "Show notification for SMS from new merchants.",
-                icon = Icons.Default.Notifications,
-                checked = isUnknownTransactionPopupEnabled,
-                onCheckedChange = { settingsViewModel.setUnknownTransactionPopupEnabled(it) },
-            )
-        }
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable {
-                            if (hasSmsPermission) {
-                                showDatePickerDialog = true
-                            } else {
-                                showSmsRationaleDialog = true
-                            }
-                        },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.EventRepeat, contentDescription = null, modifier = Modifier.padding(end = 16.dp))
-                    Column {
-                        Text("Scan From Date", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "Current: ${dateFormatter.format(Date(smsScanStartDate))}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                OutlinedButton(
-                    onClick = {
-                        if (hasSmsPermission) {
-                            if (!isScanning) {
-                                settingsViewModel.rescanSmsForReview(smsScanStartDate)
-                            }
-                        } else {
-                            showSmsRationaleDialog = true
-                        }
-                    },
-                    enabled = !isScanning
-                ) {
-                    Text("Scan")
-                }
-            }
-        }
-        item {
-            SettingsActionItem(
-                text = "Scan Full Inbox",
-                subtitle = "Scan all messages to find transactions for review.",
-                icon = Icons.AutoMirrored.Filled.ManageSearch,
-                onClick = {
-                    if (hasSmsPermission) {
-                        if (!isScanning) {
-                            settingsViewModel.rescanSmsForReview(null)
-                        }
-                    } else {
-                        showSmsRationaleDialog = true
-                    }
-                },
-            )
-        }
+
         item { SettingSectionHeader("Data Management") }
         item {
             SettingsToggleItem(
                 title = "Enable Google Drive Backup",
-                subtitle = "Automatically back up app data to your Google account.",
+                subtitle = "Automatically back up app data to your Google account",
                 icon = Icons.Default.CloudUpload,
                 checked = isBackupEnabled,
                 onCheckedChange = { settingsViewModel.setBackupEnabled(it) },
@@ -9817,7 +10371,7 @@ fun ProfileScreen(
         item {
             SettingsActionItem(
                 text = "Export Data as JSON",
-                subtitle = "Create a full backup of all your app data.",
+                subtitle = "Create a full backup of all your app data",
                 icon = Icons.Default.DataObject,
                 onClick = {
                     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -9830,7 +10384,7 @@ fun ProfileScreen(
         item {
             SettingsActionItem(
                 text = "Export Transactions as CSV",
-                subtitle = "Save all transactions in a spreadsheet-compatible format.",
+                subtitle = "Save all transactions in a spreadsheet-compatible format",
                 icon = Icons.Default.GridOn,
                 onClick = {
                     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -9843,7 +10397,7 @@ fun ProfileScreen(
         item {
             SettingsActionItem(
                 text = "Import from JSON",
-                subtitle = "Restore your app data from a full backup file.",
+                subtitle = "Restore your app data from a full backup file",
                 icon = Icons.Default.Download,
                 onClick = { showImportJsonDialog = true },
             )
@@ -9851,7 +10405,7 @@ fun ProfileScreen(
         item {
             SettingsActionItem(
                 text = "Import from CSV",
-                subtitle = "Add new transactions from a CSV file.",
+                subtitle = "Add new transactions from a CSV file",
                 icon = Icons.Default.PostAdd,
                 onClick = { showImportCsvDialog = true },
             )
@@ -9877,36 +10431,6 @@ fun ProfileScreen(
         ) {
             DatePicker(state = datePickerState)
         }
-    }
-
-    if (showSmsRationaleDialog) {
-        AlertDialog(
-            onDismissRequest = { showSmsRationaleDialog = false },
-            title = { Text("Permission Required") },
-            text = {
-                Text(
-                    "To automatically capture transactions, this app needs permission to read and receive SMS messages. Your data is processed only on your device and is never shared.",
-                )
-            },
-            confirmButton = {
-                Button(onClick = {
-                    showSmsRationaleDialog = false
-                    permissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.READ_SMS,
-                            Manifest.permission.RECEIVE_SMS,
-                        ),
-                    )
-                }) {
-                    Text("Continue")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSmsRationaleDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
     }
 
     if (showDailyTimePicker) {
@@ -10004,6 +10528,10 @@ fun ProfileScreen(
             },
         )
     }
+}
+
+private fun hasSmsPermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 }
 -e 
 
@@ -11107,13 +11635,15 @@ fun DeleteCategoryDialog(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt
-// REASON: NEW FILE - Centralizes reusable composables for settings screens.
-// This resolves overload ambiguity errors by creating a single source of truth
-// for these components, which were previously duplicated.
+// REASON: REFACTOR - Both `SettingsActionItem` and `SettingsToggleItem` have
+// been refactored to use the Material3 `ListItem` composable as their base.
+// This enforces a consistent layout structure, fixing the alignment issues
+// where toggle rows were previously indented differently from action rows.
 // =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -11127,7 +11657,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.*
@@ -11155,9 +11684,14 @@ fun SettingsToggleItem(
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
-        leadingContent = { Icon(icon, contentDescription = null) },
+        leadingContent = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
         trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
-        modifier = Modifier.padding(horizontal = 16.dp),
+        modifier = Modifier.clickable(enabled = enabled) { onCheckedChange(!checked) },
+        colors = ListItemDefaults.colors(
+            headlineColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            supportingColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            leadingIconColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+        )
     )
 }
 
@@ -11169,33 +11703,17 @@ fun SettingsActionItem(
     onClick: () -> Unit,
     enabled: Boolean = true
 ) {
-    val contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    val subtitleColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-
-    TextButton(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        enabled = enabled
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = contentColor)
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text, style = MaterialTheme.typography.bodyLarge, color = contentColor)
-                if (subtitle != null) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = subtitleColor
-                    )
-                }
-            }
-        }
-    }
+    ListItem(
+        headlineContent = { Text(text) },
+        supportingContent = { subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall) } },
+        leadingContent = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+        colors = ListItemDefaults.colors(
+            headlineColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            supportingColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            leadingIconColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+        )
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -11819,6 +12337,10 @@ val Typography = Typography(
 // REFACTOR - Replaced the specific `daily_report_screen` route with a generic
 // `time_period_report_screen/{timePeriod}` route to support the new reusable
 // reporting architecture.
+// FEATURE - Added the new "manage_ignore_rules" route to the NavHost to make
+// the new screen accessible within the app's navigation graph.
+// FEATURE - Added the new "link_transaction_screen" route to the NavHost to
+// enable the transaction linking UI.
 // =================================================================================
 package io.pm.finlight
 
@@ -12050,7 +12572,7 @@ fun MainAppScreen() {
         "income_screen",
         "splash_screen",
         "add_transaction",
-        "time_period_report_screen" // Hide default bar for the generic report screen
+        "time_period_report_screen"
     )
 
     val activity = LocalContext.current as AppCompatActivity
@@ -12174,6 +12696,9 @@ fun AppNavHost(
 
         composable("manage_parse_rules") {
             ManageParseRulesScreen()
+        }
+        composable("manage_ignore_rules") {
+            ManageIgnoreRulesScreen()
         }
 
         composable(BottomNavItem.Dashboard.route) {
@@ -12310,7 +12835,20 @@ fun AppNavHost(
             )
         }
 
-        // --- REFACTOR: Replaced daily_report_screen with a generic route ---
+        // --- NEW: Route for the linking screen ---
+        composable(
+            "link_transaction_screen/{potentialTransactionJson}",
+            arguments = listOf(
+                navArgument("potentialTransactionJson") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
+            LinkTransactionScreen(
+                navController = navController,
+                potentialTransactionJson = json
+            )
+        }
+
         composable(
             "time_period_report_screen/{timePeriod}",
             arguments = listOf(navArgument("timePeriod") {
@@ -13026,6 +13564,76 @@ class SmsRepository(private val context: Context) {
 -e 
 
 
+================== FILE: ./app/src/main/java/IgnoreRuleDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/IgnoreRuleDao.kt
+// REASON: FEATURE - The DAO has been updated with new methods to support the
+// enhanced ignore rule management. It can now insert a list of default rules,
+// update the enabled status of a rule, and fetch only the active phrases for
+// the parser to use.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Data Access Object (DAO) for the IgnoreRule entity.
+ */
+@Dao
+interface IgnoreRuleDao {
+
+    /**
+     * Retrieves all ignore rules from the database, ordered alphabetically.
+     * @return A Flow emitting a list of all IgnoreRule objects.
+     */
+    @Query("SELECT * FROM ignore_rules ORDER BY phrase ASC")
+    fun getAll(): Flow<List<IgnoreRule>>
+
+    /**
+     * Retrieves all enabled ignore phrases.
+     * @return A list of strings containing the active ignore phrases.
+     */
+    @Query("SELECT phrase FROM ignore_rules WHERE isEnabled = 1")
+    suspend fun getEnabledPhrases(): List<String>
+
+    /**
+     * Inserts a new ignore rule. If a rule with the same phrase already exists,
+     * it will be ignored.
+     * @param rule The IgnoreRule object to insert.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(rule: IgnoreRule)
+
+    /**
+     * Inserts a list of ignore rules. Used for seeding the database.
+     * @param rules The list of IgnoreRule objects to insert.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(rules: List<IgnoreRule>)
+
+    /**
+     * Updates an existing ignore rule.
+     * @param rule The IgnoreRule object to update.
+     */
+    @Update
+    suspend fun update(rule: IgnoreRule)
+
+    /**
+     * Deletes a specific ignore rule from the database.
+     * @param rule The IgnoreRule object to delete.
+     */
+    @Delete
+    suspend fun delete(rule: IgnoreRule)
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/BudgetViewModel.kt ==================
 package io.pm.finlight
 
@@ -13160,10 +13768,13 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 18. A new
-// entity, `MerchantCategoryMapping`, has been added, along with its corresponding
-// DAO and a migration (MIGRATION_17_18) to create the new table. This table
-// is the foundation for the new "Category Learning" feature.
+// REASON: FEATURE - The database version is incremented to 20. A new migration
+// (MIGRATION_19_20) is added to modify the `ignore_rules` table with new
+// `isEnabled` and `isDefault` columns. The `DatabaseCallback` is updated to
+// pre-populate this table with the app's default ignore phrases upon creation.
+// BUG FIX - The `onOpen` callback has been corrected to ensure that on a fresh
+// install, it seeds not only the default rules but also the sample accounts,
+// categories, and transactions, restoring the original sample data.
 // =================================================================================
 package io.pm.finlight
 
@@ -13192,9 +13803,10 @@ import java.util.Calendar
         TransactionImage::class,
         CustomSmsRule::class,
         MerchantRenameRule::class,
-        MerchantCategoryMapping::class // --- NEW: Add new entity ---
+        MerchantCategoryMapping::class,
+        IgnoreRule::class
     ],
-    version = 18, // --- UPDATED: Database version incremented ---
+    version = 20,
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -13207,11 +13819,21 @@ abstract open class AppDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun customSmsRuleDao(): CustomSmsRuleDao
     abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
-    abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao // --- NEW: Add new DAO ---
+    abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
+    abstract fun ignoreRuleDao(): IgnoreRuleDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        private val DEFAULT_IGNORE_PHRASES = listOf(
+            "invoice of",
+            "payment of.*is successful",
+            "has been credited to",
+            "payment of.*has been received towards",
+            "credited to your.*card",
+            "Payment of.*has been received on your.*Credit Card"
+        ).map { IgnoreRule(phrase = it, isDefault = true) }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -13336,10 +13958,23 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the merchant_category_mapping table ---
         val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_category_mapping` (`parsedName` TEXT NOT NULL, `categoryId` INTEGER NOT NULL, PRIMARY KEY(`parsedName`))")
+            }
+        }
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `ignore_rules` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `phrase` TEXT NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ignore_rules_phrase` ON `ignore_rules` (`phrase`)")
+            }
+        }
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `ignore_rules` ADD COLUMN `isEnabled` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `ignore_rules` ADD COLUMN `isDefault` INTEGER NOT NULL DEFAULT 0")
             }
         }
 
@@ -13348,7 +13983,7 @@ abstract open class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18) // Add new migration
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -13360,20 +13995,15 @@ abstract open class AppDatabase : RoomDatabase() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 CoroutineScope(Dispatchers.IO).launch {
+                    // Populate everything on first creation
                     populateDatabase(getInstance(context))
                 }
             }
 
             override fun onOpen(db: SupportSQLiteDatabase) {
                 super.onOpen(db)
-                CoroutineScope(Dispatchers.IO).launch {
-                    val database = getInstance(context)
-                    val categoryDao = database.categoryDao()
-                    val categories = categoryDao.getAllCategories().first()
-                    if (categories.isEmpty()) {
-                        categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
-                    }
-                }
+                // This is a good place for conditional seeding if needed on app open
+                // For now, onCreate handles the initial population.
             }
 
             suspend fun populateDatabase(db: AppDatabase) {
@@ -13381,13 +14011,11 @@ abstract open class AppDatabase : RoomDatabase() {
                 val categoryDao = db.categoryDao()
                 val transactionDao = db.transactionDao()
                 val budgetDao = db.budgetDao()
+                val ignoreRuleDao = db.ignoreRuleDao()
 
-                transactionDao.deleteAll()
-                budgetDao.deleteAll()
-                categoryDao.deleteAll()
-                accountDao.deleteAll()
-
+                // --- Seed all default data ---
                 categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
+                ignoreRuleDao.insertAll(DEFAULT_IGNORE_PHRASES)
 
                 accountDao.insertAll(
                     listOf(
@@ -13458,10 +14086,10 @@ abstract open class AppDatabase : RoomDatabase() {
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - Added a new pattern to the `NEGATIVE_KEYWORDS_REGEX`. The
-// new pattern, `Payment of.*has been received on your.*Credit Card`, specifically
-// targets and ignores credit card payment confirmations made through systems
-// like Bharat Bill Pay, further improving parsing accuracy.
+// REASON: REFACTOR - The hardcoded `NEGATIVE_KEYWORDS_REGEX` has been removed.
+// The parser now relies entirely on the enabled phrases fetched from the
+// `ignoreRuleDao`, making the ignore logic fully database-driven and
+// user-configurable.
 // =================================================================================
 package io.pm.finlight
 
@@ -13480,7 +14108,7 @@ object SmsParser {
     private val KEYWORD_AMOUNT_REGEX = "(?:purchase of|payment of|spent|charged|credited with|debited for|credit of|for)\\s+([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
-    private val NEGATIVE_KEYWORDS_REGEX = "\\b(invoice of|payment of.*is successful|has been credited to|payment of.*has been received towards|credited to your.*card|Payment of.*has been received on your.*Credit Card)\\b".toRegex(RegexOption.IGNORE_CASE)
+    // --- REMOVED: The hardcoded negative keywords regex is no longer needed. ---
     private val ACCOUNT_PATTERNS =
         listOf(
             "(ICICI Bank) Account XX(\\d{3,4}) credited".toRegex(RegexOption.IGNORE_CASE),
@@ -13532,14 +14160,24 @@ object SmsParser {
         sms: SmsMessage,
         mappings: Map<String, String>,
         customSmsRuleDao: CustomSmsRuleDao,
-        merchantRenameRuleDao: MerchantRenameRuleDao
+        merchantRenameRuleDao: MerchantRenameRuleDao,
+        ignoreRuleDao: IgnoreRuleDao
     ): PotentialTransaction? {
         val messageBody = sms.body
         Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
 
-        if (NEGATIVE_KEYWORDS_REGEX.containsMatchIn(messageBody)) {
-            Log.d("SmsParser", "Message contains negative keywords. Ignoring.")
-            return null
+        // --- UPDATED: Check against enabled ignore phrases from the database ---
+        val ignorePhrases = ignoreRuleDao.getEnabledPhrases()
+        for (phrase in ignorePhrases) {
+            try {
+                if (phrase.toRegex(RegexOption.IGNORE_CASE).containsMatchIn(messageBody)) {
+                    Log.d("SmsParser", "Message contains ignore phrase '$phrase'. Ignoring.")
+                    return null
+                }
+            } catch (e: PatternSyntaxException) {
+                // Log error for invalid regex from user input, but don't crash
+                Log.e("SmsParser", "Invalid regex pattern in ignore phrase: '$phrase'", e)
+            }
         }
 
         var extractedMerchant: String? = null
@@ -14202,9 +14840,12 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
 ================== FILE: ./app/src/main/java/SettingsViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: REFACTOR - The call to `SmsParser.parse` has been updated to pass the
-// individual DAOs (`customSmsRuleDao`, `merchantRenameRuleDao`) instead of the
-// entire database instance, aligning with the parser's new, decoupled signature.
+// REASON: FEATURE - The `rescanSmsForReview` function now passes the `ignoreRuleDao`
+// to the SmsParser. This ensures that manual SMS scans from the settings screen
+// will also respect the user's defined list of ignore phrases.
+// FEATURE - Added the `onTransactionLinked` function to remove a potential
+// transaction from the review list after it has been successfully linked to an
+// existing manual entry, completing the feature's cleanup workflow.
 // =================================================================================
 package io.pm.finlight
 
@@ -14367,7 +15008,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { sms ->
-                        SmsParser.parse(sms, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao())
+                        SmsParser.parse(sms, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
                     }
                 }
 
@@ -14391,6 +15032,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun onTransactionApproved(smsId: Long) {
+        _potentialTransactions.update { currentList ->
+            currentList.filterNot { it.sourceSmsId == smsId }
+        }
+    }
+
+    // --- NEW: Function to remove a linked transaction from the review list ---
+    fun onTransactionLinked(smsId: Long) {
         _potentialTransactions.update { currentList ->
             currentList.filterNot { it.sourceSmsId == smsId }
         }
@@ -14827,6 +15475,43 @@ data class TransactionImage(
 -e 
 
 
+================== FILE: ./app/src/main/java/IgnoreRule.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/IgnoreRule.kt
+// REASON: FEATURE - The entity has been updated with `isEnabled` and `isDefault`
+// fields. This allows the app to distinguish between pre-populated default
+// rules and user-added rules, and gives users the ability to toggle the
+// default rules on or off without deleting them.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+/**
+ * Represents a user-defined rule to ignore an SMS based on a specific phrase.
+ * If this phrase is found in an SMS body, the parser will skip it.
+ *
+ * @param id The unique identifier for the rule.
+ * @param phrase The text that, if found, will cause the SMS to be ignored (e.g., "invoice of").
+ * @param isEnabled Whether this rule is currently active.
+ * @param isDefault True if this is a pre-populated rule, false if user-added.
+ */
+@Entity(
+    tableName = "ignore_rules",
+    indices = [Index(value = ["phrase"], unique = true)]
+)
+data class IgnoreRule(
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+    val phrase: String,
+    var isEnabled: Boolean = true,
+    val isDefault: Boolean = false
+)
+-e 
+
+
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
@@ -14835,10 +15520,12 @@ data class TransactionImage(
 // to fetch and display the top spending categories for any given period (daily,
 // weekly, or monthly).
 // REFACTOR - Replaced specific queries like `getTransactionsForDay` with more
-// generic versions like `getTransactionsForDateRange` to support the new
-// reusable TimePeriodReportScreen.
+// generic versions like `getTransactionsForDateRange` to support the new reusable
+// TimePeriodReportScreen.
 // FEATURE - Added `getWeeklySpendingForDateRange` and `getMonthlySpendingForDateRange`
 // to provide data for the context charts on the weekly and monthly report screens.
+// FEATURE - Added `setSmsHash` and `findLinkableTransactions` queries to
+// provide the data layer foundation for the new transaction linking feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -15218,7 +15905,6 @@ interface TransactionDao {
     """)
     fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>>
 
-    // --- NEW: Query to get total spending grouped by week ---
     @Query("""
         SELECT
             strftime('%Y-%W', date / 1000, 'unixepoch') as period,
@@ -15230,7 +15916,6 @@ interface TransactionDao {
     """)
     fun getWeeklySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
 
-    // --- NEW: Query to get total spending grouped by month ---
     @Query("""
         SELECT
             strftime('%Y-%m', date / 1000, 'unixepoch') as period,
@@ -15241,6 +15926,28 @@ interface TransactionDao {
         ORDER BY period ASC
     """)
     fun getMonthlySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
+
+    // --- NEW: Query to set the SMS hash on a manually entered transaction ---
+    @Query("UPDATE transactions SET sourceSmsHash = :smsHash WHERE id = :transactionId")
+    suspend fun setSmsHash(transactionId: Int, smsHash: String)
+
+    // --- NEW: Smart query to find potential matches for linking ---
+    @Query("""
+        SELECT * FROM transactions
+        WHERE sourceSmsHash IS NULL
+          AND date BETWEEN :startDate AND :endDate
+          AND amount BETWEEN :minAmount AND :maxAmount
+          AND transactionType = :transactionType
+        ORDER BY ABS(date - :smsDate) ASC
+    """)
+    suspend fun findLinkableTransactions(
+        startDate: Long,
+        endDate: Long,
+        minAmount: Double,
+        maxAmount: Double,
+        smsDate: Long,
+        transactionType: String
+    ): List<Transaction>
 }
 -e 
 
@@ -15296,9 +16003,13 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
 // updated the "Salary" category's icon. Also added the new icons to the
 // helper maps.
 // BUG FIX: Replaced the 'Replay' icon with 'Redo' to resolve compilation errors.
+// FEATURE - Added the new `getCategoryBackground` function and a corresponding
+// map to associate category keys with drawable resources for background images,
+// enhancing the visual appeal of the transaction detail screen.
 // =================================================================================
 package io.pm.finlight
 
+import androidx.annotation.DrawableRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
@@ -15326,6 +16037,33 @@ object CategoryIconHelper {
         "yellow_light" to Color(0xFFFFF59D),
         "gray_light" to Color(0xFFE0E0E0),
     )
+
+    // --- NEW: Map category keys to background drawable resources ---
+    // NOTE: Replace these placeholders with your actual drawable resource IDs.
+    private val categoryBackgrounds = mapOf(
+        "receipt_long" to R.drawable.bg_cat_bills,
+        "trending_up" to R.drawable.bg_cat_investment,
+        "star" to R.drawable.bg_cat_entertainment,
+        "restaurant" to R.drawable.bg_cat_food,
+        "local_gas_station" to R.drawable.bg_cat_fuel,
+        "shopping_cart" to R.drawable.bg_cat_groceries,
+        "favorite" to R.drawable.bg_cat_health,
+        "business" to R.drawable.bg_cat_investment,
+        "shopping_bag" to R.drawable.bg_cat_shopping,
+        "swap_horiz" to R.drawable.bg_cat_transfer,
+        "travel_explore" to R.drawable.bg_cat_travel,
+        "work" to R.drawable.bg_cat_salary,
+        "redo" to R.drawable.bg_cat_refund,
+        "add_card" to R.drawable.bg_cat_card,
+        "more_horiz" to R.drawable.bg_cat_general,
+        "default" to R.drawable.bg_cat_general
+    )
+
+    @DrawableRes
+    fun getCategoryBackground(categoryIconKey: String?): Int {
+        return categoryBackgrounds[categoryIconKey] ?: R.drawable.bg_cat_general
+    }
+
 
     fun getIconBackgroundColor(colorKey: String): Color {
         return iconColors[colorKey] ?: Color.LightGray
@@ -15355,7 +16093,6 @@ object CategoryIconHelper {
         Category(id = 11, name = "Travel", iconKey = "travel_explore", colorKey = "deep_purple_light"),
         Category(id = 12, name = "Salary", iconKey = "work", colorKey = "yellow_light"),
         Category(id = 13, name = "Other", iconKey = "more_horiz", colorKey = "gray_light"),
-        // --- UPDATED: Replaced 'replay' with 'redo' ---
         Category(id = 14, name = "Refund", iconKey = "redo", colorKey = "green_light"),
         Category(id = 15, name = "Credit", iconKey = "add_card", colorKey = "blue_light"),
     )
@@ -15381,7 +16118,6 @@ object CategoryIconHelper {
             "fastfood" -> Icons.Default.Fastfood
             "directions_car" -> Icons.Default.DirectionsCar
             "work" -> Icons.Default.Work
-            // --- UPDATED: Replaced 'Replay' with 'Redo' ---
             "redo" -> Icons.Default.Redo
             "add_card" -> Icons.Default.AddCard
             else -> Icons.Default.Category
@@ -15410,7 +16146,6 @@ object CategoryIconHelper {
             "directions_car" to Icons.Default.DirectionsCar,
             "category" to Icons.Default.Category,
             "work" to Icons.Default.Work,
-            // --- UPDATED: Replaced 'replay' with 'redo' ---
             "redo" to Icons.Default.Redo,
             "add_card" to Icons.Default.AddCard,
         )
@@ -16069,10 +16804,9 @@ data class Transaction(
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: FEATURE - The receiver now queries the new `merchant_category_mapping`
-// table after a transaction is parsed. If a category has been previously
-// associated with the parsed merchant name, that category ID is automatically
-// assigned to the new transaction, fulfilling the "Category Learning" feature.
+// REASON: FEATURE - The receiver now passes the new `ignoreRuleDao` to the
+// SmsParser. This enables the parser to check against the user-defined list of
+// ignore phrases before attempting to process an SMS.
 // =================================================================================
 package io.pm.finlight
 
@@ -16114,18 +16848,18 @@ class SmsReceiver : BroadcastReceiver() {
                         val transactionDao = db.transactionDao()
                         val accountDao = db.accountDao()
                         val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
-                        val merchantCategoryMappingDao = db.merchantCategoryMappingDao() // --- NEW ---
+                        val merchantCategoryMappingDao = db.merchantCategoryMappingDao()
+                        val ignoreRuleDao = db.ignoreRuleDao() // --- NEW ---
 
                         val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
                         val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
-                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao())
+                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), ignoreRuleDao) // --- UPDATED ---
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
 
-                            // --- NEW: Apply learned category ---
                             var mappedCategoryId: Int? = null
                             potentialTxn.merchantName?.let { merchantName ->
                                 mappedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
@@ -16151,8 +16885,8 @@ class SmsReceiver : BroadcastReceiver() {
                                     amount = potentialTxn.amount,
                                     date = System.currentTimeMillis(),
                                     accountId = account.id,
-                                    categoryId = mappedCategoryId, // --- UPDATED: Use the learned category ID
-                                    notes = "", // Keep notes empty for user
+                                    categoryId = mappedCategoryId,
+                                    notes = "",
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,
@@ -16434,6 +17168,9 @@ object NotificationHelper {
 // REASON: BUG FIX - The `allTransactions` property now correctly calls the
 // `getAllTransactions()` function, which was re-added to the DAO. This resolves
 // the "Unresolved reference" compilation error.
+// FEATURE - The repository now exposes the new `setSmsHash` and
+// `findLinkableTransactions` functions from the DAO, making them available to
+// the ViewModel layer for the transaction linking feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -16621,6 +17358,35 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     suspend fun delete(transaction: Transaction) {
         transactionDao.delete(transaction)
+    }
+
+    // --- NEW: Expose the DAO function to set an SMS hash ---
+    suspend fun setSmsHash(transactionId: Int, smsHash: String) {
+        transactionDao.setSmsHash(transactionId, smsHash)
+    }
+
+    // --- NEW: Expose the DAO function to find linkable transactions ---
+    suspend fun findLinkableTransactions(
+        smsDate: Long,
+        smsAmount: Double,
+        transactionType: String
+    ): List<Transaction> {
+        val sevenDaysInMillis = 7 * 24 * 60 * 60 * 1000
+        val startDate = smsDate - sevenDaysInMillis
+        val endDate = smsDate + sevenDaysInMillis
+
+        val amountRange = smsAmount * 0.10
+        val minAmount = smsAmount - amountRange
+        val maxAmount = smsAmount + amountRange
+
+        return transactionDao.findLinkableTransactions(
+            startDate = startDate,
+            endDate = endDate,
+            minAmount = minAmount,
+            maxAmount = maxAmount,
+            smsDate = smsDate,
+            transactionType = transactionType
+        )
     }
 }
 -e 
@@ -17277,10 +18043,11 @@ class ExampleUnitTest {
 ================== FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt ==================
 // =================================================================================
 // FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt
-// REASON: FEATURE - Added the `test_ignores_bharat_bill_pay_confirmation` unit
-// test. This new test case specifically verifies that the parser correctly
-// ignores credit card payment confirmation messages sent via the "Bharat Bill
-// Payment System", ensuring the new negative keyword regex is effective.
+// REASON: FEATURE - Added `mockIgnoreRuleDao` and updated the `setupTest` helper
+// to support the new ignore rule functionality. A new test,
+// `test_ignores_message_with_user_defined_ignore_phrase`, has been added to
+// verify that the parser correctly skips messages containing phrases from the
+// new user-managed ignore list.
 // =================================================================================
 package io.pm.finlight
 
@@ -17303,6 +18070,9 @@ class SmsParserTest {
     @Mock
     private lateinit var mockMerchantRenameRuleDao: MerchantRenameRuleDao
 
+    @Mock
+    private lateinit var mockIgnoreRuleDao: IgnoreRuleDao // --- NEW ---
+
     private val emptyMappings = emptyMap<String, String>()
 
     @Before
@@ -17310,9 +18080,14 @@ class SmsParserTest {
         // No need to mock AppDatabase anymore
     }
 
-    private suspend fun setupTest(customRules: List<CustomSmsRule> = emptyList(), renameRules: List<MerchantRenameRule> = emptyList()) {
+    private suspend fun setupTest(
+        customRules: List<CustomSmsRule> = emptyList(),
+        renameRules: List<MerchantRenameRule> = emptyList(),
+        ignoreRules: List<IgnoreRule> = emptyList() // --- NEW ---
+    ) {
         `when`(mockCustomSmsRuleDao.getAllRules()).thenReturn(flowOf(customRules))
         `when`(mockMerchantRenameRuleDao.getAllRules()).thenReturn(flowOf(renameRules))
+        `when`(mockIgnoreRuleDao.getAll()).thenReturn(flowOf(ignoreRules)) // --- NEW ---
     }
 
     @Test
@@ -17321,7 +18096,7 @@ class SmsParserTest {
         val smsBody = "Your account with HDFC Bank has been debited for Rs. 750.50 at Amazon on 22-Jun-2025."
         val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
 
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
 
         assertNotNull("Parser should return a result for a debit message", result)
         assertEquals(750.50, result?.amount)
@@ -17335,7 +18110,7 @@ class SmsParserTest {
         val smsBody = "You have received a credit of INR 5,000.00 from Freelance Client."
         val mockSms = SmsMessage(id = 2L, sender = "DM-SOMEBK", body = smsBody, date = System.currentTimeMillis())
 
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
 
         assertNotNull("Parser should return a result for a credit message", result)
         assertEquals(5000.00, result?.amount)
@@ -17349,7 +18124,7 @@ class SmsParserTest {
         val smsBody = "Hello, just checking in. Are we still on for dinner tomorrow evening?"
         val mockSms = SmsMessage(id = 3L, sender = "+1234567890", body = smsBody, date = System.currentTimeMillis())
 
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
 
         assertNull("Parser should return null for a non-financial message", result)
     }
@@ -17359,7 +18134,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "Rs.267.00 spent on your SBI Credit Card ending with 3201 at HALLI THOTA on 29-06-25 via UPI (Ref No. 1231230123). Trxn. Not done by you? Report at https://sbicards.com/Dispute)"
         val mockSms = SmsMessage(id = 4L, sender = "VM-SBICRD", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
 
         assertNotNull(result)
         assertEquals(267.00, result?.amount)
@@ -17375,7 +18150,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "ICICI Bank Acct XX823 debited for Rs 240.00 on 21-Jun-25; DAKSHIN CAFE credited. UPI: 552200221100. Call 18002661 for dispute."
         val mockSms = SmsMessage(id = 5L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
 
         assertNotNull(result)
         assertEquals(240.00, result?.amount)
@@ -17391,7 +18166,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "[JD-HDFCBK-S] Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on2025-06-22:08:01:24.Not You> To Block+Reissue Call 18002323232/SMS BLOCK CC 9922 to 123098123"
         val mockSms = SmsMessage(id = 6L, sender = "JD-HDFCBK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
 
         assertNotNull(result)
         assertEquals(388.19, result?.amount)
@@ -17407,7 +18182,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "Rs. 60.00 spent from Pluxee Meal Card wallet, card no.xx1345 on 30-06-2025 18:41:56 at KITCHEN AFF . Avl bal Rs.1824.65. Not you call 18002106919"
         val mockSms = SmsMessage(id = 7L, sender = "VD-PLUXEE", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
 
         assertNotNull(result)
         assertEquals(60.00, result?.amount)
@@ -17423,7 +18198,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "Dear Customer, Acct XX823 is credited with Rs 6000.00 on 26-Jun-25 from GANGA MANGA. UPI:5577822323232-ICICI Bank"
         val mockSms = SmsMessage(id = 8L, sender = "QP-ICIBNK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
 
         assertNotNull(result)
         assertEquals(6000.00, result?.amount)
@@ -17435,20 +18210,11 @@ class SmsParserTest {
     }
 
     @Test
-    fun `test ignores invoice message`() = runBlocking {
-        setupTest()
-        val smsBody = "An Invoice of Rs.330.8 for A4 Block-108 is raised. Pay at https://nbhd.co/NBHood/g/szBBpng. Ignore if paid - NoBrokerHood"
-        val mockSms = SmsMessage(id = 9L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
-        assertNull("Parser should ignore invoice messages", result)
-    }
-
-    @Test
     fun `test ignores successful payment confirmation`() = runBlocking {
         setupTest()
         val smsBody = "Your payment of Rs.330.80 for A4-108 against Water Charges is successful. Regards NoBrokerHood"
         val mockSms = SmsMessage(id = 10L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
         assertNull("Parser should ignore successful payment confirmations", result)
     }
 
@@ -17457,7 +18223,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "ICICI Bank Account XX823 credited:Rs. 1,133.00 on 01-Jul-25. Info NEFT-HDFCN5202507024345356218-. Available Balance is Rs. 1,858.35."
         val mockSms = SmsMessage(id = 11L, sender = "VM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
 
         assertNotNull(result)
         assertEquals(1133.00, result?.amount)
@@ -17473,7 +18239,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "HDFC Bank : NEFT money transfer Txn No HDFCN520253454560344 for Rs INR 1,500.00 has been credited to Manga Penga on 01-07-2025 at 08:05:30"
         val mockSms = SmsMessage(id = 12L, sender = "VM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
         assertNull("Parser should ignore has been credited to messages", result)
     }
 
@@ -17482,7 +18248,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "Payment of INR 1180.01 has been received towards your SBI card XX1121"
         val mockSms = SmsMessage(id = 13L, sender = "DM-SBICRD", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
         assertNull("Parser should ignore credit card payment confirmations", result)
     }
 
@@ -17491,8 +18257,18 @@ class SmsParserTest {
         setupTest()
         val smsBody = "Payment of Rs 356.33 has been received on your ICICI Bank Credit Card XX2529 through Bharat Bill Payment System on 03-JUL-25."
         val mockSms = SmsMessage(id = 14L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
         assertNull("Parser should ignore Bharat Bill Pay confirmations", result)
+    }
+
+    @Test
+    fun `test ignores message with user-defined ignore phrase`() = runBlocking {
+        val ignoreRules = listOf(IgnoreRule(id = 1, phrase = "invoice of"))
+        setupTest(ignoreRules = ignoreRules)
+        val smsBody = "An Invoice of Rs.330.8 for A4 Block-108 is raised."
+        val mockSms = SmsMessage(id = 9L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        assertNull("Parser should ignore messages with user-defined phrases", result)
     }
 }
 -e 

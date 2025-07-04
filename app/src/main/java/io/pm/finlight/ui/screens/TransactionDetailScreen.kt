@@ -6,6 +6,17 @@
 //    `originalDescription` if it exists, otherwise falling back to the current
 //    `description` (the value before the edit). This ensures that rules can be
 //    created for any transaction, not just imported ones.
+// FEATURE - The `TransactionHeaderCard` has been redesigned to display a large,
+// semi-transparent background image corresponding to the transaction's category,
+// creating a more visually engaging and contextual header.
+// BUG FIX - The `TransactionHeaderCard` has been refactored to use a layered
+// Box layout. This ensures the background image always crops and fills the
+// available space uniformly, fixing inconsistent sizing issues. The image alpha
+// and text colors have also been adjusted for better visibility.
+// VISUAL - Increased the minimum height of the TransactionHeaderCard and adjusted
+// the background image alpha for a more prominent and visually appealing look.
+// VISUAL - The content layout within the `TransactionHeaderCard` has been updated
+// to spread the elements vertically, making better use of the larger card size.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -14,6 +25,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -41,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -886,54 +899,81 @@ private fun TransactionHeaderCard(
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
-        Column(
+        Box(
             modifier = Modifier
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                .fillMaxWidth()
+                .heightIn(min = 400.dp),
+        ) {
+            // Layer 1: The Background Image
+            Image(
+                painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+                alpha = 0.5f
+            )
+
+            // Layer 2: A darkening scrim
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.2f),
+                                Color.Black.copy(alpha = 0.7f)
+                            )
                         )
                     )
-                )
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+            )
+
+            // Layer 3: The actual content, using Box alignments
+            // Top Content (Description)
             Text(
                 text = details.transaction.description,
                 style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.clickable(onClick = onDescriptionClick)
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 24.dp)
+                    .clickable(onClick = onDescriptionClick)
             )
 
-            Text(
-                text = "₹${"%,.2f".format(details.transaction.amount)}",
-                fontSize = 48.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.clickable(onClick = onAmountClick)
-            )
+            // Center Content (Amount and Category)
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "₹${"%,.2f".format(details.transaction.amount)}",
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.clickable(onClick = onAmountClick)
+                )
+                Spacer(Modifier.height(12.dp))
+                ChipWithIcon(
+                    text = details.categoryName ?: "Uncategorized",
+                    icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
+                    colorKey = details.categoryColorKey ?: "gray_light",
+                    onClick = onCategoryClick,
+                    category = details.toCategory()
+                )
+            }
 
-            ChipWithIcon(
-                text = details.categoryName ?: "Uncategorized",
-                icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
-                colorKey = details.categoryColorKey ?: "gray_light",
-                onClick = onCategoryClick,
-                category = details.toCategory()
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
+            // Bottom Content (Date and Source)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 24.dp, vertical = 24.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = dateFormatter.format(Date(details.transaction.date)),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.8f),
                     modifier = Modifier.clickable(onClick = onDateTimeClick)
                 )
 
@@ -944,13 +984,13 @@ private fun TransactionHeaderCard(
                     Icon(
                         imageVector = Icons.Default.Info,
                         contentDescription = "Transaction Source",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = Color.White.copy(alpha = 0.8f),
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
                         text = details.transaction.source,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = Color.White.copy(alpha = 0.8f)
                     )
                 }
             }

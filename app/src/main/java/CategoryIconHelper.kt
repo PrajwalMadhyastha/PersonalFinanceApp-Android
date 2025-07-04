@@ -4,9 +4,13 @@
 // updated the "Salary" category's icon. Also added the new icons to the
 // helper maps.
 // BUG FIX: Replaced the 'Replay' icon with 'Redo' to resolve compilation errors.
+// FEATURE - Added the new `getCategoryBackground` function and a corresponding
+// map to associate category keys with drawable resources for background images,
+// enhancing the visual appeal of the transaction detail screen.
 // =================================================================================
 package io.pm.finlight
 
+import androidx.annotation.DrawableRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
@@ -34,6 +38,33 @@ object CategoryIconHelper {
         "yellow_light" to Color(0xFFFFF59D),
         "gray_light" to Color(0xFFE0E0E0),
     )
+
+    // --- NEW: Map category keys to background drawable resources ---
+    // NOTE: Replace these placeholders with your actual drawable resource IDs.
+    private val categoryBackgrounds = mapOf(
+        "receipt_long" to R.drawable.bg_cat_bills,
+        "trending_up" to R.drawable.bg_cat_investment,
+        "star" to R.drawable.bg_cat_entertainment,
+        "restaurant" to R.drawable.bg_cat_food,
+        "local_gas_station" to R.drawable.bg_cat_fuel,
+        "shopping_cart" to R.drawable.bg_cat_groceries,
+        "favorite" to R.drawable.bg_cat_health,
+        "business" to R.drawable.bg_cat_investment,
+        "shopping_bag" to R.drawable.bg_cat_shopping,
+        "swap_horiz" to R.drawable.bg_cat_transfer,
+        "travel_explore" to R.drawable.bg_cat_travel,
+        "work" to R.drawable.bg_cat_salary,
+        "redo" to R.drawable.bg_cat_refund,
+        "add_card" to R.drawable.bg_cat_card,
+        "more_horiz" to R.drawable.bg_cat_general,
+        "default" to R.drawable.bg_cat_general
+    )
+
+    @DrawableRes
+    fun getCategoryBackground(categoryIconKey: String?): Int {
+        return categoryBackgrounds[categoryIconKey] ?: R.drawable.bg_cat_general
+    }
+
 
     fun getIconBackgroundColor(colorKey: String): Color {
         return iconColors[colorKey] ?: Color.LightGray
@@ -63,7 +94,6 @@ object CategoryIconHelper {
         Category(id = 11, name = "Travel", iconKey = "travel_explore", colorKey = "deep_purple_light"),
         Category(id = 12, name = "Salary", iconKey = "work", colorKey = "yellow_light"),
         Category(id = 13, name = "Other", iconKey = "more_horiz", colorKey = "gray_light"),
-        // --- UPDATED: Replaced 'replay' with 'redo' ---
         Category(id = 14, name = "Refund", iconKey = "redo", colorKey = "green_light"),
         Category(id = 15, name = "Credit", iconKey = "add_card", colorKey = "blue_light"),
     )
@@ -89,7 +119,6 @@ object CategoryIconHelper {
             "fastfood" -> Icons.Default.Fastfood
             "directions_car" -> Icons.Default.DirectionsCar
             "work" -> Icons.Default.Work
-            // --- UPDATED: Replaced 'Replay' with 'Redo' ---
             "redo" -> Icons.Default.Redo
             "add_card" -> Icons.Default.AddCard
             else -> Icons.Default.Category
@@ -118,7 +147,6 @@ object CategoryIconHelper {
             "directions_car" to Icons.Default.DirectionsCar,
             "category" to Icons.Default.Category,
             "work" to Icons.Default.Work,
-            // --- UPDATED: Replaced 'replay' with 'redo' ---
             "redo" to Icons.Default.Redo,
             "add_card" to Icons.Default.AddCard,
         )
