@@ -1,12 +1,14 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt
-// REASON: NEW FILE - Centralizes reusable composables for settings screens.
-// This resolves overload ambiguity errors by creating a single source of truth
-// for these components, which were previously duplicated.
+// REASON: REFACTOR - Both `SettingsActionItem` and `SettingsToggleItem` have
+// been refactored to use the Material3 `ListItem` composable as their base.
+// This enforces a consistent layout structure, fixing the alignment issues
+// where toggle rows were previously indented differently from action rows.
 // =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -20,7 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.*
@@ -48,9 +49,14 @@ fun SettingsToggleItem(
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
-        leadingContent = { Icon(icon, contentDescription = null) },
+        leadingContent = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
         trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
-        modifier = Modifier.padding(horizontal = 16.dp),
+        modifier = Modifier.clickable(enabled = enabled) { onCheckedChange(!checked) },
+        colors = ListItemDefaults.colors(
+            headlineColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            supportingColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            leadingIconColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+        )
     )
 }
 
@@ -62,33 +68,17 @@ fun SettingsActionItem(
     onClick: () -> Unit,
     enabled: Boolean = true
 ) {
-    val contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    val subtitleColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-
-    TextButton(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        enabled = enabled
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = contentColor)
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text, style = MaterialTheme.typography.bodyLarge, color = contentColor)
-                if (subtitle != null) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = subtitleColor
-                    )
-                }
-            }
-        }
-    }
+    ListItem(
+        headlineContent = { Text(text) },
+        supportingContent = { subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall) } },
+        leadingContent = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+        colors = ListItemDefaults.colors(
+            headlineColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            supportingColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            leadingIconColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+        )
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
