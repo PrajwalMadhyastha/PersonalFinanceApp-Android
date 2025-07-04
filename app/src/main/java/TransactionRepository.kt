@@ -3,6 +3,9 @@
 // REASON: BUG FIX - The `allTransactions` property now correctly calls the
 // `getAllTransactions()` function, which was re-added to the DAO. This resolves
 // the "Unresolved reference" compilation error.
+// FEATURE - The repository now exposes the new `setSmsHash` and
+// `findLinkableTransactions` functions from the DAO, making them available to
+// the ViewModel layer for the transaction linking feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -190,5 +193,34 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     suspend fun delete(transaction: Transaction) {
         transactionDao.delete(transaction)
+    }
+
+    // --- NEW: Expose the DAO function to set an SMS hash ---
+    suspend fun setSmsHash(transactionId: Int, smsHash: String) {
+        transactionDao.setSmsHash(transactionId, smsHash)
+    }
+
+    // --- NEW: Expose the DAO function to find linkable transactions ---
+    suspend fun findLinkableTransactions(
+        smsDate: Long,
+        smsAmount: Double,
+        transactionType: String
+    ): List<Transaction> {
+        val sevenDaysInMillis = 7 * 24 * 60 * 60 * 1000
+        val startDate = smsDate - sevenDaysInMillis
+        val endDate = smsDate + sevenDaysInMillis
+
+        val amountRange = smsAmount * 0.10
+        val minAmount = smsAmount - amountRange
+        val maxAmount = smsAmount + amountRange
+
+        return transactionDao.findLinkableTransactions(
+            startDate = startDate,
+            endDate = endDate,
+            minAmount = minAmount,
+            maxAmount = maxAmount,
+            smsDate = smsDate,
+            transactionType = transactionType
+        )
     }
 }

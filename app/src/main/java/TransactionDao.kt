@@ -5,10 +5,12 @@
 // to fetch and display the top spending categories for any given period (daily,
 // weekly, or monthly).
 // REFACTOR - Replaced specific queries like `getTransactionsForDay` with more
-// generic versions like `getTransactionsForDateRange` to support the new
-// reusable TimePeriodReportScreen.
+// generic versions like `getTransactionsForDateRange` to support the new reusable
+// TimePeriodReportScreen.
 // FEATURE - Added `getWeeklySpendingForDateRange` and `getMonthlySpendingForDateRange`
 // to provide data for the context charts on the weekly and monthly report screens.
+// FEATURE - Added `setSmsHash` and `findLinkableTransactions` queries to
+// provide the data layer foundation for the new transaction linking feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -388,7 +390,6 @@ interface TransactionDao {
     """)
     fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>>
 
-    // --- NEW: Query to get total spending grouped by week ---
     @Query("""
         SELECT
             strftime('%Y-%W', date / 1000, 'unixepoch') as period,
@@ -400,7 +401,6 @@ interface TransactionDao {
     """)
     fun getWeeklySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
 
-    // --- NEW: Query to get total spending grouped by month ---
     @Query("""
         SELECT
             strftime('%Y-%m', date / 1000, 'unixepoch') as period,
@@ -411,4 +411,26 @@ interface TransactionDao {
         ORDER BY period ASC
     """)
     fun getMonthlySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
+
+    // --- NEW: Query to set the SMS hash on a manually entered transaction ---
+    @Query("UPDATE transactions SET sourceSmsHash = :smsHash WHERE id = :transactionId")
+    suspend fun setSmsHash(transactionId: Int, smsHash: String)
+
+    // --- NEW: Smart query to find potential matches for linking ---
+    @Query("""
+        SELECT * FROM transactions
+        WHERE sourceSmsHash IS NULL
+          AND date BETWEEN :startDate AND :endDate
+          AND amount BETWEEN :minAmount AND :maxAmount
+          AND transactionType = :transactionType
+        ORDER BY ABS(date - :smsDate) ASC
+    """)
+    suspend fun findLinkableTransactions(
+        startDate: Long,
+        endDate: Long,
+        minAmount: Double,
+        maxAmount: Double,
+        smsDate: Long,
+        transactionType: String
+    ): List<Transaction>
 }
