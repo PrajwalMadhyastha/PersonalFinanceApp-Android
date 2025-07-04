@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 18. A new
-// entity, `MerchantCategoryMapping`, has been added, along with its corresponding
-// DAO and a migration (MIGRATION_17_18) to create the new table. This table
-// is the foundation for the new "Category Learning" feature.
+// REASON: FEATURE - The database version has been incremented to 19. A new
+// entity, `IgnoreRule`, has been added, along with its corresponding DAO and a
+// migration (MIGRATION_18_19) to create the new `ignore_rules` table. This
+// provides the foundation for the new user-managed ignore list feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -32,9 +32,10 @@ import java.util.Calendar
         TransactionImage::class,
         CustomSmsRule::class,
         MerchantRenameRule::class,
-        MerchantCategoryMapping::class // --- NEW: Add new entity ---
+        MerchantCategoryMapping::class,
+        IgnoreRule::class // --- NEW: Add new entity ---
     ],
-    version = 18, // --- UPDATED: Database version incremented ---
+    version = 19, // --- UPDATED: Database version incremented ---
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -47,7 +48,8 @@ abstract open class AppDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun customSmsRuleDao(): CustomSmsRuleDao
     abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
-    abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao // --- NEW: Add new DAO ---
+    abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
+    abstract fun ignoreRuleDao(): IgnoreRuleDao // --- NEW: Add new DAO ---
 
     companion object {
         @Volatile
@@ -176,10 +178,17 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the merchant_category_mapping table ---
         val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_category_mapping` (`parsedName` TEXT NOT NULL, `categoryId` INTEGER NOT NULL, PRIMARY KEY(`parsedName`))")
+            }
+        }
+
+        // --- NEW: Migration to add the ignore_rules table ---
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `ignore_rules` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `phrase` TEXT NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ignore_rules_phrase` ON `ignore_rules` (`phrase`)")
             }
         }
 
@@ -188,7 +197,7 @@ abstract open class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18) // Add new migration
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19) // Add new migration
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance

@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - Added a new pattern to the `NEGATIVE_KEYWORDS_REGEX`. The
-// new pattern, `Payment of.*has been received on your.*Credit Card`, specifically
-// targets and ignores credit card payment confirmations made through systems
-// like Bharat Bill Pay, further improving parsing accuracy.
+// REASON: FEATURE - The `parse` function now accepts an `IgnoreRuleDao` and
+// checks the SMS body against a user-defined list of ignore phrases. If a match
+// is found, parsing is immediately halted, preventing non-transactional messages
+// from being processed.
 // =================================================================================
 package io.pm.finlight
 
@@ -22,7 +22,7 @@ object SmsParser {
     private val KEYWORD_AMOUNT_REGEX = "(?:purchase of|payment of|spent|charged|credited with|debited for|credit of|for)\\s+([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
-    private val NEGATIVE_KEYWORDS_REGEX = "\\b(invoice of|payment of.*is successful|has been credited to|payment of.*has been received towards|credited to your.*card|Payment of.*has been received on your.*Credit Card)\\b".toRegex(RegexOption.IGNORE_CASE)
+    private val NEGATIVE_KEYWORDS_REGEX = "\\b(payment of.*is successful|has been credited to|payment of.*has been received towards|credited to your.*card|Payment of.*has been received on your.*Credit Card)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val ACCOUNT_PATTERNS =
         listOf(
             "(ICICI Bank) Account XX(\\d{3,4}) credited".toRegex(RegexOption.IGNORE_CASE),
@@ -74,10 +74,20 @@ object SmsParser {
         sms: SmsMessage,
         mappings: Map<String, String>,
         customSmsRuleDao: CustomSmsRuleDao,
-        merchantRenameRuleDao: MerchantRenameRuleDao
+        merchantRenameRuleDao: MerchantRenameRuleDao,
+        ignoreRuleDao: IgnoreRuleDao
     ): PotentialTransaction? {
         val messageBody = sms.body
         Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
+
+        // --- NEW: Check against user-defined ignore rules first ---
+        val ignoreRules = ignoreRuleDao.getAll().first()
+        for (rule in ignoreRules) {
+            if (messageBody.contains(rule.phrase, ignoreCase = true)) {
+                Log.d("SmsParser", "Message contains user-defined ignore phrase '${rule.phrase}'. Ignoring.")
+                return null
+            }
+        }
 
         if (NEGATIVE_KEYWORDS_REGEX.containsMatchIn(messageBody)) {
             Log.d("SmsParser", "Message contains negative keywords. Ignoring.")

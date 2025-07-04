@@ -5,6 +5,9 @@
 // provides a more robust way for the UI to handle navigation or state resets
 // after saving. A `clearAddTransactionState` function has also been added to
 // reset tag selections for the "Save & add another" feature.
+// BUG FIX - The call to `SmsParser.parse` within the `reparseTransactionFromSms`
+// function has been updated to include the new `ignoreRuleDao` parameter,
+// resolving a compilation error.
 // =================================================================================
 package io.pm.finlight
 
@@ -319,7 +322,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db.customSmsRuleDao(), db.merchantRenameRuleDao())
+            // --- FIX: Pass the ignoreRuleDao to the parser ---
+            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
             Log.d(logTag, "SmsParser result: $potentialTxn")
 
             if (potentialTxn != null) {

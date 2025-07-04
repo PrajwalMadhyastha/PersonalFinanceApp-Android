@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: FEATURE - The receiver now queries the new `merchant_category_mapping`
-// table after a transaction is parsed. If a category has been previously
-// associated with the parsed merchant name, that category ID is automatically
-// assigned to the new transaction, fulfilling the "Category Learning" feature.
+// REASON: FEATURE - The receiver now passes the new `ignoreRuleDao` to the
+// SmsParser. This enables the parser to check against the user-defined list of
+// ignore phrases before attempting to process an SMS.
 // =================================================================================
 package io.pm.finlight
 
@@ -45,18 +44,18 @@ class SmsReceiver : BroadcastReceiver() {
                         val transactionDao = db.transactionDao()
                         val accountDao = db.accountDao()
                         val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
-                        val merchantCategoryMappingDao = db.merchantCategoryMappingDao() // --- NEW ---
+                        val merchantCategoryMappingDao = db.merchantCategoryMappingDao()
+                        val ignoreRuleDao = db.ignoreRuleDao() // --- NEW ---
 
                         val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
                         val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
-                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao())
+                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), ignoreRuleDao) // --- UPDATED ---
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
 
-                            // --- NEW: Apply learned category ---
                             var mappedCategoryId: Int? = null
                             potentialTxn.merchantName?.let { merchantName ->
                                 mappedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
@@ -82,8 +81,8 @@ class SmsReceiver : BroadcastReceiver() {
                                     amount = potentialTxn.amount,
                                     date = System.currentTimeMillis(),
                                     accountId = account.id,
-                                    categoryId = mappedCategoryId, // --- UPDATED: Use the learned category ID
-                                    notes = "", // Keep notes empty for user
+                                    categoryId = mappedCategoryId,
+                                    notes = "",
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,

@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: REFACTOR - The call to `SmsParser.parse` has been updated to pass the
-// individual DAOs (`customSmsRuleDao`, `merchantRenameRuleDao`) instead of the
-// entire database instance, aligning with the parser's new, decoupled signature.
+// REASON: FEATURE - The `rescanSmsForReview` function now passes the `ignoreRuleDao`
+// to the SmsParser. This ensures that manual SMS scans from the settings screen
+// will also respect the user's defined list of ignore phrases.
 // =================================================================================
 package io.pm.finlight
 
@@ -165,7 +165,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { sms ->
-                        SmsParser.parse(sms, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao())
+                        // --- UPDATED: Pass the ignoreRuleDao to the parser ---
+                        SmsParser.parse(sms, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
                     }
                 }
 
