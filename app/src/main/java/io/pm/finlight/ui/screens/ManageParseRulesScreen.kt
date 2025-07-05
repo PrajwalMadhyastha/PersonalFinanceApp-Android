@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageParseRulesScreen.kt
-// REASON: UX IMPROVEMENT - The UI is updated to display the user-friendly example
-// text (e.g., "Merchant Name: STARBUCKS") instead of the complex regex pattern.
-// This makes the screen much more intuitive and understandable for all users.
+// REASON: FIX - The `RuleItemCard` has been updated to use the rule's `triggerPhrase`
+// as the main title instead of the internal database ID (e.g., "Rule #3"). This
+// avoids user confusion about non-sequential numbers after deleting rules and
+// makes each card more descriptive. The redundant "Trigger Phrase" detail row
+// has been removed.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -17,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.pm.finlight.CustomSmsRule
@@ -90,9 +93,11 @@ private fun RuleItemCard(rule: CustomSmsRule, onDeleteClick: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Rule #${rule.id}",
+                    text = rule.triggerPhrase,
                     style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 IconButton(onClick = onDeleteClick) {
                     Icon(
@@ -103,13 +108,14 @@ private fun RuleItemCard(rule: CustomSmsRule, onDeleteClick: () -> Unit) {
                 }
             }
             HorizontalDivider()
-            RuleDetailRow(label = "Trigger Phrase", value = rule.triggerPhrase)
-            // --- UPDATED: Display user-friendly examples instead of regex ---
             rule.merchantNameExample?.let {
                 RuleDetailRow(label = "Merchant Name", value = it)
             }
             rule.amountExample?.let {
                 RuleDetailRow(label = "Amount", value = it)
+            }
+            rule.accountNameExample?.let {
+                RuleDetailRow(label = "Account Info", value = it)
             }
         }
     }

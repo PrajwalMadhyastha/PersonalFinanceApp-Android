@@ -1,6 +1,6 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt
-// REASON: FEATURE - The UI is enhanced with a "Mark as Account" button and a
+// REASON: FEATURE - The UI is enhanced with a "Mark as Account Info" button and a
 // corresponding summary item. This allows users to define a custom pattern for
 // the account, completing the new feature.
 // =================================================================================
@@ -120,7 +120,6 @@ fun RuleCreationScreen(
                 Text("Mark as Trigger Phrase")
             }
 
-            // --- UPDATED: Button layout now includes "Mark as Account" ---
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -158,7 +157,7 @@ fun RuleCreationScreen(
                     enabled = isSelectionActive,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Mark as Account")
+                    Text("Mark as Account Info")
                 }
             }
 
@@ -183,7 +182,6 @@ fun RuleCreationScreen(
                         label = "Amount",
                         value = uiState.amountSelection.selectedText.ifBlank { "Not set" }
                     )
-                    // --- NEW: Display the selected Account ---
                     RuleSummaryItem(
                         icon = Icons.Default.AccountBalanceWallet,
                         label = "Account",

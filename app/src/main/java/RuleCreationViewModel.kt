@@ -1,10 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
-// REASON: BUG FIX - The `generateRegex` function was too strict with its
-// whitespace requirements, causing rules to fail if the selected text was
-// adjacent to punctuation. The regex construction is now more flexible, using
-// `\s*` (zero or more whitespace) instead of `\s+` (one or more), making the
-// generated rules much more robust and reliable.
+// REASON: FEATURE - The ViewModel is updated to support custom account rule
+// creation. The UI state now includes an `accountSelection`, and a new
+// `onMarkAsAccount` function handles the user's selection. The `saveRule`
+// function is enhanced to generate and save the `accountRegex` and
+// `accountNameExample`, completing the feature's data logic.
 // =================================================================================
 package io.pm.finlight
 
@@ -141,7 +141,7 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
         val escapedPrefix = if (prefix.isNotBlank()) Pattern.quote(prefix) else ""
         val escapedSuffix = if (suffix.isNotBlank()) Pattern.quote(suffix) else ""
 
-        // --- FIX: Use `\s*` for flexible whitespace matching instead of `\s+` ---
+        // Use `\s*` for flexible whitespace matching instead of `\s+`
         // This handles cases where the selection is immediately next to punctuation.
         return when {
             escapedPrefix.isNotBlank() && escapedSuffix.isNotBlank() -> "$escapedPrefix\\s*(.*?)\\s*$escapedSuffix"

@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: REFACTOR - The hardcoded `NEGATIVE_KEYWORDS_REGEX` has been removed.
-// The parser now relies entirely on the enabled phrases fetched from the
-// `ignoreRuleDao`, making the ignore logic fully database-driven and
-// user-configurable.
+// REASON: FEATURE - The parser is enhanced to apply custom, user-defined
+// account rules. When a trigger-based rule matches, the parser now checks for
+// a custom `accountRegex`. If found, it uses this regex to extract the account
+// information, overriding the default account parsing logic and making the
+// feature more powerful and flexible.
 // =================================================================================
 package io.pm.finlight
 
@@ -22,7 +23,6 @@ object SmsParser {
     private val KEYWORD_AMOUNT_REGEX = "(?:purchase of|payment of|spent|charged|credited with|debited for|credit of|for)\\s+([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
-    // --- REMOVED: The hardcoded negative keywords regex is no longer needed. ---
     private val ACCOUNT_PATTERNS =
         listOf(
             "(ICICI Bank) Account XX(\\d{3,4}) credited".toRegex(RegexOption.IGNORE_CASE),
@@ -80,7 +80,6 @@ object SmsParser {
         val messageBody = sms.body
         Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
 
-        // --- UPDATED: Check against enabled ignore phrases from the database ---
         val ignorePhrases = ignoreRuleDao.getEnabledPhrases()
         for (phrase in ignorePhrases) {
             try {
@@ -89,7 +88,6 @@ object SmsParser {
                     return null
                 }
             } catch (e: PatternSyntaxException) {
-                // Log error for invalid regex from user input, but don't crash
                 Log.e("SmsParser", "Invalid regex pattern in ignore phrase: '$phrase'", e)
             }
         }

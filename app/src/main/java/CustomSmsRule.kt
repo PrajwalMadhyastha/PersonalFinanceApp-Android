@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRule.kt
-// REASON: FEATURE - Added `accountRegex` and `accountNameExample` fields. This
-// enhances the rule system to allow users to define custom patterns for
-// extracting account information, making parsing even more flexible.
+// REASON: No changes needed. This entity already supports the new account rule
+// feature with its `accountRegex` and `accountNameExample` fields. It is
+// included here for completeness.
 // =================================================================================
 package io.pm.finlight
 
