@@ -1,22 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: REFACTOR - The `addTransaction` function is now a `suspend` function
-// that returns a Boolean indicating the success of the database operation. This
-// provides a more robust way for the UI to handle navigation or state resets
-// after saving. A `clearAddTransactionState` function has also been added to
-// reset tag selections for the "Save & add another" feature.
-// BUG FIX - The call to `SmsParser.parse` within the `reparseTransactionFromSms`
-// function has been updated to include the new `ignoreRuleDao` parameter,
-// resolving a compilation error.
-// BUG FIX - Separated the fetching of transaction details and merchant visit
-// count to prevent a recursive collection loop that was causing the detail
-// screen to hang. A new `loadVisitCount` function was added.
-// BUG FIX - Re-implemented the missing merchant-to-category learning logic in
-// the `approveSmsTransaction` function to ensure the app remembers user
-// categorization choices for future automatic imports.
-// BUG FIX - The `loadVisitCount` function now correctly uses the original
-// transaction description to query for the visit count, ensuring that renamed
-// merchants are counted correctly.
+// REASON: BUG FIX - Implemented the missing merchant-to-category learning logic
+// in the `updateTransactionCategory` function. When a user manually
+// re-categorizes an auto-imported transaction, the app will now learn this
+// preference and save a `MerchantCategoryMapping` rule. This ensures that
+// future transactions from the same merchant are automatically assigned the
+// correct category, fixing the regression.
 // =================================================================================
 package io.pm.finlight
 
@@ -345,7 +334,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            // --- FIX: Pass the ignoreRuleDao to the parser ---
             val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
             Log.d(logTag, "SmsParser result: $potentialTxn")
 
@@ -508,9 +496,25 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.updateNotes(id, notes.takeIf { it.isNotBlank() })
     }
 
-    fun updateTransactionCategory(id: Int, categoryId: Int?) = viewModelScope.launch {
+    // --- BUG FIX: Added category learning logic ---
+    fun updateTransactionCategory(id: Int, categoryId: Int?) = viewModelScope.launch(Dispatchers.IO) {
+        // First, get the transaction to check its properties
+        val transaction = transactionRepository.getTransactionById(id).first()
+
+        // Learn the category mapping if it's an imported transaction with a clear original name
+        if (transaction != null && categoryId != null && transaction.sourceSmsId != null && !transaction.originalDescription.isNullOrBlank()) {
+            val mapping = MerchantCategoryMapping(
+                parsedName = transaction.originalDescription,
+                categoryId = categoryId
+            )
+            merchantCategoryMappingRepository.insert(mapping)
+            Log.d(TAG, "Learned category mapping for '${transaction.originalDescription}' -> categoryId $categoryId")
+        }
+
+        // Finally, update the transaction's category
         transactionRepository.updateCategoryId(id, categoryId)
     }
+
 
     fun updateTransactionAccount(id: Int, accountId: Int) = viewModelScope.launch {
         transactionRepository.updateAccountId(id, accountId)

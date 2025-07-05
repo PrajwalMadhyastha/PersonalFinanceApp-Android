@@ -1,15 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: REFACTOR - The settings items have been completely reorganized into
-// logical groups (General, Automation & AI, etc.) for improved clarity and
-// usability.
-// FEATURE - Added new entry points for "Manage Custom Parse Rules" and "Manage
-// Parser Ignore List" to make these features accessible to the user.
-// REFACTOR - Consolidated individual permission toggles into a single "Manage
-// App Permissions" item that navigates the user to the system settings screen
-// for the app, which is a more standard and robust approach.
-// REFACTOR - Adjusted LazyColumn spacing for better control within list items.
-// The primary visual alignment fix is in the `SettingsComponents.kt` file.
+// REASON: FEATURE - Re-implemented the "Scan from specific date" UI that was
+// lost during a previous refactor. A new `ListItem` has been added under the
+// "Automation & AI" section, which displays the selected start date, allows
+// the user to change it via a `DatePickerDialog`, and includes a "Scan"
+// button to trigger a historical SMS scan. This restores critical app
+// functionality.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -274,6 +270,44 @@ fun ProfileScreen(
                         Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
                     }
                 },
+            )
+        }
+        // --- FEATURE: Restored Scan From Date UI ---
+        item {
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            ListItem(
+                headlineContent = { Text("Scan from specific date") },
+                supportingContent = {
+                    Text(
+                        text = "Current start date: ${dateFormatter.format(Date(smsScanStartDate))}",
+                        modifier = Modifier.clickable { showDatePickerDialog = true },
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Default.Event,
+                        contentDescription = "Scan from date",
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                trailingContent = {
+                    Button(
+                        onClick = {
+                            if (hasSmsPermission(context)) {
+                                if (!isScanning) {
+                                    settingsViewModel.rescanSmsForReview(smsScanStartDate)
+                                }
+                            } else {
+                                Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = !isScanning
+                    ) {
+                        Text("Scan")
+                    }
+                }
             )
         }
         item {

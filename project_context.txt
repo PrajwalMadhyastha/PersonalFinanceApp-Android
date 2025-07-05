@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Fri Jul  4 22:51:31 IST 2025
+Generated on: Sat Jul  5 16:04:46 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -1088,6 +1088,15 @@ interface CustomSmsRuleDao {
 // BUG FIX - The call to `SmsParser.parse` within the `reparseTransactionFromSms`
 // function has been updated to include the new `ignoreRuleDao` parameter,
 // resolving a compilation error.
+// BUG FIX - Separated the fetching of transaction details and merchant visit
+// count to prevent a recursive collection loop that was causing the detail
+// screen to hang. A new `loadVisitCount` function was added.
+// BUG FIX - Re-implemented the missing merchant-to-category learning logic in
+// the `approveSmsTransaction` function to ensure the app remembers user
+// categorization choices for future automatic imports.
+// BUG FIX - The `loadVisitCount` function now correctly uses the original
+// transaction description to query for the visit count, ensuring that renamed
+// merchants are counted correctly.
 // =================================================================================
 package io.pm.finlight
 
@@ -1125,6 +1134,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val settingsRepository: SettingsRepository
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
+    private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
@@ -1170,6 +1180,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _originalSmsText = MutableStateFlow<String?>(null)
     val originalSmsText: StateFlow<String?> = _originalSmsText.asStateFlow()
 
+    private val _visitCount = MutableStateFlow(0)
+    val visitCount: StateFlow<Int> = _visitCount.asStateFlow()
+
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
@@ -1178,6 +1191,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         settingsRepository = SettingsRepository(application)
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
+        merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
 
         merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -1283,6 +1297,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     it.copy(transaction = it.transaction.copy(description = newDescription))
                 }
             }
+    }
+
+    fun loadVisitCount(originalDescription: String?, fallbackDescription: String) {
+        val descriptionToQuery = originalDescription ?: fallbackDescription
+        viewModelScope.launch {
+            transactionRepository.getTransactionCountForMerchant(descriptionToQuery).collect { count ->
+                _visitCount.value = count
+            }
+        }
     }
 
     /**
@@ -1650,6 +1673,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
                 val newTransaction = Transaction(
                     description = description,
+                    originalDescription = potentialTxn.merchantName,
                     categoryId = categoryId,
                     amount = potentialTxn.amount,
                     date = System.currentTimeMillis(),
@@ -1661,6 +1685,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     source = "Reviewed Import"
                 )
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
+
+                // --- CATEGORY LEARNING LOGIC ---
+                if (categoryId != null && potentialTxn.merchantName != null) {
+                    val mapping = MerchantCategoryMapping(
+                        parsedName = potentialTxn.merchantName,
+                        categoryId = categoryId
+                    )
+                    merchantCategoryMappingRepository.insert(mapping)
+                    Log.d(TAG, "Saved learned category mapping: ${potentialTxn.merchantName} -> Category ID $categoryId")
+                }
+
                 true
             } catch (e: Exception) {
                 false
@@ -6893,6 +6928,13 @@ fun PlaceholderTabContent(title: String) {
 // the background image alpha for a more prominent and visually appealing look.
 // VISUAL - The content layout within the `TransactionHeaderCard` has been updated
 // to spread the elements vertically, making better use of the larger card size.
+// BUG FIX - Replaced the unresolved `ChipDefaults.LeadingIconSize` with a hardcoded
+// size of `18.dp` to resolve a compilation error and ensure consistent icon sizing.
+// BUG FIX - Added a `LaunchedEffect` to separately load the visit count when
+// the transaction details are available, fixing an infinite recomposition loop.
+// BUG FIX - The `LaunchedEffect` for loading the visit count now correctly
+// passes the `originalDescription` to ensure an accurate count for renamed
+// merchants.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -7011,6 +7053,7 @@ fun TransactionDetailScreen(
     val selectedTags by viewModel.selectedTags.collectAsState()
     val attachedImages by viewModel.transactionImages.collectAsState()
     val originalSms by viewModel.originalSmsText.collectAsState()
+    val visitCount by viewModel.visitCount.collectAsState()
     val scope = rememberCoroutineScope()
 
     var showMenu by remember { mutableStateOf(false) }
@@ -7069,6 +7112,10 @@ fun TransactionDetailScreen(
             }
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
 
+            LaunchedEffect(details.transaction.originalDescription, details.transaction.description) {
+                viewModel.loadVisitCount(details.transaction.originalDescription, details.transaction.description)
+            }
+
             LaunchedEffect(details.transaction.sourceSmsId) {
                 viewModel.loadOriginalSms(details.transaction.sourceSmsId)
             }
@@ -7115,6 +7162,7 @@ fun TransactionDetailScreen(
                     item {
                         TransactionHeaderCard(
                             details = details,
+                            visitCount = visitCount,
                             onDescriptionClick = { activeSheetContent = SheetContent.Description },
                             onAmountClick = { activeSheetContent = SheetContent.Amount },
                             onCategoryClick = { activeSheetContent = SheetContent.Category },
@@ -7763,12 +7811,13 @@ private fun CategoryIconDisplay(category: Category) {
 @Composable
 private fun TransactionHeaderCard(
     details: TransactionDetails,
+    visitCount: Int,
     onDescriptionClick: () -> Unit,
     onAmountClick: () -> Unit,
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy, h:mm a", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yy, h:mm a", Locale.getDefault()) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -7778,7 +7827,7 @@ private fun TransactionHeaderCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 400.dp), // User-specified height
+                .heightIn(min = 400.dp),
         ) {
             // Layer 1: The Background Image
             Image(
@@ -7786,7 +7835,7 @@ private fun TransactionHeaderCard(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),
-                alpha = 0.5f // User-specified alpha
+                alpha = 0.5f
             )
 
             // Layer 2: A darkening scrim
@@ -7803,79 +7852,89 @@ private fun TransactionHeaderCard(
                     )
             )
 
-            // Layer 3: The actual content
-            Column(
+            // Layer 3: The actual content, using Box alignments
+            // Top Content (Description and Visit Count)
+            Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
+                    .align(Alignment.TopCenter)
+                    .padding(top = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Top Content (Description)
                 Text(
                     text = details.transaction.description,
                     style = MaterialTheme.typography.headlineSmall,
                     color = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .clickable(onClick = onDescriptionClick)
+                    modifier = Modifier.clickable(onClick = onDescriptionClick)
                 )
-
-                // Spacer to push content to center and bottom
-                Spacer(Modifier.weight(1f))
-
-                // Center Content (Amount and Category)
-                Column(
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "₹${"%,.2f".format(details.transaction.amount)}",
-                        fontSize = 48.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.clickable(onClick = onAmountClick)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    ChipWithIcon(
-                        text = details.categoryName ?: "Uncategorized",
-                        icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
-                        colorKey = details.categoryColorKey ?: "gray_light",
-                        onClick = onCategoryClick,
-                        category = details.toCategory()
+                if (visitCount > 1) {
+                    AssistChip(
+                        onClick = { /* No action needed */ },
+                        label = { Text("$visitCount visits") },
+                        leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = Color.White.copy(alpha = 0.2f),
+                            labelColor = Color.White,
+                            leadingIconContentColor = Color.White
+                        )
                     )
                 }
+            }
 
-                // Spacer to push content to bottom
-                Spacer(Modifier.weight(1f))
 
-                // Bottom Content (Date and Source)
+            // Center Content (Amount and Category)
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "₹${"%,.2f".format(details.transaction.amount)}",
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.clickable(onClick = onAmountClick)
+                )
+                Spacer(Modifier.height(12.dp))
+                ChipWithIcon(
+                    text = details.categoryName ?: "Uncategorized",
+                    icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
+                    colorKey = details.categoryColorKey ?: "gray_light",
+                    onClick = onCategoryClick,
+                    category = details.toCategory()
+                )
+            }
+
+            // Bottom Content (Date and Source)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 24.dp, vertical = 24.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = dateFormatter.format(Date(details.transaction.date)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.clickable(onClick = onDateTimeClick)
+                )
+
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(
-                        text = dateFormatter.format(Date(details.transaction.date)),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.clickable(onClick = onDateTimeClick)
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Transaction Source",
+                        tint = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.size(16.dp)
                     )
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = "Transaction Source",
-                            tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = details.transaction.source,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.8f)
-                        )
-                    }
+                    Text(
+                        text = details.transaction.source,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
                 }
             }
         }
@@ -15737,16 +15796,12 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT T.*,
-               A.name as accountName,
-               C.name as categoryName,
-               C.iconKey as categoryIconKey,
-               C.colorKey as categoryColorKey
-        FROM transactions AS T
-        LEFT JOIN accounts AS A ON T.accountId = A.id
-        LEFT JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.accountId = :accountId
-        ORDER BY T.date DESC
+        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
+        FROM transactions t
+        LEFT JOIN accounts a ON t.accountId = a.id
+        LEFT JOIN categories c ON t.categoryId = c.id
+        WHERE t.accountId = :accountId
+        ORDER BY t.date DESC
     """
     )
     fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>>
@@ -15927,11 +15982,9 @@ interface TransactionDao {
     """)
     fun getMonthlySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
 
-    // --- NEW: Query to set the SMS hash on a manually entered transaction ---
     @Query("UPDATE transactions SET sourceSmsHash = :smsHash WHERE id = :transactionId")
     suspend fun setSmsHash(transactionId: Int, smsHash: String)
 
-    // --- NEW: Smart query to find potential matches for linking ---
     @Query("""
         SELECT * FROM transactions
         WHERE sourceSmsHash IS NULL
@@ -15948,6 +16001,9 @@ interface TransactionDao {
         smsDate: Long,
         transactionType: String
     ): List<Transaction>
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE description = :description AND isExcluded = 0")
+    fun getTransactionCountForMerchant(description: String): Flow<Int>
 }
 -e 
 
@@ -17360,12 +17416,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         transactionDao.delete(transaction)
     }
 
-    // --- NEW: Expose the DAO function to set an SMS hash ---
     suspend fun setSmsHash(transactionId: Int, smsHash: String) {
         transactionDao.setSmsHash(transactionId, smsHash)
     }
 
-    // --- NEW: Expose the DAO function to find linkable transactions ---
     suspend fun findLinkableTransactions(
         smsDate: Long,
         smsAmount: Double,
@@ -17387,6 +17441,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
             smsDate = smsDate,
             transactionType = transactionType
         )
+    }
+
+    fun getTransactionCountForMerchant(description: String): Flow<Int> {
+        return transactionDao.getTransactionCountForMerchant(description)
     }
 }
 -e 

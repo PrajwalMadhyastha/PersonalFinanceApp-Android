@@ -1,7 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: Added functions to save and retrieve the enabled state for the new
-// monthly summary notification toggle.
+// REASON: FEATURE - Added the `isUnknownTransactionPopupEnabledBlocking()`
+// function. This provides a synchronous way to read the preference, which is
+// necessary for the `SmsReceiver` as it operates in a context where collecting
+// a Flow is not practical.
 // =================================================================================
 package io.pm.finlight
 
@@ -37,7 +39,6 @@ class SettingsRepository(context: Context) {
         private const val KEY_MONTHLY_REPORT_DAY = "monthly_report_day"
         private const val KEY_MONTHLY_REPORT_HOUR = "monthly_report_hour"
         private const val KEY_MONTHLY_REPORT_MINUTE = "monthly_report_minute"
-        // --- NEW: Key for monthly summary toggle ---
         private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
     }
 
@@ -217,7 +218,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Functions for monthly summary toggle ---
     fun saveMonthlySummaryEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_MONTHLY_SUMMARY_ENABLED, isEnabled).apply()
     }
@@ -245,6 +245,11 @@ class SettingsRepository(context: Context) {
             trySend(prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
+    }
+
+    // --- NEW: Blocking getter for use in BroadcastReceiver ---
+    fun isUnknownTransactionPopupEnabledBlocking(): Boolean {
+        return prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true)
     }
 
     fun saveDailyReportTime(hour: Int, minute: Int) {

@@ -1,8 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: FEATURE - The receiver now passes the new `ignoreRuleDao` to the
-// SmsParser. This enables the parser to check against the user-defined list of
-// ignore phrases before attempting to process an SMS.
+// REASON: BUG FIX - The receiver now checks if a category was successfully
+// learned for an auto-imported transaction. If a category was not found
+// (`mappedCategoryId == null`), it now correctly shows the "Review"
+// notification, prompting the user to categorize it. Otherwise, it shows the
+// standard "Auto-Saved" confirmation. This ensures transactions that require
+// attention are not silently saved without a category.
 // =================================================================================
 package io.pm.finlight
 
@@ -45,13 +48,14 @@ class SmsReceiver : BroadcastReceiver() {
                         val accountDao = db.accountDao()
                         val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
                         val merchantCategoryMappingDao = db.merchantCategoryMappingDao()
-                        val ignoreRuleDao = db.ignoreRuleDao() // --- NEW ---
+                        val ignoreRuleDao = db.ignoreRuleDao()
+                        val settingsRepository = SettingsRepository(context)
 
                         val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
                         val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
-                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), ignoreRuleDao) // --- UPDATED ---
+                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), ignoreRuleDao)
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
@@ -86,13 +90,18 @@ class SmsReceiver : BroadcastReceiver() {
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                                    source = "Auto-Imported"
+                                    source = if (mappedCategoryId != null) "Auto-Imported" else "Needs Review"
                                 )
                                 val newTransactionId = transactionDao.insert(newTransaction)
                                 Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
 
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                                    NotificationHelper.showAutoSaveConfirmationNotification(context, newTransaction.copy(id = newTransactionId.toInt()))
+                                    // --- FIX: Show the correct notification based on learning status ---
+                                    if (mappedCategoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
+                                        NotificationHelper.showTransactionNotification(context, potentialTxn)
+                                    } else {
+                                        NotificationHelper.showAutoSaveConfirmationNotification(context, newTransaction.copy(id = newTransactionId.toInt()))
+                                    }
                                 }
 
                             } else {
