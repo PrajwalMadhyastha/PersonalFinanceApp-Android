@@ -1,29 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FIX - The logic for creating a rename rule has been made more robust.
-// 1. The "Always rename" checkbox is now always visible when editing a description.
-// 2. The `originalNameForRule` is now correctly determined by using the
-//    `originalDescription` if it exists, otherwise falling back to the current
-//    `description` (the value before the edit). This ensures that rules can be
-//    created for any transaction, not just imported ones.
-// FEATURE - The `TransactionHeaderCard` has been redesigned to display a large,
-// semi-transparent background image corresponding to the transaction's category,
-// creating a more visually engaging and contextual header.
-// BUG FIX - The `TransactionHeaderCard` has been refactored to use a layered
-// Box layout. This ensures the background image always crops and fills the
-// available space uniformly, fixing inconsistent sizing issues. The image alpha
-// and text colors have also been adjusted for better visibility.
-// VISUAL - Increased the minimum height of the TransactionHeaderCard and adjusted
-// the background image alpha for a more prominent and visually appealing look.
-// VISUAL - The content layout within the `TransactionHeaderCard` has been updated
-// to spread the elements vertically, making better use of the larger card size.
-// BUG FIX - Replaced the unresolved `ChipDefaults.LeadingIconSize` with a hardcoded
-// size of `18.dp` to resolve a compilation error and ensure consistent icon sizing.
-// BUG FIX - Added a `LaunchedEffect` to separately load the visit count when
-// the transaction details are available, fixing an infinite recomposition loop.
-// BUG FIX - The `LaunchedEffect` for loading the visit count now correctly
-// passes the `originalDescription` to ensure an accurate count for renamed
-// merchants.
+// REASON: FEATURE - Integrated the Retrospective Update feature. The screen now
+// observes a `retroUpdatePromptState` from the ViewModel. When this state is
+// populated after an edit, it displays an `AlertDialog` asking the user if they
+// want to apply the change to other similar transactions. If confirmed, it
+// navigates to the new `retrospective_update_screen`, passing all necessary
+// parameters to perform the batch update.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -144,6 +126,8 @@ fun TransactionDetailScreen(
     val originalSms by viewModel.originalSmsText.collectAsState()
     val visitCount by viewModel.visitCount.collectAsState()
     val scope = rememberCoroutineScope()
+    val retroUpdatePromptState by viewModel.retroUpdatePromptState.collectAsState()
+
 
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -207,6 +191,44 @@ fun TransactionDetailScreen(
 
             LaunchedEffect(details.transaction.sourceSmsId) {
                 viewModel.loadOriginalSms(details.transaction.sourceSmsId)
+            }
+
+            // --- NEW: Dialog for retrospective update ---
+            retroUpdatePromptState?.let { promptState ->
+                AlertDialog(
+                    onDismissRequest = { viewModel.dismissRetroUpdateDialog() },
+                    title = { Text("Update Similar Transactions?") },
+                    text = {
+                        val changeType = if (promptState.newDescription != null) "description" else "category"
+                        Text("You've updated the $changeType for transactions named '${promptState.originalDescription}'. Apply this change to ${promptState.similarCount} other similar transaction(s)?")
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            val originalDescEncoded = URLEncoder.encode(promptState.originalDescription, "UTF-8")
+                            val newDescEncoded = promptState.newDescription?.let { URLEncoder.encode(it, "UTF-8") }
+                            val categoryId = promptState.newCategoryId ?: -1
+
+                            var route = "retrospective_update_screen/${details.transaction.id}/$originalDescEncoded"
+                            if (newDescEncoded != null) {
+                                route += "?newDescription=$newDescEncoded"
+                            }
+                            if (categoryId != -1) {
+                                val separator = if (route.contains("?")) "&" else "?"
+                                route += "${separator}newCategoryId=$categoryId"
+                            }
+
+                            navController.navigate(route)
+                            viewModel.dismissRetroUpdateDialog()
+                        }) {
+                            Text("Update Others")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.dismissRetroUpdateDialog() }) {
+                            Text("Just This One")
+                        }
+                    }
+                )
             }
 
             Scaffold(
@@ -578,15 +600,14 @@ private fun TransactionEditSheetContent(
                 title = "Edit Description",
                 initialValue = details.transaction.description,
                 onConfirm = { newDescription ->
-                    scope.launch {
-                        val originalNameForRule = details.transaction.originalDescription ?: details.transaction.description
-                        viewModel.updateTransactionDescription(transactionId, newDescription)
-                        if (saveForFuture) {
-                            if (originalNameForRule.isNotBlank() && newDescription.isNotBlank()) {
-                                onSaveRenameRule(originalNameForRule, newDescription)
-                            }
+                    val originalNameForRule = details.transaction.originalDescription ?: details.transaction.description
+                    if (saveForFuture) {
+                        if (originalNameForRule.isNotBlank() && newDescription.isNotBlank()) {
+                            onSaveRenameRule(originalNameForRule, newDescription)
                         }
                     }
+                    viewModel.updateTransactionDescription(transactionId, newDescription)
+                    onDismiss()
                 },
                 onDismiss = onDismiss
             ) {
@@ -609,7 +630,10 @@ private fun TransactionEditSheetContent(
                 title = "Edit Amount",
                 initialValue = "%.2f".format(details.transaction.amount),
                 keyboardType = KeyboardType.Number,
-                onConfirm = { viewModel.updateTransactionAmount(transactionId, it) },
+                onConfirm = {
+                    viewModel.updateTransactionAmount(transactionId, it)
+                    onDismiss()
+                },
                 onDismiss = onDismiss
             )
         }
@@ -617,7 +641,10 @@ private fun TransactionEditSheetContent(
             EditTextFieldSheet(
                 title = "Edit Notes",
                 initialValue = details.transaction.notes ?: "",
-                onConfirm = { viewModel.updateTransactionNotes(transactionId, it) },
+                onConfirm = {
+                    viewModel.updateTransactionNotes(transactionId, it)
+                    onDismiss()
+                },
                 onDismiss = onDismiss
             )
         }
@@ -626,7 +653,10 @@ private fun TransactionEditSheetContent(
                 title = "Select Account",
                 items = accounts,
                 getItemName = { (it as Account).name },
-                onItemSelected = { viewModel.updateTransactionAccount(transactionId, (it as Account).id) },
+                onItemSelected = {
+                    viewModel.updateTransactionAccount(transactionId, (it as Account).id)
+                    onDismiss()
+                },
                 onDismiss = onDismiss,
                 onAddNew = onAddNewAccount
             )
@@ -635,7 +665,10 @@ private fun TransactionEditSheetContent(
             CategoryPickerSheet(
                 title = "Select Category",
                 items = categories,
-                onItemSelected = { viewModel.updateTransactionCategory(transactionId, it.id) },
+                onItemSelected = {
+                    viewModel.updateTransactionCategory(transactionId, it.id)
+                    onDismiss()
+                },
                 onDismiss = onDismiss,
                 onAddNew = onAddNewCategory
             )
@@ -696,7 +729,6 @@ private fun EditTextFieldSheet(
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {
                 onConfirm(text)
-                onDismiss()
             }) { Text("Save") }
         }
     }
@@ -723,7 +755,6 @@ private fun <T> PickerSheet(
                     headlineContent = { Text(getItemName(item)) },
                     modifier = Modifier.clickable {
                         onItemSelected(item)
-                        onDismiss()
                     }
                 )
             }
@@ -767,7 +798,6 @@ private fun CategoryPickerSheet(
                         .clip(RoundedCornerShape(12.dp))
                         .clickable {
                             onItemSelected(category)
-                            onDismiss()
                         }
                         .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -918,7 +948,6 @@ private fun TransactionHeaderCard(
                 .fillMaxWidth()
                 .heightIn(min = 400.dp),
         ) {
-            // Layer 1: The Background Image
             Image(
                 painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
                 contentDescription = null,
@@ -927,7 +956,6 @@ private fun TransactionHeaderCard(
                 alpha = 0.5f
             )
 
-            // Layer 2: A darkening scrim
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -941,8 +969,6 @@ private fun TransactionHeaderCard(
                     )
             )
 
-            // Layer 3: The actual content, using Box alignments
-            // Top Content (Description and Visit Count)
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -971,7 +997,6 @@ private fun TransactionHeaderCard(
             }
 
 
-            // Center Content (Amount and Category)
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -993,7 +1018,6 @@ private fun TransactionHeaderCard(
                 )
             }
 
-            // Bottom Content (Date and Source)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

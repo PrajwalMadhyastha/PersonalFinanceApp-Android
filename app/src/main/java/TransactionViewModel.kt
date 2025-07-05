@@ -1,11 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: BUG FIX - Implemented the missing merchant-to-category learning logic
-// in the `updateTransactionCategory` function. When a user manually
-// re-categorizes an auto-imported transaction, the app will now learn this
-// preference and save a `MerchantCategoryMapping` rule. This ensures that
-// future transactions from the same merchant are automatically assigned the
-// correct category, fixing the regression.
+// REASON: FEATURE - Added logic to trigger the Retrospective Update flow. The
+// `updateTransactionDescription` and `updateTransactionCategory` functions now
+// check for similar transactions after an edit. If any are found, a new
+// `retroUpdatePromptState` is emitted, allowing the UI to show a confirmation
+// dialog to the user.
 // =================================================================================
 package io.pm.finlight
 
@@ -32,6 +31,14 @@ data class TransactionFilterState(
     val keyword: String = "",
     val account: Account? = null,
     val category: Category? = null
+)
+
+// --- NEW: Data class to hold the state for the batch update prompt ---
+data class RetroUpdatePromptState(
+    val originalDescription: String,
+    val newDescription: String? = null,
+    val newCategoryId: Int? = null,
+    val similarCount: Int
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -91,6 +98,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _visitCount = MutableStateFlow(0)
     val visitCount: StateFlow<Int> = _visitCount.asStateFlow()
+
+    // --- NEW: State for the retrospective update prompt ---
+    private val _retroUpdatePromptState = MutableStateFlow<RetroUpdatePromptState?>(null)
+    val retroUpdatePromptState = _retroUpdatePromptState.asStateFlow()
 
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
@@ -217,11 +228,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /**
-     * Saves a new transaction to the database.
-     * This is now a suspend function to allow the UI to await the result.
-     * @return true if the transaction was saved successfully, false otherwise.
-     */
     suspend fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -257,14 +263,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 val newTransaction =
                     Transaction(
                         description = description,
-                        originalDescription = description, // Set original description for manual entries
+                        originalDescription = description,
                         categoryId = categoryId,
                         amount = amount,
                         date = date,
                         accountId = accountId,
                         notes = notes,
                         transactionType = transactionType,
-                        isExcluded = false, // isExcluded is not part of the new design, default to false
+                        isExcluded = false,
                         sourceSmsId = null,
                         sourceSmsHash = null,
                         source = "Manual Entry"
@@ -284,10 +290,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /**
-     * Clears ViewModel-managed state related to the Add Transaction screen.
-     * Called after a "Save & add another" operation.
-     */
     fun clearAddTransactionState() {
         _selectedTags.value = emptySet()
     }
@@ -338,13 +340,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             Log.d(logTag, "SmsParser result: $potentialTxn")
 
             if (potentialTxn != null) {
-                // UPDATE DESCRIPTION
                 if (potentialTxn.merchantName != null && potentialTxn.merchantName != transaction.description) {
                     Log.d(logTag, "Updating description for txnId $transactionId from '${transaction.description}' to '${potentialTxn.merchantName}'")
                     transactionRepository.updateDescription(transactionId, potentialTxn.merchantName)
                 }
 
-                // UPDATE ACCOUNT
                 potentialTxn.potentialAccount?.let { parsedAccount ->
                     Log.d(logTag, "Parsed account found: Name='${parsedAccount.formattedName}', Type='${parsedAccount.accountType}'")
                     val currentAccount = accountRepository.getAccountById(transaction.accountId).first()
@@ -478,9 +478,22 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun updateTransactionDescription(id: Int, description: String) = viewModelScope.launch {
-        if (description.isNotBlank()) {
-            transactionRepository.updateDescription(id, description)
+    fun updateTransactionDescription(id: Int, newDescription: String) = viewModelScope.launch(Dispatchers.IO) {
+        if (newDescription.isNotBlank()) {
+            val transaction = transactionRepository.getTransactionById(id).first() ?: return@launch
+            val originalDescription = transaction.originalDescription ?: transaction.description
+
+            transactionRepository.updateDescription(id, newDescription)
+
+            val similar = transactionRepository.findSimilarTransactions(originalDescription, id)
+            if (similar.isNotEmpty()) {
+                _retroUpdatePromptState.value = RetroUpdatePromptState(
+                    originalDescription = originalDescription,
+                    newDescription = newDescription,
+                    newCategoryId = null,
+                    similarCount = similar.size
+                )
+            }
         }
     }
 
@@ -496,13 +509,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.updateNotes(id, notes.takeIf { it.isNotBlank() })
     }
 
-    // --- BUG FIX: Added category learning logic ---
     fun updateTransactionCategory(id: Int, categoryId: Int?) = viewModelScope.launch(Dispatchers.IO) {
-        // First, get the transaction to check its properties
-        val transaction = transactionRepository.getTransactionById(id).first()
+        val transaction = transactionRepository.getTransactionById(id).first() ?: return@launch
+        val originalDescription = transaction.originalDescription ?: transaction.description
 
-        // Learn the category mapping if it's an imported transaction with a clear original name
-        if (transaction != null && categoryId != null && transaction.sourceSmsId != null && !transaction.originalDescription.isNullOrBlank()) {
+        transactionRepository.updateCategoryId(id, categoryId)
+
+        if (categoryId != null && transaction.sourceSmsId != null && !transaction.originalDescription.isNullOrBlank()) {
             val mapping = MerchantCategoryMapping(
                 parsedName = transaction.originalDescription,
                 categoryId = categoryId
@@ -511,8 +524,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             Log.d(TAG, "Learned category mapping for '${transaction.originalDescription}' -> categoryId $categoryId")
         }
 
-        // Finally, update the transaction's category
-        transactionRepository.updateCategoryId(id, categoryId)
+        val similar = transactionRepository.findSimilarTransactions(originalDescription, id)
+        if (similar.isNotEmpty()) {
+            _retroUpdatePromptState.value = RetroUpdatePromptState(
+                originalDescription = originalDescription,
+                newDescription = null,
+                newCategoryId = categoryId,
+                similarCount = similar.size
+            )
+        }
     }
 
 
@@ -610,7 +630,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 )
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
 
-                // --- CATEGORY LEARNING LOGIC ---
                 if (categoryId != null && potentialTxn.merchantName != null) {
                     val mapping = MerchantCategoryMapping(
                         parsedName = potentialTxn.merchantName,
@@ -652,5 +671,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun clearError() {
         _validationError.value = null
+    }
+
+    // --- NEW: Function to dismiss the retrospective update dialog ---
+    fun dismissRetroUpdateDialog() {
+        _retroUpdatePromptState.value = null
     }
 }
