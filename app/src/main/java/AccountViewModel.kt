@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -19,17 +20,15 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
         repository = AccountRepository(db.accountDao())
         transactionRepository = TransactionRepository(db.transactionDao())
 
-        // --- CORRECTED: Directly use the powerful query from the DAO via the repository ---
-        // This is much more efficient than using 'combine' and calculating in the ViewModel.
         accountsWithBalance = repository.accountsWithBalance
     }
 
     fun getAccountById(accountId: Int): Flow<Account?> = repository.getAccountById(accountId)
 
-    // --- CORRECTED: The balance calculation now correctly uses the transactionType ---
-    // Helper function to calculate a single account's balance for the detail view
+    // --- FIX: Corrected the balance calculation logic ---
+    // The `map` operator receives a `List<Transaction>`, so `it` inside `sumOf` is a
+    // Transaction object. The properties should be accessed directly on `it`.
     fun getAccountBalance(accountId: Int): Flow<Double> {
-        // This leverages the existing getTransactionsForAccount and then sums the amounts correctly.
         return transactionRepository.getTransactionsForAccount(accountId).map { transactions ->
             transactions.sumOf { if (it.transactionType == "income") it.amount else -it.amount }
         }
@@ -37,18 +36,14 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
 
     // Pass through for the detail screen to get full transaction details
     fun getTransactionsForAccount(accountId: Int): Flow<List<TransactionDetails>> {
-        // NOTE: You'll need to add getTransactionsForAccountDetails to your TransactionRepository
-        // that calls the corresponding DAO method.
         return transactionRepository.getTransactionsForAccountDetails(accountId)
     }
 
-    // --- CORRECTED: The Account object no longer has a 'balance' parameter in its constructor ---
     fun addAccount(
         name: String,
         type: String,
     ) = viewModelScope.launch {
         if (name.isNotBlank() && type.isNotBlank()) {
-            // Create the Account object without a balance.
             repository.insert(Account(name = name, type = type))
         }
     }
@@ -57,6 +52,17 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.update(account)
         }
+
+    fun renameAccount(accountId: Int, newName: String) {
+        if (newName.isBlank()) return
+        viewModelScope.launch {
+            val accountToUpdate = repository.getAccountById(accountId).firstOrNull()
+            accountToUpdate?.let {
+                updateAccount(it.copy(name = newName))
+            }
+        }
+    }
+
 
     fun deleteAccount(account: Account) =
         viewModelScope.launch {

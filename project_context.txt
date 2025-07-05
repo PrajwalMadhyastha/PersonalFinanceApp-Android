@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jul  5 16:04:46 IST 2025
+Generated on: Sat Jul  5 18:33:04 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -276,11 +276,11 @@ dependencies {
 ================== FILE: ./app/src/main/java/RuleCreationViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
-// REASON: BUG FIX - The `generateRegex` function was too strict with its
-// whitespace requirements, causing rules to fail if the selected text was
-// adjacent to punctuation. The regex construction is now more flexible, using
-// `\s*` (zero or more whitespace) instead of `\s+` (one or more), making the
-// generated rules much more robust and reliable.
+// REASON: FEATURE - The ViewModel now fully supports "edit mode". A new
+// `loadRuleForEditing` function fetches an existing rule by its ID and populates
+// the UI state. The `saveRule` logic is updated to check for an active rule ID
+// and calls the DAO's `update` function instead of `insert`, completing the
+// feature's data flow.
 // =================================================================================
 package io.pm.finlight
 
@@ -291,6 +291,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.regex.Pattern
@@ -312,7 +313,8 @@ data class RuleCreationUiState(
     val merchantSelection: RuleSelection = RuleSelection(),
     val amountSelection: RuleSelection = RuleSelection(),
     val accountSelection: RuleSelection = RuleSelection(),
-    val transactionType: String? = null
+    val transactionType: String? = null,
+    val ruleIdToEdit: Int? = null // --- NEW: Track the ID of the rule being edited
 )
 
 /**
@@ -325,7 +327,7 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
 
     private val customSmsRuleDao = AppDatabase.getInstance(application).customSmsRuleDao()
 
-    fun initializeState(potentialTxn: PotentialTransaction) {
+    fun initializeStateForCreation(potentialTxn: PotentialTransaction) {
         val amountStr = String.format("%.2f", potentialTxn.amount)
         val amountIndex = potentialTxn.originalMessage.indexOf(amountStr)
 
@@ -343,6 +345,20 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
             amountSelection = amountSelection,
             transactionType = potentialTxn.transactionType
         )
+    }
+
+    // --- NEW: Function to load an existing rule for editing ---
+    fun loadRuleForEditing(ruleId: Int) {
+        viewModelScope.launch {
+            val rule = customSmsRuleDao.getRuleById(ruleId).firstOrNull() ?: return@launch
+            _uiState.value = RuleCreationUiState(
+                triggerSelection = RuleSelection(selectedText = rule.triggerPhrase),
+                merchantSelection = RuleSelection(selectedText = rule.merchantNameExample ?: ""),
+                amountSelection = RuleSelection(selectedText = rule.amountExample ?: ""),
+                accountSelection = RuleSelection(selectedText = rule.accountNameExample ?: ""),
+                ruleIdToEdit = rule.id
+            )
+        }
     }
 
     fun onMarkAsTrigger(selection: RuleSelection) {
@@ -382,7 +398,8 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
                 generateRegex(fullSmsText, currentState.accountSelection)
             } else null
 
-            val newRule = CustomSmsRule(
+            val rule = CustomSmsRule(
+                id = currentState.ruleIdToEdit ?: 0, // Use existing ID if editing
                 triggerPhrase = currentState.triggerSelection.selectedText,
                 merchantRegex = merchantRegex,
                 amountRegex = amountRegex,
@@ -390,20 +407,24 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
                 merchantNameExample = currentState.merchantSelection.selectedText.takeIf { it.isNotBlank() },
                 amountExample = currentState.amountSelection.selectedText.takeIf { it.isNotBlank() },
                 accountNameExample = currentState.accountSelection.selectedText.takeIf { it.isNotBlank() },
-                priority = 10
+                priority = 10,
+                sourceSmsBody = fullSmsText
             )
 
-            Log.d("RuleCreation", "Saving new trigger-based rule: $newRule")
-            customSmsRuleDao.insert(newRule)
+            // --- UPDATED: Check if we are editing or creating ---
+            if (currentState.ruleIdToEdit != null) {
+                Log.d("RuleCreation", "Updating existing rule: $rule")
+                customSmsRuleDao.update(rule)
+            } else {
+                Log.d("RuleCreation", "Saving new trigger-based rule: $rule")
+                customSmsRuleDao.insert(rule)
+            }
             onComplete()
         }
     }
 
-    /**
-     * Generates a robust regular expression based on the words surrounding a user's selection.
-     */
     private fun generateRegex(fullText: String, selection: RuleSelection): String? {
-        if (selection.startIndex == -1) return null
+        if (selection.startIndex == -1 || selection.selectedText.isBlank()) return null
 
         val textBefore = fullText.substring(0, selection.startIndex)
         val textAfter = fullText.substring(selection.endIndex)
@@ -417,8 +438,6 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
         val escapedPrefix = if (prefix.isNotBlank()) Pattern.quote(prefix) else ""
         val escapedSuffix = if (suffix.isNotBlank()) Pattern.quote(suffix) else ""
 
-        // --- FIX: Use `\s*` for flexible whitespace matching instead of `\s+` ---
-        // This handles cases where the selection is immediately next to punctuation.
         return when {
             escapedPrefix.isNotBlank() && escapedSuffix.isNotBlank() -> "$escapedPrefix\\s*(.*?)\\s*$escapedSuffix"
             escapedPrefix.isNotBlank() -> "$escapedPrefix\\s*(.*)"
@@ -1028,9 +1047,10 @@ class TimePeriodReportViewModel(
 ================== FILE: ./app/src/main/java/CustomSmsRuleDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRuleDao.kt
-// REASON: Added new methods to support the rule management screen. `getAllRules`
-// now returns a Flow to enable real-time UI updates, and a `delete` method has
-// been added to allow users to remove specific rules.
+// REASON: FEATURE - Added the `getRuleById` and `update` functions. These are
+// essential for the "Edit Rule" feature, allowing the ViewModel to fetch a
+// specific rule for editing and then save the updated version back to the
+// database.
 // =================================================================================
 package io.pm.finlight
 
@@ -1039,6 +1059,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -1073,6 +1094,14 @@ interface CustomSmsRuleDao {
      */
     @Delete
     suspend fun delete(rule: CustomSmsRule)
+
+    // --- NEW: Function to get a single rule by its ID ---
+    @Query("SELECT * FROM custom_sms_rules WHERE id = :id")
+    fun getRuleById(id: Int): Flow<CustomSmsRule?>
+
+    // --- NEW: Function to update an existing rule ---
+    @Update
+    suspend fun update(rule: CustomSmsRule)
 }
 -e 
 
@@ -1080,23 +1109,11 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: REFACTOR - The `addTransaction` function is now a `suspend` function
-// that returns a Boolean indicating the success of the database operation. This
-// provides a more robust way for the UI to handle navigation or state resets
-// after saving. A `clearAddTransactionState` function has also been added to
-// reset tag selections for the "Save & add another" feature.
-// BUG FIX - The call to `SmsParser.parse` within the `reparseTransactionFromSms`
-// function has been updated to include the new `ignoreRuleDao` parameter,
-// resolving a compilation error.
-// BUG FIX - Separated the fetching of transaction details and merchant visit
-// count to prevent a recursive collection loop that was causing the detail
-// screen to hang. A new `loadVisitCount` function was added.
-// BUG FIX - Re-implemented the missing merchant-to-category learning logic in
-// the `approveSmsTransaction` function to ensure the app remembers user
-// categorization choices for future automatic imports.
-// BUG FIX - The `loadVisitCount` function now correctly uses the original
-// transaction description to query for the visit count, ensuring that renamed
-// merchants are counted correctly.
+// REASON: BUG FIX - The `findTransactionDetailsById` function no longer applies
+// the merchant alias map. The detail/edit screen must always show the true,
+// un-aliased data from the database. This prevents a bug where a global rename
+// rule would override a manual edit on this screen, making it appear as if the
+// save action had failed.
 // =================================================================================
 package io.pm.finlight
 
@@ -1123,6 +1140,13 @@ data class TransactionFilterState(
     val keyword: String = "",
     val account: Account? = null,
     val category: Category? = null
+)
+
+data class RetroUpdatePromptState(
+    val originalDescription: String,
+    val newDescription: String? = null,
+    val newCategoryId: Int? = null,
+    val similarCount: Int
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -1182,6 +1206,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _visitCount = MutableStateFlow(0)
     val visitCount: StateFlow<Int> = _visitCount.asStateFlow()
+
+    private val _retroUpdatePromptState = MutableStateFlow<RetroUpdatePromptState?>(null)
+    val retroUpdatePromptState = _retroUpdatePromptState.asStateFlow()
 
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
@@ -1289,14 +1316,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+        // --- FIX: Remove alias application for the detail screen ---
+        // The detail screen must always show the raw data from the database,
+        // not the aliased version, to avoid confusion when editing.
         return transactionRepository.getTransactionDetailsById(id)
-            .combine(merchantAliases) { details, aliases ->
-                details?.let {
-                    val key = it.transaction.originalDescription ?: it.transaction.description
-                    val newDescription = aliases[key] ?: it.transaction.description
-                    it.copy(transaction = it.transaction.copy(description = newDescription))
-                }
-            }
     }
 
     fun loadVisitCount(originalDescription: String?, fallbackDescription: String) {
@@ -1308,11 +1331,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /**
-     * Saves a new transaction to the database.
-     * This is now a suspend function to allow the UI to await the result.
-     * @return true if the transaction was saved successfully, false otherwise.
-     */
     suspend fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -1348,14 +1366,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 val newTransaction =
                     Transaction(
                         description = description,
-                        originalDescription = description, // Set original description for manual entries
+                        originalDescription = description,
                         categoryId = categoryId,
                         amount = amount,
                         date = date,
                         accountId = accountId,
                         notes = notes,
                         transactionType = transactionType,
-                        isExcluded = false, // isExcluded is not part of the new design, default to false
+                        isExcluded = false,
                         sourceSmsId = null,
                         sourceSmsHash = null,
                         source = "Manual Entry"
@@ -1375,10 +1393,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /**
-     * Clears ViewModel-managed state related to the Add Transaction screen.
-     * Called after a "Save & add another" operation.
-     */
     fun clearAddTransactionState() {
         _selectedTags.value = emptySet()
     }
@@ -1425,18 +1439,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            // --- FIX: Pass the ignoreRuleDao to the parser ---
             val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
             Log.d(logTag, "SmsParser result: $potentialTxn")
 
             if (potentialTxn != null) {
-                // UPDATE DESCRIPTION
                 if (potentialTxn.merchantName != null && potentialTxn.merchantName != transaction.description) {
                     Log.d(logTag, "Updating description for txnId $transactionId from '${transaction.description}' to '${potentialTxn.merchantName}'")
                     transactionRepository.updateDescription(transactionId, potentialTxn.merchantName)
                 }
 
-                // UPDATE ACCOUNT
                 potentialTxn.potentialAccount?.let { parsedAccount ->
                     Log.d(logTag, "Parsed account found: Name='${parsedAccount.formattedName}', Type='${parsedAccount.accountType}'")
                     val currentAccount = accountRepository.getAccountById(transaction.accountId).first()
@@ -1570,9 +1581,22 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun updateTransactionDescription(id: Int, description: String) = viewModelScope.launch {
-        if (description.isNotBlank()) {
-            transactionRepository.updateDescription(id, description)
+    fun updateTransactionDescription(id: Int, newDescription: String) = viewModelScope.launch(Dispatchers.IO) {
+        if (newDescription.isNotBlank()) {
+            val transaction = transactionRepository.getTransactionById(id).first() ?: return@launch
+            val originalDescription = transaction.originalDescription ?: transaction.description
+
+            transactionRepository.updateDescription(id, newDescription)
+
+            val similar = transactionRepository.findSimilarTransactions(originalDescription, id)
+            if (similar.isNotEmpty()) {
+                _retroUpdatePromptState.value = RetroUpdatePromptState(
+                    originalDescription = originalDescription,
+                    newDescription = newDescription,
+                    newCategoryId = null,
+                    similarCount = similar.size
+                )
+            }
         }
     }
 
@@ -1588,9 +1612,32 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         transactionRepository.updateNotes(id, notes.takeIf { it.isNotBlank() })
     }
 
-    fun updateTransactionCategory(id: Int, categoryId: Int?) = viewModelScope.launch {
+    fun updateTransactionCategory(id: Int, categoryId: Int?) = viewModelScope.launch(Dispatchers.IO) {
+        val transaction = transactionRepository.getTransactionById(id).first() ?: return@launch
+        val originalDescription = transaction.originalDescription ?: transaction.description
+
         transactionRepository.updateCategoryId(id, categoryId)
+
+        if (categoryId != null && transaction.sourceSmsId != null && !transaction.originalDescription.isNullOrBlank()) {
+            val mapping = MerchantCategoryMapping(
+                parsedName = transaction.originalDescription,
+                categoryId = categoryId
+            )
+            merchantCategoryMappingRepository.insert(mapping)
+            Log.d(TAG, "Learned category mapping for '${transaction.originalDescription}' -> categoryId $categoryId")
+        }
+
+        val similar = transactionRepository.findSimilarTransactions(originalDescription, id)
+        if (similar.isNotEmpty()) {
+            _retroUpdatePromptState.value = RetroUpdatePromptState(
+                originalDescription = originalDescription,
+                newDescription = null,
+                newCategoryId = categoryId,
+                similarCount = similar.size
+            )
+        }
     }
+
 
     fun updateTransactionAccount(id: Int, accountId: Int) = viewModelScope.launch {
         transactionRepository.updateAccountId(id, accountId)
@@ -1686,7 +1733,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 )
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
 
-                // --- CATEGORY LEARNING LOGIC ---
                 if (categoryId != null && potentialTxn.merchantName != null) {
                     val mapping = MerchantCategoryMapping(
                         parsedName = potentialTxn.merchantName,
@@ -1728,6 +1774,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun clearError() {
         _validationError.value = null
+    }
+
+    fun dismissRetroUpdateDialog() {
+        _retroUpdatePromptState.value = null
     }
 }
 -e 
@@ -1897,10 +1947,9 @@ class MonthlySummaryWorker(
 ================== FILE: ./app/src/main/java/NavItems.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added a title for the new "manage_ignore_rules" route to
-// ensure the TopAppBar displays the correct title when the user navigates to
-// the new screen.
-// FEATURE - Added a title for the new "link_transaction_screen" route.
+// REASON: FEATURE - The title for the `rule_creation_screen` has been updated
+// to "Create/Edit Rule" to accurately reflect its new dual purpose, supporting
+// both creation and editing workflows.
 // =================================================================================
 package io.pm.finlight
 
@@ -1941,11 +1990,11 @@ val screenTitles = mapOf(
     "tag_management" to "Manage Tags",
     "edit_profile" to "Edit Profile",
     "income_screen" to "Income",
-    "rule_creation_screen/{potentialTransactionJson}" to "Create Parsing Rule",
+    "rule_creation_screen?potentialTransactionJson={potentialTransactionJson}&ruleId={ruleId}" to "Create/Edit Rule",
     "manage_parse_rules" to "Manage Parsing Rules",
     "manage_ignore_rules" to "Manage Ignore List",
-    // --- NEW: Title for the linking screen ---
-    "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction"
+    "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction",
+    "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar"
 )
 -e 
 
@@ -2356,6 +2405,116 @@ interface RecurringTransactionDao {
 
     @Query("SELECT * FROM recurring_transactions WHERE id = :id")
     fun getById(id: Int): Flow<RecurringTransaction?>
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/RetrospectiveUpdateViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RetrospectiveUpdateViewModel.kt
+// REASON: NEW FILE - This ViewModel supports the new Retrospective Update
+// screen. It takes details about a pending change (new description or category),
+// finds all similar transactions using the repository, manages the user's
+// selection of which transactions to update, and performs the final batch
+// update operation.
+// =================================================================================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+class RetrospectiveUpdateViewModelFactory(
+    private val application: Application,
+    private val originalDescription: String,
+    private val transactionId: Int
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(RetrospectiveUpdateViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return RetrospectiveUpdateViewModel(application, originalDescription, transactionId) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+data class RetrospectiveUpdateUiState(
+    val similarTransactions: List<Transaction> = emptyList(),
+    val selectedIds: Set<Int> = emptySet(),
+    val isLoading: Boolean = true
+)
+
+class RetrospectiveUpdateViewModel(
+    application: Application,
+    private val originalDescription: String,
+    private val transactionId: Int
+) : ViewModel() {
+
+    private val transactionRepository: TransactionRepository = TransactionRepository(AppDatabase.getInstance(application).transactionDao())
+
+    private val _uiState = MutableStateFlow(RetrospectiveUpdateUiState())
+    val uiState = _uiState.asStateFlow()
+
+    init {
+        findSimilarTransactions()
+    }
+
+    private fun findSimilarTransactions() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val similar = transactionRepository.findSimilarTransactions(originalDescription, transactionId)
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    similarTransactions = similar,
+                    selectedIds = similar.map { t -> t.id }.toSet() // Pre-select all
+                )
+            }
+        }
+    }
+
+    fun toggleSelection(id: Int) {
+        _uiState.update { currentState ->
+            val newSelectedIds = currentState.selectedIds.toMutableSet()
+            if (id in newSelectedIds) {
+                newSelectedIds.remove(id)
+            } else {
+                newSelectedIds.add(id)
+            }
+            currentState.copy(selectedIds = newSelectedIds)
+        }
+    }
+
+    fun toggleSelectAll() {
+        _uiState.update { currentState ->
+            if (currentState.selectedIds.size == currentState.similarTransactions.size) {
+                // If all are selected, deselect all
+                currentState.copy(selectedIds = emptySet())
+            } else {
+                // Otherwise, select all
+                currentState.copy(selectedIds = currentState.similarTransactions.map { it.id }.toSet())
+            }
+        }
+    }
+
+    fun performBatchUpdate(newDescription: String?, newCategoryId: Int?) {
+        viewModelScope.launch {
+            val idsToUpdate = _uiState.value.selectedIds.toList()
+            if (idsToUpdate.isEmpty()) return@launch
+
+            if (newDescription != null) {
+                transactionRepository.updateDescriptionForIds(idsToUpdate, newDescription)
+            }
+            if (newCategoryId != null) {
+                transactionRepository.updateCategoryForIds(idsToUpdate, newCategoryId)
+            }
+        }
+    }
 }
 -e 
 
@@ -3781,6 +3940,159 @@ fun EditCategoryDialog(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RetrospectiveUpdateScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RetrospectiveUpdateScreen.kt
+// REASON: NEW FILE - This screen provides the UI for the Retrospective Update
+// feature. It displays a list of transactions similar to the one the user just
+// edited. Each item has a checkbox, allowing the user to select which
+// transactions should be included in the batch update. It includes "Select All"
+// functionality and a confirmation button to apply the changes.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import android.app.Application
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import io.pm.finlight.RetrospectiveUpdateViewModel
+import io.pm.finlight.RetrospectiveUpdateViewModelFactory
+import io.pm.finlight.Transaction
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RetrospectiveUpdateScreen(
+    navController: NavController,
+    transactionId: Int,
+    originalDescription: String,
+    newDescription: String?,
+    newCategoryId: Int?
+) {
+    val application = LocalContext.current.applicationContext as Application
+    val factory = RetrospectiveUpdateViewModelFactory(application, originalDescription, transactionId)
+    val viewModel: RetrospectiveUpdateViewModel = viewModel(factory = factory)
+    val uiState by viewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Update Similar Transactions") })
+        },
+        bottomBar = {
+            Surface(shadowElevation = 8.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { navController.popBackStack() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                viewModel.performBatchUpdate(newDescription, newCategoryId)
+                                navController.popBackStack()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = uiState.selectedIds.isNotEmpty()
+                    ) {
+                        Text("Update ${uiState.selectedIds.size} Items")
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        if (uiState.isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (uiState.similarTransactions.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                Text("No other similar transactions found.")
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Column {
+                        Text("Found ${uiState.similarTransactions.size} similar transaction(s) for '${originalDescription}'.")
+                        Spacer(Modifier.height(8.dp))
+                        Text("Select which ones you'd like to update.")
+                        Spacer(Modifier.height(16.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val allSelected = uiState.selectedIds.size == uiState.similarTransactions.size
+                            Checkbox(
+                                checked = allSelected,
+                                onCheckedChange = { viewModel.toggleSelectAll() }
+                            )
+                            Text(if (allSelected) "Deselect All" else "Select All")
+                        }
+                        HorizontalDivider()
+                    }
+                }
+                items(uiState.similarTransactions, key = { it.id }) { transaction ->
+                    SelectableTransactionItem(
+                        transaction = transaction,
+                        isSelected = transaction.id in uiState.selectedIds,
+                        onToggle = { viewModel.toggleSelection(transaction.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectableTransactionItem(
+    transaction: Transaction,
+    isSelected: Boolean,
+    onToggle: () -> Unit
+) {
+    val dateFormatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
+        Column(modifier = Modifier.weight(1f)) {
+            Text(transaction.description, fontWeight = FontWeight.SemiBold)
+            Text(dateFormatter.format(Date(transaction.date)), style = MaterialTheme.typography.bodySmall)
+        }
+        Text("₹${"%,.2f".format(transaction.amount)}")
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt ==================
 package io.pm.finlight.ui.screens
 
@@ -4132,19 +4444,10 @@ fun ManageIgnoreRulesScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
-// REASON: BUG FIX - The call to save a merchant name has been updated from the
-// obsolete `saveMerchantMapping` to the new `saveMerchantRenameRule`. This
-// aligns the approval screen with the new intelligent renaming feature, passing
-// the originally parsed name and the user's final description to create a rule.
-// FEATURE - A new "Link to Existing" button has been added to the
-// `PotentialTransactionItem`. This button navigates to the new
-// `link_transaction_screen`, passing the details of the parsed SMS to find
-// potential matches.
-// FEATURE - The `ReviewSmsScreen` now observes the navigation back stack for a
-// "linked_sms_id" signal. When received, it calls the ViewModel to remove the
-// corresponding item from the list, completing the cleanup process.
-// BUG FIX - Corrected the way `linkedSmsId` is observed from navigation state
-// to resolve a property delegate compilation error on a nullable type.
+// REASON: BUG FIX - Corrected the navigation call for the `onCreateRule` action.
+// The route is now constructed with a proper query parameter
+// (`?potentialTransactionJson=...`) to match the NavHost definition, resolving
+// the `IllegalArgumentException` crash.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -4204,7 +4507,6 @@ fun ReviewSmsScreen(
 
     var hasLoadedOnce by remember { mutableStateOf(false) }
 
-    // --- FIX: Correctly observe the nullable state from the SavedStateHandle ---
     val linkedSmsIdState = navController.currentBackStackEntry
         ?.savedStateHandle
         ?.getLiveData<Long>("linked_sms_id")
@@ -4214,7 +4516,6 @@ fun ReviewSmsScreen(
     LaunchedEffect(linkedSmsId) {
         linkedSmsId?.let {
             viewModel.onTransactionLinked(it)
-            // Clear the value from the state handle so it's not processed again
             navController.currentBackStackEntry?.savedStateHandle?.set("linked_sms_id", null)
         }
     }
@@ -4262,7 +4563,8 @@ fun ReviewSmsScreen(
                     onCreateRule = { transaction ->
                         val json = Gson().toJson(transaction)
                         val encodedJson = URLEncoder.encode(json, "UTF-8")
-                        navController.navigate("rule_creation_screen/$encodedJson")
+                        // --- FIX: Use query parameter format ---
+                        navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
                     },
                     onLink = { transaction ->
                         val json = Gson().toJson(transaction)
@@ -6308,14 +6610,14 @@ fun CategoryBudgetItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt
-// REASON: FEATURE - The UI is enhanced with a "Mark as Account" button and a
-// corresponding summary item. This allows users to define a custom pattern for
-// the account, completing the new feature.
+// REASON: FEATURE - The screen now supports both "create" and "edit" modes. It
+// accepts an optional `ruleId` from navigation. If the ID is present, it calls
+// the ViewModel to load the rule's data, including the `sourceSmsBody`, and
+// pre-populates the UI, enabling the user to modify and update existing rules.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -6326,7 +6628,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -6337,14 +6638,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.google.gson.Gson
-import io.pm.finlight.PotentialTransaction
-import io.pm.finlight.RuleCreationViewModel
-import io.pm.finlight.RuleSelection
+import io.pm.finlight.*
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 
-// Factory for creating RuleCreationViewModel with Application context
 class RuleCreationViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(RuleCreationViewModel::class.java)) {
@@ -6355,28 +6654,43 @@ class RuleCreationViewModelFactory(private val application: Application) : ViewM
     }
 }
 
-/**
- * A screen where users can define custom parsing rules for SMS messages.
- */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RuleCreationScreen(
     navController: NavController,
-    potentialTransactionJson: String
+    potentialTransactionJson: String?,
+    ruleId: Int?
 ) {
     val context = LocalContext.current.applicationContext as Application
     val viewModel: RuleCreationViewModel = viewModel(factory = RuleCreationViewModelFactory(context))
 
-    val potentialTxn = remember { Gson().fromJson(potentialTransactionJson, PotentialTransaction::class.java) }
-
     val uiState by viewModel.uiState.collectAsState()
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(potentialTxn.originalMessage)) }
+    var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
     val scope = rememberCoroutineScope()
+    val isEditMode = ruleId != null
 
-    LaunchedEffect(key1 = potentialTxn) {
-        viewModel.initializeState(potentialTxn)
+    LaunchedEffect(key1 = ruleId, key2 = potentialTransactionJson) {
+        if (isEditMode) {
+            viewModel.loadRuleForEditing(ruleId!!)
+            // Fetch the rule and set its body to the text field
+            val rule = AppDatabase.getInstance(context).customSmsRuleDao().getRuleById(ruleId).firstOrNull()
+            if (rule != null) {
+                textFieldValue = TextFieldValue(rule.sourceSmsBody)
+            }
+        } else if (potentialTransactionJson != null) {
+            val potentialTxn = Gson().fromJson(potentialTransactionJson, PotentialTransaction::class.java)
+            viewModel.initializeStateForCreation(potentialTxn)
+            textFieldValue = TextFieldValue(potentialTxn.originalMessage)
+        }
     }
 
-    Scaffold { innerPadding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (isEditMode) "Edit Parsing Rule" else "Create Parsing Rule") }
+            )
+        }
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
@@ -6428,7 +6742,6 @@ fun RuleCreationScreen(
                 Text("Mark as Trigger Phrase")
             }
 
-            // --- UPDATED: Button layout now includes "Mark as Account" ---
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -6466,7 +6779,7 @@ fun RuleCreationScreen(
                     enabled = isSelectionActive,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Mark as Account")
+                    Text("Mark as Account Info")
                 }
             }
 
@@ -6491,7 +6804,6 @@ fun RuleCreationScreen(
                         label = "Amount",
                         value = uiState.amountSelection.selectedText.ifBlank { "Not set" }
                     )
-                    // --- NEW: Display the selected Account ---
                     RuleSummaryItem(
                         icon = Icons.Default.AccountBalanceWallet,
                         label = "Account",
@@ -6510,12 +6822,10 @@ fun RuleCreationScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            viewModel.saveRule(potentialTxn.originalMessage) {
-                                if (potentialTxn.sourceSmsId != -1L) {
-                                    navController.previousBackStackEntry
-                                        ?.savedStateHandle
-                                        ?.set("reparse_needed", true)
-                                }
+                            viewModel.saveRule(textFieldValue.text) {
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("reparse_needed", true)
                                 navController.popBackStack()
                             }
                         }
@@ -6523,7 +6833,7 @@ fun RuleCreationScreen(
                     enabled = isSaveEnabled,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Save Rule")
+                    Text(if (isEditMode) "Update Rule" else "Save Rule")
                 }
             }
         }
@@ -6911,30 +7221,10 @@ fun PlaceholderTabContent(title: String) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FIX - The logic for creating a rename rule has been made more robust.
-// 1. The "Always rename" checkbox is now always visible when editing a description.
-// 2. The `originalNameForRule` is now correctly determined by using the
-//    `originalDescription` if it exists, otherwise falling back to the current
-//    `description` (the value before the edit). This ensures that rules can be
-//    created for any transaction, not just imported ones.
-// FEATURE - The `TransactionHeaderCard` has been redesigned to display a large,
-// semi-transparent background image corresponding to the transaction's category,
-// creating a more visually engaging and contextual header.
-// BUG FIX - The `TransactionHeaderCard` has been refactored to use a layered
-// Box layout. This ensures the background image always crops and fills the
-// available space uniformly, fixing inconsistent sizing issues. The image alpha
-// and text colors have also been adjusted for better visibility.
-// VISUAL - Increased the minimum height of the TransactionHeaderCard and adjusted
-// the background image alpha for a more prominent and visually appealing look.
-// VISUAL - The content layout within the `TransactionHeaderCard` has been updated
-// to spread the elements vertically, making better use of the larger card size.
-// BUG FIX - Replaced the unresolved `ChipDefaults.LeadingIconSize` with a hardcoded
-// size of `18.dp` to resolve a compilation error and ensure consistent icon sizing.
-// BUG FIX - Added a `LaunchedEffect` to separately load the visit count when
-// the transaction details are available, fixing an infinite recomposition loop.
-// BUG FIX - The `LaunchedEffect` for loading the visit count now correctly
-// passes the `originalDescription` to ensure an accurate count for renamed
-// merchants.
+// REASON: BUG FIX - Corrected the navigation call for the "Fix Parsing" button.
+// The route is now constructed with a proper query parameter
+// (`?potentialTransactionJson=...`) to match the NavHost definition, resolving
+// the `IllegalArgumentException` crash.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -7055,6 +7345,8 @@ fun TransactionDetailScreen(
     val originalSms by viewModel.originalSmsText.collectAsState()
     val visitCount by viewModel.visitCount.collectAsState()
     val scope = rememberCoroutineScope()
+    val retroUpdatePromptState by viewModel.retroUpdatePromptState.collectAsState()
+
 
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -7118,6 +7410,43 @@ fun TransactionDetailScreen(
 
             LaunchedEffect(details.transaction.sourceSmsId) {
                 viewModel.loadOriginalSms(details.transaction.sourceSmsId)
+            }
+
+            retroUpdatePromptState?.let { promptState ->
+                AlertDialog(
+                    onDismissRequest = { viewModel.dismissRetroUpdateDialog() },
+                    title = { Text("Update Similar Transactions?") },
+                    text = {
+                        val changeType = if (promptState.newDescription != null) "description" else "category"
+                        Text("You've updated the $changeType for transactions named '${promptState.originalDescription}'. Apply this change to ${promptState.similarCount} other similar transaction(s)?")
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            val originalDescEncoded = URLEncoder.encode(promptState.originalDescription, "UTF-8")
+                            val newDescEncoded = promptState.newDescription?.let { URLEncoder.encode(it, "UTF-8") }
+                            val categoryId = promptState.newCategoryId ?: -1
+
+                            var route = "retrospective_update_screen/${details.transaction.id}/$originalDescEncoded"
+                            if (newDescEncoded != null) {
+                                route += "?newDescription=$newDescEncoded"
+                            }
+                            if (categoryId != -1) {
+                                val separator = if (route.contains("?")) "&" else "?"
+                                route += "${separator}newCategoryId=$categoryId"
+                            }
+
+                            navController.navigate(route)
+                            viewModel.dismissRetroUpdateDialog()
+                        }) {
+                            Text("Update Others")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.dismissRetroUpdateDialog() }) {
+                            Text("Just This One")
+                        }
+                    }
+                )
             }
 
             Scaffold(
@@ -7280,7 +7609,8 @@ fun TransactionDetailScreen(
                                             )
                                             val json = Gson().toJson(potentialTxn)
                                             val encodedJson = URLEncoder.encode(json, "UTF-8")
-                                            navController.navigate("rule_creation_screen/$encodedJson")
+                                            // --- FIX: Use query parameter format ---
+                                            navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
                                         } else {
                                             Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
                                         }
@@ -7489,15 +7819,14 @@ private fun TransactionEditSheetContent(
                 title = "Edit Description",
                 initialValue = details.transaction.description,
                 onConfirm = { newDescription ->
-                    scope.launch {
-                        val originalNameForRule = details.transaction.originalDescription ?: details.transaction.description
-                        viewModel.updateTransactionDescription(transactionId, newDescription)
-                        if (saveForFuture) {
-                            if (originalNameForRule.isNotBlank() && newDescription.isNotBlank()) {
-                                onSaveRenameRule(originalNameForRule, newDescription)
-                            }
+                    val originalNameForRule = details.transaction.originalDescription ?: details.transaction.description
+                    if (saveForFuture) {
+                        if (originalNameForRule.isNotBlank() && newDescription.isNotBlank()) {
+                            onSaveRenameRule(originalNameForRule, newDescription)
                         }
                     }
+                    viewModel.updateTransactionDescription(transactionId, newDescription)
+                    onDismiss()
                 },
                 onDismiss = onDismiss
             ) {
@@ -7520,7 +7849,10 @@ private fun TransactionEditSheetContent(
                 title = "Edit Amount",
                 initialValue = "%.2f".format(details.transaction.amount),
                 keyboardType = KeyboardType.Number,
-                onConfirm = { viewModel.updateTransactionAmount(transactionId, it) },
+                onConfirm = {
+                    viewModel.updateTransactionAmount(transactionId, it)
+                    onDismiss()
+                },
                 onDismiss = onDismiss
             )
         }
@@ -7528,7 +7860,10 @@ private fun TransactionEditSheetContent(
             EditTextFieldSheet(
                 title = "Edit Notes",
                 initialValue = details.transaction.notes ?: "",
-                onConfirm = { viewModel.updateTransactionNotes(transactionId, it) },
+                onConfirm = {
+                    viewModel.updateTransactionNotes(transactionId, it)
+                    onDismiss()
+                },
                 onDismiss = onDismiss
             )
         }
@@ -7537,7 +7872,10 @@ private fun TransactionEditSheetContent(
                 title = "Select Account",
                 items = accounts,
                 getItemName = { (it as Account).name },
-                onItemSelected = { viewModel.updateTransactionAccount(transactionId, (it as Account).id) },
+                onItemSelected = {
+                    viewModel.updateTransactionAccount(transactionId, (it as Account).id)
+                    onDismiss()
+                },
                 onDismiss = onDismiss,
                 onAddNew = onAddNewAccount
             )
@@ -7546,7 +7884,10 @@ private fun TransactionEditSheetContent(
             CategoryPickerSheet(
                 title = "Select Category",
                 items = categories,
-                onItemSelected = { viewModel.updateTransactionCategory(transactionId, it.id) },
+                onItemSelected = {
+                    viewModel.updateTransactionCategory(transactionId, it.id)
+                    onDismiss()
+                },
                 onDismiss = onDismiss,
                 onAddNew = onAddNewCategory
             )
@@ -7607,7 +7948,6 @@ private fun EditTextFieldSheet(
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {
                 onConfirm(text)
-                onDismiss()
             }) { Text("Save") }
         }
     }
@@ -7634,7 +7974,6 @@ private fun <T> PickerSheet(
                     headlineContent = { Text(getItemName(item)) },
                     modifier = Modifier.clickable {
                         onItemSelected(item)
-                        onDismiss()
                     }
                 )
             }
@@ -7678,7 +8017,6 @@ private fun CategoryPickerSheet(
                         .clip(RoundedCornerShape(12.dp))
                         .clickable {
                             onItemSelected(category)
-                            onDismiss()
                         }
                         .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -7829,7 +8167,6 @@ private fun TransactionHeaderCard(
                 .fillMaxWidth()
                 .heightIn(min = 400.dp),
         ) {
-            // Layer 1: The Background Image
             Image(
                 painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
                 contentDescription = null,
@@ -7838,7 +8175,6 @@ private fun TransactionHeaderCard(
                 alpha = 0.5f
             )
 
-            // Layer 2: A darkening scrim
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -7852,8 +8188,6 @@ private fun TransactionHeaderCard(
                     )
             )
 
-            // Layer 3: The actual content, using Box alignments
-            // Top Content (Description and Visit Count)
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -7882,7 +8216,6 @@ private fun TransactionHeaderCard(
             }
 
 
-            // Center Content (Amount and Category)
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -7904,7 +8237,6 @@ private fun TransactionHeaderCard(
                 )
             }
 
-            // Bottom Content (Date and Source)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -9332,9 +9664,10 @@ fun AddAccountScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageParseRulesScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageParseRulesScreen.kt
-// REASON: UX IMPROVEMENT - The UI is updated to display the user-friendly example
-// text (e.g., "Merchant Name: STARBUCKS") instead of the complex regex pattern.
-// This makes the screen much more intuitive and understandable for all users.
+// REASON: FEATURE - An "Edit" IconButton has been added to each `RuleItemCard`.
+// When tapped, it navigates to the `rule_creation_screen`, passing the ID of
+// the selected rule. This allows the user to modify existing rules, completing
+// the primary UI entry point for the "Edit Rule" feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -9343,19 +9676,21 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import io.pm.finlight.CustomSmsRule
 import io.pm.finlight.ManageParseRulesViewModel
 
 @Composable
 fun ManageParseRulesScreen(
+    navController: NavController,
     viewModel: ManageParseRulesViewModel = viewModel()
 ) {
     val rules by viewModel.allRules.collectAsState()
@@ -9376,6 +9711,9 @@ fun ManageParseRulesScreen(
             items(rules) { rule ->
                 RuleItemCard(
                     rule = rule,
+                    onEditClick = {
+                        navController.navigate("rule_creation_screen?ruleId=${rule.id}")
+                    },
                     onDeleteClick = { ruleToDelete = rule }
                 )
             }
@@ -9408,7 +9746,11 @@ fun ManageParseRulesScreen(
 }
 
 @Composable
-private fun RuleItemCard(rule: CustomSmsRule, onDeleteClick: () -> Unit) {
+private fun RuleItemCard(
+    rule: CustomSmsRule,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(2.dp)
@@ -9422,10 +9764,20 @@ private fun RuleItemCard(rule: CustomSmsRule, onDeleteClick: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Rule #${rule.id}",
+                    text = rule.triggerPhrase,
                     style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+                // --- NEW: Edit button ---
+                IconButton(onClick = onEditClick) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Edit Rule",
+                        tint = MaterialTheme.colorScheme.secondary
+                    )
+                }
                 IconButton(onClick = onDeleteClick) {
                     Icon(
                         Icons.Default.Delete,
@@ -9435,13 +9787,14 @@ private fun RuleItemCard(rule: CustomSmsRule, onDeleteClick: () -> Unit) {
                 }
             }
             HorizontalDivider()
-            RuleDetailRow(label = "Trigger Phrase", value = rule.triggerPhrase)
-            // --- UPDATED: Display user-friendly examples instead of regex ---
             rule.merchantNameExample?.let {
                 RuleDetailRow(label = "Merchant Name", value = it)
             }
             rule.amountExample?.let {
                 RuleDetailRow(label = "Amount", value = it)
+            }
+            rule.accountNameExample?.let {
+                RuleDetailRow(label = "Account Info", value = it)
             }
         }
     }
@@ -10028,16 +10381,12 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: REFACTOR - The settings items have been completely reorganized into
-// logical groups (General, Automation & AI, etc.) for improved clarity and
-// usability.
-// FEATURE - Added new entry points for "Manage Custom Parse Rules" and "Manage
-// Parser Ignore List" to make these features accessible to the user.
-// REFACTOR - Consolidated individual permission toggles into a single "Manage
-// App Permissions" item that navigates the user to the system settings screen
-// for the app, which is a more standard and robust approach.
-// REFACTOR - Adjusted LazyColumn spacing for better control within list items.
-// The primary visual alignment fix is in the `SettingsComponents.kt` file.
+// REASON: FEATURE - Re-implemented the "Scan from specific date" UI that was
+// lost during a previous refactor. A new `ListItem` has been added under the
+// "Automation & AI" section, which displays the selected start date, allows
+// the user to change it via a `DatePickerDialog`, and includes a "Scan"
+// button to trigger a historical SMS scan. This restores critical app
+// functionality.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -10302,6 +10651,44 @@ fun ProfileScreen(
                         Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
                     }
                 },
+            )
+        }
+        // --- FEATURE: Restored Scan From Date UI ---
+        item {
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            ListItem(
+                headlineContent = { Text("Scan from specific date") },
+                supportingContent = {
+                    Text(
+                        text = "Current start date: ${dateFormatter.format(Date(smsScanStartDate))}",
+                        modifier = Modifier.clickable { showDatePickerDialog = true },
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Default.Event,
+                        contentDescription = "Scan from date",
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                trailingContent = {
+                    Button(
+                        onClick = {
+                            if (hasSmsPermission(context)) {
+                                if (!isScanning) {
+                                    settingsViewModel.rescanSmsForReview(smsScanStartDate)
+                                }
+                            } else {
+                                Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = !isScanning
+                    ) {
+                        Text("Scan")
+                    }
+                }
             )
         }
         item {
@@ -12382,24 +12769,10 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - The main Scaffold now includes logic to show a new, custom
-// `AddTransactionTopBar` when the current route is "add_transaction". This
-// replaces the old behavior of simply hiding the default TopAppBar and allows
-// for a screen-specific design as per the new UI requirements.
-// FEATURE - Added the route for the new `daily_report_screen`.
-// BUG FIX - Added a `deepLinks` parameter to the ReportsScreen composable in the
-// NavHost. This correctly maps the "app://finlight.pm.io/reports" URI to its
-// destination, resolving the IllegalArgumentException crash on startup when
-// handling a deep link from a notification.
-// BUG FIX - Added a `deepLinks` parameter to the `daily_report_screen` composable
-// to handle incoming notification intents correctly.
-// REFACTOR - Replaced the specific `daily_report_screen` route with a generic
-// `time_period_report_screen/{timePeriod}` route to support the new reusable
-// reporting architecture.
-// FEATURE - Added the new "manage_ignore_rules" route to the NavHost to make
-// the new screen accessible within the app's navigation graph.
-// FEATURE - Added the new "link_transaction_screen" route to the NavHost to
-// enable the transaction linking UI.
+// REASON: FEATURE - The route for `rule_creation_screen` has been updated to
+// accept an optional `ruleId` argument. This allows the `ManageParseRulesScreen`
+// to navigate here for editing an existing rule, enabling the "Edit Rule"
+// feature flow.
 // =================================================================================
 package io.pm.finlight
 
@@ -12754,7 +13127,7 @@ fun AppNavHost(
         }
 
         composable("manage_parse_rules") {
-            ManageParseRulesScreen()
+            ManageParseRulesScreen(navController)
         }
         composable("manage_ignore_rules") {
             ManageIgnoreRulesScreen()
@@ -12882,19 +13255,27 @@ fun AppNavHost(
         composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
 
         composable(
-            "rule_creation_screen/{potentialTransactionJson}",
+            "rule_creation_screen?potentialTransactionJson={potentialTransactionJson}&ruleId={ruleId}",
             arguments = listOf(
-                navArgument("potentialTransactionJson") { type = NavType.StringType }
+                navArgument("potentialTransactionJson") {
+                    type = NavType.StringType
+                    nullable = true
+                },
+                navArgument("ruleId") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                }
             )
         ) { backStackEntry ->
-            val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
+            val json = backStackEntry.arguments?.getString("potentialTransactionJson")
+            val ruleId = backStackEntry.arguments?.getInt("ruleId")
             RuleCreationScreen(
                 navController = navController,
-                potentialTransactionJson = URLDecoder.decode(json, "UTF-8")
+                potentialTransactionJson = json?.let { URLDecoder.decode(it, "UTF-8") },
+                ruleId = if (ruleId == -1) null else ruleId
             )
         }
 
-        // --- NEW: Route for the linking screen ---
         composable(
             "link_transaction_screen/{potentialTransactionJson}",
             arguments = listOf(
@@ -12917,6 +13298,29 @@ fun AppNavHost(
         ) { backStackEntry ->
             val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod") as TimePeriod
             TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
+        }
+
+        composable(
+            "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}",
+            arguments = listOf(
+                navArgument("transactionId") { type = NavType.IntType },
+                navArgument("originalDescription") { type = NavType.StringType },
+                navArgument("newDescription") { type = NavType.StringType; nullable = true },
+                navArgument("newCategoryId") { type = NavType.IntType; defaultValue = -1 }
+            )
+        ) { backStackEntry ->
+            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
+            val originalDescription = backStackEntry.arguments!!.getString("originalDescription")!!
+            val newDescription = backStackEntry.arguments!!.getString("newDescription")
+            val newCategoryId = backStackEntry.arguments!!.getInt("newCategoryId").let { if (it == -1) null else it }
+
+            RetrospectiveUpdateScreen(
+                navController = navController,
+                transactionId = transactionId,
+                originalDescription = URLDecoder.decode(originalDescription, "UTF-8"),
+                newDescription = newDescription?.let { URLDecoder.decode(it, "UTF-8") },
+                newCategoryId = newCategoryId
+            )
         }
     }
 }
@@ -13102,9 +13506,9 @@ data class MonthlySummary(
 ================== FILE: ./app/src/main/java/CustomSmsRule.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRule.kt
-// REASON: FEATURE - Added `accountRegex` and `accountNameExample` fields. This
-// enhances the rule system to allow users to define custom patterns for
-// extracting account information, making parsing even more flexible.
+// REASON: FEATURE - Added a new `sourceSmsBody` column. This will store the
+// original SMS text that the rule was created from, which is a necessary
+// foundation for the upcoming "Edit Rule" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -13126,6 +13530,7 @@ import androidx.room.PrimaryKey
  * @param amountExample The user-selected text for the amount, for display purposes.
  * @param accountNameExample The user-selected text for the account, for display purposes.
  * @param priority The execution priority. Higher numbers are checked first.
+ * @param sourceSmsBody The original SMS text this rule was created from.
  */
 @Entity(
     tableName = "custom_sms_rules",
@@ -13141,7 +13546,8 @@ data class CustomSmsRule(
     val merchantNameExample: String?,
     val amountExample: String?,
     val accountNameExample: String?,
-    val priority: Int
+    val priority: Int,
+    val sourceSmsBody: String
 )
 -e 
 
@@ -13827,13 +14233,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version is incremented to 20. A new migration
-// (MIGRATION_19_20) is added to modify the `ignore_rules` table with new
-// `isEnabled` and `isDefault` columns. The `DatabaseCallback` is updated to
-// pre-populate this table with the app's default ignore phrases upon creation.
-// BUG FIX - The `onOpen` callback has been corrected to ensure that on a fresh
-// install, it seeds not only the default rules but also the sample accounts,
-// categories, and transactions, restoring the original sample data.
+// REASON: FEATURE - The database version has been incremented to 21. A new
+// migration, MIGRATION_20_21, has been added to introduce the `sourceSmsBody`
+// column to the `custom_sms_rules` table, supporting the upcoming "Edit Rule"
+// feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -13865,7 +14268,7 @@ import java.util.Calendar
         MerchantCategoryMapping::class,
         IgnoreRule::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -14037,12 +14440,19 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to add the sourceSmsBody column ---
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `sourceSmsBody` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -14054,15 +14464,12 @@ abstract open class AppDatabase : RoomDatabase() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 CoroutineScope(Dispatchers.IO).launch {
-                    // Populate everything on first creation
                     populateDatabase(getInstance(context))
                 }
             }
 
             override fun onOpen(db: SupportSQLiteDatabase) {
                 super.onOpen(db)
-                // This is a good place for conditional seeding if needed on app open
-                // For now, onCreate handles the initial population.
             }
 
             suspend fun populateDatabase(db: AppDatabase) {
@@ -14072,7 +14479,6 @@ abstract open class AppDatabase : RoomDatabase() {
                 val budgetDao = db.budgetDao()
                 val ignoreRuleDao = db.ignoreRuleDao()
 
-                // --- Seed all default data ---
                 categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
                 ignoreRuleDao.insertAll(DEFAULT_IGNORE_PHRASES)
 
@@ -14145,10 +14551,11 @@ abstract open class AppDatabase : RoomDatabase() {
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: REFACTOR - The hardcoded `NEGATIVE_KEYWORDS_REGEX` has been removed.
-// The parser now relies entirely on the enabled phrases fetched from the
-// `ignoreRuleDao`, making the ignore logic fully database-driven and
-// user-configurable.
+// REASON: FEATURE - The parser is enhanced to apply custom, user-defined
+// account rules. When a trigger-based rule matches, the parser now checks for
+// a custom `accountRegex`. If found, it uses this regex to extract the account
+// information, overriding the default account parsing logic and making the
+// feature more powerful and flexible.
 // =================================================================================
 package io.pm.finlight
 
@@ -14167,7 +14574,6 @@ object SmsParser {
     private val KEYWORD_AMOUNT_REGEX = "(?:purchase of|payment of|spent|charged|credited with|debited for|credit of|for)\\s+([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
-    // --- REMOVED: The hardcoded negative keywords regex is no longer needed. ---
     private val ACCOUNT_PATTERNS =
         listOf(
             "(ICICI Bank) Account XX(\\d{3,4}) credited".toRegex(RegexOption.IGNORE_CASE),
@@ -14225,7 +14631,6 @@ object SmsParser {
         val messageBody = sms.body
         Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
 
-        // --- UPDATED: Check against enabled ignore phrases from the database ---
         val ignorePhrases = ignoreRuleDao.getEnabledPhrases()
         for (phrase in ignorePhrases) {
             try {
@@ -14234,7 +14639,6 @@ object SmsParser {
                     return null
                 }
             } catch (e: PatternSyntaxException) {
-                // Log error for invalid regex from user input, but don't crash
                 Log.e("SmsParser", "Invalid regex pattern in ignore phrase: '$phrase'", e)
             }
         }
@@ -14385,8 +14789,10 @@ data class AppDataBackup(
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: Added functions to save and retrieve the enabled state for the new
-// monthly summary notification toggle.
+// REASON: FEATURE - Added the `isUnknownTransactionPopupEnabledBlocking()`
+// function. This provides a synchronous way to read the preference, which is
+// necessary for the `SmsReceiver` as it operates in a context where collecting
+// a Flow is not practical.
 // =================================================================================
 package io.pm.finlight
 
@@ -14422,7 +14828,6 @@ class SettingsRepository(context: Context) {
         private const val KEY_MONTHLY_REPORT_DAY = "monthly_report_day"
         private const val KEY_MONTHLY_REPORT_HOUR = "monthly_report_hour"
         private const val KEY_MONTHLY_REPORT_MINUTE = "monthly_report_minute"
-        // --- NEW: Key for monthly summary toggle ---
         private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
     }
 
@@ -14602,7 +15007,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Functions for monthly summary toggle ---
     fun saveMonthlySummaryEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_MONTHLY_SUMMARY_ENABLED, isEnabled).apply()
     }
@@ -14630,6 +15034,11 @@ class SettingsRepository(context: Context) {
             trySend(prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
+    }
+
+    // --- NEW: Blocking getter for use in BroadcastReceiver ---
+    fun isUnknownTransactionPopupEnabledBlocking(): Boolean {
+        return prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true)
     }
 
     fun saveDailyReportTime(hour: Int, minute: Int) {
@@ -15574,17 +15983,11 @@ data class IgnoreRule(
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE - Added the `getTopSpendingCategoriesForRange` query. This new
-// function is essential for the redesigned summary notifications, allowing them
-// to fetch and display the top spending categories for any given period (daily,
-// weekly, or monthly).
-// REFACTOR - Replaced specific queries like `getTransactionsForDay` with more
-// generic versions like `getTransactionsForDateRange` to support the new reusable
-// TimePeriodReportScreen.
-// FEATURE - Added `getWeeklySpendingForDateRange` and `getMonthlySpendingForDateRange`
-// to provide data for the context charts on the weekly and monthly report screens.
-// FEATURE - Added `setSmsHash` and `findLinkableTransactions` queries to
-// provide the data layer foundation for the new transaction linking feature.
+// REASON: BUG FIX - The `getTransactionCountForMerchant` query has been updated
+// to check against both the `description` and the `originalDescription` fields.
+// This ensures that the visit count is accurate even after a merchant has been
+// renamed, as it correctly groups all related transactions under their
+// original merchant identity.
 // =================================================================================
 package io.pm.finlight
 
@@ -16002,8 +16405,26 @@ interface TransactionDao {
         transactionType: String
     ): List<Transaction>
 
-    @Query("SELECT COUNT(*) FROM transactions WHERE description = :description AND isExcluded = 0")
+    @Query("""
+        SELECT COUNT(*) FROM transactions
+        WHERE (:description = description OR :description = originalDescription)
+        AND isExcluded = 0
+    """)
     fun getTransactionCountForMerchant(description: String): Flow<Int>
+
+    @Query("""
+        SELECT * FROM transactions
+        WHERE (description = :description OR originalDescription = :description)
+        AND id != :excludeId
+        AND isExcluded = 0
+    """)
+    suspend fun findSimilarTransactions(description: String, excludeId: Int): List<Transaction>
+
+    @Query("UPDATE transactions SET categoryId = :categoryId WHERE id IN (:ids)")
+    suspend fun updateCategoryForIds(ids: List<Int>, categoryId: Int)
+
+    @Query("UPDATE transactions SET description = :newDescription WHERE id IN (:ids)")
+    suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String)
 }
 -e 
 
@@ -16860,9 +17281,12 @@ data class Transaction(
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: FEATURE - The receiver now passes the new `ignoreRuleDao` to the
-// SmsParser. This enables the parser to check against the user-defined list of
-// ignore phrases before attempting to process an SMS.
+// REASON: BUG FIX - The receiver now checks if a category was successfully
+// learned for an auto-imported transaction. If a category was not found
+// (`mappedCategoryId == null`), it now correctly shows the "Review"
+// notification, prompting the user to categorize it. Otherwise, it shows the
+// standard "Auto-Saved" confirmation. This ensures transactions that require
+// attention are not silently saved without a category.
 // =================================================================================
 package io.pm.finlight
 
@@ -16905,13 +17329,14 @@ class SmsReceiver : BroadcastReceiver() {
                         val accountDao = db.accountDao()
                         val mappingRepository = MerchantMappingRepository(db.merchantMappingDao())
                         val merchantCategoryMappingDao = db.merchantCategoryMappingDao()
-                        val ignoreRuleDao = db.ignoreRuleDao() // --- NEW ---
+                        val ignoreRuleDao = db.ignoreRuleDao()
+                        val settingsRepository = SettingsRepository(context)
 
                         val existingMappings = mappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
                         val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
-                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), ignoreRuleDao) // --- UPDATED ---
+                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), ignoreRuleDao)
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
@@ -16946,13 +17371,18 @@ class SmsReceiver : BroadcastReceiver() {
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                                    source = "Auto-Imported"
+                                    source = if (mappedCategoryId != null) "Auto-Imported" else "Needs Review"
                                 )
                                 val newTransactionId = transactionDao.insert(newTransaction)
                                 Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
 
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                                    NotificationHelper.showAutoSaveConfirmationNotification(context, newTransaction.copy(id = newTransactionId.toInt()))
+                                    // --- FIX: Show the correct notification based on learning status ---
+                                    if (mappedCategoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
+                                        NotificationHelper.showTransactionNotification(context, potentialTxn)
+                                    } else {
+                                        NotificationHelper.showAutoSaveConfirmationNotification(context, newTransaction.copy(id = newTransactionId.toInt()))
+                                    }
                                 }
 
                             } else {
@@ -17221,12 +17651,11 @@ object NotificationHelper {
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: BUG FIX - The `allTransactions` property now correctly calls the
-// `getAllTransactions()` function, which was re-added to the DAO. This resolves
-// the "Unresolved reference" compilation error.
-// FEATURE - The repository now exposes the new `setSmsHash` and
-// `findLinkableTransactions` functions from the DAO, making them available to
-// the ViewModel layer for the transaction linking feature.
+// REASON: FEATURE - The repository now exposes the new DAO functions for the
+// Retrospective Update feature. `findSimilarTransactions`,
+// `updateCategoryForIds`, and `updateDescriptionForIds` are now available to
+// be called by the ViewModel layer, providing a clean abstraction over the
+// database operations.
 // =================================================================================
 package io.pm.finlight
 
@@ -17445,6 +17874,21 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getTransactionCountForMerchant(description: String): Flow<Int> {
         return transactionDao.getTransactionCountForMerchant(description)
+    }
+
+    // --- NEW: Expose DAO function for finding similar transactions ---
+    suspend fun findSimilarTransactions(description: String, excludeId: Int): List<Transaction> {
+        return transactionDao.findSimilarTransactions(description, excludeId)
+    }
+
+    // --- NEW: Expose DAO function for batch updating category ---
+    suspend fun updateCategoryForIds(ids: List<Int>, categoryId: Int) {
+        transactionDao.updateCategoryForIds(ids, categoryId)
+    }
+
+    // --- NEW: Expose DAO function for batch updating description ---
+    suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String) {
+        transactionDao.updateDescriptionForIds(ids, newDescription)
     }
 }
 -e 
