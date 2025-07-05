@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added a title for the new `retrospective_update_screen`
-// route to ensure the TopAppBar displays the correct title when the user
-// navigates to the new screen.
+// REASON: FEATURE - The title for the `rule_creation_screen` has been updated
+// to "Create/Edit Rule" to accurately reflect its new dual purpose, supporting
+// both creation and editing workflows.
 // =================================================================================
 package io.pm.finlight
 
@@ -43,10 +43,9 @@ val screenTitles = mapOf(
     "tag_management" to "Manage Tags",
     "edit_profile" to "Edit Profile",
     "income_screen" to "Income",
-    "rule_creation_screen/{potentialTransactionJson}" to "Create Parsing Rule",
+    "rule_creation_screen?potentialTransactionJson={potentialTransactionJson}&ruleId={ruleId}" to "Create/Edit Rule",
     "manage_parse_rules" to "Manage Parsing Rules",
     "manage_ignore_rules" to "Manage Ignore List",
     "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction",
-    // --- NEW: Title for the retrospective update screen ---
     "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar"
 )

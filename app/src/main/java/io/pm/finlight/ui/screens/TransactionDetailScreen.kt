@@ -1,11 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE - Integrated the Retrospective Update feature. The screen now
-// observes a `retroUpdatePromptState` from the ViewModel. When this state is
-// populated after an edit, it displays an `AlertDialog` asking the user if they
-// want to apply the change to other similar transactions. If confirmed, it
-// navigates to the new `retrospective_update_screen`, passing all necessary
-// parameters to perform the batch update.
+// REASON: BUG FIX - Corrected the navigation call for the "Fix Parsing" button.
+// The route is now constructed with a proper query parameter
+// (`?potentialTransactionJson=...`) to match the NavHost definition, resolving
+// the `IllegalArgumentException` crash.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -193,7 +191,6 @@ fun TransactionDetailScreen(
                 viewModel.loadOriginalSms(details.transaction.sourceSmsId)
             }
 
-            // --- NEW: Dialog for retrospective update ---
             retroUpdatePromptState?.let { promptState ->
                 AlertDialog(
                     onDismissRequest = { viewModel.dismissRetroUpdateDialog() },
@@ -391,7 +388,8 @@ fun TransactionDetailScreen(
                                             )
                                             val json = Gson().toJson(potentialTxn)
                                             val encodedJson = URLEncoder.encode(json, "UTF-8")
-                                            navController.navigate("rule_creation_screen/$encodedJson")
+                                            // --- FIX: Use query parameter format ---
+                                            navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
                                         } else {
                                             Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
                                         }

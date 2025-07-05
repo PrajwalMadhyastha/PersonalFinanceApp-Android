@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - Added the new `retrospective_update_screen` route to the
-// NavHost. This makes the new UI accessible within the app's navigation graph
-// and defines the necessary arguments (transactionId, descriptions, categoryId)
-// that will be passed to it when a user chooses to perform a batch update.
+// REASON: FEATURE - The route for `rule_creation_screen` has been updated to
+// accept an optional `ruleId` argument. This allows the `ManageParseRulesScreen`
+// to navigate here for editing an existing rule, enabling the "Edit Rule"
+// feature flow.
 // =================================================================================
 package io.pm.finlight
 
@@ -358,7 +358,7 @@ fun AppNavHost(
         }
 
         composable("manage_parse_rules") {
-            ManageParseRulesScreen()
+            ManageParseRulesScreen(navController)
         }
         composable("manage_ignore_rules") {
             ManageIgnoreRulesScreen()
@@ -486,15 +486,24 @@ fun AppNavHost(
         composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
 
         composable(
-            "rule_creation_screen/{potentialTransactionJson}",
+            "rule_creation_screen?potentialTransactionJson={potentialTransactionJson}&ruleId={ruleId}",
             arguments = listOf(
-                navArgument("potentialTransactionJson") { type = NavType.StringType }
+                navArgument("potentialTransactionJson") {
+                    type = NavType.StringType
+                    nullable = true
+                },
+                navArgument("ruleId") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                }
             )
         ) { backStackEntry ->
-            val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
+            val json = backStackEntry.arguments?.getString("potentialTransactionJson")
+            val ruleId = backStackEntry.arguments?.getInt("ruleId")
             RuleCreationScreen(
                 navController = navController,
-                potentialTransactionJson = URLDecoder.decode(json, "UTF-8")
+                potentialTransactionJson = json?.let { URLDecoder.decode(it, "UTF-8") },
+                ruleId = if (ruleId == -1) null else ruleId
             )
         }
 
@@ -522,7 +531,6 @@ fun AppNavHost(
             TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
         }
 
-        // --- NEW: Route for the retrospective update screen ---
         composable(
             "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}",
             arguments = listOf(

@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRuleDao.kt
-// REASON: Added new methods to support the rule management screen. `getAllRules`
-// now returns a Flow to enable real-time UI updates, and a `delete` method has
-// been added to allow users to remove specific rules.
+// REASON: FEATURE - Added the `getRuleById` and `update` functions. These are
+// essential for the "Edit Rule" feature, allowing the ViewModel to fetch a
+// specific rule for editing and then save the updated version back to the
+// database.
 // =================================================================================
 package io.pm.finlight
 
@@ -11,6 +12,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -45,4 +47,12 @@ interface CustomSmsRuleDao {
      */
     @Delete
     suspend fun delete(rule: CustomSmsRule)
+
+    // --- NEW: Function to get a single rule by its ID ---
+    @Query("SELECT * FROM custom_sms_rules WHERE id = :id")
+    fun getRuleById(id: Int): Flow<CustomSmsRule?>
+
+    // --- NEW: Function to update an existing rule ---
+    @Update
+    suspend fun update(rule: CustomSmsRule)
 }

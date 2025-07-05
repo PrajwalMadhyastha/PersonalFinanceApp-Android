@@ -1,18 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
-// REASON: BUG FIX - The call to save a merchant name has been updated from the
-// obsolete `saveMerchantMapping` to the new `saveMerchantRenameRule`. This
-// aligns the approval screen with the new intelligent renaming feature, passing
-// the originally parsed name and the user's final description to create a rule.
-// FEATURE - A new "Link to Existing" button has been added to the
-// `PotentialTransactionItem`. This button navigates to the new
-// `link_transaction_screen`, passing the details of the parsed SMS to find
-// potential matches.
-// FEATURE - The `ReviewSmsScreen` now observes the navigation back stack for a
-// "linked_sms_id" signal. When received, it calls the ViewModel to remove the
-// corresponding item from the list, completing the cleanup process.
-// BUG FIX - Corrected the way `linkedSmsId` is observed from navigation state
-// to resolve a property delegate compilation error on a nullable type.
+// REASON: BUG FIX - Corrected the navigation call for the `onCreateRule` action.
+// The route is now constructed with a proper query parameter
+// (`?potentialTransactionJson=...`) to match the NavHost definition, resolving
+// the `IllegalArgumentException` crash.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -72,7 +63,6 @@ fun ReviewSmsScreen(
 
     var hasLoadedOnce by remember { mutableStateOf(false) }
 
-    // --- FIX: Correctly observe the nullable state from the SavedStateHandle ---
     val linkedSmsIdState = navController.currentBackStackEntry
         ?.savedStateHandle
         ?.getLiveData<Long>("linked_sms_id")
@@ -82,7 +72,6 @@ fun ReviewSmsScreen(
     LaunchedEffect(linkedSmsId) {
         linkedSmsId?.let {
             viewModel.onTransactionLinked(it)
-            // Clear the value from the state handle so it's not processed again
             navController.currentBackStackEntry?.savedStateHandle?.set("linked_sms_id", null)
         }
     }
@@ -130,7 +119,8 @@ fun ReviewSmsScreen(
                     onCreateRule = { transaction ->
                         val json = Gson().toJson(transaction)
                         val encodedJson = URLEncoder.encode(json, "UTF-8")
-                        navController.navigate("rule_creation_screen/$encodedJson")
+                        // --- FIX: Use query parameter format ---
+                        navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
                     },
                     onLink = { transaction ->
                         val json = Gson().toJson(transaction)

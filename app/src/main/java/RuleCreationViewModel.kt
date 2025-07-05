@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
-// REASON: FEATURE - The `saveRule` function has been updated to save the
-// original SMS text. It now includes the `fullSmsText` in the `CustomSmsRule`
-// object that is inserted into the database, providing the necessary data for
-// the upcoming "Edit Rule" feature.
+// REASON: FEATURE - The ViewModel now fully supports "edit mode". A new
+// `loadRuleForEditing` function fetches an existing rule by its ID and populates
+// the UI state. The `saveRule` logic is updated to check for an active rule ID
+// and calls the DAO's `update` function instead of `insert`, completing the
+// feature's data flow.
 // =================================================================================
 package io.pm.finlight
 
@@ -14,6 +15,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.regex.Pattern
@@ -35,7 +37,8 @@ data class RuleCreationUiState(
     val merchantSelection: RuleSelection = RuleSelection(),
     val amountSelection: RuleSelection = RuleSelection(),
     val accountSelection: RuleSelection = RuleSelection(),
-    val transactionType: String? = null
+    val transactionType: String? = null,
+    val ruleIdToEdit: Int? = null // --- NEW: Track the ID of the rule being edited
 )
 
 /**
@@ -48,7 +51,7 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
 
     private val customSmsRuleDao = AppDatabase.getInstance(application).customSmsRuleDao()
 
-    fun initializeState(potentialTxn: PotentialTransaction) {
+    fun initializeStateForCreation(potentialTxn: PotentialTransaction) {
         val amountStr = String.format("%.2f", potentialTxn.amount)
         val amountIndex = potentialTxn.originalMessage.indexOf(amountStr)
 
@@ -66,6 +69,20 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
             amountSelection = amountSelection,
             transactionType = potentialTxn.transactionType
         )
+    }
+
+    // --- NEW: Function to load an existing rule for editing ---
+    fun loadRuleForEditing(ruleId: Int) {
+        viewModelScope.launch {
+            val rule = customSmsRuleDao.getRuleById(ruleId).firstOrNull() ?: return@launch
+            _uiState.value = RuleCreationUiState(
+                triggerSelection = RuleSelection(selectedText = rule.triggerPhrase),
+                merchantSelection = RuleSelection(selectedText = rule.merchantNameExample ?: ""),
+                amountSelection = RuleSelection(selectedText = rule.amountExample ?: ""),
+                accountSelection = RuleSelection(selectedText = rule.accountNameExample ?: ""),
+                ruleIdToEdit = rule.id
+            )
+        }
     }
 
     fun onMarkAsTrigger(selection: RuleSelection) {
@@ -105,7 +122,8 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
                 generateRegex(fullSmsText, currentState.accountSelection)
             } else null
 
-            val newRule = CustomSmsRule(
+            val rule = CustomSmsRule(
+                id = currentState.ruleIdToEdit ?: 0, // Use existing ID if editing
                 triggerPhrase = currentState.triggerSelection.selectedText,
                 merchantRegex = merchantRegex,
                 amountRegex = amountRegex,
@@ -114,20 +132,23 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
                 amountExample = currentState.amountSelection.selectedText.takeIf { it.isNotBlank() },
                 accountNameExample = currentState.accountSelection.selectedText.takeIf { it.isNotBlank() },
                 priority = 10,
-                sourceSmsBody = fullSmsText // --- NEW: Save the original SMS body ---
+                sourceSmsBody = fullSmsText
             )
 
-            Log.d("RuleCreation", "Saving new trigger-based rule: $newRule")
-            customSmsRuleDao.insert(newRule)
+            // --- UPDATED: Check if we are editing or creating ---
+            if (currentState.ruleIdToEdit != null) {
+                Log.d("RuleCreation", "Updating existing rule: $rule")
+                customSmsRuleDao.update(rule)
+            } else {
+                Log.d("RuleCreation", "Saving new trigger-based rule: $rule")
+                customSmsRuleDao.insert(rule)
+            }
             onComplete()
         }
     }
 
-    /**
-     * Generates a robust regular expression based on the words surrounding a user's selection.
-     */
     private fun generateRegex(fullText: String, selection: RuleSelection): String? {
-        if (selection.startIndex == -1) return null
+        if (selection.startIndex == -1 || selection.selectedText.isBlank()) return null
 
         val textBefore = fullText.substring(0, selection.startIndex)
         val textAfter = fullText.substring(selection.endIndex)
@@ -141,8 +162,6 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
         val escapedPrefix = if (prefix.isNotBlank()) Pattern.quote(prefix) else ""
         val escapedSuffix = if (suffix.isNotBlank()) Pattern.quote(suffix) else ""
 
-        // Use `\s*` for flexible whitespace matching instead of `\s+`
-        // This handles cases where the selection is immediately next to punctuation.
         return when {
             escapedPrefix.isNotBlank() && escapedSuffix.isNotBlank() -> "$escapedPrefix\\s*(.*?)\\s*$escapedSuffix"
             escapedPrefix.isNotBlank() -> "$escapedPrefix\\s*(.*)"

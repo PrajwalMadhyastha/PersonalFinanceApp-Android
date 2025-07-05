@@ -1,13 +1,13 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt
-// REASON: FEATURE - The UI is enhanced with a "Mark as Account Info" button and a
-// corresponding summary item. This allows users to define a custom pattern for
-// the account, completing the new feature.
+// REASON: FEATURE - The screen now supports both "create" and "edit" modes. It
+// accepts an optional `ruleId` from navigation. If the ID is present, it calls
+// the ViewModel to load the rule's data, including the `sourceSmsBody`, and
+// pre-populates the UI, enabling the user to modify and update existing rules.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -18,7 +18,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -29,14 +28,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.google.gson.Gson
-import io.pm.finlight.PotentialTransaction
-import io.pm.finlight.RuleCreationViewModel
-import io.pm.finlight.RuleSelection
+import io.pm.finlight.*
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 
-// Factory for creating RuleCreationViewModel with Application context
 class RuleCreationViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(RuleCreationViewModel::class.java)) {
@@ -47,28 +44,43 @@ class RuleCreationViewModelFactory(private val application: Application) : ViewM
     }
 }
 
-/**
- * A screen where users can define custom parsing rules for SMS messages.
- */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RuleCreationScreen(
     navController: NavController,
-    potentialTransactionJson: String
+    potentialTransactionJson: String?,
+    ruleId: Int?
 ) {
     val context = LocalContext.current.applicationContext as Application
     val viewModel: RuleCreationViewModel = viewModel(factory = RuleCreationViewModelFactory(context))
 
-    val potentialTxn = remember { Gson().fromJson(potentialTransactionJson, PotentialTransaction::class.java) }
-
     val uiState by viewModel.uiState.collectAsState()
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(potentialTxn.originalMessage)) }
+    var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
     val scope = rememberCoroutineScope()
+    val isEditMode = ruleId != null
 
-    LaunchedEffect(key1 = potentialTxn) {
-        viewModel.initializeState(potentialTxn)
+    LaunchedEffect(key1 = ruleId, key2 = potentialTransactionJson) {
+        if (isEditMode) {
+            viewModel.loadRuleForEditing(ruleId!!)
+            // Fetch the rule and set its body to the text field
+            val rule = AppDatabase.getInstance(context).customSmsRuleDao().getRuleById(ruleId).firstOrNull()
+            if (rule != null) {
+                textFieldValue = TextFieldValue(rule.sourceSmsBody)
+            }
+        } else if (potentialTransactionJson != null) {
+            val potentialTxn = Gson().fromJson(potentialTransactionJson, PotentialTransaction::class.java)
+            viewModel.initializeStateForCreation(potentialTxn)
+            textFieldValue = TextFieldValue(potentialTxn.originalMessage)
+        }
     }
 
-    Scaffold { innerPadding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (isEditMode) "Edit Parsing Rule" else "Create Parsing Rule") }
+            )
+        }
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
@@ -200,12 +212,10 @@ fun RuleCreationScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            viewModel.saveRule(potentialTxn.originalMessage) {
-                                if (potentialTxn.sourceSmsId != -1L) {
-                                    navController.previousBackStackEntry
-                                        ?.savedStateHandle
-                                        ?.set("reparse_needed", true)
-                                }
+                            viewModel.saveRule(textFieldValue.text) {
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("reparse_needed", true)
                                 navController.popBackStack()
                             }
                         }
@@ -213,7 +223,7 @@ fun RuleCreationScreen(
                     enabled = isSaveEnabled,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Save Rule")
+                    Text(if (isEditMode) "Update Rule" else "Save Rule")
                 }
             }
         }

@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageParseRulesScreen.kt
-// REASON: FIX - The `RuleItemCard` has been updated to use the rule's `triggerPhrase`
-// as the main title instead of the internal database ID (e.g., "Rule #3"). This
-// avoids user confusion about non-sequential numbers after deleting rules and
-// makes each card more descriptive. The redundant "Trigger Phrase" detail row
-// has been removed.
+// REASON: FEATURE - An "Edit" IconButton has been added to each `RuleItemCard`.
+// When tapped, it navigates to the `rule_creation_screen`, passing the ID of
+// the selected rule. This allows the user to modify existing rules, completing
+// the primary UI entry point for the "Edit Rule" feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -13,20 +12,21 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import io.pm.finlight.CustomSmsRule
 import io.pm.finlight.ManageParseRulesViewModel
 
 @Composable
 fun ManageParseRulesScreen(
+    navController: NavController,
     viewModel: ManageParseRulesViewModel = viewModel()
 ) {
     val rules by viewModel.allRules.collectAsState()
@@ -47,6 +47,9 @@ fun ManageParseRulesScreen(
             items(rules) { rule ->
                 RuleItemCard(
                     rule = rule,
+                    onEditClick = {
+                        navController.navigate("rule_creation_screen?ruleId=${rule.id}")
+                    },
                     onDeleteClick = { ruleToDelete = rule }
                 )
             }
@@ -79,7 +82,11 @@ fun ManageParseRulesScreen(
 }
 
 @Composable
-private fun RuleItemCard(rule: CustomSmsRule, onDeleteClick: () -> Unit) {
+private fun RuleItemCard(
+    rule: CustomSmsRule,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(2.dp)
@@ -99,6 +106,14 @@ private fun RuleItemCard(rule: CustomSmsRule, onDeleteClick: () -> Unit) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                // --- NEW: Edit button ---
+                IconButton(onClick = onEditClick) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Edit Rule",
+                        tint = MaterialTheme.colorScheme.secondary
+                    )
+                }
                 IconButton(onClick = onDeleteClick) {
                     Icon(
                         Icons.Default.Delete,
