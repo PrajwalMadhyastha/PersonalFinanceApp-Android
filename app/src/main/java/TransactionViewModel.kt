@@ -1,10 +1,12 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: BUG FIX - The `findTransactionDetailsById` function no longer applies
-// the merchant alias map. The detail/edit screen must always show the true,
-// un-aliased data from the database. This prevents a bug where a global rename
-// rule would override a manual edit on this screen, making it appear as if the
-// save action had failed.
+// REASON: REFACTOR - The logic for the "Retrospective Update" feature has been
+// consolidated into this ViewModel. The old `RetroUpdatePromptState` is replaced
+// with a more comprehensive `RetroUpdateSheetState` that holds all necessary
+// data for the new bottom sheet. New functions (`toggleRetroUpdateSelection`,
+// `toggleRetroUpdateSelectAll`, `performBatchUpdate`, `dismissRetroUpdateSheet`)
+// have been added to manage the state of this new, integrated UI flow, removing
+// the need for a separate ViewModel.
 // =================================================================================
 package io.pm.finlight
 
@@ -33,11 +35,14 @@ data class TransactionFilterState(
     val category: Category? = null
 )
 
-data class RetroUpdatePromptState(
+// --- REFACTORED: State for the new integrated bottom sheet ---
+data class RetroUpdateSheetState(
     val originalDescription: String,
     val newDescription: String? = null,
     val newCategoryId: Int? = null,
-    val similarCount: Int
+    val similarTransactions: List<Transaction> = emptyList(),
+    val selectedIds: Set<Int> = emptySet(),
+    val isLoading: Boolean = true
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -98,8 +103,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _visitCount = MutableStateFlow(0)
     val visitCount: StateFlow<Int> = _visitCount.asStateFlow()
 
-    private val _retroUpdatePromptState = MutableStateFlow<RetroUpdatePromptState?>(null)
-    val retroUpdatePromptState = _retroUpdatePromptState.asStateFlow()
+    // --- REFACTORED: Changed state to support the new bottom sheet flow ---
+    private val _retroUpdateSheetState = MutableStateFlow<RetroUpdateSheetState?>(null)
+    val retroUpdateSheetState = _retroUpdateSheetState.asStateFlow()
 
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
@@ -207,9 +213,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
-        // --- FIX: Remove alias application for the detail screen ---
-        // The detail screen must always show the raw data from the database,
-        // not the aliased version, to avoid confusion when editing.
         return transactionRepository.getTransactionDetailsById(id)
     }
 
@@ -481,11 +484,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
             val similar = transactionRepository.findSimilarTransactions(originalDescription, id)
             if (similar.isNotEmpty()) {
-                _retroUpdatePromptState.value = RetroUpdatePromptState(
+                _retroUpdateSheetState.value = RetroUpdateSheetState(
                     originalDescription = originalDescription,
                     newDescription = newDescription,
                     newCategoryId = null,
-                    similarCount = similar.size
+                    similarTransactions = similar,
+                    selectedIds = similar.map { it.id }.toSet(),
+                    isLoading = false
                 )
             }
         }
@@ -520,11 +525,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
         val similar = transactionRepository.findSimilarTransactions(originalDescription, id)
         if (similar.isNotEmpty()) {
-            _retroUpdatePromptState.value = RetroUpdatePromptState(
+            _retroUpdateSheetState.value = RetroUpdateSheetState(
                 originalDescription = originalDescription,
                 newDescription = null,
                 newCategoryId = categoryId,
-                similarCount = similar.size
+                similarTransactions = similar,
+                selectedIds = similar.map { it.id }.toSet(),
+                isLoading = false
             )
         }
     }
@@ -667,7 +674,47 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _validationError.value = null
     }
 
-    fun dismissRetroUpdateDialog() {
-        _retroUpdatePromptState.value = null
+    // --- NEW: Functions to manage the retrospective update sheet ---
+
+    fun dismissRetroUpdateSheet() {
+        _retroUpdateSheetState.value = null
+    }
+
+    fun toggleRetroUpdateSelection(id: Int) {
+        _retroUpdateSheetState.update { currentState ->
+            currentState?.copy(
+                selectedIds = currentState.selectedIds.toMutableSet().apply {
+                    if (id in this) remove(id) else add(id)
+                }
+            )
+        }
+    }
+
+    fun toggleRetroUpdateSelectAll() {
+        _retroUpdateSheetState.update { currentState ->
+            currentState?.let {
+                if (it.selectedIds.size == it.similarTransactions.size) {
+                    it.copy(selectedIds = emptySet()) // Deselect all
+                } else {
+                    it.copy(selectedIds = it.similarTransactions.map { t -> t.id }.toSet()) // Select all
+                }
+            }
+        }
+    }
+
+    fun performBatchUpdate() {
+        viewModelScope.launch {
+            val state = _retroUpdateSheetState.value ?: return@launch
+            val idsToUpdate = state.selectedIds.toList()
+            if (idsToUpdate.isEmpty()) return@launch
+
+            state.newDescription?.let {
+                transactionRepository.updateDescriptionForIds(idsToUpdate, it)
+            }
+            state.newCategoryId?.let {
+                transactionRepository.updateCategoryForIds(idsToUpdate, it)
+            }
+            dismissRetroUpdateSheet()
+        }
     }
 }

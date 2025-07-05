@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - The route for `rule_creation_screen` has been updated to
-// accept an optional `ruleId` argument. This allows the `ManageParseRulesScreen`
-// to navigate here for editing an existing rule, enabling the "Edit Rule"
-// feature flow.
+// REASON: REFACTOR - The navigation route for the now-obsolete
+// `retrospective_update_screen` has been removed from the NavHost. The entire
+// feature is now handled by a `ModalBottomSheet` within the
+// `TransactionDetailScreen`, simplifying the navigation graph.
 // =================================================================================
 package io.pm.finlight
 
@@ -458,6 +458,7 @@ fun AppNavHost(
                 navController = navController,
                 transactionId = transactionId,
                 viewModel = transactionViewModel,
+                accountViewModel = accountViewModel,
                 onSaveRenameRule = { original, new ->
                     settingsViewModel.saveMerchantRenameRule(original, new)
                 }
@@ -531,28 +532,7 @@ fun AppNavHost(
             TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
         }
 
-        composable(
-            "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}",
-            arguments = listOf(
-                navArgument("transactionId") { type = NavType.IntType },
-                navArgument("originalDescription") { type = NavType.StringType },
-                navArgument("newDescription") { type = NavType.StringType; nullable = true },
-                navArgument("newCategoryId") { type = NavType.IntType; defaultValue = -1 }
-            )
-        ) { backStackEntry ->
-            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
-            val originalDescription = backStackEntry.arguments!!.getString("originalDescription")!!
-            val newDescription = backStackEntry.arguments!!.getString("newDescription")
-            val newCategoryId = backStackEntry.arguments!!.getInt("newCategoryId").let { if (it == -1) null else it }
-
-            RetrospectiveUpdateScreen(
-                navController = navController,
-                transactionId = transactionId,
-                originalDescription = URLDecoder.decode(originalDescription, "UTF-8"),
-                newDescription = newDescription?.let { URLDecoder.decode(it, "UTF-8") },
-                newCategoryId = newCategoryId
-            )
-        }
+        // --- REMOVED: Obsolete route for retrospective update ---
     }
 }
 

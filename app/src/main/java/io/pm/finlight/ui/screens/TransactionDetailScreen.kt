@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: UX REFINEMENT - The `AccountPickerSheet` has been updated to allow for
-// in-place editing. Instead of navigating to a new screen, tapping the "Edit"
-// icon now reveals a text field and Save/Cancel buttons directly within the
-// list item, providing a more seamless and context-aware editing experience.
+// REASON: REFACTOR - The "Retrospective Update" feature has been completely
+// integrated into this screen. The separate `AlertDialog` and navigation have
+// been replaced with a `ModalBottomSheet`. A new `RetrospectiveUpdateSheetContent`
+// composable now houses the UI for selecting similar transactions, creating a
+// seamless, in-context workflow for batch updates.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -125,7 +126,7 @@ fun TransactionDetailScreen(
     val originalSms by viewModel.originalSmsText.collectAsState()
     val visitCount by viewModel.visitCount.collectAsState()
     val scope = rememberCoroutineScope()
-    val retroUpdatePromptState by viewModel.retroUpdatePromptState.collectAsState()
+    val retroUpdateSheetState by viewModel.retroUpdateSheetState.collectAsState()
 
 
     var showMenu by remember { mutableStateOf(false) }
@@ -193,41 +194,19 @@ fun TransactionDetailScreen(
                 viewModel.loadOriginalSms(details.transaction.sourceSmsId)
             }
 
-            retroUpdatePromptState?.let { promptState ->
-                AlertDialog(
-                    onDismissRequest = { viewModel.dismissRetroUpdateDialog() },
-                    title = { Text("Update Similar Transactions?") },
-                    text = {
-                        val changeType = if (promptState.newDescription != null) "description" else "category"
-                        Text("You've updated the $changeType for transactions named '${promptState.originalDescription}'. Apply this change to ${promptState.similarCount} other similar transaction(s)?")
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            val originalDescEncoded = URLEncoder.encode(promptState.originalDescription, "UTF-8")
-                            val newDescEncoded = promptState.newDescription?.let { URLEncoder.encode(it, "UTF-8") }
-                            val categoryId = promptState.newCategoryId ?: -1
-
-                            var route = "retrospective_update_screen/${details.transaction.id}/$originalDescEncoded"
-                            if (newDescEncoded != null) {
-                                route += "?newDescription=$newDescEncoded"
-                            }
-                            if (categoryId != -1) {
-                                val separator = if (route.contains("?")) "&" else "?"
-                                route += "${separator}newCategoryId=$categoryId"
-                            }
-
-                            navController.navigate(route)
-                            viewModel.dismissRetroUpdateDialog()
-                        }) {
-                            Text("Update Others")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { viewModel.dismissRetroUpdateDialog() }) {
-                            Text("Just This One")
-                        }
-                    }
-                )
+            // --- REFACTORED: Show bottom sheet instead of dialog and navigation ---
+            if (retroUpdateSheetState != null) {
+                ModalBottomSheet(onDismissRequest = { viewModel.dismissRetroUpdateSheet() }) {
+                    RetrospectiveUpdateSheetContent(
+                        state = retroUpdateSheetState!!,
+                        onToggleSelection = viewModel::toggleRetroUpdateSelection,
+                        onToggleSelectAll = viewModel::toggleRetroUpdateSelectAll,
+                        onConfirm = {
+                            viewModel.performBatchUpdate()
+                        },
+                        onDismiss = { viewModel.dismissRetroUpdateSheet() }
+                    )
+                }
             }
 
             Scaffold(
@@ -1274,5 +1253,111 @@ fun InfoCard(
             }
             Icon(Icons.Default.Edit, contentDescription = "Edit")
         }
+    }
+}
+
+// --- NEW: Composable for the retrospective update bottom sheet ---
+@Composable
+private fun RetrospectiveUpdateSheetContent(
+    state: RetroUpdateSheetState,
+    onToggleSelection: (Int) -> Unit,
+    onToggleSelectAll: () -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val changeType = if (state.newDescription != null) "description" else "category"
+
+    Column(
+        modifier = Modifier
+            .navigationBarsPadding()
+            .padding(16.dp)
+    ) {
+        Text(
+            "Update Similar Transactions",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Text(
+            "You've changed the $changeType for transactions like '${state.originalDescription}'. Apply this change to other similar transactions?",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        if (state.isLoading) {
+            Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val allSelected = state.selectedIds.size == state.similarTransactions.size
+                Checkbox(
+                    checked = allSelected,
+                    onCheckedChange = { onToggleSelectAll() }
+                )
+                Text(if (allSelected) "Deselect All" else "Select All")
+            }
+            HorizontalDivider()
+
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 250.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(state.similarTransactions, key = { it.id }) { transaction ->
+                    SelectableTransactionItem(
+                        transaction = transaction,
+                        isSelected = transaction.id in state.selectedIds,
+                        onToggle = { onToggleSelection(transaction.id) }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Just This One")
+            }
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier.weight(1f),
+                enabled = state.selectedIds.isNotEmpty()
+            ) {
+                Text("Update ${state.selectedIds.size} Items")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectableTransactionItem(
+    transaction: Transaction,
+    isSelected: Boolean,
+    onToggle: () -> Unit
+) {
+    val dateFormatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
+        Column(modifier = Modifier.weight(1f)) {
+            Text(transaction.description, fontWeight = FontWeight.SemiBold)
+            Text(dateFormatter.format(Date(transaction.date)), style = MaterialTheme.typography.bodySmall)
+        }
+        Text("₹${"%,.2f".format(transaction.amount)}")
     }
 }
