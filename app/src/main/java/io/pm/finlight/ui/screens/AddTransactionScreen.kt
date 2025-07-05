@@ -1,9 +1,12 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: UX REFINEMENT - The "Expense"/"Income" switch has been moved from its
-// own separate card into the "Account" row within the DetailsCard. This provides
-// a more integrated and contextually relevant UI, consistent with the changes
-// made to the TransactionDetailScreen.
+// REASON: BUG FIX - The `Text` composable inside `AddCategoryPickerSheet` now
+// uses `maxLines = 1` and `overflow = TextOverflow.Ellipsis` to prevent long
+// category names from wrapping and breaking the grid layout.
+// BUG FIX - The `LaunchedEffect` that sets the default account is now keyed to
+// the `defaultAccount` state. This ensures the effect runs only after the
+// default account has been loaded from the database, fixing the bug where it
+// wasn't being selected on screen open.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -41,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -130,7 +134,8 @@ fun AddTransactionScreen(
         viewModel.clearAddTransactionState()
     }
 
-    LaunchedEffect(defaultAccount, isCsvEdit) {
+    // --- BUG FIX: Key the effect on defaultAccount to ensure it runs after it's loaded ---
+    LaunchedEffect(defaultAccount) {
         if (!isCsvEdit && selectedAccount == null) {
             selectedAccount = defaultAccount
         }
@@ -774,7 +779,13 @@ private fun AddCategoryPickerSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     CategoryIcon(category, Modifier.size(48.dp))
-                    Text(category.name, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Text(
+                        category.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1, // --- BUG FIX: Prevent wrapping ---
+                        overflow = TextOverflow.Ellipsis // --- BUG FIX: Add ellipsis for overflow ---
+                    )
                 }
             }
             item {

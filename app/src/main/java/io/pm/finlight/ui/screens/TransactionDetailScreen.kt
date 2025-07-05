@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: REFACTOR - The `TransactionHeaderCard` has been updated to improve
-// visual hierarchy. The merchant name's font size has been increased, and it has
-// been moved slightly higher. The text and icon color of the "visit count"
-// chip has been made brighter for better contrast and readability.
+// REASON: BUG FIX - The `Text` composable inside `CategoryPickerSheet` now uses
+// `maxLines = 1` and `overflow = TextOverflow.Ellipsis` to prevent long
+// category names from wrapping and breaking the grid layout, ensuring a
+// consistent and clean appearance.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -45,6 +45,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -872,7 +874,13 @@ private fun CategoryPickerSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     CategoryIconDisplay(category)
-                    Text(category.name, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        category.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1, // --- BUG FIX: Prevent wrapping ---
+                        overflow = TextOverflow.Ellipsis // --- BUG FIX: Add ellipsis for overflow ---
+                    )
                 }
             }
             if (onAddNew != null) {
@@ -1047,7 +1055,6 @@ private fun TransactionHeaderCard(
                     leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     colors = AssistChipDefaults.assistChipColors(
                         containerColor = Color.White.copy(alpha = 0.2f),
-                        // --- UPDATED: Increased brightness of chip text ---
                         labelColor = Color.White,
                         leadingIconContentColor = Color.White
                     )
@@ -1060,7 +1067,6 @@ private fun TransactionHeaderCard(
             ) {
                 Text(
                     text = details.transaction.description,
-                    // --- UPDATED: Increased font size and moved it up ---
                     style = MaterialTheme.typography.headlineLarge,
                     color = Color.White,
                     modifier = Modifier.clickable(onClick = onDescriptionClick).padding(bottom = 4.dp)
