@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: UX REFINEMENT - The `AccountPickerSheet` has been updated to display
-// the currently selected account at the top of the list, visually separated
-// from the other accounts. This makes it easier for the user to identify and
-// edit the current account without having to search for it in a long list.
+// REASON: UX REFINEMENT - The `AccountPickerSheet` has been updated to allow for
+// in-place editing. Instead of navigating to a new screen, tapping the "Edit"
+// icon now reveals a text field and Save/Cancel buttons directly within the
+// list item, providing a more seamless and context-aware editing experience.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -88,7 +88,7 @@ fun TransactionDetailScreen(
     navController: NavController,
     transactionId: Int,
     viewModel: TransactionViewModel = viewModel(),
-    accountViewModel: AccountViewModel = viewModel(), // Add AccountViewModel
+    accountViewModel: AccountViewModel = viewModel(),
     onSaveRenameRule: (originalName: String, newName: String) -> Unit
 ) {
     Log.d(TAG, "Composing TransactionDetailScreen for transactionId: $transactionId")
@@ -140,7 +140,6 @@ fun TransactionDetailScreen(
 
     var showCreateAccountDialog by remember { mutableStateOf(false) }
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
-    var showRenameAccountDialog by remember { mutableStateOf(false) }
 
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -230,19 +229,6 @@ fun TransactionDetailScreen(
                     }
                 )
             }
-
-            if (showRenameAccountDialog) {
-                RenameAccountDialog(
-                    account = accounts.find { it.id == details.transaction.accountId },
-                    onDismiss = { showRenameAccountDialog = false },
-                    onConfirm = { account, newName ->
-                        accountViewModel.renameAccount(account.id, newName)
-                        showRenameAccountDialog = false
-                        activeSheetContent = null
-                    }
-                )
-            }
-
 
             Scaffold(
                 topBar = {
@@ -404,7 +390,6 @@ fun TransactionDetailScreen(
                                             )
                                             val json = Gson().toJson(potentialTxn)
                                             val encodedJson = URLEncoder.encode(json, "UTF-8")
-                                            // --- FIX: Use query parameter format ---
                                             navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
                                         } else {
                                             Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
@@ -466,7 +451,7 @@ fun TransactionDetailScreen(
                             sheetContent = activeSheetContent!!,
                             details = details,
                             viewModel = viewModel,
-                            navController = navController, // Pass NavController
+                            accountViewModel = accountViewModel,
                             onSaveRenameRule = onSaveRenameRule,
                             accounts = accounts,
                             categories = categories,
@@ -480,10 +465,6 @@ fun TransactionDetailScreen(
                             onAddNewCategory = {
                                 activeSheetContent = null
                                 showCreateCategoryDialog = true
-                            },
-                            onRenameAccount = { // Pass rename handler
-                                activeSheetContent = null
-                                showRenameAccountDialog = true
                             }
                         )
                     }
@@ -600,7 +581,7 @@ private fun TransactionEditSheetContent(
     sheetContent: SheetContent,
     details: TransactionDetails,
     viewModel: TransactionViewModel,
-    navController: NavController,
+    accountViewModel: AccountViewModel,
     onSaveRenameRule: (originalName: String, newName: String) -> Unit,
     accounts: List<Account>,
     categories: List<Category>,
@@ -608,8 +589,7 @@ private fun TransactionEditSheetContent(
     selectedTags: Set<Tag>,
     onDismiss: () -> Unit,
     onAddNewAccount: () -> Unit,
-    onAddNewCategory: () -> Unit,
-    onRenameAccount: () -> Unit
+    onAddNewCategory: () -> Unit
 ) {
     val transactionId = details.transaction.id
 
@@ -679,11 +659,7 @@ private fun TransactionEditSheetContent(
                 },
                 onDismiss = onDismiss,
                 onAddNew = onAddNewAccount,
-                onRename = onRenameAccount,
-                onEdit = { accountId ->
-                    onDismiss()
-                    navController.navigate("edit_account/$accountId")
-                }
+                accountViewModel = accountViewModel
             )
         }
         is SheetContent.Category -> {
@@ -722,55 +698,59 @@ private fun AccountPickerSheet(
     onItemSelected: (Account) -> Unit,
     onDismiss: () -> Unit,
     onAddNew: () -> Unit,
-    onRename: () -> Unit,
-    onEdit: (Int) -> Unit
+    accountViewModel: AccountViewModel
 ) {
-    // --- REFACTORED: Separate current account from the rest ---
+    var editingAccount by remember { mutableStateOf<Account?>(null) }
+    var editingName by remember { mutableStateOf("") }
+
     val currentAccount = items.find { it.id == currentAccountId }
     val otherAccounts = items.filter { it.id != currentAccountId }
 
     Column(modifier = Modifier.navigationBarsPadding()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            if (currentAccount != null) {
-                TextButton(onClick = onRename) {
-                    Text("Rename Current")
-                }
-            }
-        }
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
 
-        // --- NEW: Display current account at the top ---
         currentAccount?.let { account ->
-            ListItem(
-                headlineContent = { Text(account.name, fontWeight = FontWeight.Bold) },
-                supportingContent = { Text("Currently Selected") },
-                modifier = Modifier.clickable { onItemSelected(account) },
-                colors = ListItemDefaults.colors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                ),
-                trailingContent = {
-                    IconButton(onClick = { onEdit(account.id) }) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Current Account")
-                    }
-                }
+            AccountPickerItem(
+                account = account,
+                isEditing = editingAccount?.id == account.id,
+                editingName = editingName,
+                onEditingNameChange = { editingName = it },
+                onEditClick = {
+                    editingAccount = account
+                    editingName = account.name
+                },
+                onSaveClick = {
+                    accountViewModel.renameAccount(account.id, editingName)
+                    editingAccount = null
+                },
+                onCancelClick = { editingAccount = null },
+                onSelectClick = { onItemSelected(account) },
+                isCurrent = true
             )
             HorizontalDivider()
         }
 
         LazyColumn {
-            items(otherAccounts) { item ->
-                ListItem(
-                    headlineContent = { Text(item.name) },
-                    modifier = Modifier.clickable { onItemSelected(item) },
-                    trailingContent = {
-                        IconButton(onClick = { onEdit(item.id) }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit Account")
-                        }
-                    }
+            items(otherAccounts) { account ->
+                AccountPickerItem(
+                    account = account,
+                    isEditing = editingAccount?.id == account.id,
+                    editingName = editingName,
+                    onEditingNameChange = { editingName = it },
+                    onEditClick = {
+                        editingAccount = account
+                        editingName = account.name
+                    },
+                    onSaveClick = {
+                        accountViewModel.renameAccount(account.id, editingName)
+                        editingAccount = null
+                    },
+                    onCancelClick = { editingAccount = null },
+                    onSelectClick = { onItemSelected(account) }
                 )
             }
             item {
@@ -785,39 +765,58 @@ private fun AccountPickerSheet(
     }
 }
 
-
 @Composable
-private fun RenameAccountDialog(
-    account: Account?,
-    onDismiss: () -> Unit,
-    onConfirm: (Account, String) -> Unit
+private fun AccountPickerItem(
+    account: Account,
+    isEditing: Boolean,
+    editingName: String,
+    onEditingNameChange: (String) -> Unit,
+    onEditClick: () -> Unit,
+    onSaveClick: () -> Unit,
+    onCancelClick: () -> Unit,
+    onSelectClick: () -> Unit,
+    isCurrent: Boolean = false
 ) {
-    if (account == null) return
-    var newName by remember { mutableStateOf(account.name) }
+    val colors = if (isCurrent && !isEditing) {
+        ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    } else {
+        ListItemDefaults.colors()
+    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Rename Account") },
-        text = {
-            OutlinedTextField(
-                value = newName,
-                onValueChange = { newName = it },
-                label = { Text("New Account Name") },
-                singleLine = true
-            )
+    ListItem(
+        colors = colors,
+        headlineContent = {
+            if (isEditing) {
+                OutlinedTextField(
+                    value = editingName,
+                    onValueChange = onEditingNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            } else {
+                Text(account.name, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal)
+            }
         },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(account, newName) },
-                enabled = newName.isNotBlank()
-            ) { Text("Rename") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+        supportingContent = { if (isCurrent && !isEditing) Text("Currently Selected") },
+        modifier = Modifier.clickable(enabled = !isEditing, onClick = onSelectClick),
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isEditing) {
+                    IconButton(onClick = onSaveClick, enabled = editingName.isNotBlank()) {
+                        Icon(Icons.Default.Check, contentDescription = "Save Name")
+                    }
+                    IconButton(onClick = onCancelClick) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel Edit")
+                    }
+                } else {
+                    IconButton(onClick = onEditClick) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit Account Name")
+                    }
+                }
+            }
         }
     )
 }
-
 
 @Composable
 private fun EditTextFieldSheet(
