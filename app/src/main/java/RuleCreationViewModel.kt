@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
-// REASON: FEATURE - The ViewModel is updated to support custom account rule
-// creation. The UI state now includes an `accountSelection`, and a new
-// `onMarkAsAccount` function handles the user's selection. The `saveRule`
-// function is enhanced to generate and save the `accountRegex` and
-// `accountNameExample`, completing the feature's data logic.
+// REASON: FEATURE - The `saveRule` function has been updated to save the
+// original SMS text. It now includes the `fullSmsText` in the `CustomSmsRule`
+// object that is inserted into the database, providing the necessary data for
+// the upcoming "Edit Rule" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -114,7 +113,8 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
                 merchantNameExample = currentState.merchantSelection.selectedText.takeIf { it.isNotBlank() },
                 amountExample = currentState.amountSelection.selectedText.takeIf { it.isNotBlank() },
                 accountNameExample = currentState.accountSelection.selectedText.takeIf { it.isNotBlank() },
-                priority = 10
+                priority = 10,
+                sourceSmsBody = fullSmsText // --- NEW: Save the original SMS body ---
             )
 
             Log.d("RuleCreation", "Saving new trigger-based rule: $newRule")

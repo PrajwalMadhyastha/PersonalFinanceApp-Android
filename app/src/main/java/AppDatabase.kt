@@ -1,12 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version is incremented to 20. A new migration
-// (MIGRATION_19_20) is added to modify the `ignore_rules` table with new
-// `isEnabled` and `isDefault` columns. The `DatabaseCallback` is updated to
-// pre-populate this table with the app's default ignore phrases upon creation.
-// BUG FIX - The `onOpen` callback has been corrected to ensure that on a fresh
-// install, it seeds not only the default rules but also the sample accounts,
-// categories, and transactions, restoring the original sample data.
+// REASON: FEATURE - The database version has been incremented to 21. A new
+// migration, MIGRATION_20_21, has been added to introduce the `sourceSmsBody`
+// column to the `custom_sms_rules` table, supporting the upcoming "Edit Rule"
+// feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -38,7 +35,7 @@ import java.util.Calendar
         MerchantCategoryMapping::class,
         IgnoreRule::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -210,12 +207,19 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to add the sourceSmsBody column ---
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `sourceSmsBody` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -227,15 +231,12 @@ abstract open class AppDatabase : RoomDatabase() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 CoroutineScope(Dispatchers.IO).launch {
-                    // Populate everything on first creation
                     populateDatabase(getInstance(context))
                 }
             }
 
             override fun onOpen(db: SupportSQLiteDatabase) {
                 super.onOpen(db)
-                // This is a good place for conditional seeding if needed on app open
-                // For now, onCreate handles the initial population.
             }
 
             suspend fun populateDatabase(db: AppDatabase) {
@@ -245,7 +246,6 @@ abstract open class AppDatabase : RoomDatabase() {
                 val budgetDao = db.budgetDao()
                 val ignoreRuleDao = db.ignoreRuleDao()
 
-                // --- Seed all default data ---
                 categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
                 ignoreRuleDao.insertAll(DEFAULT_IGNORE_PHRASES)
 

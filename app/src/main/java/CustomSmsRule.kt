@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRule.kt
-// REASON: No changes needed. This entity already supports the new account rule
-// feature with its `accountRegex` and `accountNameExample` fields. It is
-// included here for completeness.
+// REASON: FEATURE - Added a new `sourceSmsBody` column. This will store the
+// original SMS text that the rule was created from, which is a necessary
+// foundation for the upcoming "Edit Rule" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -24,6 +24,7 @@ import androidx.room.PrimaryKey
  * @param amountExample The user-selected text for the amount, for display purposes.
  * @param accountNameExample The user-selected text for the account, for display purposes.
  * @param priority The execution priority. Higher numbers are checked first.
+ * @param sourceSmsBody The original SMS text this rule was created from.
  */
 @Entity(
     tableName = "custom_sms_rules",
@@ -39,5 +40,6 @@ data class CustomSmsRule(
     val merchantNameExample: String?,
     val amountExample: String?,
     val accountNameExample: String?,
-    val priority: Int
+    val priority: Int,
+    val sourceSmsBody: String
 )
