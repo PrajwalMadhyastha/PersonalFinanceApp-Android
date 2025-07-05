@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 21. A new
-// migration, MIGRATION_20_21, has been added to introduce the `sourceSmsBody`
-// column to the `custom_sms_rules` table, supporting the upcoming "Edit Rule"
-// feature.
+// REASON: FEATURE - The database version has been incremented to 22. A new
+// migration, MIGRATION_21_22, has been added to insert the new default
+// categories (Bike, Car, Debt, etc.) for existing users, ensuring they receive
+// the updated category list without a fresh install.
 // =================================================================================
 package io.pm.finlight
 
@@ -35,7 +35,7 @@ import java.util.Calendar
         MerchantCategoryMapping::class,
         IgnoreRule::class
     ],
-    version = 21,
+    version = 22, // --- UPDATED: Incremented version number ---
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -207,10 +207,26 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the sourceSmsBody column ---
         val MIGRATION_20_21 = object : Migration(20, 21) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `sourceSmsBody` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        // --- NEW: Migration to add the new default categories ---
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (16, 'Bike', 'two_wheeler', 'red_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (17, 'Car', 'directions_car', 'blue_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (18, 'Debt', 'credit_score', 'brown_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (19, 'Family', 'people', 'pink_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (20, 'Friends', 'group', 'cyan_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (21, 'Gift', 'card_giftcard', 'purple_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (22, 'Fitness', 'fitness_center', 'green_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (23, 'Home Maintenance', 'home', 'teal_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (24, 'Insurance', 'shield', 'indigo_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (25, 'Learning & Education', 'school', 'orange_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (26, 'Rent', 'house', 'deep_purple_light')")
             }
         }
 
@@ -219,7 +235,7 @@ abstract open class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance

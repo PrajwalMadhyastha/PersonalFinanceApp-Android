@@ -1,22 +1,21 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CategoryIconHelper.kt
-// REASON: Added new predefined categories for income ("Refund", "Credit") and
-// updated the "Salary" category's icon. Also added the new icons to the
-// helper maps.
-// BUG FIX: Replaced the 'Replay' icon with 'Redo' to resolve compilation errors.
-// FEATURE - Added the new `getCategoryBackground` function and a corresponding
-// map to associate category keys with drawable resources for background images,
-// enhancing the visual appeal of the transaction detail screen.
+// REASON: FEATURE - A new, more comprehensive set of default categories has been
+// added to the `predefinedCategories` list. The helper maps have also been
+// updated with the corresponding new icons and background drawable mappings to
+// support this expanded default set.
 // =================================================================================
 package io.pm.finlight
 
 import androidx.annotation.DrawableRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import io.pm.finlight.R
 
 /**
  * A helper object to manage category icons and colors, and provide a predefined list of categories.
@@ -39,8 +38,6 @@ object CategoryIconHelper {
         "gray_light" to Color(0xFFE0E0E0),
     )
 
-    // --- NEW: Map category keys to background drawable resources ---
-    // NOTE: Replace these placeholders with your actual drawable resource IDs.
     private val categoryBackgrounds = mapOf(
         "receipt_long" to R.drawable.bg_cat_bills,
         "trending_up" to R.drawable.bg_cat_investment,
@@ -57,6 +54,19 @@ object CategoryIconHelper {
         "redo" to R.drawable.bg_cat_refund,
         "add_card" to R.drawable.bg_cat_card,
         "more_horiz" to R.drawable.bg_cat_general,
+        "schedule" to R.drawable.bg_cat_emi,
+        // --- NEW: Mappings for new default categories ---
+        "two_wheeler" to R.drawable.bg_cat_bike,
+        "directions_car" to R.drawable.bg_cat_car,
+        "credit_score" to R.drawable.bg_cat_debt,
+        "people" to R.drawable.bg_cat_family,
+        "group" to R.drawable.bg_cat_friends,
+        "card_giftcard" to R.drawable.bg_cat_gift,
+        "fitness_center" to R.drawable.bg_cat_fitness,
+        "home" to R.drawable.bg_cat_home,
+        "shield" to R.drawable.bg_cat_insurance,
+        "school" to R.drawable.bg_cat_learning,
+        "house" to R.drawable.bg_cat_rent,
         "default" to R.drawable.bg_cat_general
     )
 
@@ -82,7 +92,7 @@ object CategoryIconHelper {
 
     val predefinedCategories = listOf(
         Category(id = 1, name = "Bills", iconKey = "receipt_long", colorKey = "green_light"),
-        Category(id = 2, name = "EMI", iconKey = "trending_up", colorKey = "blue_light"),
+        Category(id = 2, name = "EMI", iconKey = "schedule", colorKey = "blue_light"),
         Category(id = 3, name = "Entertainment", iconKey = "star", colorKey = "purple_light"),
         Category(id = 4, name = "Food & Drinks", iconKey = "restaurant", colorKey = "orange_light"),
         Category(id = 5, name = "Fuel", iconKey = "local_gas_station", colorKey = "red_light"),
@@ -96,6 +106,18 @@ object CategoryIconHelper {
         Category(id = 13, name = "Other", iconKey = "more_horiz", colorKey = "gray_light"),
         Category(id = 14, name = "Refund", iconKey = "redo", colorKey = "green_light"),
         Category(id = 15, name = "Credit", iconKey = "add_card", colorKey = "blue_light"),
+        // --- NEW: Added new set of default categories ---
+        Category(id = 16, name = "Bike", iconKey = "two_wheeler", colorKey = "red_light"),
+        Category(id = 17, name = "Car", iconKey = "directions_car", colorKey = "blue_light"),
+        Category(id = 18, name = "Debt", iconKey = "credit_score", colorKey = "brown_light"),
+        Category(id = 19, name = "Family", iconKey = "people", colorKey = "pink_light"),
+        Category(id = 20, name = "Friends", iconKey = "group", colorKey = "cyan_light"),
+        Category(id = 21, name = "Gift", iconKey = "card_giftcard", colorKey = "purple_light"),
+        Category(id = 22, name = "Fitness", iconKey = "fitness_center", colorKey = "green_light"),
+        Category(id = 23, name = "Home Maintenance", iconKey = "home", colorKey = "teal_light"),
+        Category(id = 24, name = "Insurance", iconKey = "shield", colorKey = "indigo_light"),
+        Category(id = 25, name = "Learning & Education", iconKey = "school", colorKey = "orange_light"),
+        Category(id = 26, name = "Rent", iconKey = "house", colorKey = "deep_purple_light"),
     )
 
     fun getIcon(iconKey: String): ImageVector {
@@ -121,6 +143,16 @@ object CategoryIconHelper {
             "work" -> Icons.Default.Work
             "redo" -> Icons.Default.Redo
             "add_card" -> Icons.Default.AddCard
+            "schedule" -> Icons.Default.Schedule
+            // --- NEW: Mappings for new category icons ---
+            "two_wheeler" -> Icons.Default.TwoWheeler
+            "credit_score" -> Icons.Default.CreditScore
+            "people" -> Icons.Default.People
+            "group" -> Icons.Default.Group
+            "fitness_center" -> Icons.Default.FitnessCenter
+            "home" -> Icons.Default.Home
+            "shield" -> Icons.Default.Shield
+            "house" -> Icons.Default.House
             else -> Icons.Default.Category
         }
     }
@@ -147,8 +179,18 @@ object CategoryIconHelper {
             "directions_car" to Icons.Default.DirectionsCar,
             "category" to Icons.Default.Category,
             "work" to Icons.Default.Work,
-            "redo" to Icons.Default.Redo,
+            "redo" to Icons.AutoMirrored.Filled.Redo,
             "add_card" to Icons.Default.AddCard,
+            "schedule" to Icons.Default.Schedule,
+            // --- NEW: Mappings for new category icons ---
+            "two_wheeler" to Icons.Default.TwoWheeler,
+            "credit_score" to Icons.Default.CreditScore,
+            "people" to Icons.Default.People,
+            "group" to Icons.Default.Group,
+            "fitness_center" to Icons.Default.FitnessCenter,
+            "home" to Icons.Default.Home,
+            "shield" to Icons.Default.Shield,
+            "house" to Icons.Default.House,
         )
     }
 }
