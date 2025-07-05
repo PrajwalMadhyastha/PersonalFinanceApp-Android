@@ -1,21 +1,27 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FEATURE - The ViewModel now loads the user's dashboard layout
-// configuration from the `SettingsRepository`. It combines the saved order and
-// visibility flows into a single `visibleCards` StateFlow, which the UI will
-// use to dynamically render the dashboard, enabling customization.
+// REASON: FEATURE - The ViewModel now manages the dashboard customization mode.
+// It includes an `isCustomizationMode` StateFlow and functions to enter and exit
+// this mode (`enterCustomizationMode`, `exitCustomizationMode`). A new function,
+// `updateCardOrder`, handles the drag-and-drop logic and saves the new layout
+// to the SettingsRepository.
 // =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Collections
 import java.util.Locale
 
 class DashboardViewModel(
@@ -37,8 +43,13 @@ class DashboardViewModel(
     val safeToSpendPerDay: StateFlow<Float>
     val accountsSummary: StateFlow<List<AccountWithBalance>>
 
-    // --- NEW: StateFlow for the visible and ordered dashboard cards ---
     val visibleCards: StateFlow<List<DashboardCardType>>
+
+    // --- NEW: State for customization mode ---
+    private val _isCustomizationMode = MutableStateFlow(false)
+    val isCustomizationMode: StateFlow<Boolean> = _isCustomizationMode.asStateFlow()
+
+    private val _cardOrder = MutableStateFlow<List<DashboardCardType>>(emptyList())
 
     init {
         userName = settingsRepository.getUserName()
@@ -55,9 +66,14 @@ class DashboardViewModel(
                 initialValue = null
             )
 
-        // --- NEW: Load and combine layout configuration ---
+        viewModelScope.launch {
+            settingsRepository.getDashboardCardOrder().collect {
+                _cardOrder.value = it
+            }
+        }
+
         visibleCards = combine(
-            settingsRepository.getDashboardCardOrder(),
+            _cardOrder,
             settingsRepository.getDashboardVisibleCards()
         ) { order, visible ->
             order.filter { it in visible }
@@ -147,5 +163,27 @@ class DashboardViewModel(
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = emptyList(),
                 )
+    }
+
+    // --- NEW: Functions for customization mode ---
+    fun enterCustomizationMode() {
+        _isCustomizationMode.value = true
+    }
+
+    fun exitCustomizationModeAndSave() {
+        viewModelScope.launch {
+            val currentOrder = _cardOrder.value
+            val currentVisible = settingsRepository.getDashboardVisibleCards().stateIn(viewModelScope).value
+            settingsRepository.saveDashboardLayout(currentOrder, currentVisible)
+            _isCustomizationMode.value = false
+        }
+    }
+
+    fun updateCardOrder(from: Int, to: Int) {
+        _cardOrder.update { currentList ->
+            currentList.toMutableList().apply {
+                add(to, removeAt(from))
+            }
+        }
     }
 }

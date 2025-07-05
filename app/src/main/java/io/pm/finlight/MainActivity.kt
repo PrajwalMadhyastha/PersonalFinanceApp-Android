@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - The "Profile" entry has been removed from the `bottomNavItems`
-// list. This removes the dedicated Profile tab from the bottom navigation bar, as
-// the screen is now accessed via the clickable profile icon in the TopAppBar,
-// creating a cleaner and more streamlined main navigation structure.
+// REASON: FEATURE - The main TopAppBar now supports dashboard customization mode.
+// It conditionally displays a "Done" button when `isCustomizationMode` is true,
+// which calls the ViewModel to save the new layout and exit the mode. The
+// search icon is hidden during customization to provide a focused editing UI.
 // =================================================================================
 package io.pm.finlight
 
@@ -201,9 +201,9 @@ fun MainAppScreen() {
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
     val filterState by transactionViewModel.filterState.collectAsState()
+    val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
 
 
-    // --- REFACTORED: Removed Profile from the list ---
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
@@ -224,8 +224,12 @@ fun MainAppScreen() {
         "time_period_report_screen"
     )
 
-    val currentTitle = if (showBottomBar) "Hi, $userName!" else screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
-    val showProfileIcon = showBottomBar
+    val currentTitle = if (showBottomBar) {
+        if (isCustomizationMode) "Customize Dashboard" else "Hi, $userName!"
+    } else {
+        screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
+    }
+    val showProfileIcon = showBottomBar && !isCustomizationMode
 
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
@@ -264,32 +268,38 @@ fun MainAppScreen() {
                         }
                     },
                     actions = {
-                        when (baseCurrentRoute) {
-                            BottomNavItem.Dashboard.route -> {
-                                IconButton(onClick = { navController.navigate("search_screen") }) {
-                                    Icon(Icons.Default.Search, contentDescription = "Search")
-                                }
+                        if (isCustomizationMode) {
+                            TextButton(onClick = { dashboardViewModel.exitCustomizationModeAndSave() }) {
+                                Text("Done")
                             }
-                            BottomNavItem.Transactions.route -> {
-                                val areFiltersActive by remember(filterState) {
-                                    derivedStateOf {
-                                        filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+                        } else {
+                            when (baseCurrentRoute) {
+                                BottomNavItem.Dashboard.route -> {
+                                    IconButton(onClick = { navController.navigate("search_screen") }) {
+                                        Icon(Icons.Default.Search, contentDescription = "Search")
                                     }
                                 }
-                                BadgedBox(
-                                    badge = {
-                                        if (areFiltersActive) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(MaterialTheme.colorScheme.primary)
-                                            )
+                                BottomNavItem.Transactions.route -> {
+                                    val areFiltersActive by remember(filterState) {
+                                        derivedStateOf {
+                                            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
                                         }
                                     }
-                                ) {
-                                    IconButton(onClick = { transactionViewModel.onFilterClick() }) {
-                                        Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                                    BadgedBox(
+                                        badge = {
+                                            if (areFiltersActive) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(MaterialTheme.colorScheme.primary)
+                                                )
+                                            }
+                                        }
+                                    ) {
+                                        IconButton(onClick = { transactionViewModel.onFilterClick() }) {
+                                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                                        }
                                     }
                                 }
                             }
