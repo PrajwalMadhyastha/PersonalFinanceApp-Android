@@ -1,9 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/DashboardCardType.kt
-// REASON: NEW FILE - This enum defines all the possible cards that can be
-// displayed on the dashboard. It provides a type-safe way to manage the layout
-// configuration, making it easy to reference and reorder the dashboard components.
-// =================================================================================
 package io.pm.finlight
 
 /**
@@ -12,10 +6,12 @@ package io.pm.finlight
  */
 enum class DashboardCardType {
     OVERALL_BUDGET,
-    MONTHLY_STATS,
+    // --- UPDATED: Replaced MONTHLY_STATS with QUICK_STATS ---
+    QUICK_STATS,
     QUICK_ACTIONS,
     NET_WORTH,
     RECENT_ACTIVITY,
-    ACCOUNTS_SUMMARY,
+    // --- UPDATED: Replaced ACCOUNTS_SUMMARY with ACCOUNTS_CAROUSEL ---
+    ACCOUNTS_CAROUSEL,
     BUDGET_WATCH
 }

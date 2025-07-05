@@ -1,10 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FEATURE - The screen now fully supports dashboard customization. A
-// "hide" icon appears on cards in customization mode. An "Add Card" FAB is
-// shown, which triggers a ModalBottomSheet displaying hidden cards. Tapping a
-// hidden card adds it back to the dashboard, completing the hide/show workflow.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
@@ -38,13 +31,7 @@ import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.DashboardCardType
 import io.pm.finlight.DashboardViewModel
 import io.pm.finlight.DashboardViewModelFactory
-import io.pm.finlight.ui.components.AccountSummaryCard
-import io.pm.finlight.ui.components.BudgetWatchCard
-import io.pm.finlight.ui.components.NetWorthCard
-import io.pm.finlight.ui.components.OverallBudgetCard
-import io.pm.finlight.ui.components.RecentActivityCard
-import io.pm.finlight.ui.components.StatCard
-import io.pm.finlight.ui.components.rememberDragDropState
+import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -147,27 +134,27 @@ private fun DashboardCard(
 
     Box {
         when (cardType) {
-            DashboardCardType.OVERALL_BUDGET -> OverallBudgetCard(
+            DashboardCardType.OVERALL_BUDGET -> AuroraMonthlyBudgetCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
                 navController = navController,
             )
-            DashboardCardType.MONTHLY_STATS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard(
-                    label = "Monthly Income",
+            DashboardCardType.QUICK_STATS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AuroraStatCard(
+                    label = "Income",
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
                     onClick = {
                         navController.navigate("income_screen")
                     }
                 )
-                StatCard(
-                    label = "Total Budget",
+                AuroraStatCard(
+                    label = "Budget",
                     amount = overallBudget,
                     modifier = Modifier.weight(1f),
                     onClick = { navController.navigate("budget_screen") }
                 )
-                StatCard(
+                AuroraStatCard(
                     label = "Safe To Spend",
                     amount = safeToSpendPerDay,
                     isPerDay = true,
@@ -206,7 +193,7 @@ private fun DashboardCard(
             }
             DashboardCardType.NET_WORTH -> NetWorthCard(netWorth)
             DashboardCardType.RECENT_ACTIVITY -> RecentActivityCard(recentTransactions, navController)
-            DashboardCardType.ACCOUNTS_SUMMARY -> AccountSummaryCard(accounts = accountsSummary, navController = navController)
+            DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
             DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
                 budgetStatus = budgetStatus,
                 viewModel = budgetViewModel,

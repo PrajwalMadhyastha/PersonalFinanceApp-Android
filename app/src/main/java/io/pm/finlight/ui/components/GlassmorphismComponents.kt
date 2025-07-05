@@ -4,13 +4,14 @@ import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -21,10 +22,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import io.pm.finlight.AccountWithBalance
+import io.pm.finlight.BankLogoHelper
 import io.pm.finlight.ui.theme.AuroraPrimary
 import io.pm.finlight.ui.theme.GlassPanelBorder
 import io.pm.finlight.ui.theme.GlassPanelFill
@@ -186,6 +191,134 @@ private fun AuroraProgressBar(progress: Float) {
                 end = Offset(x, size.height * 0.75f),
                 strokeWidth = 1.dp.toPx()
             )
+        }
+    }
+}
+
+/**
+ * A small card for displaying a single, quick-glance statistic on the dashboard.
+ * It uses the GlassPanel for its background and features an animated number count-up.
+ *
+ * @param label The text label for the statistic.
+ * @param amount The numerical value of the statistic.
+ * @param modifier Modifier for this composable.
+ * @param isPerDay If true, appends "/day" to the amount.
+ * @param onClick A lambda to be invoked when the card is clicked.
+ */
+@Composable
+fun AuroraStatCard(
+    label: String,
+    amount: Float,
+    modifier: Modifier = Modifier,
+    isPerDay: Boolean = false,
+    onClick: () -> Unit = {}
+) {
+    var targetAmount by remember { mutableStateOf(0f) }
+    val animatedAmount by animateFloatAsState(
+        targetValue = targetAmount,
+        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
+        label = "StatCardAmountAnimation"
+    )
+
+    LaunchedEffect(amount) {
+        targetAmount = amount
+    }
+
+    GlassPanel(
+        modifier = modifier.clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+                textAlign = TextAlign.Start
+            )
+            Text(
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedAmount.toInt())}${if (isPerDay) "/day" else ""}",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Start,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/**
+ * A dashboard card that displays a horizontally scrolling carousel of user accounts.
+ *
+ * @param accounts The list of accounts with their balances.
+ * @param navController The NavController for navigation.
+ */
+@Composable
+fun AccountsCarouselCard(
+    accounts: List<AccountWithBalance>,
+    navController: NavController
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Accounts",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(horizontal = 4.dp)
+        ) {
+            items(accounts) { account ->
+                AccountItem(account = account, navController = navController)
+            }
+        }
+    }
+}
+
+/**
+ * An individual item in the AccountsCarouselCard, styled to look like a mini glass credit card.
+ *
+ * @param account The account data to display.
+ * @param navController The NavController for navigation.
+ */
+@Composable
+private fun AccountItem(account: AccountWithBalance, navController: NavController) {
+    GlassPanel(
+        modifier = Modifier
+            .width(180.dp)
+            .height(110.dp)
+            .clickable { navController.navigate("account_detail/${account.account.id}") }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Image(
+                painter = painterResource(id = BankLogoHelper.getLogoForAccount(account.account.name)),
+                contentDescription = "${account.account.name} Logo",
+                modifier = Modifier.height(24.dp)
+            )
+            Column {
+                Text(
+                    text = account.account.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(account.balance)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
         }
     }
 }

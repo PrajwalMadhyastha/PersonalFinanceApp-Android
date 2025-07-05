@@ -1,8 +1,5 @@
 package io.pm.finlight.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Category
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -30,16 +25,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -52,108 +43,8 @@ import io.pm.finlight.BudgetWithSpending
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
 
-private fun formatAmountCompact(amount: Float): String {
-    return when {
-        amount >= 1_000_000 -> "₹${"%.1f".format(amount / 1_000_000)}M"
-        amount >= 1_000 -> "₹${"%.1f".format(amount / 1_000)}k"
-        else -> "₹${"%.0f".format(amount)}"
-    }
-}
-
-@Composable
-fun StatCard(
-    label: String,
-    amount: Float,
-    modifier: Modifier = Modifier,
-    isPerDay: Boolean = false,
-    onClick: () -> Unit = {}
-) {
-    Card(
-        modifier = modifier.clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${formatAmountCompact(amount)}${if (isPerDay) "/day" else ""}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-fun BudgetGauge(
-    progress: Float,
-    modifier: Modifier = Modifier
-) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 1000),
-        label = "BudgetGaugeAnimation"
-    )
-
-    val progressColor = when {
-        animatedProgress > 1f -> MaterialTheme.colorScheme.error
-        animatedProgress > 0.8f -> Color(0xFFFBC02D) // Amber
-        else -> MaterialTheme.colorScheme.primary
-    }
-
-    // Read the color from the theme within the composable scope, before the Canvas
-    val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = size.width / 10f
-            drawArc(
-                color = surfaceVariantColor, // Use the variable here
-                startAngle = 135f,
-                sweepAngle = 270f,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-            )
-            drawArc(
-                color = progressColor,
-                startAngle = 135f,
-                sweepAngle = 270 * animatedProgress,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-            )
-        }
-        Text(
-            text = "${(animatedProgress * 100).toInt()}%",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-
-@Composable
-fun OverallBudgetCard(
-    totalBudget: Float,
-    amountSpent: Float,
-    navController: NavController
-) {
-    // --- UPDATED: Use the new AuroraMonthlyBudgetCard ---
-    AuroraMonthlyBudgetCard(
-        totalBudget = totalBudget,
-        amountSpent = amountSpent,
-        navController = navController
-    )
-}
+// Note: The old OverallBudgetCard, StatCard, and AccountSummaryCard have been
+// removed and replaced by the new Aurora-themed components in GlassmorphismComponents.kt
 
 @Composable
 fun NetWorthCard(netWorth: Double) {
@@ -165,74 +56,6 @@ fun NetWorthCard(netWorth: Double) {
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold
             )
-        }
-    }
-}
-
-@Composable
-fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavController) {
-    Card(
-        elevation = CardDefaults.cardElevation(4.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Your Accounts",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(
-                    onClick = {
-                        navController.navigate("account_list")
-                    }
-                ) { Text("View All") }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            if (accounts.isEmpty()) {
-                Text("No accounts found. Add one from the Settings.", modifier = Modifier.padding(vertical = 16.dp))
-            } else {
-                Column {
-                    // --- UPDATED: Loop through accounts and display with logos ---
-                    for ((index, accountWithBalance) in accounts.take(3).withIndex()) { // Show max 3
-                        if (index > 0) {
-                            HorizontalDivider()
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { navController.navigate("account_detail/${accountWithBalance.account.id}") }
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            Image(
-                                painter = painterResource(id = BankLogoHelper.getLogoForAccount(accountWithBalance.account.name)),
-                                contentDescription = "${accountWithBalance.account.name} Logo",
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = accountWithBalance.account.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = accountWithBalance.account.type,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                text = "₹${"%,.2f".format(accountWithBalance.balance)}",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (accountWithBalance.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }

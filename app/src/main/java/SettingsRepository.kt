@@ -1,11 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: FEATURE - New functions (`saveDashboardLayout`, `getDashboardCardOrder`,
-// `getDashboardVisibleCards`) have been added to manage the user's custom
-// dashboard layout. These functions handle the serialization and deserialization
-// of the card order and visibility settings into SharedPreferences, providing
-// the persistence layer for the customizable dashboard.
-// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -44,12 +36,9 @@ class SettingsRepository(context: Context) {
         private const val KEY_MONTHLY_REPORT_HOUR = "monthly_report_hour"
         private const val KEY_MONTHLY_REPORT_MINUTE = "monthly_report_minute"
         private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
-        // --- NEW: Keys for dashboard layout ---
         private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
         private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
     }
-
-    // --- NEW: Functions to save and load dashboard layout ---
 
     fun saveDashboardLayout(order: List<DashboardCardType>, visible: Set<DashboardCardType>) {
         val orderJson = gson.toJson(order.map { it.name })
@@ -93,14 +82,14 @@ class SettingsRepository(context: Context) {
             val names: List<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
         } else {
-            // Default order
+            // --- FIXED: Use the new enum values for the default order ---
             listOf(
                 DashboardCardType.OVERALL_BUDGET,
-                DashboardCardType.MONTHLY_STATS,
+                DashboardCardType.QUICK_STATS,
                 DashboardCardType.QUICK_ACTIONS,
                 DashboardCardType.NET_WORTH,
                 DashboardCardType.RECENT_ACTIVITY,
-                DashboardCardType.ACCOUNTS_SUMMARY,
+                DashboardCardType.ACCOUNTS_CAROUSEL,
                 DashboardCardType.BUDGET_WATCH
             )
         }
