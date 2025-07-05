@@ -222,16 +222,12 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT T.*,
-               A.name as accountName,
-               C.name as categoryName,
-               C.iconKey as categoryIconKey,
-               C.colorKey as categoryColorKey
-        FROM transactions AS T
-        LEFT JOIN accounts AS A ON T.accountId = A.id
-        LEFT JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.accountId = :accountId
-        ORDER BY T.date DESC
+        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
+        FROM transactions t
+        LEFT JOIN accounts a ON t.accountId = a.id
+        LEFT JOIN categories c ON t.categoryId = c.id
+        WHERE t.accountId = :accountId
+        ORDER BY t.date DESC
     """
     )
     fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>>
@@ -412,11 +408,9 @@ interface TransactionDao {
     """)
     fun getMonthlySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
 
-    // --- NEW: Query to set the SMS hash on a manually entered transaction ---
     @Query("UPDATE transactions SET sourceSmsHash = :smsHash WHERE id = :transactionId")
     suspend fun setSmsHash(transactionId: Int, smsHash: String)
 
-    // --- NEW: Smart query to find potential matches for linking ---
     @Query("""
         SELECT * FROM transactions
         WHERE sourceSmsHash IS NULL
@@ -433,4 +427,7 @@ interface TransactionDao {
         smsDate: Long,
         transactionType: String
     ): List<Transaction>
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE description = :description AND isExcluded = 0")
+    fun getTransactionCountForMerchant(description: String): Flow<Int>
 }

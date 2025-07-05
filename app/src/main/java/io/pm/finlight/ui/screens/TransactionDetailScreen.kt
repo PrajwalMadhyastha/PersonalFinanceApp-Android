@@ -17,6 +17,13 @@
 // the background image alpha for a more prominent and visually appealing look.
 // VISUAL - The content layout within the `TransactionHeaderCard` has been updated
 // to spread the elements vertically, making better use of the larger card size.
+// BUG FIX - Replaced the unresolved `ChipDefaults.LeadingIconSize` with a hardcoded
+// size of `18.dp` to resolve a compilation error and ensure consistent icon sizing.
+// BUG FIX - Added a `LaunchedEffect` to separately load the visit count when
+// the transaction details are available, fixing an infinite recomposition loop.
+// BUG FIX - The `LaunchedEffect` for loading the visit count now correctly
+// passes the `originalDescription` to ensure an accurate count for renamed
+// merchants.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -135,6 +142,7 @@ fun TransactionDetailScreen(
     val selectedTags by viewModel.selectedTags.collectAsState()
     val attachedImages by viewModel.transactionImages.collectAsState()
     val originalSms by viewModel.originalSmsText.collectAsState()
+    val visitCount by viewModel.visitCount.collectAsState()
     val scope = rememberCoroutineScope()
 
     var showMenu by remember { mutableStateOf(false) }
@@ -193,6 +201,10 @@ fun TransactionDetailScreen(
             }
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
 
+            LaunchedEffect(details.transaction.originalDescription, details.transaction.description) {
+                viewModel.loadVisitCount(details.transaction.originalDescription, details.transaction.description)
+            }
+
             LaunchedEffect(details.transaction.sourceSmsId) {
                 viewModel.loadOriginalSms(details.transaction.sourceSmsId)
             }
@@ -239,6 +251,7 @@ fun TransactionDetailScreen(
                     item {
                         TransactionHeaderCard(
                             details = details,
+                            visitCount = visitCount,
                             onDescriptionClick = { activeSheetContent = SheetContent.Description },
                             onAmountClick = { activeSheetContent = SheetContent.Amount },
                             onCategoryClick = { activeSheetContent = SheetContent.Category },
@@ -887,12 +900,13 @@ private fun CategoryIconDisplay(category: Category) {
 @Composable
 private fun TransactionHeaderCard(
     details: TransactionDetails,
+    visitCount: Int,
     onDescriptionClick: () -> Unit,
     onAmountClick: () -> Unit,
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit
 ) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yyyy, h:mm a", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yy, h:mm a", Locale.getDefault()) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -928,16 +942,34 @@ private fun TransactionHeaderCard(
             )
 
             // Layer 3: The actual content, using Box alignments
-            // Top Content (Description)
-            Text(
-                text = details.transaction.description,
-                style = MaterialTheme.typography.headlineSmall,
-                color = Color.White,
+            // Top Content (Description and Visit Count)
+            Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 24.dp)
-                    .clickable(onClick = onDescriptionClick)
-            )
+                    .padding(top = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = details.transaction.description,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                    modifier = Modifier.clickable(onClick = onDescriptionClick)
+                )
+                if (visitCount > 1) {
+                    AssistChip(
+                        onClick = { /* No action needed */ },
+                        label = { Text("$visitCount visits") },
+                        leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = Color.White.copy(alpha = 0.2f),
+                            labelColor = Color.White,
+                            leadingIconContentColor = Color.White
+                        )
+                    )
+                }
+            }
+
 
             // Center Content (Amount and Category)
             Column(

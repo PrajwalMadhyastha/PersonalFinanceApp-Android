@@ -8,6 +8,15 @@
 // BUG FIX - The call to `SmsParser.parse` within the `reparseTransactionFromSms`
 // function has been updated to include the new `ignoreRuleDao` parameter,
 // resolving a compilation error.
+// BUG FIX - Separated the fetching of transaction details and merchant visit
+// count to prevent a recursive collection loop that was causing the detail
+// screen to hang. A new `loadVisitCount` function was added.
+// BUG FIX - Re-implemented the missing merchant-to-category learning logic in
+// the `approveSmsTransaction` function to ensure the app remembers user
+// categorization choices for future automatic imports.
+// BUG FIX - The `loadVisitCount` function now correctly uses the original
+// transaction description to query for the visit count, ensuring that renamed
+// merchants are counted correctly.
 // =================================================================================
 package io.pm.finlight
 
@@ -45,6 +54,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val settingsRepository: SettingsRepository
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
+    private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
@@ -90,6 +100,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _originalSmsText = MutableStateFlow<String?>(null)
     val originalSmsText: StateFlow<String?> = _originalSmsText.asStateFlow()
 
+    private val _visitCount = MutableStateFlow(0)
+    val visitCount: StateFlow<Int> = _visitCount.asStateFlow()
+
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
@@ -98,6 +111,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         settingsRepository = SettingsRepository(application)
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
+        merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
 
         merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -203,6 +217,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     it.copy(transaction = it.transaction.copy(description = newDescription))
                 }
             }
+    }
+
+    fun loadVisitCount(originalDescription: String?, fallbackDescription: String) {
+        val descriptionToQuery = originalDescription ?: fallbackDescription
+        viewModelScope.launch {
+            transactionRepository.getTransactionCountForMerchant(descriptionToQuery).collect { count ->
+                _visitCount.value = count
+            }
+        }
     }
 
     /**
@@ -570,6 +593,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
                 val newTransaction = Transaction(
                     description = description,
+                    originalDescription = potentialTxn.merchantName,
                     categoryId = categoryId,
                     amount = potentialTxn.amount,
                     date = System.currentTimeMillis(),
@@ -581,6 +605,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     source = "Reviewed Import"
                 )
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
+
+                // --- CATEGORY LEARNING LOGIC ---
+                if (categoryId != null && potentialTxn.merchantName != null) {
+                    val mapping = MerchantCategoryMapping(
+                        parsedName = potentialTxn.merchantName,
+                        categoryId = categoryId
+                    )
+                    merchantCategoryMappingRepository.insert(mapping)
+                    Log.d(TAG, "Saved learned category mapping: ${potentialTxn.merchantName} -> Category ID $categoryId")
+                }
+
                 true
             } catch (e: Exception) {
                 false

@@ -195,12 +195,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         transactionDao.delete(transaction)
     }
 
-    // --- NEW: Expose the DAO function to set an SMS hash ---
     suspend fun setSmsHash(transactionId: Int, smsHash: String) {
         transactionDao.setSmsHash(transactionId, smsHash)
     }
 
-    // --- NEW: Expose the DAO function to find linkable transactions ---
     suspend fun findLinkableTransactions(
         smsDate: Long,
         smsAmount: Double,
@@ -222,5 +220,9 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
             smsDate = smsDate,
             transactionType = transactionType
         )
+    }
+
+    fun getTransactionCountForMerchant(description: String): Flow<Int> {
+        return transactionDao.getTransactionCountForMerchant(description)
     }
 }
