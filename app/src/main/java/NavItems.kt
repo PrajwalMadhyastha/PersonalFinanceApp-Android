@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added a title for the new "manage_ignore_rules" route to
-// ensure the TopAppBar displays the correct title when the user navigates to
-// the new screen.
-// FEATURE - Added a title for the new "link_transaction_screen" route.
+// REASON: FEATURE - Added a title for the new `retrospective_update_screen`
+// route to ensure the TopAppBar displays the correct title when the user
+// navigates to the new screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -47,6 +46,7 @@ val screenTitles = mapOf(
     "rule_creation_screen/{potentialTransactionJson}" to "Create Parsing Rule",
     "manage_parse_rules" to "Manage Parsing Rules",
     "manage_ignore_rules" to "Manage Ignore List",
-    // --- NEW: Title for the linking screen ---
-    "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction"
+    "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction",
+    // --- NEW: Title for the retrospective update screen ---
+    "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar"
 )

@@ -1,11 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: BUG FIX - The `allTransactions` property now correctly calls the
-// `getAllTransactions()` function, which was re-added to the DAO. This resolves
-// the "Unresolved reference" compilation error.
-// FEATURE - The repository now exposes the new `setSmsHash` and
-// `findLinkableTransactions` functions from the DAO, making them available to
-// the ViewModel layer for the transaction linking feature.
+// REASON: FEATURE - The repository now exposes the new DAO functions for the
+// Retrospective Update feature. `findSimilarTransactions`,
+// `updateCategoryForIds`, and `updateDescriptionForIds` are now available to
+// be called by the ViewModel layer, providing a clean abstraction over the
+// database operations.
 // =================================================================================
 package io.pm.finlight
 
@@ -224,5 +223,20 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getTransactionCountForMerchant(description: String): Flow<Int> {
         return transactionDao.getTransactionCountForMerchant(description)
+    }
+
+    // --- NEW: Expose DAO function for finding similar transactions ---
+    suspend fun findSimilarTransactions(description: String, excludeId: Int): List<Transaction> {
+        return transactionDao.findSimilarTransactions(description, excludeId)
+    }
+
+    // --- NEW: Expose DAO function for batch updating category ---
+    suspend fun updateCategoryForIds(ids: List<Int>, categoryId: Int) {
+        transactionDao.updateCategoryForIds(ids, categoryId)
+    }
+
+    // --- NEW: Expose DAO function for batch updating description ---
+    suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String) {
+        transactionDao.updateDescriptionForIds(ids, newDescription)
     }
 }

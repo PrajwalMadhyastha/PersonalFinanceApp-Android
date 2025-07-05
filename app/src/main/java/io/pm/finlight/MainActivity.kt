@@ -1,23 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - The main Scaffold now includes logic to show a new, custom
-// `AddTransactionTopBar` when the current route is "add_transaction". This
-// replaces the old behavior of simply hiding the default TopAppBar and allows
-// for a screen-specific design as per the new UI requirements.
-// FEATURE - Added the route for the new `daily_report_screen`.
-// BUG FIX - Added a `deepLinks` parameter to the ReportsScreen composable in the
-// NavHost. This correctly maps the "app://finlight.pm.io/reports" URI to its
-// destination, resolving the IllegalArgumentException crash on startup when
-// handling a deep link from a notification.
-// BUG FIX - Added a `deepLinks` parameter to the `daily_report_screen` composable
-// to handle incoming notification intents correctly.
-// REFACTOR - Replaced the specific `daily_report_screen` route with a generic
-// `time_period_report_screen/{timePeriod}` route to support the new reusable
-// reporting architecture.
-// FEATURE - Added the new "manage_ignore_rules" route to the NavHost to make
-// the new screen accessible within the app's navigation graph.
-// FEATURE - Added the new "link_transaction_screen" route to the NavHost to
-// enable the transaction linking UI.
+// REASON: FEATURE - Added the new `retrospective_update_screen` route to the
+// NavHost. This makes the new UI accessible within the app's navigation graph
+// and defines the necessary arguments (transactionId, descriptions, categoryId)
+// that will be passed to it when a user chooses to perform a batch update.
 // =================================================================================
 package io.pm.finlight
 
@@ -512,7 +498,6 @@ fun AppNavHost(
             )
         }
 
-        // --- NEW: Route for the linking screen ---
         composable(
             "link_transaction_screen/{potentialTransactionJson}",
             arguments = listOf(
@@ -535,6 +520,30 @@ fun AppNavHost(
         ) { backStackEntry ->
             val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod") as TimePeriod
             TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
+        }
+
+        // --- NEW: Route for the retrospective update screen ---
+        composable(
+            "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}",
+            arguments = listOf(
+                navArgument("transactionId") { type = NavType.IntType },
+                navArgument("originalDescription") { type = NavType.StringType },
+                navArgument("newDescription") { type = NavType.StringType; nullable = true },
+                navArgument("newCategoryId") { type = NavType.IntType; defaultValue = -1 }
+            )
+        ) { backStackEntry ->
+            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
+            val originalDescription = backStackEntry.arguments!!.getString("originalDescription")!!
+            val newDescription = backStackEntry.arguments!!.getString("newDescription")
+            val newCategoryId = backStackEntry.arguments!!.getInt("newCategoryId").let { if (it == -1) null else it }
+
+            RetrospectiveUpdateScreen(
+                navController = navController,
+                transactionId = transactionId,
+                originalDescription = URLDecoder.decode(originalDescription, "UTF-8"),
+                newDescription = newDescription?.let { URLDecoder.decode(it, "UTF-8") },
+                newCategoryId = newCategoryId
+            )
         }
     }
 }
