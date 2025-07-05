@@ -1,14 +1,17 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: FEATURE - Added the `isUnknownTransactionPopupEnabledBlocking()`
-// function. This provides a synchronous way to read the preference, which is
-// necessary for the `SmsReceiver` as it operates in a context where collecting
-// a Flow is not practical.
+// REASON: FEATURE - New functions (`saveDashboardLayout`, `getDashboardCardOrder`,
+// `getDashboardVisibleCards`) have been added to manage the user's custom
+// dashboard layout. These functions handle the serialization and deserialization
+// of the card order and visibility settings into SharedPreferences, providing
+// the persistence layer for the customizable dashboard.
 // =================================================================================
 package io.pm.finlight
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -18,6 +21,7 @@ class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+    private val gson = Gson()
 
     companion object {
         private const val PREF_NAME = "finance_app_settings"
@@ -40,7 +44,80 @@ class SettingsRepository(context: Context) {
         private const val KEY_MONTHLY_REPORT_HOUR = "monthly_report_hour"
         private const val KEY_MONTHLY_REPORT_MINUTE = "monthly_report_minute"
         private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
+        // --- NEW: Keys for dashboard layout ---
+        private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
+        private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
     }
+
+    // --- NEW: Functions to save and load dashboard layout ---
+
+    fun saveDashboardLayout(order: List<DashboardCardType>, visible: Set<DashboardCardType>) {
+        val orderJson = gson.toJson(order.map { it.name })
+        val visibleJson = gson.toJson(visible.map { it.name })
+        prefs.edit()
+            .putString(KEY_DASHBOARD_CARD_ORDER, orderJson)
+            .putString(KEY_DASHBOARD_VISIBLE_CARDS, visibleJson)
+            .apply()
+    }
+
+    fun getDashboardCardOrder(): Flow<List<DashboardCardType>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_DASHBOARD_CARD_ORDER) {
+                    trySend(loadCardOrder(sp))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(loadCardOrder(prefs))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    fun getDashboardVisibleCards(): Flow<Set<DashboardCardType>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_DASHBOARD_VISIBLE_CARDS) {
+                    trySend(loadVisibleCards(sp))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(loadVisibleCards(prefs))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    private fun loadCardOrder(sp: SharedPreferences): List<DashboardCardType> {
+        val json = sp.getString(KEY_DASHBOARD_CARD_ORDER, null)
+        return if (json != null) {
+            val type = object : TypeToken<List<String>>() {}.type
+            val names: List<String> = gson.fromJson(json, type)
+            names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
+        } else {
+            // Default order
+            listOf(
+                DashboardCardType.OVERALL_BUDGET,
+                DashboardCardType.MONTHLY_STATS,
+                DashboardCardType.QUICK_ACTIONS,
+                DashboardCardType.NET_WORTH,
+                DashboardCardType.RECENT_ACTIVITY,
+                DashboardCardType.ACCOUNTS_SUMMARY,
+                DashboardCardType.BUDGET_WATCH
+            )
+        }
+    }
+
+    private fun loadVisibleCards(sp: SharedPreferences): Set<DashboardCardType> {
+        val json = sp.getString(KEY_DASHBOARD_VISIBLE_CARDS, null)
+        return if (json != null) {
+            val type = object : TypeToken<Set<String>>() {}.type
+            val names: Set<String> = gson.fromJson(json, type)
+            names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }.toSet()
+        } else {
+            // Default visibility (all cards)
+            DashboardCardType.values().toSet()
+        }
+    }
+
 
     fun saveBackupEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_BACKUP_ENABLED, isEnabled).apply()
@@ -247,7 +324,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Blocking getter for use in BroadcastReceiver ---
     fun isUnknownTransactionPopupEnabledBlocking(): Boolean {
         return prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true)
     }

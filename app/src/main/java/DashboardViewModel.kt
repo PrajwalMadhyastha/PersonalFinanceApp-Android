@@ -1,11 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FIX - Added a `!it.transaction.isExcluded` filter to the `map`
-// functions for `monthlyIncome` and `monthlyExpenses`. The underlying DAO query
-// was previously changed to fetch all transactions (including excluded ones) for
-// display purposes. This change ensures that when those transactions are used for
-// calculations in the ViewModel, the excluded ones are correctly ignored, fixing
-// the bug where they were being counted in the dashboard's budget card.
+// REASON: FEATURE - The ViewModel now loads the user's dashboard layout
+// configuration from the `SettingsRepository`. It combines the saved order and
+// visibility flows into a single `visibleCards` StateFlow, which the UI will
+// use to dynamically render the dashboard, enabling customization.
 // =================================================================================
 package io.pm.finlight
 
@@ -39,6 +37,9 @@ class DashboardViewModel(
     val safeToSpendPerDay: StateFlow<Float>
     val accountsSummary: StateFlow<List<AccountWithBalance>>
 
+    // --- NEW: StateFlow for the visible and ordered dashboard cards ---
+    val visibleCards: StateFlow<List<DashboardCardType>>
+
     init {
         userName = settingsRepository.getUserName()
             .stateIn(
@@ -53,6 +54,15 @@ class DashboardViewModel(
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = null
             )
+
+        // --- NEW: Load and combine layout configuration ---
+        visibleCards = combine(
+            settingsRepository.getDashboardCardOrder(),
+            settingsRepository.getDashboardVisibleCards()
+        ) { order, visible ->
+            order.filter { it in visible }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
 
         val calendar = Calendar.getInstance()
         val monthStart =
