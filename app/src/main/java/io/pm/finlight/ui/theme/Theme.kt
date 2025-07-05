@@ -11,22 +11,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-// --- UPDATED: Dark theme color scheme using our new custom colors ---
+// --- UPDATED: Dark theme color scheme using our new Aurora colors ---
 private val DarkColorScheme =
     darkColorScheme(
-        primary = FinanceGreenLight,
-        secondary = GoldAccentLight,
-        tertiary = Charcoal,
-        background = Color(0xFF121212),
-        surface = DarkSurface,
+        primary = AuroraPrimary,
+        secondary = AuroraSecondary,
+        background = AuroraBackground,
+        surface = GlassPanelFill, // Use for card backgrounds
         onPrimary = Color.Black,
         onSecondary = Color.Black,
-        onBackground = Color.White,
-        onSurface = Color.White,
-        onError = Color.Red,
+        onBackground = TextPrimary,
+        onSurface = TextPrimary,
+        onSurfaceVariant = TextSecondary, // For secondary text
+        error = Color(0xFFCF6679),
+        outline = GlassPanelBorder // For borders on cards/panels
     )
 
-// --- UPDATED: Light theme color scheme using our new custom colors ---
+// Light theme remains unchanged for now
 private val LightColorScheme =
     lightColorScheme(
         primary = FinanceGreen,
@@ -44,7 +45,8 @@ private val LightColorScheme =
 @Composable
 fun PersonalFinanceAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true, // Set to false to always use your custom theme
+    // --- UPDATED: Set dynamicColor to false to enforce our custom theme ---
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colorScheme =

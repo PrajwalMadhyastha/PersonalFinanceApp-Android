@@ -1,10 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: UX REFINEMENT - The "Add Card" action has been moved from the FAB to
-// an IconButton in the TopAppBar, appearing next to the "Done" button during
-// customization mode. The main FAB is now hidden when customization mode is
-// active, eliminating the confusing dual-purpose "+" button.
-// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -32,7 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -41,8 +34,6 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import androidx.navigation.NavDeepLinkRequest
-import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -50,9 +41,9 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
-import androidx.navigation.navOptions
 import coil.compose.AsyncImage
 import com.google.gson.Gson
+import io.pm.finlight.ui.components.AuroraAnimatedBackground
 import io.pm.finlight.ui.screens.*
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
 import java.net.URLDecoder
@@ -237,136 +228,146 @@ fun MainAppScreen() {
         "account_list",
         "recurring_transactions"
     )
-    // --- UPDATED: Hide FAB in customization mode ---
     val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
 
     val activity = LocalContext.current as AppCompatActivity
 
-    Scaffold(
-        topBar = {
-            if (showMainTopBar) {
-                TopAppBar(
-                    title = { Text(currentTitle) },
-                    navigationIcon = {
-                        if (showProfileIcon) {
-                            AsyncImage(
-                                model = profilePictureUri,
-                                contentDescription = "User Profile Picture",
-                                placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                                error = painterResource(id = R.drawable.ic_launcher_foreground),
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .padding(start = 16.dp)
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable { navController.navigate("profile") }
-                            )
-                        } else if (!showBottomBar) {
-                            IconButton(onClick = { navController.popBackStack() }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                            }
-                        }
-                    },
-                    actions = {
-                        // --- UPDATED: Show different actions for customization mode ---
-                        if (isCustomizationMode) {
-                            IconButton(onClick = { dashboardViewModel.onAddCardClick() }) {
-                                Icon(Icons.Default.Add, contentDescription = "Add Card")
-                            }
-                            TextButton(onClick = { dashboardViewModel.exitCustomizationModeAndSave() }) {
-                                Text("Done")
-                            }
-                        } else {
-                            when (baseCurrentRoute) {
-                                BottomNavItem.Dashboard.route -> {
-                                    IconButton(onClick = { navController.navigate("search_screen") }) {
-                                        Icon(Icons.Default.Search, contentDescription = "Search")
-                                    }
+    // --- NEW: Wrap the entire Scaffold content in a Box with the animated background ---
+    Box(modifier = Modifier.fillMaxSize()) {
+        AuroraAnimatedBackground()
+
+        Scaffold(
+            topBar = {
+                if (showMainTopBar) {
+                    TopAppBar(
+                        title = { Text(currentTitle) },
+                        navigationIcon = {
+                            if (showProfileIcon) {
+                                AsyncImage(
+                                    model = profilePictureUri,
+                                    contentDescription = "User Profile Picture",
+                                    placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                                    error = painterResource(id = R.drawable.ic_launcher_foreground),
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .padding(start = 16.dp)
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { navController.navigate("profile") }
+                                )
+                            } else if (!showBottomBar) {
+                                IconButton(onClick = { navController.popBackStack() }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                                 }
-                                BottomNavItem.Transactions.route -> {
-                                    val areFiltersActive by remember(filterState) {
-                                        derivedStateOf {
-                                            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+                            }
+                        },
+                        actions = {
+                            if (isCustomizationMode) {
+                                IconButton(onClick = { dashboardViewModel.onAddCardClick() }) {
+                                    Icon(Icons.Default.Add, contentDescription = "Add Card")
+                                }
+                                TextButton(onClick = { dashboardViewModel.exitCustomizationModeAndSave() }) {
+                                    Text("Done")
+                                }
+                            } else {
+                                when (baseCurrentRoute) {
+                                    BottomNavItem.Dashboard.route -> {
+                                        IconButton(onClick = { navController.navigate("search_screen") }) {
+                                            Icon(Icons.Default.Search, contentDescription = "Search")
                                         }
                                     }
-                                    BadgedBox(
-                                        badge = {
-                                            if (areFiltersActive) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .clip(CircleShape)
-                                                        .background(MaterialTheme.colorScheme.primary)
-                                                )
+                                    BottomNavItem.Transactions.route -> {
+                                        val areFiltersActive by remember(filterState) {
+                                            derivedStateOf {
+                                                filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
                                             }
                                         }
-                                    ) {
-                                        IconButton(onClick = { transactionViewModel.onFilterClick() }) {
-                                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                                        BadgedBox(
+                                            badge = {
+                                                if (areFiltersActive) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(8.dp)
+                                                            .clip(CircleShape)
+                                                            .background(MaterialTheme.colorScheme.primary)
+                                                    )
+                                                }
+                                            }
+                                        ) {
+                                            IconButton(onClick = { transactionViewModel.onFilterClick() }) {
+                                                Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                    }
-                )
-            }
-        },
-        bottomBar = {
-            if (showBottomBar) {
-                NavigationBar {
-                    bottomNavItems.forEach { screen ->
-                        val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
-                        NavigationBarItem(
-                            icon = { Icon(screen.icon, contentDescription = screen.label) },
-                            label = { Text(screen.label) },
-                            selected = isSelected,
-                            onClick = {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+                        },
+                        // --- NEW: Make TopAppBar transparent ---
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                    )
+                }
+            },
+            bottomBar = {
+                if (showBottomBar) {
+                    NavigationBar(
+                        // --- NEW: Make NavigationBar transparent ---
+                        containerColor = Color.Transparent
+                    ) {
+                        bottomNavItems.forEach { screen ->
+                            val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                            NavigationBarItem(
+                                icon = { Icon(screen.icon, contentDescription = screen.label) },
+                                label = { Text(screen.label) },
+                                selected = isSelected,
+                                onClick = {
+                                    navController.navigate(screen.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
+                            )
+                        }
+                    }
+                }
+            },
+            floatingActionButton = {
+                if (showFab) {
+                    FloatingActionButton(onClick = {
+                        when (baseCurrentRoute) {
+                            BottomNavItem.Dashboard.route, BottomNavItem.Transactions.route -> {
+                                navController.navigate("add_transaction")
                             }
-                        )
+                            "account_list" -> {
+                                navController.navigate("add_account")
+                            }
+                            "recurring_transactions" -> {
+                                navController.navigate("add_recurring_transaction")
+                            }
+                        }
+                    }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Add Transaction or Account")
                     }
                 }
-            }
-        },
-        floatingActionButton = {
-            if (showFab) {
-                FloatingActionButton(onClick = {
-                    when (baseCurrentRoute) {
-                        BottomNavItem.Dashboard.route, BottomNavItem.Transactions.route -> {
-                            navController.navigate("add_transaction")
-                        }
-                        "account_list" -> {
-                            navController.navigate("add_account")
-                        }
-                        "recurring_transactions" -> {
-                            navController.navigate("add_recurring_transaction")
-                        }
-                    }
-                }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add Transaction or Account")
-                }
-            }
+            },
+            // --- NEW: Make Scaffold container transparent ---
+            containerColor = Color.Transparent
+        ) { innerPadding ->
+            AppNavHost(
+                navController = navController,
+                modifier = Modifier.padding(innerPadding),
+                activity = activity,
+                dashboardViewModel = dashboardViewModel,
+                settingsViewModel = settingsViewModel,
+                transactionViewModel = transactionViewModel,
+                accountViewModel = accountViewModel,
+                categoryViewModel = categoryViewModel,
+                budgetViewModel = budgetViewModel,
+                profileViewModel = profileViewModel,
+                incomeViewModel = incomeViewModel
+            )
         }
-    ) { innerPadding ->
-        AppNavHost(
-            navController = navController,
-            modifier = Modifier.padding(innerPadding),
-            activity = activity,
-            dashboardViewModel = dashboardViewModel,
-            settingsViewModel = settingsViewModel,
-            transactionViewModel = transactionViewModel,
-            accountViewModel = accountViewModel,
-            categoryViewModel = categoryViewModel,
-            budgetViewModel = budgetViewModel,
-            profileViewModel = profileViewModel,
-            incomeViewModel = incomeViewModel
-        )
     }
 }
 

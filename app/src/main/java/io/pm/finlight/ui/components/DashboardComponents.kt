@@ -1,10 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt
-// REASON: FEATURE - The `AccountSummaryCard` has been updated to display bank
-// logos. It now uses the new `BankLogoHelper` to fetch the appropriate drawable
-// for each account, providing a richer and more intuitive visual representation
-// of the user's accounts directly on the dashboard.
-// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -154,75 +147,12 @@ fun OverallBudgetCard(
     amountSpent: Float,
     navController: NavController
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { navController.navigate("budget_screen") },
-        elevation = CardDefaults.cardElevation(4.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
-                if (totalBudget > 0) {
-                    TextButton(onClick = { navController.navigate("budget_screen") }) {
-                        Text("Edit")
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (totalBudget <= 0) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        "You haven't set a budget for this month yet.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = { navController.navigate("budget_screen") }) {
-                        Text("Set Budget")
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceAround
-                ) {
-                    BudgetGauge(
-                        progress = (amountSpent / totalBudget),
-                        modifier = Modifier.size(120.dp)
-                    )
-                    Column {
-                        Text("Spent", style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            text = "₹${"%,.2f".format(amountSpent)}",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Remaining", style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            text = "₹${"%,.2f".format(totalBudget - amountSpent)}",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-    }
+    // --- UPDATED: Use the new AuroraMonthlyBudgetCard ---
+    AuroraMonthlyBudgetCard(
+        totalBudget = totalBudget,
+        amountSpent = amountSpent,
+        navController = navController
+    )
 }
 
 @Composable
