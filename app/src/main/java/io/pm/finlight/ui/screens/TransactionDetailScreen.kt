@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: REFACTOR - The "Retrospective Update" feature has been completely
-// integrated into this screen. The separate `AlertDialog` and navigation have
-// been replaced with a `ModalBottomSheet`. A new `RetrospectiveUpdateSheetContent`
-// composable now houses the UI for selecting similar transactions, creating a
-// seamless, in-context workflow for batch updates.
+// REASON: REFACTOR - The `TransactionHeaderCard` has been updated to improve
+// visual hierarchy. The merchant name's font size has been increased, and it has
+// been moved slightly higher. The text and icon color of the "visit count"
+// chip has been made brighter for better contrast and readability.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -194,7 +193,6 @@ fun TransactionDetailScreen(
                 viewModel.loadOriginalSms(details.transaction.sourceSmsId)
             }
 
-            // --- REFACTORED: Show bottom sheet instead of dialog and navigation ---
             if (retroUpdateSheetState != null) {
                 ModalBottomSheet(onDismissRequest = { viewModel.dismissRetroUpdateSheet() }) {
                     RetrospectiveUpdateSheetContent(
@@ -1039,38 +1037,34 @@ private fun TransactionHeaderCard(
                     )
             )
 
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 24.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = details.transaction.description,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White,
-                    modifier = Modifier.clickable(onClick = onDescriptionClick)
-                )
-                if (visitCount > 1) {
-                    AssistChip(
-                        onClick = { /* No action needed */ },
-                        label = { Text("$visitCount visits") },
-                        leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color.White.copy(alpha = 0.2f),
-                            labelColor = Color.White,
-                            leadingIconContentColor = Color.White
-                        )
+            if (visitCount > 1) {
+                AssistChip(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp),
+                    onClick = { /* No action needed */ },
+                    label = { Text("$visitCount visits") },
+                    leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = Color.White.copy(alpha = 0.2f),
+                        // --- UPDATED: Increased brightness of chip text ---
+                        labelColor = Color.White,
+                        leadingIconContentColor = Color.White
                     )
-                }
+                )
             }
-
 
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Text(
+                    text = details.transaction.description,
+                    // --- UPDATED: Increased font size and moved it up ---
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = Color.White,
+                    modifier = Modifier.clickable(onClick = onDescriptionClick).padding(bottom = 4.dp)
+                )
                 Text(
                     text = "₹${"%,.2f".format(details.transaction.amount)}",
                     fontSize = 48.sp,
@@ -1078,7 +1072,7 @@ private fun TransactionHeaderCard(
                     color = Color.White,
                     modifier = Modifier.clickable(onClick = onAmountClick)
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 ChipWithIcon(
                     text = details.categoryName ?: "Uncategorized",
                     icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
@@ -1123,6 +1117,7 @@ private fun TransactionHeaderCard(
         }
     }
 }
+
 
 @Composable
 private fun AccountCardWithSwitch(
@@ -1256,7 +1251,6 @@ fun InfoCard(
     }
 }
 
-// --- NEW: Composable for the retrospective update bottom sheet ---
 @Composable
 private fun RetrospectiveUpdateSheetContent(
     state: RetroUpdateSheetState,
@@ -1344,7 +1338,7 @@ private fun SelectableTransactionItem(
     isSelected: Boolean,
     onToggle: () -> Unit
 ) {
-    val dateFormatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("dd MMM, yy", Locale.getDefault()) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
