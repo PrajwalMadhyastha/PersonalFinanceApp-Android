@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: Integrated a TopAppBar with a filter icon that triggers a modal bottom
-// sheet, allowing users to apply filters to the transaction list.
-// BUG FIX: Corrected the invalid SimpleDateFormat pattern.
+// REASON: REFACTOR - The local `Scaffold` and `TopAppBar` have been removed.
+// The screen's header, title, and actions are now handled centrally by the
+// `TopAppBar` in `MainActivity`, creating a more consistent UI and simplifying
+// this screen's logic. The filter state is now collected from the ViewModel to
+// drive the bottom sheet.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -64,88 +66,56 @@ fun TransactionListScreen(
     val filterState by viewModel.filterState.collectAsState()
     val allAccounts by viewModel.allAccounts.collectAsState()
     val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
-    var showFilterSheet by remember { mutableStateOf(false) }
+    val showFilterSheet by viewModel.showFilterSheet.collectAsState()
 
-    val areFiltersActive by remember(filterState) {
-        derivedStateOf {
-            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Transactions") },
-                actions = {
-                    BadgedBox(
-                        badge = {
-                            if (areFiltersActive) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary)
-                                )
-                            }
-                        }
-                    ) {
-                        IconButton(onClick = { showFilterSheet = true }) {
-                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
-                        }
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+    // --- REMOVED: Scaffold and TopAppBar are now handled in MainActivity ---
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        MonthlySummaryHeader(
+            selectedMonth = selectedMonth,
+            monthlySummaries = monthlySummaries,
+            totalSpent = totalSpent,
+            totalIncome = totalIncome,
+            budget = budget,
+            onMonthSelected = { viewModel.setSelectedMonth(it) }
+        )
+        TabRow(
+            selectedTabIndex = pagerState.currentPage,
+            indicator = { tabPositions ->
+                TabRowDefaults.SecondaryIndicator(
+                    Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
+                )
+            }
         ) {
-            MonthlySummaryHeader(
-                selectedMonth = selectedMonth,
-                monthlySummaries = monthlySummaries,
-                totalSpent = totalSpent,
-                totalIncome = totalIncome,
-                budget = budget,
-                onMonthSelected = { viewModel.setSelectedMonth(it) }
-            )
-            TabRow(
-                selectedTabIndex = pagerState.currentPage,
-                indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
-                    )
-                }
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = pagerState.currentPage == index,
-                        onClick = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(index)
-                            }
-                        },
-                        text = { Text(title) }
-                    )
-                }
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = {
+                        scope.launch {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    },
+                    text = { Text(title) }
+                )
             }
+        }
 
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.weight(1f)
-            ) { page ->
-                when (page) {
-                    0 -> TransactionList(transactions = transactions, navController = navController)
-                    1 -> CategorySpendingScreen(spendingList = categorySpending)
-                    2 -> MerchantSpendingScreen(merchantList = merchantSpending)
-                }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f)
+        ) { page ->
+            when (page) {
+                0 -> TransactionList(transactions = transactions, navController = navController)
+                1 -> CategorySpendingScreen(spendingList = categorySpending)
+                2 -> MerchantSpendingScreen(merchantList = merchantSpending)
             }
         }
     }
+
 
     if (showFilterSheet) {
-        ModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
+        ModalBottomSheet(onDismissRequest = { viewModel.onFilterSheetDismiss() }) {
             FilterBottomSheet(
                 filterState = filterState,
                 accounts = allAccounts,
@@ -169,7 +139,6 @@ fun MonthlySummaryHeader(
     onMonthSelected: (Calendar) -> Unit
 ) {
     val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
-    // --- FIX: Corrected the date format pattern ---
     val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
     var showMonthScroller by remember { mutableStateOf(false) }
 

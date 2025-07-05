@@ -1,12 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: REFACTOR - The logic for the "Retrospective Update" feature has been
-// consolidated into this ViewModel. The old `RetroUpdatePromptState` is replaced
-// with a more comprehensive `RetroUpdateSheetState` that holds all necessary
-// data for the new bottom sheet. New functions (`toggleRetroUpdateSelection`,
-// `toggleRetroUpdateSelectAll`, `performBatchUpdate`, `dismissRetroUpdateSheet`)
-// have been added to manage the state of this new, integrated UI flow, removing
-// the need for a separate ViewModel.
+// REASON: REFACTOR - State management for the filter bottom sheet has been added
+// here. A new `showFilterSheet` StateFlow and corresponding `onFilterClick` and
+// `onFilterSheetDismiss` functions allow the centralized TopAppBar in MainActivity
+// to control the visibility of the filter sheet, which is now part of the
+// TransactionListScreen.
 // =================================================================================
 package io.pm.finlight
 
@@ -35,7 +33,6 @@ data class TransactionFilterState(
     val category: Category? = null
 )
 
-// --- REFACTORED: State for the new integrated bottom sheet ---
 data class RetroUpdateSheetState(
     val originalDescription: String,
     val newDescription: String? = null,
@@ -66,6 +63,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _filterState = MutableStateFlow(TransactionFilterState())
     val filterState: StateFlow<TransactionFilterState> = _filterState.asStateFlow()
+
+    private val _showFilterSheet = MutableStateFlow(false)
+    val showFilterSheet: StateFlow<Boolean> = _showFilterSheet.asStateFlow()
 
     private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
         _selectedMonth.combine(_filterState) { month, filters ->
@@ -103,7 +103,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _visitCount = MutableStateFlow(0)
     val visitCount: StateFlow<Int> = _visitCount.asStateFlow()
 
-    // --- REFACTORED: Changed state to support the new bottom sheet flow ---
     private val _retroUpdateSheetState = MutableStateFlow<RetroUpdateSheetState?>(null)
     val retroUpdateSheetState = _retroUpdateSheetState.asStateFlow()
 
@@ -396,6 +395,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _filterState.value = TransactionFilterState()
     }
 
+    fun onFilterClick() {
+        _showFilterSheet.value = true
+    }
+
+    fun onFilterSheetDismiss() {
+        _showFilterSheet.value = false
+    }
+
     fun setSelectedMonth(calendar: Calendar) {
         _selectedMonth.value = calendar
     }
@@ -673,8 +680,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun clearError() {
         _validationError.value = null
     }
-
-    // --- NEW: Functions to manage the retrospective update sheet ---
 
     fun dismissRetroUpdateSheet() {
         _retroUpdateSheetState.value = null

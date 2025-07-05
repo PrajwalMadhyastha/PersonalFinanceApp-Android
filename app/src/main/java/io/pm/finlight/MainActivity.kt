@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - The navigation route for the now-obsolete
-// `retrospective_update_screen` has been removed from the NavHost. The entire
-// feature is now handled by a `ModalBottomSheet` within the
-// `TransactionDetailScreen`, simplifying the navigation graph.
+// REASON: REFACTOR - The "Profile" entry has been removed from the `bottomNavItems`
+// list. This removes the dedicated Profile tab from the bottom navigation bar, as
+// the screen is now accessed via the clickable profile icon in the TopAppBar,
+// creating a cleaner and more streamlined main navigation structure.
 // =================================================================================
 package io.pm.finlight
 
@@ -200,7 +200,10 @@ fun MainAppScreen() {
 
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
+    val filterState by transactionViewModel.filterState.collectAsState()
 
+
+    // --- REFACTORED: Removed Profile from the list ---
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
         BottomNavItem.Transactions,
@@ -212,14 +215,17 @@ fun MainAppScreen() {
     val currentRoute = currentDestination?.route
     val baseCurrentRoute = currentRoute?.split("?")?.firstOrNull()?.split("/")?.firstOrNull()
 
-
-    val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
-        "Hi, $userName!"
-    } else {
-        screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
-    }
-
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
+    val showMainTopBar = baseCurrentRoute !in setOf(
+        "transaction_detail",
+        "income_screen",
+        "splash_screen",
+        "add_transaction",
+        "time_period_report_screen"
+    )
+
+    val currentTitle = if (showBottomBar) "Hi, $userName!" else screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
+    val showProfileIcon = showBottomBar
 
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
@@ -229,15 +235,6 @@ fun MainAppScreen() {
     )
     val showFab = baseCurrentRoute in fabRoutes
 
-    val showMainTopBar = baseCurrentRoute !in setOf(
-        "transaction_detail",
-        "transaction_list",
-        "income_screen",
-        "splash_screen",
-        "add_transaction",
-        "time_period_report_screen"
-    )
-
     val activity = LocalContext.current as AppCompatActivity
 
     Scaffold(
@@ -246,7 +243,7 @@ fun MainAppScreen() {
                 TopAppBar(
                     title = { Text(currentTitle) },
                     navigationIcon = {
-                        if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
+                        if (showProfileIcon) {
                             AsyncImage(
                                 model = profilePictureUri,
                                 contentDescription = "User Profile Picture",
@@ -267,9 +264,34 @@ fun MainAppScreen() {
                         }
                     },
                     actions = {
-                        if (currentRoute == BottomNavItem.Dashboard.route) {
-                            IconButton(onClick = { navController.navigate("search_screen") }) {
-                                Icon(Icons.Default.Search, contentDescription = "Search")
+                        when (baseCurrentRoute) {
+                            BottomNavItem.Dashboard.route -> {
+                                IconButton(onClick = { navController.navigate("search_screen") }) {
+                                    Icon(Icons.Default.Search, contentDescription = "Search")
+                                }
+                            }
+                            BottomNavItem.Transactions.route -> {
+                                val areFiltersActive by remember(filterState) {
+                                    derivedStateOf {
+                                        filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+                                    }
+                                }
+                                BadgedBox(
+                                    badge = {
+                                        if (areFiltersActive) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.primary)
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    IconButton(onClick = { transactionViewModel.onFilterClick() }) {
+                                        Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                                    }
+                                }
                             }
                         }
                     }
@@ -531,8 +553,6 @@ fun AppNavHost(
             val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod") as TimePeriod
             TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
         }
-
-        // --- REMOVED: Obsolete route for retrospective update ---
     }
 }
 

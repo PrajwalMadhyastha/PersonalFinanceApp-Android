@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FEATURE - Added new cards for navigating to the generic
-// TimePeriodReportScreen with the appropriate TimePeriod enum (DAILY, WEEKLY,
-// MONTHLY), enabling the new reporting features.
+// REASON: REFACTOR - The local `Scaffold` and `TopAppBar` have been removed.
+// The screen's header and title are now handled centrally by the `TopAppBar` in
+// `MainActivity`, creating a more consistent UI and simplifying this screen's
+// logic.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -39,7 +40,6 @@ import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GroupedBarChart
 import com.github.mikephil.charting.charts.PieChart
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportsScreen(
     navController: NavController,
