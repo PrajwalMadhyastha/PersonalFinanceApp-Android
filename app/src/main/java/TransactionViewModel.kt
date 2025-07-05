@@ -1,10 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE - Added logic to trigger the Retrospective Update flow. The
-// `updateTransactionDescription` and `updateTransactionCategory` functions now
-// check for similar transactions after an edit. If any are found, a new
-// `retroUpdatePromptState` is emitted, allowing the UI to show a confirmation
-// dialog to the user.
+// REASON: BUG FIX - The `findTransactionDetailsById` function no longer applies
+// the merchant alias map. The detail/edit screen must always show the true,
+// un-aliased data from the database. This prevents a bug where a global rename
+// rule would override a manual edit on this screen, making it appear as if the
+// save action had failed.
 // =================================================================================
 package io.pm.finlight
 
@@ -33,7 +33,6 @@ data class TransactionFilterState(
     val category: Category? = null
 )
 
-// --- NEW: Data class to hold the state for the batch update prompt ---
 data class RetroUpdatePromptState(
     val originalDescription: String,
     val newDescription: String? = null,
@@ -99,7 +98,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _visitCount = MutableStateFlow(0)
     val visitCount: StateFlow<Int> = _visitCount.asStateFlow()
 
-    // --- NEW: State for the retrospective update prompt ---
     private val _retroUpdatePromptState = MutableStateFlow<RetroUpdatePromptState?>(null)
     val retroUpdatePromptState = _retroUpdatePromptState.asStateFlow()
 
@@ -209,14 +207,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+        // --- FIX: Remove alias application for the detail screen ---
+        // The detail screen must always show the raw data from the database,
+        // not the aliased version, to avoid confusion when editing.
         return transactionRepository.getTransactionDetailsById(id)
-            .combine(merchantAliases) { details, aliases ->
-                details?.let {
-                    val key = it.transaction.originalDescription ?: it.transaction.description
-                    val newDescription = aliases[key] ?: it.transaction.description
-                    it.copy(transaction = it.transaction.copy(description = newDescription))
-                }
-            }
     }
 
     fun loadVisitCount(originalDescription: String?, fallbackDescription: String) {
@@ -673,7 +667,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _validationError.value = null
     }
 
-    // --- NEW: Function to dismiss the retrospective update dialog ---
     fun dismissRetroUpdateDialog() {
         _retroUpdatePromptState.value = null
     }
