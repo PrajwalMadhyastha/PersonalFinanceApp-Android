@@ -11,7 +11,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -19,23 +21,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.AccountWithBalance
 import io.pm.finlight.BankLogoHelper
+import io.pm.finlight.BudgetWithSpending
+import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.ui.theme.AuroraPrimary
 import io.pm.finlight.ui.theme.GlassPanelBorder
 import io.pm.finlight.ui.theme.GlassPanelFill
 import io.pm.finlight.ui.theme.TextSecondary
 import java.text.NumberFormat
 import java.util.Locale
+import kotlin.math.min
 
 /**
  * A reusable composable that creates a "glassmorphism" effect panel.
@@ -319,6 +327,123 @@ private fun AccountItem(account: AccountWithBalance, navController: NavControlle
                     color = TextSecondary
                 )
             }
+        }
+    }
+}
+
+/**
+ * A dashboard card that displays radial gauges for individual category budgets.
+ *
+ * @param budgetStatus A list of budgets with their current spending.
+ * @param navController The NavController for navigation.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun BudgetWatchCard(
+    budgetStatus: List<BudgetWithSpending>,
+    navController: NavController
+) {
+    GlassPanel {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Budget Watch",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (budgetStatus.isEmpty()) {
+                Text(
+                    "No category-specific budgets set for this month.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    maxItemsInEachRow = 4
+                ) {
+                    budgetStatus.forEach { budget ->
+                        CategoryBudgetGauge(budget = budget, navController = navController)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A radial gauge for displaying the status of a single category budget.
+ *
+ * @param budget The budget data with spending information.
+ * @param navController The NavController for navigation.
+ */
+@Composable
+private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavController) {
+    val progress = if (budget.budget.amount > 0) (budget.spent / budget.budget.amount).toFloat() else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(1500),
+        label = "CategoryBudgetGaugeAnimation"
+    )
+    val remaining = budget.budget.amount - budget.spent
+
+    val progressBrush = Brush.sweepGradient(
+        colors = listOf(
+            AuroraPrimary.copy(alpha = 0.5f),
+            AuroraPrimary
+        )
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.clickable { navController.navigate("budget_screen") }
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 8.dp.toPx()
+                val diameter = min(size.width, size.height) - strokeWidth
+                drawArc(
+                    color = Color.White.copy(alpha = 0.1f),
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth)
+                )
+                drawArc(
+                    brush = progressBrush,
+                    startAngle = -90f,
+                    sweepAngle = 360 * animatedProgress,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(budget.iconKey ?: "category"),
+                contentDescription = budget.budget.categoryName,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = budget.budget.categoryName,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remaining.toInt())} left",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
         }
     }
 }

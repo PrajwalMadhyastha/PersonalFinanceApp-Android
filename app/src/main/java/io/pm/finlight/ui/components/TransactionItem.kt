@@ -1,14 +1,7 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: UX IMPROVEMENT - Added logic to visually dim transactions that are
-// excluded from calculations. If `transaction.isExcluded` is true, a lower
-// alpha is applied to the category icon's background, the icon itself, and the
-// transaction amount text. This provides an immediate, at-a-glance indicator
-// of the transaction's status directly in the list view.
-// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
+import io.pm.finlight.ui.theme.TextSecondary
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -38,24 +32,26 @@ fun TransactionItem(
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
 ) {
-    // Determine the alpha based on the exclusion status for a dimmed effect
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
 
-    Card(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-        onClick = onClick,
+    // --- UPDATED: Replaced Card with GlassPanel ---
+    GlassPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(onClick = onClick)
     ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(
                         CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")
-                            .copy(alpha = contentAlpha) // Apply alpha to background
+                            .copy(alpha = contentAlpha)
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -64,13 +60,13 @@ fun TransactionItem(
                         text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
-                        color = Color.Black.copy(alpha = contentAlpha) // Apply alpha to text
+                        color = Color.Black.copy(alpha = contentAlpha)
                     )
                 } else {
                     Icon(
                         imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
                         contentDescription = transactionDetails.categoryName,
-                        tint = Color.Black.copy(alpha = contentAlpha), // Apply alpha to icon
+                        tint = Color.Black.copy(alpha = contentAlpha),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -81,31 +77,26 @@ fun TransactionItem(
                     text = transactionDetails.transaction.description,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
-                    color = LocalContentColor.current.copy(alpha = contentAlpha) // Apply alpha
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                 )
                 if (!transactionDetails.transaction.notes.isNullOrBlank()) {
                     Text(
                         text = transactionDetails.transaction.notes!!,
                         style = MaterialTheme.typography.bodyMedium,
                         fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha) // Apply alpha
+                        color = TextSecondary.copy(alpha = contentAlpha)
                     )
                 }
                 Text(
-                    text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = contentAlpha) // Apply alpha
-                )
-                Text(
                     text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha) // Apply alpha
+                    color = TextSecondary.copy(alpha = contentAlpha)
                 )
             }
 
             val isIncome = transactionDetails.transaction.transactionType == "income"
             val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
-            val amountColor = baseAmountColor.copy(alpha = contentAlpha) // Apply alpha
+            val amountColor = baseAmountColor.copy(alpha = contentAlpha)
             val icon = if (isIncome) Icons.Default.SouthWest else Icons.Default.NorthEast
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -129,7 +120,6 @@ fun TransactionItem(
 
 @Composable
 fun AccountTransactionItem(transactionDetails: TransactionDetails) {
-    // Determine the alpha based on the exclusion status for a dimmed effect
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
 
     Row(
@@ -143,17 +133,17 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
             Text(
                 text = transactionDetails.transaction.description,
                 style = MaterialTheme.typography.bodyLarge,
-                color = LocalContentColor.current.copy(alpha = contentAlpha) // Apply alpha
+                color = LocalContentColor.current.copy(alpha = contentAlpha)
             )
             Text(
                 text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha) // Apply alpha
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
             )
         }
         val isIncome = transactionDetails.transaction.transactionType == "income"
         val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
-        val amountColor = baseAmountColor.copy(alpha = contentAlpha) // Apply alpha
+        val amountColor = baseAmountColor.copy(alpha = contentAlpha)
 
         Text(
             text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",

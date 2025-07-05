@@ -105,7 +105,6 @@ fun DashboardScreen(
                     cardType = cardType,
                     navController = navController,
                     viewModel = viewModel,
-                    budgetViewModel = budgetViewModel,
                     isCustomizationMode = isCustomizationMode,
                     onHide = { viewModel.hideCard(cardType) }
                 )
@@ -119,7 +118,6 @@ private fun DashboardCard(
     cardType: DashboardCardType,
     navController: NavController,
     viewModel: DashboardViewModel,
-    budgetViewModel: BudgetViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit
 ) {
@@ -196,7 +194,6 @@ private fun DashboardCard(
             DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
             DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
                 budgetStatus = budgetStatus,
-                viewModel = budgetViewModel,
                 navController = navController,
             )
         }
