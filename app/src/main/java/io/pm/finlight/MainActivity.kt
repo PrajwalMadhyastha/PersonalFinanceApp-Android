@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - The main TopAppBar now supports dashboard customization mode.
-// It conditionally displays a "Done" button when `isCustomizationMode` is true,
-// which calls the ViewModel to save the new layout and exit the mode. The
-// search icon is hidden during customization to provide a focused editing UI.
+// REASON: UX REFINEMENT - The "Add Card" action has been moved from the FAB to
+// an IconButton in the TopAppBar, appearing next to the "Done" button during
+// customization mode. The main FAB is now hidden when customization mode is
+// active, eliminating the confusing dual-purpose "+" button.
 // =================================================================================
 package io.pm.finlight
 
@@ -237,7 +237,8 @@ fun MainAppScreen() {
         "account_list",
         "recurring_transactions"
     )
-    val showFab = baseCurrentRoute in fabRoutes
+    // --- UPDATED: Hide FAB in customization mode ---
+    val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
 
     val activity = LocalContext.current as AppCompatActivity
 
@@ -268,7 +269,11 @@ fun MainAppScreen() {
                         }
                     },
                     actions = {
+                        // --- UPDATED: Show different actions for customization mode ---
                         if (isCustomizationMode) {
+                            IconButton(onClick = { dashboardViewModel.onAddCardClick() }) {
+                                Icon(Icons.Default.Add, contentDescription = "Add Card")
+                            }
                             TextButton(onClick = { dashboardViewModel.exitCustomizationModeAndSave() }) {
                                 Text("Done")
                             }
@@ -344,7 +349,7 @@ fun MainAppScreen() {
                         }
                     }
                 }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add")
+                    Icon(Icons.Filled.Add, contentDescription = "Add Transaction or Account")
                 }
             }
         }

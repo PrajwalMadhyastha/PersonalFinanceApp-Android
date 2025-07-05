@@ -1,10 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FEATURE - The ViewModel now manages the dashboard customization mode.
-// It includes an `isCustomizationMode` StateFlow and functions to enter and exit
-// this mode (`enterCustomizationMode`, `exitCustomizationMode`). A new function,
-// `updateCardOrder`, handles the drag-and-drop logic and saves the new layout
-// to the SettingsRepository.
+// REASON: FEATURE - The ViewModel now fully manages card visibility. It maintains
+// a separate StateFlow for the visible card set, provides `hideCard` and
+// `showCard` functions to modify it, and exposes a `hiddenCards` flow for the
+// "Add Card" UI. The `exitCustomizationModeAndSave` function now saves both
+// the order and the visibility state.
 // =================================================================================
 package io.pm.finlight
 
@@ -45,11 +45,19 @@ class DashboardViewModel(
 
     val visibleCards: StateFlow<List<DashboardCardType>>
 
-    // --- NEW: State for customization mode ---
     private val _isCustomizationMode = MutableStateFlow(false)
     val isCustomizationMode: StateFlow<Boolean> = _isCustomizationMode.asStateFlow()
 
     private val _cardOrder = MutableStateFlow<List<DashboardCardType>>(emptyList())
+    private val _visibleCardsSet = MutableStateFlow<Set<DashboardCardType>>(emptySet())
+
+    // --- NEW: Expose hidden cards for the "Add Card" sheet ---
+    val hiddenCards: StateFlow<List<DashboardCardType>>
+
+    // --- NEW: State to control the "Add Card" bottom sheet ---
+    private val _showAddCardSheet = MutableStateFlow(false)
+    val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
+
 
     init {
         userName = settingsRepository.getUserName()
@@ -71,12 +79,24 @@ class DashboardViewModel(
                 _cardOrder.value = it
             }
         }
+        viewModelScope.launch {
+            settingsRepository.getDashboardVisibleCards().collect {
+                _visibleCardsSet.value = it
+            }
+        }
 
         visibleCards = combine(
             _cardOrder,
-            settingsRepository.getDashboardVisibleCards()
+            _visibleCardsSet
         ) { order, visible ->
             order.filter { it in visible }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        hiddenCards = combine(
+            _cardOrder,
+            _visibleCardsSet
+        ) { order, visible ->
+            order.filterNot { it in visible }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
 
@@ -165,16 +185,14 @@ class DashboardViewModel(
                 )
     }
 
-    // --- NEW: Functions for customization mode ---
     fun enterCustomizationMode() {
         _isCustomizationMode.value = true
     }
 
     fun exitCustomizationModeAndSave() {
         viewModelScope.launch {
-            val currentOrder = _cardOrder.value
-            val currentVisible = settingsRepository.getDashboardVisibleCards().stateIn(viewModelScope).value
-            settingsRepository.saveDashboardLayout(currentOrder, currentVisible)
+            // --- UPDATED: Save both order and visibility ---
+            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
             _isCustomizationMode.value = false
         }
     }
@@ -185,5 +203,22 @@ class DashboardViewModel(
                 add(to, removeAt(from))
             }
         }
+    }
+
+    // --- NEW: Functions to manage card visibility ---
+    fun hideCard(cardType: DashboardCardType) {
+        _visibleCardsSet.update { it - cardType }
+    }
+
+    fun showCard(cardType: DashboardCardType) {
+        _visibleCardsSet.update { it + cardType }
+    }
+
+    fun onAddCardClick() {
+        _showAddCardSheet.value = true
+    }
+
+    fun onAddCardSheetDismiss() {
+        _showAddCardSheet.value = false
     }
 }

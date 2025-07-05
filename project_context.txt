@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jul  5 18:33:04 IST 2025
+Generated on: Sat Jul  5 23:13:46 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -1109,11 +1109,11 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: BUG FIX - The `findTransactionDetailsById` function no longer applies
-// the merchant alias map. The detail/edit screen must always show the true,
-// un-aliased data from the database. This prevents a bug where a global rename
-// rule would override a manual edit on this screen, making it appear as if the
-// save action had failed.
+// REASON: REFACTOR - State management for the filter bottom sheet has been added
+// here. A new `showFilterSheet` StateFlow and corresponding `onFilterClick` and
+// `onFilterSheetDismiss` functions allow the centralized TopAppBar in MainActivity
+// to control the visibility of the filter sheet, which is now part of the
+// TransactionListScreen.
 // =================================================================================
 package io.pm.finlight
 
@@ -1142,11 +1142,13 @@ data class TransactionFilterState(
     val category: Category? = null
 )
 
-data class RetroUpdatePromptState(
+data class RetroUpdateSheetState(
     val originalDescription: String,
     val newDescription: String? = null,
     val newCategoryId: Int? = null,
-    val similarCount: Int
+    val similarTransactions: List<Transaction> = emptyList(),
+    val selectedIds: Set<Int> = emptySet(),
+    val isLoading: Boolean = true
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -1170,6 +1172,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _filterState = MutableStateFlow(TransactionFilterState())
     val filterState: StateFlow<TransactionFilterState> = _filterState.asStateFlow()
+
+    private val _showFilterSheet = MutableStateFlow(false)
+    val showFilterSheet: StateFlow<Boolean> = _showFilterSheet.asStateFlow()
 
     private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
         _selectedMonth.combine(_filterState) { month, filters ->
@@ -1207,8 +1212,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _visitCount = MutableStateFlow(0)
     val visitCount: StateFlow<Int> = _visitCount.asStateFlow()
 
-    private val _retroUpdatePromptState = MutableStateFlow<RetroUpdatePromptState?>(null)
-    val retroUpdatePromptState = _retroUpdatePromptState.asStateFlow()
+    private val _retroUpdateSheetState = MutableStateFlow<RetroUpdateSheetState?>(null)
+    val retroUpdateSheetState = _retroUpdateSheetState.asStateFlow()
 
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
@@ -1316,9 +1321,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
-        // --- FIX: Remove alias application for the detail screen ---
-        // The detail screen must always show the raw data from the database,
-        // not the aliased version, to avoid confusion when editing.
         return transactionRepository.getTransactionDetailsById(id)
     }
 
@@ -1502,6 +1504,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _filterState.value = TransactionFilterState()
     }
 
+    fun onFilterClick() {
+        _showFilterSheet.value = true
+    }
+
+    fun onFilterSheetDismiss() {
+        _showFilterSheet.value = false
+    }
+
     fun setSelectedMonth(calendar: Calendar) {
         _selectedMonth.value = calendar
     }
@@ -1590,11 +1600,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
             val similar = transactionRepository.findSimilarTransactions(originalDescription, id)
             if (similar.isNotEmpty()) {
-                _retroUpdatePromptState.value = RetroUpdatePromptState(
+                _retroUpdateSheetState.value = RetroUpdateSheetState(
                     originalDescription = originalDescription,
                     newDescription = newDescription,
                     newCategoryId = null,
-                    similarCount = similar.size
+                    similarTransactions = similar,
+                    selectedIds = similar.map { it.id }.toSet(),
+                    isLoading = false
                 )
             }
         }
@@ -1629,11 +1641,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
         val similar = transactionRepository.findSimilarTransactions(originalDescription, id)
         if (similar.isNotEmpty()) {
-            _retroUpdatePromptState.value = RetroUpdatePromptState(
+            _retroUpdateSheetState.value = RetroUpdateSheetState(
                 originalDescription = originalDescription,
                 newDescription = null,
                 newCategoryId = categoryId,
-                similarCount = similar.size
+                similarTransactions = similar,
+                selectedIds = similar.map { it.id }.toSet(),
+                isLoading = false
             )
         }
     }
@@ -1776,8 +1790,46 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _validationError.value = null
     }
 
-    fun dismissRetroUpdateDialog() {
-        _retroUpdatePromptState.value = null
+    fun dismissRetroUpdateSheet() {
+        _retroUpdateSheetState.value = null
+    }
+
+    fun toggleRetroUpdateSelection(id: Int) {
+        _retroUpdateSheetState.update { currentState ->
+            currentState?.copy(
+                selectedIds = currentState.selectedIds.toMutableSet().apply {
+                    if (id in this) remove(id) else add(id)
+                }
+            )
+        }
+    }
+
+    fun toggleRetroUpdateSelectAll() {
+        _retroUpdateSheetState.update { currentState ->
+            currentState?.let {
+                if (it.selectedIds.size == it.similarTransactions.size) {
+                    it.copy(selectedIds = emptySet()) // Deselect all
+                } else {
+                    it.copy(selectedIds = it.similarTransactions.map { t -> t.id }.toSet()) // Select all
+                }
+            }
+        }
+    }
+
+    fun performBatchUpdate() {
+        viewModelScope.launch {
+            val state = _retroUpdateSheetState.value ?: return@launch
+            val idsToUpdate = state.selectedIds.toList()
+            if (idsToUpdate.isEmpty()) return@launch
+
+            state.newDescription?.let {
+                transactionRepository.updateDescriptionForIds(idsToUpdate, it)
+            }
+            state.newCategoryId?.let {
+                transactionRepository.updateCategoryForIds(idsToUpdate, it)
+            }
+            dismissRetroUpdateSheet()
+        }
     }
 }
 -e 
@@ -1996,6 +2048,31 @@ val screenTitles = mapOf(
     "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction",
     "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar"
 )
+-e 
+
+
+================== FILE: ./app/src/main/java/DashboardCardType.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DashboardCardType.kt
+// REASON: NEW FILE - This enum defines all the possible cards that can be
+// displayed on the dashboard. It provides a type-safe way to manage the layout
+// configuration, making it easy to reference and reorder the dashboard components.
+// =================================================================================
+package io.pm.finlight
+
+/**
+ * Represents the different types of cards that can be displayed on the dashboard.
+ * Used for managing customizable dashboard layouts.
+ */
+enum class DashboardCardType {
+    OVERALL_BUDGET,
+    MONTHLY_STATS,
+    QUICK_ACTIONS,
+    NET_WORTH,
+    RECENT_ACTIVITY,
+    ACCOUNTS_SUMMARY,
+    BUDGET_WATCH
+}
 -e 
 
 
@@ -2405,116 +2482,6 @@ interface RecurringTransactionDao {
 
     @Query("SELECT * FROM recurring_transactions WHERE id = :id")
     fun getById(id: Int): Flow<RecurringTransaction?>
-}
--e 
-
-
-================== FILE: ./app/src/main/java/RetrospectiveUpdateViewModel.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/RetrospectiveUpdateViewModel.kt
-// REASON: NEW FILE - This ViewModel supports the new Retrospective Update
-// screen. It takes details about a pending change (new description or category),
-// finds all similar transactions using the repository, manages the user's
-// selection of which transactions to update, and performs the final batch
-// update operation.
-// =================================================================================
-package io.pm.finlight
-
-import android.app.Application
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-
-class RetrospectiveUpdateViewModelFactory(
-    private val application: Application,
-    private val originalDescription: String,
-    private val transactionId: Int
-) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(RetrospectiveUpdateViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return RetrospectiveUpdateViewModel(application, originalDescription, transactionId) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
-    }
-}
-
-data class RetrospectiveUpdateUiState(
-    val similarTransactions: List<Transaction> = emptyList(),
-    val selectedIds: Set<Int> = emptySet(),
-    val isLoading: Boolean = true
-)
-
-class RetrospectiveUpdateViewModel(
-    application: Application,
-    private val originalDescription: String,
-    private val transactionId: Int
-) : ViewModel() {
-
-    private val transactionRepository: TransactionRepository = TransactionRepository(AppDatabase.getInstance(application).transactionDao())
-
-    private val _uiState = MutableStateFlow(RetrospectiveUpdateUiState())
-    val uiState = _uiState.asStateFlow()
-
-    init {
-        findSimilarTransactions()
-    }
-
-    private fun findSimilarTransactions() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            val similar = transactionRepository.findSimilarTransactions(originalDescription, transactionId)
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    similarTransactions = similar,
-                    selectedIds = similar.map { t -> t.id }.toSet() // Pre-select all
-                )
-            }
-        }
-    }
-
-    fun toggleSelection(id: Int) {
-        _uiState.update { currentState ->
-            val newSelectedIds = currentState.selectedIds.toMutableSet()
-            if (id in newSelectedIds) {
-                newSelectedIds.remove(id)
-            } else {
-                newSelectedIds.add(id)
-            }
-            currentState.copy(selectedIds = newSelectedIds)
-        }
-    }
-
-    fun toggleSelectAll() {
-        _uiState.update { currentState ->
-            if (currentState.selectedIds.size == currentState.similarTransactions.size) {
-                // If all are selected, deselect all
-                currentState.copy(selectedIds = emptySet())
-            } else {
-                // Otherwise, select all
-                currentState.copy(selectedIds = currentState.similarTransactions.map { it.id }.toSet())
-            }
-        }
-    }
-
-    fun performBatchUpdate(newDescription: String?, newCategoryId: Int?) {
-        viewModelScope.launch {
-            val idsToUpdate = _uiState.value.selectedIds.toList()
-            if (idsToUpdate.isEmpty()) return@launch
-
-            if (newDescription != null) {
-                transactionRepository.updateDescriptionForIds(idsToUpdate, newDescription)
-            }
-            if (newCategoryId != null) {
-                transactionRepository.updateCategoryForIds(idsToUpdate, newCategoryId)
-            }
-        }
-    }
 }
 -e 
 
@@ -3940,159 +3907,6 @@ fun EditCategoryDialog(
 -e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RetrospectiveUpdateScreen.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RetrospectiveUpdateScreen.kt
-// REASON: NEW FILE - This screen provides the UI for the Retrospective Update
-// feature. It displays a list of transactions similar to the one the user just
-// edited. Each item has a checkbox, allowing the user to select which
-// transactions should be included in the batch update. It includes "Select All"
-// functionality and a confirmation button to apply the changes.
-// =================================================================================
-package io.pm.finlight.ui.screens
-
-import android.app.Application
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
-import io.pm.finlight.RetrospectiveUpdateViewModel
-import io.pm.finlight.RetrospectiveUpdateViewModelFactory
-import io.pm.finlight.Transaction
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.*
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun RetrospectiveUpdateScreen(
-    navController: NavController,
-    transactionId: Int,
-    originalDescription: String,
-    newDescription: String?,
-    newCategoryId: Int?
-) {
-    val application = LocalContext.current.applicationContext as Application
-    val factory = RetrospectiveUpdateViewModelFactory(application, originalDescription, transactionId)
-    val viewModel: RetrospectiveUpdateViewModel = viewModel(factory = factory)
-    val uiState by viewModel.uiState.collectAsState()
-    val scope = rememberCoroutineScope()
-
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Update Similar Transactions") })
-        },
-        bottomBar = {
-            Surface(shadowElevation = 8.dp) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { navController.popBackStack() },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Cancel")
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                viewModel.performBatchUpdate(newDescription, newCategoryId)
-                                navController.popBackStack()
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        enabled = uiState.selectedIds.isNotEmpty()
-                    ) {
-                        Text("Update ${uiState.selectedIds.size} Items")
-                    }
-                }
-            }
-        }
-    ) { innerPadding ->
-        if (uiState.isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else if (uiState.similarTransactions.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                Text("No other similar transactions found.")
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    Column {
-                        Text("Found ${uiState.similarTransactions.size} similar transaction(s) for '${originalDescription}'.")
-                        Spacer(Modifier.height(8.dp))
-                        Text("Select which ones you'd like to update.")
-                        Spacer(Modifier.height(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            val allSelected = uiState.selectedIds.size == uiState.similarTransactions.size
-                            Checkbox(
-                                checked = allSelected,
-                                onCheckedChange = { viewModel.toggleSelectAll() }
-                            )
-                            Text(if (allSelected) "Deselect All" else "Select All")
-                        }
-                        HorizontalDivider()
-                    }
-                }
-                items(uiState.similarTransactions, key = { it.id }) { transaction ->
-                    SelectableTransactionItem(
-                        transaction = transaction,
-                        isSelected = transaction.id in uiState.selectedIds,
-                        onToggle = { viewModel.toggleSelection(transaction.id) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SelectableTransactionItem(
-    transaction: Transaction,
-    isSelected: Boolean,
-    onToggle: () -> Unit
-) {
-    val dateFormatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
-        Column(modifier = Modifier.weight(1f)) {
-            Text(transaction.description, fontWeight = FontWeight.SemiBold)
-            Text(dateFormatter.format(Date(transaction.date)), style = MaterialTheme.typography.bodySmall)
-        }
-        Text("₹${"%,.2f".format(transaction.amount)}")
-    }
-}
--e 
-
-
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt ==================
 package io.pm.finlight.ui.screens
 
@@ -5379,10 +5193,13 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>, timePeriod:
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: UX REFINEMENT - The "Expense"/"Income" switch has been moved from its
-// own separate card into the "Account" row within the DetailsCard. This provides
-// a more integrated and contextually relevant UI, consistent with the changes
-// made to the TransactionDetailScreen.
+// REASON: BUG FIX - The `Text` composable inside `AddCategoryPickerSheet` now
+// uses `maxLines = 1` and `overflow = TextOverflow.Ellipsis` to prevent long
+// category names from wrapping and breaking the grid layout.
+// BUG FIX - The `LaunchedEffect` that sets the default account is now keyed to
+// the `defaultAccount` state. This ensures the effect runs only after the
+// default account has been loaded from the database, fixing the bug where it
+// wasn't being selected on screen open.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -5420,6 +5237,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -5509,7 +5327,8 @@ fun AddTransactionScreen(
         viewModel.clearAddTransactionState()
     }
 
-    LaunchedEffect(defaultAccount, isCsvEdit) {
+    // --- BUG FIX: Key the effect on defaultAccount to ensure it runs after it's loaded ---
+    LaunchedEffect(defaultAccount) {
         if (!isCsvEdit && selectedAccount == null) {
             selectedAccount = defaultAccount
         }
@@ -6153,7 +5972,13 @@ private fun AddCategoryPickerSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     CategoryIcon(category, Modifier.size(48.dp))
-                    Text(category.name, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Text(
+                        category.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1, // --- BUG FIX: Prevent wrapping ---
+                        overflow = TextOverflow.Ellipsis // --- BUG FIX: Add ellipsis for overflow ---
+                    )
                 }
             }
             item {
@@ -6865,9 +6690,11 @@ private fun RuleSummaryItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: Integrated a TopAppBar with a filter icon that triggers a modal bottom
-// sheet, allowing users to apply filters to the transaction list.
-// BUG FIX: Corrected the invalid SimpleDateFormat pattern.
+// REASON: REFACTOR - The local `Scaffold` and `TopAppBar` have been removed.
+// The screen's header, title, and actions are now handled centrally by the
+// `TopAppBar` in `MainActivity`, creating a more consistent UI and simplifying
+// this screen's logic. The filter state is now collected from the ViewModel to
+// drive the bottom sheet.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -6929,88 +6756,56 @@ fun TransactionListScreen(
     val filterState by viewModel.filterState.collectAsState()
     val allAccounts by viewModel.allAccounts.collectAsState()
     val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
-    var showFilterSheet by remember { mutableStateOf(false) }
+    val showFilterSheet by viewModel.showFilterSheet.collectAsState()
 
-    val areFiltersActive by remember(filterState) {
-        derivedStateOf {
-            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Transactions") },
-                actions = {
-                    BadgedBox(
-                        badge = {
-                            if (areFiltersActive) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary)
-                                )
-                            }
-                        }
-                    ) {
-                        IconButton(onClick = { showFilterSheet = true }) {
-                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
-                        }
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+    // --- REMOVED: Scaffold and TopAppBar are now handled in MainActivity ---
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        MonthlySummaryHeader(
+            selectedMonth = selectedMonth,
+            monthlySummaries = monthlySummaries,
+            totalSpent = totalSpent,
+            totalIncome = totalIncome,
+            budget = budget,
+            onMonthSelected = { viewModel.setSelectedMonth(it) }
+        )
+        TabRow(
+            selectedTabIndex = pagerState.currentPage,
+            indicator = { tabPositions ->
+                TabRowDefaults.SecondaryIndicator(
+                    Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
+                )
+            }
         ) {
-            MonthlySummaryHeader(
-                selectedMonth = selectedMonth,
-                monthlySummaries = monthlySummaries,
-                totalSpent = totalSpent,
-                totalIncome = totalIncome,
-                budget = budget,
-                onMonthSelected = { viewModel.setSelectedMonth(it) }
-            )
-            TabRow(
-                selectedTabIndex = pagerState.currentPage,
-                indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
-                    )
-                }
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = pagerState.currentPage == index,
-                        onClick = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(index)
-                            }
-                        },
-                        text = { Text(title) }
-                    )
-                }
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = {
+                        scope.launch {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    },
+                    text = { Text(title) }
+                )
             }
+        }
 
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.weight(1f)
-            ) { page ->
-                when (page) {
-                    0 -> TransactionList(transactions = transactions, navController = navController)
-                    1 -> CategorySpendingScreen(spendingList = categorySpending)
-                    2 -> MerchantSpendingScreen(merchantList = merchantSpending)
-                }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f)
+        ) { page ->
+            when (page) {
+                0 -> TransactionList(transactions = transactions, navController = navController)
+                1 -> CategorySpendingScreen(spendingList = categorySpending)
+                2 -> MerchantSpendingScreen(merchantList = merchantSpending)
             }
         }
     }
+
 
     if (showFilterSheet) {
-        ModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
+        ModalBottomSheet(onDismissRequest = { viewModel.onFilterSheetDismiss() }) {
             FilterBottomSheet(
                 filterState = filterState,
                 accounts = allAccounts,
@@ -7034,7 +6829,6 @@ fun MonthlySummaryHeader(
     onMonthSelected: (Calendar) -> Unit
 ) {
     val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
-    // --- FIX: Corrected the date format pattern ---
     val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
     var showMonthScroller by remember { mutableStateOf(false) }
 
@@ -7221,10 +7015,10 @@ fun PlaceholderTabContent(title: String) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: BUG FIX - Corrected the navigation call for the "Fix Parsing" button.
-// The route is now constructed with a proper query parameter
-// (`?potentialTransactionJson=...`) to match the NavHost definition, resolving
-// the `IllegalArgumentException` crash.
+// REASON: BUG FIX - The `Text` composable inside `CategoryPickerSheet` now uses
+// `maxLines = 1` and `overflow = TextOverflow.Ellipsis` to prevent long
+// category names from wrapping and breaking the grid layout, ensuring a
+// consistent and clean appearance.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -7266,6 +7060,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -7309,6 +7105,7 @@ fun TransactionDetailScreen(
     navController: NavController,
     transactionId: Int,
     viewModel: TransactionViewModel = viewModel(),
+    accountViewModel: AccountViewModel = viewModel(),
     onSaveRenameRule: (originalName: String, newName: String) -> Unit
 ) {
     Log.d(TAG, "Composing TransactionDetailScreen for transactionId: $transactionId")
@@ -7345,7 +7142,7 @@ fun TransactionDetailScreen(
     val originalSms by viewModel.originalSmsText.collectAsState()
     val visitCount by viewModel.visitCount.collectAsState()
     val scope = rememberCoroutineScope()
-    val retroUpdatePromptState by viewModel.retroUpdatePromptState.collectAsState()
+    val retroUpdateSheetState by viewModel.retroUpdateSheetState.collectAsState()
 
 
     var showMenu by remember { mutableStateOf(false) }
@@ -7360,6 +7157,7 @@ fun TransactionDetailScreen(
 
     var showCreateAccountDialog by remember { mutableStateOf(false) }
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
+
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -7412,41 +7210,18 @@ fun TransactionDetailScreen(
                 viewModel.loadOriginalSms(details.transaction.sourceSmsId)
             }
 
-            retroUpdatePromptState?.let { promptState ->
-                AlertDialog(
-                    onDismissRequest = { viewModel.dismissRetroUpdateDialog() },
-                    title = { Text("Update Similar Transactions?") },
-                    text = {
-                        val changeType = if (promptState.newDescription != null) "description" else "category"
-                        Text("You've updated the $changeType for transactions named '${promptState.originalDescription}'. Apply this change to ${promptState.similarCount} other similar transaction(s)?")
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            val originalDescEncoded = URLEncoder.encode(promptState.originalDescription, "UTF-8")
-                            val newDescEncoded = promptState.newDescription?.let { URLEncoder.encode(it, "UTF-8") }
-                            val categoryId = promptState.newCategoryId ?: -1
-
-                            var route = "retrospective_update_screen/${details.transaction.id}/$originalDescEncoded"
-                            if (newDescEncoded != null) {
-                                route += "?newDescription=$newDescEncoded"
-                            }
-                            if (categoryId != -1) {
-                                val separator = if (route.contains("?")) "&" else "?"
-                                route += "${separator}newCategoryId=$categoryId"
-                            }
-
-                            navController.navigate(route)
-                            viewModel.dismissRetroUpdateDialog()
-                        }) {
-                            Text("Update Others")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { viewModel.dismissRetroUpdateDialog() }) {
-                            Text("Just This One")
-                        }
-                    }
-                )
+            if (retroUpdateSheetState != null) {
+                ModalBottomSheet(onDismissRequest = { viewModel.dismissRetroUpdateSheet() }) {
+                    RetrospectiveUpdateSheetContent(
+                        state = retroUpdateSheetState!!,
+                        onToggleSelection = viewModel::toggleRetroUpdateSelection,
+                        onToggleSelectAll = viewModel::toggleRetroUpdateSelectAll,
+                        onConfirm = {
+                            viewModel.performBatchUpdate()
+                        },
+                        onDismiss = { viewModel.dismissRetroUpdateSheet() }
+                    )
+                }
             }
 
             Scaffold(
@@ -7609,7 +7384,6 @@ fun TransactionDetailScreen(
                                             )
                                             val json = Gson().toJson(potentialTxn)
                                             val encodedJson = URLEncoder.encode(json, "UTF-8")
-                                            // --- FIX: Use query parameter format ---
                                             navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
                                         } else {
                                             Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
@@ -7671,6 +7445,7 @@ fun TransactionDetailScreen(
                             sheetContent = activeSheetContent!!,
                             details = details,
                             viewModel = viewModel,
+                            accountViewModel = accountViewModel,
                             onSaveRenameRule = onSaveRenameRule,
                             accounts = accounts,
                             categories = categories,
@@ -7800,6 +7575,7 @@ private fun TransactionEditSheetContent(
     sheetContent: SheetContent,
     details: TransactionDetails,
     viewModel: TransactionViewModel,
+    accountViewModel: AccountViewModel,
     onSaveRenameRule: (originalName: String, newName: String) -> Unit,
     accounts: List<Account>,
     categories: List<Category>,
@@ -7810,7 +7586,6 @@ private fun TransactionEditSheetContent(
     onAddNewCategory: () -> Unit
 ) {
     val transactionId = details.transaction.id
-    val scope = rememberCoroutineScope()
 
     when (sheetContent) {
         is SheetContent.Description -> {
@@ -7868,16 +7643,17 @@ private fun TransactionEditSheetContent(
             )
         }
         is SheetContent.Account -> {
-            PickerSheet(
+            AccountPickerSheet(
                 title = "Select Account",
+                currentAccountId = details.transaction.accountId,
                 items = accounts,
-                getItemName = { (it as Account).name },
                 onItemSelected = {
-                    viewModel.updateTransactionAccount(transactionId, (it as Account).id)
+                    viewModel.updateTransactionAccount(transactionId, it.id)
                     onDismiss()
                 },
                 onDismiss = onDismiss,
-                onAddNew = onAddNewAccount
+                onAddNew = onAddNewAccount,
+                accountViewModel = accountViewModel
             )
         }
         is SheetContent.Category -> {
@@ -7906,6 +7682,134 @@ private fun TransactionEditSheetContent(
             )
         }
     }
+}
+
+@Composable
+private fun AccountPickerSheet(
+    title: String,
+    currentAccountId: Int,
+    items: List<Account>,
+    onItemSelected: (Account) -> Unit,
+    onDismiss: () -> Unit,
+    onAddNew: () -> Unit,
+    accountViewModel: AccountViewModel
+) {
+    var editingAccount by remember { mutableStateOf<Account?>(null) }
+    var editingName by remember { mutableStateOf("") }
+
+    val currentAccount = items.find { it.id == currentAccountId }
+    val otherAccounts = items.filter { it.id != currentAccountId }
+
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+
+        currentAccount?.let { account ->
+            AccountPickerItem(
+                account = account,
+                isEditing = editingAccount?.id == account.id,
+                editingName = editingName,
+                onEditingNameChange = { editingName = it },
+                onEditClick = {
+                    editingAccount = account
+                    editingName = account.name
+                },
+                onSaveClick = {
+                    accountViewModel.renameAccount(account.id, editingName)
+                    editingAccount = null
+                },
+                onCancelClick = { editingAccount = null },
+                onSelectClick = { onItemSelected(account) },
+                isCurrent = true
+            )
+            HorizontalDivider()
+        }
+
+        LazyColumn {
+            items(otherAccounts) { account ->
+                AccountPickerItem(
+                    account = account,
+                    isEditing = editingAccount?.id == account.id,
+                    editingName = editingName,
+                    onEditingNameChange = { editingName = it },
+                    onEditClick = {
+                        editingAccount = account
+                        editingName = account.name
+                    },
+                    onSaveClick = {
+                        accountViewModel.renameAccount(account.id, editingName)
+                        editingAccount = null
+                    },
+                    onCancelClick = { editingAccount = null },
+                    onSelectClick = { onItemSelected(account) }
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("Create New Account") },
+                    leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New Account") },
+                    modifier = Modifier.clickable(onClick = onAddNew)
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun AccountPickerItem(
+    account: Account,
+    isEditing: Boolean,
+    editingName: String,
+    onEditingNameChange: (String) -> Unit,
+    onEditClick: () -> Unit,
+    onSaveClick: () -> Unit,
+    onCancelClick: () -> Unit,
+    onSelectClick: () -> Unit,
+    isCurrent: Boolean = false
+) {
+    val colors = if (isCurrent && !isEditing) {
+        ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    } else {
+        ListItemDefaults.colors()
+    }
+
+    ListItem(
+        colors = colors,
+        headlineContent = {
+            if (isEditing) {
+                OutlinedTextField(
+                    value = editingName,
+                    onValueChange = onEditingNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            } else {
+                Text(account.name, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal)
+            }
+        },
+        supportingContent = { if (isCurrent && !isEditing) Text("Currently Selected") },
+        modifier = Modifier.clickable(enabled = !isEditing, onClick = onSelectClick),
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isEditing) {
+                    IconButton(onClick = onSaveClick, enabled = editingName.isNotBlank()) {
+                        Icon(Icons.Default.Check, contentDescription = "Save Name")
+                    }
+                    IconButton(onClick = onCancelClick) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel Edit")
+                    }
+                } else {
+                    IconButton(onClick = onEditClick) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit Account Name")
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -7954,44 +7858,6 @@ private fun EditTextFieldSheet(
 }
 
 @Composable
-private fun <T> PickerSheet(
-    title: String,
-    items: List<T>,
-    getItemName: (T) -> String,
-    onItemSelected: (T) -> Unit,
-    onDismiss: () -> Unit,
-    onAddNew: (() -> Unit)? = null
-) {
-    Column(modifier = Modifier.navigationBarsPadding()) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(16.dp)
-        )
-        LazyColumn {
-            items(items) { item ->
-                ListItem(
-                    headlineContent = { Text(getItemName(item)) },
-                    modifier = Modifier.clickable {
-                        onItemSelected(item)
-                    }
-                )
-            }
-            if (onAddNew != null) {
-                item {
-                    ListItem(
-                        headlineContent = { Text("Create New") },
-                        leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New") },
-                        modifier = Modifier.clickable(onClick = onAddNew)
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
 private fun CategoryPickerSheet(
     title: String,
     items: List<Category>,
@@ -8023,7 +7889,13 @@ private fun CategoryPickerSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     CategoryIconDisplay(category)
-                    Text(category.name, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        category.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1, // --- BUG FIX: Prevent wrapping ---
+                        overflow = TextOverflow.Ellipsis // --- BUG FIX: Add ellipsis for overflow ---
+                    )
                 }
             }
             if (onAddNew != null) {
@@ -8188,38 +8060,32 @@ private fun TransactionHeaderCard(
                     )
             )
 
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 24.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = details.transaction.description,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White,
-                    modifier = Modifier.clickable(onClick = onDescriptionClick)
-                )
-                if (visitCount > 1) {
-                    AssistChip(
-                        onClick = { /* No action needed */ },
-                        label = { Text("$visitCount visits") },
-                        leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color.White.copy(alpha = 0.2f),
-                            labelColor = Color.White,
-                            leadingIconContentColor = Color.White
-                        )
+            if (visitCount > 1) {
+                AssistChip(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp),
+                    onClick = { /* No action needed */ },
+                    label = { Text("$visitCount visits") },
+                    leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = Color.White.copy(alpha = 0.2f),
+                        labelColor = Color.White,
+                        leadingIconContentColor = Color.White
                     )
-                }
+                )
             }
-
 
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Text(
+                    text = details.transaction.description,
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = Color.White,
+                    modifier = Modifier.clickable(onClick = onDescriptionClick).padding(bottom = 4.dp)
+                )
                 Text(
                     text = "₹${"%,.2f".format(details.transaction.amount)}",
                     fontSize = 48.sp,
@@ -8227,7 +8093,7 @@ private fun TransactionHeaderCard(
                     color = Color.White,
                     modifier = Modifier.clickable(onClick = onAmountClick)
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 ChipWithIcon(
                     text = details.categoryName ?: "Uncategorized",
                     icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
@@ -8272,6 +8138,7 @@ private fun TransactionHeaderCard(
         }
     }
 }
+
 
 @Composable
 private fun AccountCardWithSwitch(
@@ -8402,6 +8269,111 @@ fun InfoCard(
             }
             Icon(Icons.Default.Edit, contentDescription = "Edit")
         }
+    }
+}
+
+@Composable
+private fun RetrospectiveUpdateSheetContent(
+    state: RetroUpdateSheetState,
+    onToggleSelection: (Int) -> Unit,
+    onToggleSelectAll: () -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val changeType = if (state.newDescription != null) "description" else "category"
+
+    Column(
+        modifier = Modifier
+            .navigationBarsPadding()
+            .padding(16.dp)
+    ) {
+        Text(
+            "Update Similar Transactions",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Text(
+            "You've changed the $changeType for transactions like '${state.originalDescription}'. Apply this change to other similar transactions?",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        if (state.isLoading) {
+            Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val allSelected = state.selectedIds.size == state.similarTransactions.size
+                Checkbox(
+                    checked = allSelected,
+                    onCheckedChange = { onToggleSelectAll() }
+                )
+                Text(if (allSelected) "Deselect All" else "Select All")
+            }
+            HorizontalDivider()
+
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 250.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(state.similarTransactions, key = { it.id }) { transaction ->
+                    SelectableTransactionItem(
+                        transaction = transaction,
+                        isSelected = transaction.id in state.selectedIds,
+                        onToggle = { onToggleSelection(transaction.id) }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Just This One")
+            }
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier.weight(1f),
+                enabled = state.selectedIds.isNotEmpty()
+            ) {
+                Text("Update ${state.selectedIds.size} Items")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectableTransactionItem(
+    transaction: Transaction,
+    isSelected: Boolean,
+    onToggle: () -> Unit
+) {
+    val dateFormatter = remember { SimpleDateFormat("dd MMM, yy", Locale.getDefault()) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
+        Column(modifier = Modifier.weight(1f)) {
+            Text(transaction.description, fontWeight = FontWeight.SemiBold)
+            Text(dateFormatter.format(Date(transaction.date)), style = MaterialTheme.typography.bodySmall)
+        }
+        Text("₹${"%,.2f".format(transaction.amount)}")
     }
 }
 -e 
@@ -8687,90 +8659,163 @@ fun AccountDetailScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: Updated the onClick handler for the "Monthly Income" card to navigate
-// to the new, dedicated "income_screen".
+// REASON: FEATURE - The screen now fully supports dashboard customization. A
+// "hide" icon appears on cards in customization mode. An "Add Card" FAB is
+// shown, which triggers a ModalBottomSheet displaying hidden cards. Tapping a
+// hidden card adds it back to the dashboard, completing the hide/show workflow.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import coil.compose.AsyncImage
 import io.pm.finlight.BottomNavItem
 import io.pm.finlight.BudgetViewModel
+import io.pm.finlight.DashboardCardType
 import io.pm.finlight.DashboardViewModel
 import io.pm.finlight.DashboardViewModelFactory
-import io.pm.finlight.R
 import io.pm.finlight.ui.components.AccountSummaryCard
 import io.pm.finlight.ui.components.BudgetWatchCard
 import io.pm.finlight.ui.components.NetWorthCard
 import io.pm.finlight.ui.components.OverallBudgetCard
 import io.pm.finlight.ui.components.RecentActivityCard
 import io.pm.finlight.ui.components.StatCard
+import io.pm.finlight.ui.components.rememberDragDropState
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     navController: NavController,
     viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
     budgetViewModel: BudgetViewModel,
 ) {
-    val profilePictureUri by viewModel.profilePictureUri.collectAsState()
+    val visibleCards by viewModel.visibleCards.collectAsState()
+    val isCustomizationMode by viewModel.isCustomizationMode.collectAsState()
+    val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
+    val hiddenCards by viewModel.hiddenCards.collectAsState()
+
+    val coroutineScope = rememberCoroutineScope()
+    var overscrollJob by remember { mutableStateOf<Job?>(null) }
+    val dragDropState = rememberDragDropState(onMove = viewModel::updateCardOrder)
+
+    if (showAddCardSheet) {
+        ModalBottomSheet(onDismissRequest = { viewModel.onAddCardSheetDismiss() }) {
+            AddCardSheetContent(
+                hiddenCards = hiddenCards,
+                onAddCard = { cardType ->
+                    viewModel.showCard(cardType)
+                    viewModel.onAddCardSheetDismiss()
+                }
+            )
+        }
+    }
+
+    LazyColumn(
+        state = dragDropState.lazyListState,
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.pointerInput(Unit) {
+            detectDragGesturesAfterLongPress(
+                onDrag = { change, offset ->
+                    change.consume()
+                    dragDropState.onDrag(offset)
+
+                    if (overscrollJob?.isActive == true) return@detectDragGesturesAfterLongPress
+
+                    dragDropState
+                        .checkForOverScroll()
+                        .takeIf { it != 0f }
+                        ?.let {
+                            overscrollJob = coroutineScope.launch { dragDropState.lazyListState.scrollBy(it) }
+                        } ?: run { overscrollJob?.cancel() }
+                },
+                onDragStart = { offset ->
+                    viewModel.enterCustomizationMode()
+                    dragDropState.onDragStart(offset)
+                },
+                onDragEnd = { dragDropState.onDragEnd() },
+                onDragCancel = { dragDropState.onDragEnd() }
+            )
+        }
+    ) {
+        itemsIndexed(visibleCards, key = { _, item -> item.name }) { index, cardType ->
+            val displacementOffset = if (index == dragDropState.draggingItemIndex) {
+                dragDropState.draggingItemOffset
+            } else {
+                0f
+            }
+            Box(
+                modifier = Modifier
+                    .graphicsLayer { translationY = displacementOffset }
+            ) {
+                DashboardCard(
+                    cardType = cardType,
+                    navController = navController,
+                    viewModel = viewModel,
+                    budgetViewModel = budgetViewModel,
+                    isCustomizationMode = isCustomizationMode,
+                    onHide = { viewModel.hideCard(cardType) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardCard(
+    cardType: DashboardCardType,
+    navController: NavController,
+    viewModel: DashboardViewModel,
+    budgetViewModel: BudgetViewModel,
+    isCustomizationMode: Boolean,
+    onHide: () -> Unit
+) {
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
     val monthlyExpenses by viewModel.monthlyExpenses.collectAsState()
     val overallBudget by viewModel.overallMonthlyBudget.collectAsState()
-    val budgetStatus by viewModel.budgetStatus.collectAsState()
     val recentTransactions by viewModel.recentTransactions.collectAsState()
     val accountsSummary by viewModel.accountsSummary.collectAsState()
     val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
+    val budgetStatus by viewModel.budgetStatus.collectAsState()
 
-
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            OverallBudgetCard(
+    Box {
+        when (cardType) {
+            DashboardCardType.OVERALL_BUDGET -> OverallBudgetCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
                 navController = navController,
             )
-        }
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            DashboardCardType.MONTHLY_STATS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatCard(
                     label = "Monthly Income",
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
-                    // --- FIX: Navigate to the new income_screen ---
                     onClick = {
                         navController.navigate("income_screen")
                     }
@@ -8788,9 +8833,7 @@ fun DashboardScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
-        }
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            DashboardCardType.QUICK_ACTIONS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 FilledTonalButton(
                     onClick = {
                         navController.navigate(BottomNavItem.Reports.route) {
@@ -8820,16 +8863,57 @@ fun DashboardScreen(
                     Text("View Categories")
                 }
             }
-        }
-        item { NetWorthCard(netWorth) }
-        item { RecentActivityCard(recentTransactions, navController) }
-        item { AccountSummaryCard(accounts = accountsSummary, navController = navController) }
-        item {
-            BudgetWatchCard(
+            DashboardCardType.NET_WORTH -> NetWorthCard(netWorth)
+            DashboardCardType.RECENT_ACTIVITY -> RecentActivityCard(recentTransactions, navController)
+            DashboardCardType.ACCOUNTS_SUMMARY -> AccountSummaryCard(accounts = accountsSummary, navController = navController)
+            DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
                 budgetStatus = budgetStatus,
                 viewModel = budgetViewModel,
                 navController = navController,
             )
+        }
+        if (isCustomizationMode) {
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onHide, modifier = Modifier.size(36.dp).padding(4.dp)) {
+                    Icon(
+                        Icons.Default.RemoveCircleOutline,
+                        contentDescription = "Hide Card",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddCardSheetContent(
+    hiddenCards: List<DashboardCardType>,
+    onAddCard: (DashboardCardType) -> Unit
+) {
+    Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
+        Text("Add a Card to Your Dashboard", style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(16.dp))
+        if (hiddenCards.isEmpty()) {
+            Text("All available cards are already on your dashboard.")
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(hiddenCards) { cardType ->
+                    ListItem(
+                        headlineContent = { Text(cardType.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) },
+                        leadingContent = { Icon(Icons.Default.Add, contentDescription = null) },
+                        modifier = Modifier.clickable { onAddCard(cardType) }
+                    )
+                }
+            }
         }
     }
 }
@@ -10985,9 +11069,10 @@ private fun hasSmsPermission(context: Context): Boolean {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FEATURE - Added new cards for navigating to the generic
-// TimePeriodReportScreen with the appropriate TimePeriod enum (DAILY, WEEKLY,
-// MONTHLY), enabling the new reporting features.
+// REASON: REFACTOR - The local `Scaffold` and `TopAppBar` have been removed.
+// The screen's header and title are now handled centrally by the `TopAppBar` in
+// `MainActivity`, creating a more consistent UI and simplifying this screen's
+// logic.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -11024,7 +11109,6 @@ import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GroupedBarChart
 import com.github.mikephil.charting.charts.PieChart
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportsScreen(
     navController: NavController,
@@ -12534,6 +12618,99 @@ fun FilterBottomSheet(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt
+// REASON: NEW FILE - This file contains the state holder (`DragDropState`) and
+// the remember function (`rememberDragDropState`) required to implement
+// drag-and-drop functionality in a LazyColumn. It encapsulates the complex
+// logic of tracking item positions, offsets, and scroll state during a drag
+// operation, resolving the "Unresolved reference" errors in DashboardScreen.
+// =================================================================================
+package io.pm.finlight.ui.components
+
+import androidx.compose.foundation.lazy.LazyListItemInfo
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+
+@Composable
+fun rememberDragDropState(
+    lazyListState: LazyListState = rememberLazyListState(),
+    onMove: (Int, Int) -> Unit,
+): DragDropState {
+    return remember { DragDropState(lazyListState, onMove) }
+}
+
+class DragDropState(
+    val lazyListState: LazyListState,
+    private val onMove: (Int, Int) -> Unit
+) {
+    var draggingItemIndex by mutableIntStateOf(-1)
+    private var draggingItemInitialOffset by mutableIntStateOf(0)
+    var draggingItemOffset by mutableFloatStateOf(0f)
+
+    private val currentDraggingItemInfo: LazyListItemInfo?
+        get() = lazyListState.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == draggingItemIndex }
+
+    fun onDragStart(offset: Offset) {
+        lazyListState.layoutInfo.visibleItemsInfo
+            .firstOrNull { item -> offset.y.toInt() in item.offset..(item.offset + item.size) }
+            ?.also {
+                draggingItemIndex = it.index
+                draggingItemInitialOffset = it.offset
+            }
+    }
+
+    fun onDrag(offset: Offset) {
+        draggingItemOffset += offset.y
+        val draggingItem = currentDraggingItemInfo ?: return
+        val startOffset = draggingItem.offset + draggingItemOffset
+        val endOffset = startOffset + draggingItem.size
+        val middleOffset = startOffset + (endOffset - startOffset) / 2f
+
+        val targetItem = lazyListState.layoutInfo.visibleItemsInfo.find {
+            middleOffset.toInt() in it.offset..it.offsetEnd && draggingItem.index != it.index
+        }
+
+        if (targetItem != null) {
+            val targetIndex = targetItem.index
+            onMove.invoke(draggingItemIndex, targetIndex)
+            draggingItemIndex = targetIndex
+        }
+    }
+
+    fun onDragEnd() {
+        draggingItemIndex = -1
+        draggingItemOffset = 0f
+    }
+
+    fun checkForOverScroll(): Float {
+        val draggingItem = currentDraggingItemInfo ?: return 0f
+        val startOffset = draggingItem.offset + draggingItemOffset
+        val endOffset = startOffset + draggingItem.size
+
+        return when {
+            draggingItemOffset > 0 -> (endOffset - lazyListState.layoutInfo.viewportEndOffset + 50f).takeIf { it > 0 }
+            draggingItemOffset < 0 -> (startOffset - 50f).takeIf { it < 0 }
+            else -> 0f
+        } ?: 0f
+    }
+
+    private val LazyListItemInfo.offsetEnd: Int
+        get() = this.offset + this.size
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt ==================
 package io.pm.finlight.ui.theme
 
@@ -12769,10 +12946,10 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - The route for `rule_creation_screen` has been updated to
-// accept an optional `ruleId` argument. This allows the `ManageParseRulesScreen`
-// to navigate here for editing an existing rule, enabling the "Edit Rule"
-// feature flow.
+// REASON: UX REFINEMENT - The "Add Card" action has been moved from the FAB to
+// an IconButton in the TopAppBar, appearing next to the "Done" button during
+// customization mode. The main FAB is now hidden when customization mode is
+// active, eliminating the confusing dual-purpose "+" button.
 // =================================================================================
 package io.pm.finlight
 
@@ -12969,6 +13146,9 @@ fun MainAppScreen() {
 
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
+    val filterState by transactionViewModel.filterState.collectAsState()
+    val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
+
 
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
@@ -12981,14 +13161,21 @@ fun MainAppScreen() {
     val currentRoute = currentDestination?.route
     val baseCurrentRoute = currentRoute?.split("?")?.firstOrNull()?.split("/")?.firstOrNull()
 
+    val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
+    val showMainTopBar = baseCurrentRoute !in setOf(
+        "transaction_detail",
+        "income_screen",
+        "splash_screen",
+        "add_transaction",
+        "time_period_report_screen"
+    )
 
-    val currentTitle = if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
-        "Hi, $userName!"
+    val currentTitle = if (showBottomBar) {
+        if (isCustomizationMode) "Customize Dashboard" else "Hi, $userName!"
     } else {
         screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
     }
-
-    val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
+    val showProfileIcon = showBottomBar && !isCustomizationMode
 
     val fabRoutes = setOf(
         BottomNavItem.Dashboard.route,
@@ -12996,16 +13183,8 @@ fun MainAppScreen() {
         "account_list",
         "recurring_transactions"
     )
-    val showFab = baseCurrentRoute in fabRoutes
-
-    val showMainTopBar = baseCurrentRoute !in setOf(
-        "transaction_detail",
-        "transaction_list",
-        "income_screen",
-        "splash_screen",
-        "add_transaction",
-        "time_period_report_screen"
-    )
+    // --- UPDATED: Hide FAB in customization mode ---
+    val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
 
     val activity = LocalContext.current as AppCompatActivity
 
@@ -13015,7 +13194,7 @@ fun MainAppScreen() {
                 TopAppBar(
                     title = { Text(currentTitle) },
                     navigationIcon = {
-                        if (baseCurrentRoute == BottomNavItem.Dashboard.route) {
+                        if (showProfileIcon) {
                             AsyncImage(
                                 model = profilePictureUri,
                                 contentDescription = "User Profile Picture",
@@ -13036,9 +13215,44 @@ fun MainAppScreen() {
                         }
                     },
                     actions = {
-                        if (currentRoute == BottomNavItem.Dashboard.route) {
-                            IconButton(onClick = { navController.navigate("search_screen") }) {
-                                Icon(Icons.Default.Search, contentDescription = "Search")
+                        // --- UPDATED: Show different actions for customization mode ---
+                        if (isCustomizationMode) {
+                            IconButton(onClick = { dashboardViewModel.onAddCardClick() }) {
+                                Icon(Icons.Default.Add, contentDescription = "Add Card")
+                            }
+                            TextButton(onClick = { dashboardViewModel.exitCustomizationModeAndSave() }) {
+                                Text("Done")
+                            }
+                        } else {
+                            when (baseCurrentRoute) {
+                                BottomNavItem.Dashboard.route -> {
+                                    IconButton(onClick = { navController.navigate("search_screen") }) {
+                                        Icon(Icons.Default.Search, contentDescription = "Search")
+                                    }
+                                }
+                                BottomNavItem.Transactions.route -> {
+                                    val areFiltersActive by remember(filterState) {
+                                        derivedStateOf {
+                                            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+                                        }
+                                    }
+                                    BadgedBox(
+                                        badge = {
+                                            if (areFiltersActive) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(MaterialTheme.colorScheme.primary)
+                                                )
+                                            }
+                                        }
+                                    ) {
+                                        IconButton(onClick = { transactionViewModel.onFilterClick() }) {
+                                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -13081,7 +13295,7 @@ fun MainAppScreen() {
                         }
                     }
                 }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add")
+                    Icon(Icons.Filled.Add, contentDescription = "Add Transaction or Account")
                 }
             }
         }
@@ -13227,6 +13441,7 @@ fun AppNavHost(
                 navController = navController,
                 transactionId = transactionId,
                 viewModel = transactionViewModel,
+                accountViewModel = accountViewModel,
                 onSaveRenameRule = { original, new ->
                     settingsViewModel.saveMerchantRenameRule(original, new)
                 }
@@ -13298,29 +13513,6 @@ fun AppNavHost(
         ) { backStackEntry ->
             val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod") as TimePeriod
             TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
-        }
-
-        composable(
-            "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}",
-            arguments = listOf(
-                navArgument("transactionId") { type = NavType.IntType },
-                navArgument("originalDescription") { type = NavType.StringType },
-                navArgument("newDescription") { type = NavType.StringType; nullable = true },
-                navArgument("newCategoryId") { type = NavType.IntType; defaultValue = -1 }
-            )
-        ) { backStackEntry ->
-            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
-            val originalDescription = backStackEntry.arguments!!.getString("originalDescription")!!
-            val newDescription = backStackEntry.arguments!!.getString("newDescription")
-            val newCategoryId = backStackEntry.arguments!!.getInt("newCategoryId").let { if (it == -1) null else it }
-
-            RetrospectiveUpdateScreen(
-                navController = navController,
-                transactionId = transactionId,
-                originalDescription = URLDecoder.decode(originalDescription, "UTF-8"),
-                newDescription = newDescription?.let { URLDecoder.decode(it, "UTF-8") },
-                newCategoryId = newCategoryId
-            )
         }
     }
 }
@@ -14233,10 +14425,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 21. A new
-// migration, MIGRATION_20_21, has been added to introduce the `sourceSmsBody`
-// column to the `custom_sms_rules` table, supporting the upcoming "Edit Rule"
-// feature.
+// REASON: FEATURE - The database version has been incremented to 22. A new
+// migration, MIGRATION_21_22, has been added to insert the new default
+// categories (Bike, Car, Debt, etc.) for existing users, ensuring they receive
+// the updated category list without a fresh install.
 // =================================================================================
 package io.pm.finlight
 
@@ -14268,7 +14460,7 @@ import java.util.Calendar
         MerchantCategoryMapping::class,
         IgnoreRule::class
     ],
-    version = 21,
+    version = 22, // --- UPDATED: Incremented version number ---
     exportSchema = true,
 )
 abstract open class AppDatabase : RoomDatabase() {
@@ -14440,10 +14632,26 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the sourceSmsBody column ---
         val MIGRATION_20_21 = object : Migration(20, 21) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `sourceSmsBody` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        // --- NEW: Migration to add the new default categories ---
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (16, 'Bike', 'two_wheeler', 'red_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (17, 'Car', 'directions_car', 'blue_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (18, 'Debt', 'credit_score', 'brown_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (19, 'Family', 'people', 'pink_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (20, 'Friends', 'group', 'cyan_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (21, 'Gift', 'card_giftcard', 'purple_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (22, 'Fitness', 'fitness_center', 'green_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (23, 'Home Maintenance', 'home', 'teal_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (24, 'Insurance', 'shield', 'indigo_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (25, 'Learning & Education', 'school', 'orange_light')")
+                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (26, 'Rent', 'house', 'deep_purple_light')")
             }
         }
 
@@ -14452,7 +14660,7 @@ abstract open class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -14789,15 +14997,18 @@ data class AppDataBackup(
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: FEATURE - Added the `isUnknownTransactionPopupEnabledBlocking()`
-// function. This provides a synchronous way to read the preference, which is
-// necessary for the `SmsReceiver` as it operates in a context where collecting
-// a Flow is not practical.
+// REASON: FEATURE - New functions (`saveDashboardLayout`, `getDashboardCardOrder`,
+// `getDashboardVisibleCards`) have been added to manage the user's custom
+// dashboard layout. These functions handle the serialization and deserialization
+// of the card order and visibility settings into SharedPreferences, providing
+// the persistence layer for the customizable dashboard.
 // =================================================================================
 package io.pm.finlight
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -14807,6 +15018,7 @@ class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+    private val gson = Gson()
 
     companion object {
         private const val PREF_NAME = "finance_app_settings"
@@ -14829,7 +15041,80 @@ class SettingsRepository(context: Context) {
         private const val KEY_MONTHLY_REPORT_HOUR = "monthly_report_hour"
         private const val KEY_MONTHLY_REPORT_MINUTE = "monthly_report_minute"
         private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
+        // --- NEW: Keys for dashboard layout ---
+        private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
+        private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
     }
+
+    // --- NEW: Functions to save and load dashboard layout ---
+
+    fun saveDashboardLayout(order: List<DashboardCardType>, visible: Set<DashboardCardType>) {
+        val orderJson = gson.toJson(order.map { it.name })
+        val visibleJson = gson.toJson(visible.map { it.name })
+        prefs.edit()
+            .putString(KEY_DASHBOARD_CARD_ORDER, orderJson)
+            .putString(KEY_DASHBOARD_VISIBLE_CARDS, visibleJson)
+            .apply()
+    }
+
+    fun getDashboardCardOrder(): Flow<List<DashboardCardType>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_DASHBOARD_CARD_ORDER) {
+                    trySend(loadCardOrder(sp))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(loadCardOrder(prefs))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    fun getDashboardVisibleCards(): Flow<Set<DashboardCardType>> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_DASHBOARD_VISIBLE_CARDS) {
+                    trySend(loadVisibleCards(sp))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(loadVisibleCards(prefs))
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    private fun loadCardOrder(sp: SharedPreferences): List<DashboardCardType> {
+        val json = sp.getString(KEY_DASHBOARD_CARD_ORDER, null)
+        return if (json != null) {
+            val type = object : TypeToken<List<String>>() {}.type
+            val names: List<String> = gson.fromJson(json, type)
+            names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
+        } else {
+            // Default order
+            listOf(
+                DashboardCardType.OVERALL_BUDGET,
+                DashboardCardType.MONTHLY_STATS,
+                DashboardCardType.QUICK_ACTIONS,
+                DashboardCardType.NET_WORTH,
+                DashboardCardType.RECENT_ACTIVITY,
+                DashboardCardType.ACCOUNTS_SUMMARY,
+                DashboardCardType.BUDGET_WATCH
+            )
+        }
+    }
+
+    private fun loadVisibleCards(sp: SharedPreferences): Set<DashboardCardType> {
+        val json = sp.getString(KEY_DASHBOARD_VISIBLE_CARDS, null)
+        return if (json != null) {
+            val type = object : TypeToken<Set<String>>() {}.type
+            val names: Set<String> = gson.fromJson(json, type)
+            names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }.toSet()
+        } else {
+            // Default visibility (all cards)
+            DashboardCardType.values().toSet()
+        }
+    }
+
 
     fun saveBackupEnabled(isEnabled: Boolean) {
         prefs.edit().putBoolean(KEY_BACKUP_ENABLED, isEnabled).apply()
@@ -15036,7 +15321,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // --- NEW: Blocking getter for use in BroadcastReceiver ---
     fun isUnknownTransactionPopupEnabledBlocking(): Boolean {
         return prefs.getBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, true)
     }
@@ -15789,6 +16073,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -15804,17 +16089,15 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
         repository = AccountRepository(db.accountDao())
         transactionRepository = TransactionRepository(db.transactionDao())
 
-        // --- CORRECTED: Directly use the powerful query from the DAO via the repository ---
-        // This is much more efficient than using 'combine' and calculating in the ViewModel.
         accountsWithBalance = repository.accountsWithBalance
     }
 
     fun getAccountById(accountId: Int): Flow<Account?> = repository.getAccountById(accountId)
 
-    // --- CORRECTED: The balance calculation now correctly uses the transactionType ---
-    // Helper function to calculate a single account's balance for the detail view
+    // --- FIX: Corrected the balance calculation logic ---
+    // The `map` operator receives a `List<Transaction>`, so `it` inside `sumOf` is a
+    // Transaction object. The properties should be accessed directly on `it`.
     fun getAccountBalance(accountId: Int): Flow<Double> {
-        // This leverages the existing getTransactionsForAccount and then sums the amounts correctly.
         return transactionRepository.getTransactionsForAccount(accountId).map { transactions ->
             transactions.sumOf { if (it.transactionType == "income") it.amount else -it.amount }
         }
@@ -15822,18 +16105,14 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
 
     // Pass through for the detail screen to get full transaction details
     fun getTransactionsForAccount(accountId: Int): Flow<List<TransactionDetails>> {
-        // NOTE: You'll need to add getTransactionsForAccountDetails to your TransactionRepository
-        // that calls the corresponding DAO method.
         return transactionRepository.getTransactionsForAccountDetails(accountId)
     }
 
-    // --- CORRECTED: The Account object no longer has a 'balance' parameter in its constructor ---
     fun addAccount(
         name: String,
         type: String,
     ) = viewModelScope.launch {
         if (name.isNotBlank() && type.isNotBlank()) {
-            // Create the Account object without a balance.
             repository.insert(Account(name = name, type = type))
         }
     }
@@ -15842,6 +16121,17 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.update(account)
         }
+
+    fun renameAccount(accountId: Int, newName: String) {
+        if (newName.isBlank()) return
+        viewModelScope.launch {
+            val accountToUpdate = repository.getAccountById(accountId).firstOrNull()
+            accountToUpdate?.let {
+                updateAccount(it.copy(name = newName))
+            }
+        }
+    }
+
 
     fun deleteAccount(account: Account) =
         viewModelScope.launch {
@@ -16476,23 +16766,22 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
 ================== FILE: ./app/src/main/java/CategoryIconHelper.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CategoryIconHelper.kt
-// REASON: Added new predefined categories for income ("Refund", "Credit") and
-// updated the "Salary" category's icon. Also added the new icons to the
-// helper maps.
-// BUG FIX: Replaced the 'Replay' icon with 'Redo' to resolve compilation errors.
-// FEATURE - Added the new `getCategoryBackground` function and a corresponding
-// map to associate category keys with drawable resources for background images,
-// enhancing the visual appeal of the transaction detail screen.
+// REASON: FEATURE - A new, more comprehensive set of default categories has been
+// added to the `predefinedCategories` list. The helper maps have also been
+// updated with the corresponding new icons and background drawable mappings to
+// support this expanded default set.
 // =================================================================================
 package io.pm.finlight
 
 import androidx.annotation.DrawableRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import io.pm.finlight.R
 
 /**
  * A helper object to manage category icons and colors, and provide a predefined list of categories.
@@ -16515,8 +16804,6 @@ object CategoryIconHelper {
         "gray_light" to Color(0xFFE0E0E0),
     )
 
-    // --- NEW: Map category keys to background drawable resources ---
-    // NOTE: Replace these placeholders with your actual drawable resource IDs.
     private val categoryBackgrounds = mapOf(
         "receipt_long" to R.drawable.bg_cat_bills,
         "trending_up" to R.drawable.bg_cat_investment,
@@ -16533,6 +16820,19 @@ object CategoryIconHelper {
         "redo" to R.drawable.bg_cat_refund,
         "add_card" to R.drawable.bg_cat_card,
         "more_horiz" to R.drawable.bg_cat_general,
+        "schedule" to R.drawable.bg_cat_emi,
+        // --- NEW: Mappings for new default categories ---
+        "two_wheeler" to R.drawable.bg_cat_bike,
+        "directions_car" to R.drawable.bg_cat_car,
+        "credit_score" to R.drawable.bg_cat_debt,
+        "people" to R.drawable.bg_cat_family,
+        "group" to R.drawable.bg_cat_friends,
+        "card_giftcard" to R.drawable.bg_cat_gift,
+        "fitness_center" to R.drawable.bg_cat_fitness,
+        "home" to R.drawable.bg_cat_home,
+        "shield" to R.drawable.bg_cat_insurance,
+        "school" to R.drawable.bg_cat_learning,
+        "house" to R.drawable.bg_cat_rent,
         "default" to R.drawable.bg_cat_general
     )
 
@@ -16558,7 +16858,7 @@ object CategoryIconHelper {
 
     val predefinedCategories = listOf(
         Category(id = 1, name = "Bills", iconKey = "receipt_long", colorKey = "green_light"),
-        Category(id = 2, name = "EMI", iconKey = "trending_up", colorKey = "blue_light"),
+        Category(id = 2, name = "EMI", iconKey = "schedule", colorKey = "blue_light"),
         Category(id = 3, name = "Entertainment", iconKey = "star", colorKey = "purple_light"),
         Category(id = 4, name = "Food & Drinks", iconKey = "restaurant", colorKey = "orange_light"),
         Category(id = 5, name = "Fuel", iconKey = "local_gas_station", colorKey = "red_light"),
@@ -16572,6 +16872,18 @@ object CategoryIconHelper {
         Category(id = 13, name = "Other", iconKey = "more_horiz", colorKey = "gray_light"),
         Category(id = 14, name = "Refund", iconKey = "redo", colorKey = "green_light"),
         Category(id = 15, name = "Credit", iconKey = "add_card", colorKey = "blue_light"),
+        // --- NEW: Added new set of default categories ---
+        Category(id = 16, name = "Bike", iconKey = "two_wheeler", colorKey = "red_light"),
+        Category(id = 17, name = "Car", iconKey = "directions_car", colorKey = "blue_light"),
+        Category(id = 18, name = "Debt", iconKey = "credit_score", colorKey = "brown_light"),
+        Category(id = 19, name = "Family", iconKey = "people", colorKey = "pink_light"),
+        Category(id = 20, name = "Friends", iconKey = "group", colorKey = "cyan_light"),
+        Category(id = 21, name = "Gift", iconKey = "card_giftcard", colorKey = "purple_light"),
+        Category(id = 22, name = "Fitness", iconKey = "fitness_center", colorKey = "green_light"),
+        Category(id = 23, name = "Home Maintenance", iconKey = "home", colorKey = "teal_light"),
+        Category(id = 24, name = "Insurance", iconKey = "shield", colorKey = "indigo_light"),
+        Category(id = 25, name = "Learning & Education", iconKey = "school", colorKey = "orange_light"),
+        Category(id = 26, name = "Rent", iconKey = "house", colorKey = "deep_purple_light"),
     )
 
     fun getIcon(iconKey: String): ImageVector {
@@ -16597,6 +16909,16 @@ object CategoryIconHelper {
             "work" -> Icons.Default.Work
             "redo" -> Icons.Default.Redo
             "add_card" -> Icons.Default.AddCard
+            "schedule" -> Icons.Default.Schedule
+            // --- NEW: Mappings for new category icons ---
+            "two_wheeler" -> Icons.Default.TwoWheeler
+            "credit_score" -> Icons.Default.CreditScore
+            "people" -> Icons.Default.People
+            "group" -> Icons.Default.Group
+            "fitness_center" -> Icons.Default.FitnessCenter
+            "home" -> Icons.Default.Home
+            "shield" -> Icons.Default.Shield
+            "house" -> Icons.Default.House
             else -> Icons.Default.Category
         }
     }
@@ -16623,8 +16945,18 @@ object CategoryIconHelper {
             "directions_car" to Icons.Default.DirectionsCar,
             "category" to Icons.Default.Category,
             "work" to Icons.Default.Work,
-            "redo" to Icons.Default.Redo,
+            "redo" to Icons.AutoMirrored.Filled.Redo,
             "add_card" to Icons.Default.AddCard,
+            "schedule" to Icons.Default.Schedule,
+            // --- NEW: Mappings for new category icons ---
+            "two_wheeler" to Icons.Default.TwoWheeler,
+            "credit_score" to Icons.Default.CreditScore,
+            "people" to Icons.Default.People,
+            "group" to Icons.Default.Group,
+            "fitness_center" to Icons.Default.FitnessCenter,
+            "home" to Icons.Default.Home,
+            "shield" to Icons.Default.Shield,
+            "house" to Icons.Default.House,
         )
     }
 }
@@ -17910,24 +18242,28 @@ data class DailyTotal(
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FIX - Added a `!it.transaction.isExcluded` filter to the `map`
-// functions for `monthlyIncome` and `monthlyExpenses`. The underlying DAO query
-// was previously changed to fetch all transactions (including excluded ones) for
-// display purposes. This change ensures that when those transactions are used for
-// calculations in the ViewModel, the excluded ones are correctly ignored, fixing
-// the bug where they were being counted in the dashboard's budget card.
+// REASON: FEATURE - The ViewModel now fully manages card visibility. It maintains
+// a separate StateFlow for the visible card set, provides `hideCard` and
+// `showCard` functions to modify it, and exposes a `hiddenCards` flow for the
+// "Add Card" UI. The `exitCustomizationModeAndSave` function now saves both
+// the order and the visibility state.
 // =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Collections
 import java.util.Locale
 
 class DashboardViewModel(
@@ -17949,6 +18285,22 @@ class DashboardViewModel(
     val safeToSpendPerDay: StateFlow<Float>
     val accountsSummary: StateFlow<List<AccountWithBalance>>
 
+    val visibleCards: StateFlow<List<DashboardCardType>>
+
+    private val _isCustomizationMode = MutableStateFlow(false)
+    val isCustomizationMode: StateFlow<Boolean> = _isCustomizationMode.asStateFlow()
+
+    private val _cardOrder = MutableStateFlow<List<DashboardCardType>>(emptyList())
+    private val _visibleCardsSet = MutableStateFlow<Set<DashboardCardType>>(emptySet())
+
+    // --- NEW: Expose hidden cards for the "Add Card" sheet ---
+    val hiddenCards: StateFlow<List<DashboardCardType>>
+
+    // --- NEW: State to control the "Add Card" bottom sheet ---
+    private val _showAddCardSheet = MutableStateFlow(false)
+    val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
+
+
     init {
         userName = settingsRepository.getUserName()
             .stateIn(
@@ -17963,6 +18315,32 @@ class DashboardViewModel(
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = null
             )
+
+        viewModelScope.launch {
+            settingsRepository.getDashboardCardOrder().collect {
+                _cardOrder.value = it
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getDashboardVisibleCards().collect {
+                _visibleCardsSet.value = it
+            }
+        }
+
+        visibleCards = combine(
+            _cardOrder,
+            _visibleCardsSet
+        ) { order, visible ->
+            order.filter { it in visible }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        hiddenCards = combine(
+            _cardOrder,
+            _visibleCardsSet
+        ) { order, visible ->
+            order.filterNot { it in visible }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
 
         val calendar = Calendar.getInstance()
         val monthStart =
@@ -18047,6 +18425,43 @@ class DashboardViewModel(
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = emptyList(),
                 )
+    }
+
+    fun enterCustomizationMode() {
+        _isCustomizationMode.value = true
+    }
+
+    fun exitCustomizationModeAndSave() {
+        viewModelScope.launch {
+            // --- UPDATED: Save both order and visibility ---
+            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
+            _isCustomizationMode.value = false
+        }
+    }
+
+    fun updateCardOrder(from: Int, to: Int) {
+        _cardOrder.update { currentList ->
+            currentList.toMutableList().apply {
+                add(to, removeAt(from))
+            }
+        }
+    }
+
+    // --- NEW: Functions to manage card visibility ---
+    fun hideCard(cardType: DashboardCardType) {
+        _visibleCardsSet.update { it - cardType }
+    }
+
+    fun showCard(cardType: DashboardCardType) {
+        _visibleCardsSet.update { it + cardType }
+    }
+
+    fun onAddCardClick() {
+        _showAddCardSheet.value = true
+    }
+
+    fun onAddCardSheetDismiss() {
+        _showAddCardSheet.value = false
     }
 }
 -e 
