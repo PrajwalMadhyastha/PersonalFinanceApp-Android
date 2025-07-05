@@ -1,11 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE - Added new queries to support the "Retrospective Update"
-// feature. `findSimilarTransactions` fetches all transactions matching a
-// merchant description, excluding the one currently being edited.
-// `updateCategoryForIds` and `updateDescriptionForIds` are new batch update
-// functions that allow changing the category or description for multiple
-// transactions at once.
+// REASON: BUG FIX - The `getTransactionCountForMerchant` query has been updated
+// to check against both the `description` and the `originalDescription` fields.
+// This ensures that the visit count is accurate even after a merchant has been
+// renamed, as it correctly groups all related transactions under their
+// original merchant identity.
 // =================================================================================
 package io.pm.finlight
 
@@ -423,10 +422,13 @@ interface TransactionDao {
         transactionType: String
     ): List<Transaction>
 
-    @Query("SELECT COUNT(*) FROM transactions WHERE description = :description AND isExcluded = 0")
+    @Query("""
+        SELECT COUNT(*) FROM transactions
+        WHERE (:description = description OR :description = originalDescription)
+        AND isExcluded = 0
+    """)
     fun getTransactionCountForMerchant(description: String): Flow<Int>
 
-    // --- NEW: Query to find similar transactions for batch updates ---
     @Query("""
         SELECT * FROM transactions
         WHERE (description = :description OR originalDescription = :description)
@@ -435,11 +437,9 @@ interface TransactionDao {
     """)
     suspend fun findSimilarTransactions(description: String, excludeId: Int): List<Transaction>
 
-    // --- NEW: Query to batch update category ---
     @Query("UPDATE transactions SET categoryId = :categoryId WHERE id IN (:ids)")
     suspend fun updateCategoryForIds(ids: List<Int>, categoryId: Int)
 
-    // --- NEW: Query to batch update description ---
     @Query("UPDATE transactions SET description = :newDescription WHERE id IN (:ids)")
     suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String)
 }
