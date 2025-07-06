@@ -26,21 +26,25 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.*
 import io.pm.finlight.ui.theme.AuroraPrimary
+import io.pm.finlight.ui.theme.AuroraSecondary
 import io.pm.finlight.ui.theme.GlassPanelBorder
 import io.pm.finlight.ui.theme.GlassPanelFill
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * A reusable composable that creates a "glassmorphism" effect panel.
@@ -116,24 +120,22 @@ fun DashboardHeroCard(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(24.dp) // Increase space between elements
     ) {
-        // --- UPDATED: Larger, bolder title ---
         Text(
             text = "Monthly Budget",
-            style = MaterialTheme.typography.headlineSmall, // Bigger style
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // --- UPDATED: Larger "Remaining" text ---
             Text(
                 text = "Remaining",
-                style = MaterialTheme.typography.titleLarge, // Bigger style
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedRemainingAmount.toInt())}",
-                style = MaterialTheme.typography.displayMedium, // Much bigger style
+                style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -141,22 +143,22 @@ fun DashboardHeroCard(
 
         Column(
             modifier = Modifier.padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp) // Space between bar and text
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // --- UPDATED: Pass progress to the enhanced progress bar ---
             AuroraProgressBar(progress = animatedProgress)
-            // --- UPDATED: Better layout for Spent/Total text ---
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
-                    style = MaterialTheme.typography.bodyMedium, // Larger, more legible
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = "Total: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(totalBudget.toInt())}",
-                    style = MaterialTheme.typography.bodyMedium, // Larger, more legible
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -164,7 +166,6 @@ fun DashboardHeroCard(
 
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
-        // --- NEW: Merged stats section ---
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -224,56 +225,78 @@ private fun StatItem(label: String, amount: Float, isCurrency: Boolean = true, i
 
 
 /**
- * A custom styled LinearProgressIndicator with a gradient progress and decorative track.
+ * A custom styled Progress Bar that includes a percentage indicator.
  *
  * @param progress The progress to display, from 0.0 to 1.0.
  */
 @Composable
 private fun AuroraProgressBar(progress: Float) {
-    val barHeight = 16.dp
-    val trackColor = Color.White.copy(alpha = 0.1f)
-    val progressBrush = Brush.horizontalGradient(
-        colors = listOf(
-            AuroraPrimary.copy(alpha = 0.6f),
-            AuroraPrimary
-        )
-    )
+    val animatedPercentage = (progress * 100).roundToInt()
+    val progressColor = when {
+        progress > 0.9 -> MaterialTheme.colorScheme.error
+        progress > 0.7 -> AuroraSecondary
+        else -> AuroraPrimary
+    }
 
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(barHeight)
-    ) {
-        // Draw the track
-        drawLine(
-            color = trackColor,
-            start = Offset(0f, size.height / 2),
-            end = Offset(size.width, size.height / 2),
-            strokeWidth = barHeight.toPx(),
-            cap = StrokeCap.Round
-        )
-
-        // Draw the progress
-        if (progress > 0) {
-            drawLine(
-                brush = progressBrush,
-                start = Offset(0f, size.height / 2),
-                end = Offset(size.width * progress, size.height / 2),
-                strokeWidth = barHeight.toPx(),
-                cap = StrokeCap.Round
+    // Use a custom Layout to position the percentage text relative to the progress bar fill
+    Layout(
+        content = {
+            // Content for the layout: the percentage text
+            Text(
+                text = "$animatedPercentage%",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.labelSmall
             )
+            // The Canvas for drawing the bar
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(20.dp) // Made the bar thicker
+            ) {
+                // Draw the track with a subtle 3D effect
+                drawRoundRect(
+                    color = Color.Black.copy(alpha = 0.2f),
+                    size = size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2),
+                    style = Stroke(width = 1.dp.toPx()),
+                    topLeft = Offset(0f, 1.dp.toPx())
+                )
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.1f),
+                    size = size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2)
+                )
+
+                // Draw the progress fill
+                if (progress > 0) {
+                    drawRoundRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(progressColor.copy(alpha = 0.6f), progressColor)
+                        ),
+                        size = Size(width = size.width * progress, height = size.height),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2)
+                    )
+                }
+            }
         }
+    ) { measurables, constraints ->
+        // This is the measurement and placement logic for the custom Layout
+        val textPlaceable = measurables[0].measure(Constraints())
+        val canvasPlaceable = measurables[1].measure(constraints)
 
-        // Draw decorative milestone markers on the track
-        val milestoneCount = 10
-        for (i in 1 until milestoneCount) {
-            val x = size.width * (i.toFloat() / milestoneCount)
-            drawLine(
-                color = Color.Black.copy(alpha = 0.2f),
-                start = Offset(x, size.height * 0.25f),
-                end = Offset(x, size.height * 0.75f),
-                strokeWidth = 1.dp.toPx()
-            )
+        val progressWidth = (canvasPlaceable.width * progress).toInt()
+        val textX = (progressWidth - textPlaceable.width / 2).coerceIn(
+            0,
+            canvasPlaceable.width - textPlaceable.width
+        )
+        val textY = (canvasPlaceable.height - textPlaceable.height) / 2
+
+        layout(canvasPlaceable.width, canvasPlaceable.height + textPlaceable.height + 4.dp.roundToPx()) {
+            // Place the Canvas (the progress bar)
+            canvasPlaceable.placeRelative(0, textPlaceable.height + 4.dp.roundToPx())
+            // Place the Text (the percentage) above the bar
+            textPlaceable.placeRelative(textX, 0)
         }
     }
 }
