@@ -72,7 +72,8 @@ import io.pm.finlight.ui.components.CreateAccountDialog
 import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TimePickerDialog
-import io.pm.finlight.ui.theme.GlassPanelFill
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLEncoder
@@ -211,7 +212,7 @@ fun TransactionDetailScreen(
             if (retroUpdateSheetState != null) {
                 ModalBottomSheet(
                     onDismissRequest = { viewModel.dismissRetroUpdateSheet() },
-                    containerColor = GlassPanelFill,
+                    containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
                     dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 ) {
                     RetrospectiveUpdateSheetContent(
@@ -391,7 +392,7 @@ fun TransactionDetailScreen(
                         ModalBottomSheet(
                             onDismissRequest = { activeSheetContent = null },
                             sheetState = sheetState,
-                            containerColor = GlassPanelFill,
+                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
                             dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         ) {
                             TransactionEditSheetContent(
@@ -472,7 +473,7 @@ fun TransactionDetailScreen(
                     if (showDeleteDialog) {
                         AlertDialog(
                             onDismissRequest = { showDeleteDialog = false },
-                            containerColor = GlassPanelFill,
+                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
                             title = { Text("Delete Transaction?", color = MaterialTheme.colorScheme.onSurface) },
                             text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             confirmButton = {
@@ -504,7 +505,7 @@ fun TransactionDetailScreen(
                     if (showImageDeleteDialog != null) {
                         AlertDialog(
                             onDismissRequest = { showImageDeleteDialog = null },
-                            containerColor = GlassPanelFill,
+                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
                             title = { Text("Delete Attachment?", color = MaterialTheme.colorScheme.onSurface) },
                             text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             confirmButton = {
@@ -890,9 +891,20 @@ private fun TransactionEditSheetContent(
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Checkbox(checked = saveForFuture, onCheckedChange = { saveForFuture = it })
+                    Checkbox(
+                        checked = saveForFuture,
+                        onCheckedChange = { saveForFuture = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            checkmarkColor = MaterialTheme.colorScheme.surface
+                        )
+                    )
                     Spacer(Modifier.width(8.dp))
-                    Text("Always rename '$originalNameForRule' to this")
+                    Text(
+                        text = "Always rename '$originalNameForRule' to this",
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }
@@ -1106,7 +1118,7 @@ private fun EditTextFieldSheet(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
@@ -1118,7 +1130,18 @@ private fun EditTextFieldSheet(
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("value_input")
+                .testTag("value_input"),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                cursorColor = MaterialTheme.colorScheme.primary
+            )
         )
         additionalContent?.invoke()
 
@@ -1366,12 +1389,14 @@ private fun RetrospectiveUpdateSheetContent(
         Text(
             "Update Similar Transactions",
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.padding(bottom = 8.dp),
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             "You've changed the $changeType for transactions like '${state.originalDescription}'. Apply this change to other similar transactions?",
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(bottom = 16.dp)
+            modifier = Modifier.padding(bottom = 16.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         if (state.isLoading) {
@@ -1390,11 +1415,19 @@ private fun RetrospectiveUpdateSheetContent(
                 val allSelected = state.selectedIds.size == state.similarTransactions.size
                 Checkbox(
                     checked = allSelected,
-                    onCheckedChange = { onToggleSelectAll() }
+                    onCheckedChange = { onToggleSelectAll() },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        checkmarkColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-                Text(if (allSelected) "Deselect All" else "Select All")
+                Text(
+                    text = if (allSelected) "Deselect All" else "Select All",
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
             LazyColumn(
                 modifier = Modifier.heightIn(max = 250.dp),
@@ -1448,11 +1481,30 @@ private fun SelectableTransactionItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
+        Checkbox(
+            checked = isSelected,
+            onCheckedChange = { onToggle() },
+            colors = CheckboxDefaults.colors(
+                checkedColor = MaterialTheme.colorScheme.primary,
+                uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                checkmarkColor = MaterialTheme.colorScheme.surface
+            )
+        )
         Column(modifier = Modifier.weight(1f)) {
-            Text(transaction.description, fontWeight = FontWeight.SemiBold)
-            Text(dateFormatter.format(Date(transaction.date)), style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = transaction.description,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = dateFormatter.format(Date(transaction.date)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        Text("₹${"%,.2f".format(transaction.amount)}")
+        Text(
+            text = "₹${"%,.2f".format(transaction.amount)}",
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }

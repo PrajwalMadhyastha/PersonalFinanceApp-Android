@@ -18,6 +18,10 @@ val AuroraBackground = Color(0xFF121212) // Very dark charcoal
 val GlassPanelFill = Color(0x1AFFFFFF) // White with 10% opacity
 val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
 
+// --- UPDATED: Opaque colors for popup surfaces, now at 60% opacity ---
+val PopupSurfaceDark = Color(0x99212125) // 60% opaque dark charcoal
+val PopupSurfaceLight = Color(0x99FFFFFF) // 60% opaque white
+
 // --- Text colors with better contrast ---
 val TextPrimaryDark = Color(0xFFE6E1E5) // Primary text for Dark Theme (Bright off-white)
 val TextSecondaryDark = Color(0xFFC4C7C5) // Secondary text for Dark Theme (Brighter gray)
