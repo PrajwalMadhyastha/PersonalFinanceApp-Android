@@ -367,7 +367,6 @@ private fun AccountItem(account: AccountWithBalance, navController: NavControlle
  * @param budgetStatus A list of budgets with their current spending.
  * @param navController The NavController for navigation.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BudgetWatchCard(
     budgetStatus: List<BudgetWithSpending>,
@@ -393,13 +392,13 @@ fun BudgetWatchCard(
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
             } else {
-                FlowRow(
+                // --- UPDATED: Changed from FlowRow to LazyRow for horizontal scrolling ---
+                LazyRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
-                    maxItemsInEachRow = 4
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
-                    budgetStatus.forEach { budget ->
+                    items(budgetStatus) { budget ->
                         CategoryBudgetGauge(budget = budget, navController = navController)
                     }
                 }
@@ -434,7 +433,9 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.clickable { navController.navigate("budget_screen") }
+        modifier = Modifier
+            .clickable { navController.navigate("budget_screen") }
+            .width(90.dp) // Give each item a fixed width
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -463,15 +464,17 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // --- UPDATED: Increased font size and fixed color for legibility ---
             Text(
                 text = budget.budget.categoryName,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge, // Increased from bodyMedium
+                color = MaterialTheme.colorScheme.onSurface, // Fixed color
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remaining.toInt())} left",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium, // Increased from bodySmall
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
