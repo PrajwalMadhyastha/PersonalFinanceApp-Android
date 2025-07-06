@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sun Jul  6 11:41:32 IST 2025
+Generated on: Sun Jul  6 15:30:03 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -2059,13 +2059,11 @@ package io.pm.finlight
  * Used for managing customizable dashboard layouts.
  */
 enum class DashboardCardType {
-    OVERALL_BUDGET,
-    // --- UPDATED: Replaced MONTHLY_STATS with QUICK_STATS ---
-    QUICK_STATS,
+    // --- UPDATED: Replaced OVERALL_BUDGET and QUICK_STATS with a single HERO_BUDGET ---
+    HERO_BUDGET,
     QUICK_ACTIONS,
     NET_WORTH,
     RECENT_ACTIVITY,
-    // --- UPDATED: Replaced ACCOUNTS_SUMMARY with ACCOUNTS_CAROUSEL ---
     ACCOUNTS_CAROUSEL,
     BUDGET_WATCH
 }
@@ -7026,6 +7024,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -7068,8 +7067,10 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.AuroraAnimatedBackground
 import io.pm.finlight.ui.components.CreateAccountDialog
 import io.pm.finlight.ui.components.CreateCategoryDialog
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TimePickerDialog
 import kotlinx.coroutines.launch
 import java.io.File
@@ -7220,346 +7221,353 @@ fun TransactionDetailScreen(
                 }
             }
 
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text(title) },
-                        navigationIcon = {
-                            IconButton(onClick = { navController.popBackStack() }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                            }
-                        },
-                        actions = {
-                            IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More options")
-                            }
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false }
+            Box(modifier = Modifier.fillMaxSize()) {
+                AuroraAnimatedBackground()
+                Scaffold(
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(title) },
+                            navigationIcon = {
+                                IconButton(onClick = { navController.popBackStack() }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                                }
+                            },
+                            actions = {
+                                IconButton(onClick = { showMenu = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                                }
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Delete") },
+                                        onClick = {
+                                            showMenu = false
+                                            showDeleteDialog = true
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete") }
+                                    )
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                        )
+                    },
+                    containerColor = Color.Transparent
+                ) { innerPadding ->
+                    LazyColumn(
+                        modifier = Modifier
+                            .padding(innerPadding)
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
+                    ) {
+                        item {
+                            TransactionHeaderCard(
+                                details = details,
+                                visitCount = visitCount,
+                                onDescriptionClick = { activeSheetContent = SheetContent.Description },
+                                onAmountClick = { activeSheetContent = SheetContent.Amount },
+                                onCategoryClick = { activeSheetContent = SheetContent.Category },
+                                onDateTimeClick = { showDatePicker = true }
+                            )
+                        }
+                        item {
+                            AccountCardWithSwitch(
+                                details = details,
+                                onAccountClick = { activeSheetContent = SheetContent.Account },
+                                onExcludeToggled = { isExcluded ->
+                                    viewModel.updateTransactionExclusion(details.transaction.id, isExcluded)
+                                }
+                            )
+                        }
+                        item {
+                            InfoCard(
+                                icon = Icons.AutoMirrored.Filled.Notes,
+                                label = "Notes",
+                                value = details.transaction.notes ?: "Tap to add",
+                                onClick = { activeSheetContent = SheetContent.Notes }
+                            )
+                        }
+                        item {
+                            GlassPanel(
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text("Delete") },
-                                    onClick = {
-                                        showMenu = false
-                                        showDeleteDialog = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete") }
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .clickable { activeSheetContent = SheetContent.Tags }
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        if (selectedTags.isEmpty()) {
+                                            Text("Tap to add tags", color = MaterialTheme.colorScheme.onSurface)
+                                        } else {
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                selectedTags.forEach { tag ->
+                                                    AssistChip(onClick = {}, label = { Text(tag.name) })
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Icon(Icons.Default.Add, contentDescription = "Add Tag")
+                                }
                             }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-                    )
-                },
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            ) { innerPadding ->
-                LazyColumn(
-                    modifier = Modifier
-                        .padding(innerPadding)
-                        .fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
-                ) {
-                    item {
-                        TransactionHeaderCard(
-                            details = details,
-                            visitCount = visitCount,
-                            onDescriptionClick = { activeSheetContent = SheetContent.Description },
-                            onAmountClick = { activeSheetContent = SheetContent.Amount },
-                            onCategoryClick = { activeSheetContent = SheetContent.Category },
-                            onDateTimeClick = { showDatePicker = true }
-                        )
-                    }
-                    item {
-                        AccountCardWithSwitch(
-                            details = details,
-                            onAccountClick = { activeSheetContent = SheetContent.Account },
-                            onExcludeToggled = { isExcluded ->
-                                viewModel.updateTransactionExclusion(details.transaction.id, isExcluded)
-                            }
-                        )
-                    }
-                    item {
-                        InfoCard(
-                            icon = Icons.AutoMirrored.Filled.Notes,
-                            label = "Notes",
-                            value = details.transaction.notes ?: "Tap to add",
-                            onClick = { activeSheetContent = SheetContent.Notes }
-                        )
-                    }
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            elevation = CardDefaults.cardElevation(2.dp),
-                            onClick = { activeSheetContent = SheetContent.Tags }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    if (selectedTags.isEmpty()) {
-                                        Text("Tap to add tags")
-                                    } else {
-                                        FlowRow(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            selectedTags.forEach { tag ->
-                                                AssistChip(onClick = {}, label = { Text(tag.name) })
+                        }
+
+                        item {
+                            InfoCard(
+                                icon = Icons.Default.Attachment,
+                                label = "Attachments",
+                                value = if (attachedImages.isEmpty()) "Tap to add a receipt or photo" else "${attachedImages.size} image(s) attached",
+                                onClick = { imagePickerLauncher.launch("image/*") }
+                            )
+                        }
+
+                        if (attachedImages.isNotEmpty()) {
+                            item {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(attachedImages) { image ->
+                                        Box {
+                                            AsyncImage(
+                                                model = File(image.imageUri),
+                                                contentDescription = "Transaction Attachment",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(80.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable { showImageViewer = File(image.imageUri).toUri() }
+                                            )
+                                            IconButton(
+                                                onClick = { showImageDeleteDialog = image },
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .padding(4.dp)
+                                                    .size(24.dp)
+                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Close,
+                                                    contentDescription = "Delete Attachment",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
                                             }
                                         }
                                     }
                                 }
-                                Icon(Icons.Default.Add, contentDescription = "Add Tag")
                             }
                         }
-                    }
 
-                    item {
-                        InfoCard(
-                            icon = Icons.Default.Attachment,
-                            label = "Attachments",
-                            value = if (attachedImages.isEmpty()) "Tap to add a receipt or photo" else "${attachedImages.size} image(s) attached",
-                            onClick = { imagePickerLauncher.launch("image/*") }
-                        )
-                    }
+                        if (details.transaction.sourceSmsId != null) {
+                            item {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
+                                            if (smsMessage != null) {
+                                                val potentialTxn = PotentialTransaction(
+                                                    sourceSmsId = smsMessage.id,
+                                                    smsSender = smsMessage.sender,
+                                                    amount = details.transaction.amount,
+                                                    transactionType = details.transaction.transactionType,
+                                                    merchantName = details.transaction.description,
+                                                    originalMessage = smsMessage.body,
+                                                    sourceSmsHash = details.transaction.sourceSmsHash
+                                                )
+                                                val json = Gson().toJson(potentialTxn)
+                                                val encodedJson = URLEncoder.encode(json, "UTF-8")
+                                                navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
+                                            } else {
+                                                Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.Build, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Fix Parsing")
+                                }
+                            }
+                        }
 
-                    if (attachedImages.isNotEmpty()) {
-                        item {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(attachedImages) { image ->
-                                    Box {
-                                        AsyncImage(
-                                            model = File(image.imageUri),
-                                            contentDescription = "Transaction Attachment",
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier
-                                                .size(80.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .clickable { showImageViewer = File(image.imageUri).toUri() }
-                                        )
-                                        IconButton(
-                                            onClick = { showImageDeleteDialog = image },
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(4.dp)
-                                                .size(24.dp)
-                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        if (!originalSms.isNullOrBlank()) {
+                            item {
+                                GlassPanel(
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(Modifier.padding(16.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp)
                                         ) {
                                             Icon(
-                                                Icons.Default.Close,
-                                                contentDescription = "Delete Attachment",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(16.dp)
+                                                Icons.Default.Message,
+                                                contentDescription = "Original SMS",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                "Original SMS Message",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
                                             )
                                         }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (details.transaction.sourceSmsId != null) {
-                        item {
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
-                                        if (smsMessage != null) {
-                                            val potentialTxn = PotentialTransaction(
-                                                sourceSmsId = smsMessage.id,
-                                                smsSender = smsMessage.sender,
-                                                amount = details.transaction.amount,
-                                                transactionType = details.transaction.transactionType,
-                                                merchantName = details.transaction.description,
-                                                originalMessage = smsMessage.body,
-                                                sourceSmsHash = details.transaction.sourceSmsHash
-                                            )
-                                            val json = Gson().toJson(potentialTxn)
-                                            val encodedJson = URLEncoder.encode(json, "UTF-8")
-                                            navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
-                                        } else {
-                                            Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Build, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Fix Parsing")
-                            }
-                        }
-                    }
-
-                    if (!originalSms.isNullOrBlank()) {
-                        item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                elevation = CardDefaults.cardElevation(2.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                            ) {
-                                Column(Modifier.padding(16.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Message,
-                                            contentDescription = "Original SMS",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        Spacer(Modifier.height(12.dp))
                                         Text(
-                                            "Original SMS Message",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
+                                            text = originalSms!!,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            lineHeight = 20.sp
                                         )
                                     }
-                                    Spacer(Modifier.height(12.dp))
-                                    Text(
-                                        text = originalSms!!,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = 20.sp
-                                    )
                                 }
                             }
                         }
                     }
-                }
 
-                if (activeSheetContent != null) {
-                    ModalBottomSheet(
-                        onDismissRequest = { activeSheetContent = null },
-                        sheetState = sheetState
-                    ) {
-                        TransactionEditSheetContent(
-                            sheetContent = activeSheetContent!!,
-                            details = details,
-                            viewModel = viewModel,
-                            accountViewModel = accountViewModel,
-                            onSaveRenameRule = onSaveRenameRule,
-                            accounts = accounts,
-                            categories = categories,
-                            allTags = allTags,
-                            selectedTags = selectedTags,
-                            onDismiss = { activeSheetContent = null },
-                            onAddNewAccount = {
-                                activeSheetContent = null
-                                showCreateAccountDialog = true
+                    if (activeSheetContent != null) {
+                        val sheetContainerColor = if (isSystemInDarkTheme()) {
+                            Color(0xFF2C2C34)
+                        } else {
+                            BottomSheetDefaults.ContainerColor
+                        }
+                        ModalBottomSheet(
+                            onDismissRequest = { activeSheetContent = null },
+                            sheetState = sheetState,
+                            containerColor = sheetContainerColor
+                        ) {
+                            TransactionEditSheetContent(
+                                sheetContent = activeSheetContent!!,
+                                details = details,
+                                viewModel = viewModel,
+                                accountViewModel = accountViewModel,
+                                onSaveRenameRule = onSaveRenameRule,
+                                accounts = accounts,
+                                categories = categories,
+                                allTags = allTags,
+                                selectedTags = selectedTags,
+                                onDismiss = { activeSheetContent = null },
+                                onAddNewAccount = {
+                                    activeSheetContent = null
+                                    showCreateAccountDialog = true
+                                },
+                                onAddNewCategory = {
+                                    activeSheetContent = null
+                                    showCreateCategoryDialog = true
+                                }
+                            )
+                        }
+                    }
+
+                    if (showCreateAccountDialog) {
+                        CreateAccountDialog(
+                            onDismiss = { showCreateAccountDialog = false },
+                            onConfirm = { name, type ->
+                                viewModel.createAccount(name, type) { newAccount ->
+                                    viewModel.updateTransactionAccount(transactionId, newAccount.id)
+                                }
+                                showCreateAccountDialog = false
+                            }
+                        )
+                    }
+
+                    if (showCreateCategoryDialog) {
+                        CreateCategoryDialog(
+                            onDismiss = { showCreateCategoryDialog = false },
+                            onConfirm = { name, iconKey, colorKey ->
+                                viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
+                                    viewModel.updateTransactionCategory(transactionId, newCategory.id)
+                                }
+                                showCreateCategoryDialog = false
+                            }
+                        )
+                    }
+
+                    if (showDatePicker) {
+                        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
+                        DatePickerDialog(
+                            onDismissRequest = { showDatePicker = false },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    datePickerState.selectedDateMillis?.let {
+                                        calendar.timeInMillis = it
+                                    }
+                                    showDatePicker = false
+                                    showTimePicker = true
+                                }) { Text("OK") }
+                            }
+                        ) { DatePicker(state = datePickerState) }
+                    }
+                    if (showTimePicker) {
+                        val timePickerState = rememberTimePickerState(initialHour = calendar.get(Calendar.HOUR_OF_DAY), initialMinute = calendar.get(Calendar.MINUTE))
+                        TimePickerDialog(
+                            onDismissRequest = { showTimePicker = false },
+                            onConfirm = {
+                                calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                                calendar.set(Calendar.MINUTE, timePickerState.minute)
+                                viewModel.updateTransactionDate(transactionId, calendar.timeInMillis)
+                                showTimePicker = false
+                            }
+                        ) { TimePicker(state = timePickerState) }
+                    }
+
+                    if (showDeleteDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteDialog = false },
+                            title = { Text("Delete Transaction?") },
+                            text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.") },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        viewModel.deleteTransaction(details.transaction)
+                                        showDeleteDialog = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) { Text("Delete") }
                             },
-                            onAddNewCategory = {
-                                activeSheetContent = null
-                                showCreateCategoryDialog = true
+                            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
+                        )
+                    }
+
+                    if (showImageViewer != null) {
+                        Dialog(onDismissRequest = { showImageViewer = null }) {
+                            AsyncImage(
+                                model = showImageViewer,
+                                contentDescription = "Full screen image",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                            )
+                        }
+                    }
+
+                    if (showImageDeleteDialog != null) {
+                        AlertDialog(
+                            onDismissRequest = { showImageDeleteDialog = null },
+                            title = { Text("Delete Attachment?") },
+                            text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.") },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        viewModel.deleteTransactionImage(showImageDeleteDialog!!)
+                                        showImageDeleteDialog = null
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) { Text("Delete") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showImageDeleteDialog = null }) { Text("Cancel") }
                             }
                         )
                     }
-                }
-
-                if (showCreateAccountDialog) {
-                    CreateAccountDialog(
-                        onDismiss = { showCreateAccountDialog = false },
-                        onConfirm = { name, type ->
-                            viewModel.createAccount(name, type) { newAccount ->
-                                viewModel.updateTransactionAccount(transactionId, newAccount.id)
-                            }
-                            showCreateAccountDialog = false
-                        }
-                    )
-                }
-
-                if (showCreateCategoryDialog) {
-                    CreateCategoryDialog(
-                        onDismiss = { showCreateCategoryDialog = false },
-                        onConfirm = { name, iconKey, colorKey ->
-                            viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
-                                viewModel.updateTransactionCategory(transactionId, newCategory.id)
-                            }
-                            showCreateCategoryDialog = false
-                        }
-                    )
-                }
-
-                if (showDatePicker) {
-                    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
-                    DatePickerDialog(
-                        onDismissRequest = { showDatePicker = false },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                datePickerState.selectedDateMillis?.let {
-                                    calendar.timeInMillis = it
-                                }
-                                showDatePicker = false
-                                showTimePicker = true
-                            }) { Text("OK") }
-                        }
-                    ) { DatePicker(state = datePickerState) }
-                }
-                if (showTimePicker) {
-                    val timePickerState = rememberTimePickerState(initialHour = calendar.get(Calendar.HOUR_OF_DAY), initialMinute = calendar.get(Calendar.MINUTE))
-                    TimePickerDialog(
-                        onDismissRequest = { showTimePicker = false },
-                        onConfirm = {
-                            calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                            calendar.set(Calendar.MINUTE, timePickerState.minute)
-                            viewModel.updateTransactionDate(transactionId, calendar.timeInMillis)
-                            showTimePicker = false
-                        }
-                    ) { TimePicker(state = timePickerState) }
-                }
-
-                if (showDeleteDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showDeleteDialog = false },
-                        title = { Text("Delete Transaction?") },
-                        text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.") },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    viewModel.deleteTransaction(details.transaction)
-                                    showDeleteDialog = false
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                            ) { Text("Delete") }
-                        },
-                        dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
-                    )
-                }
-
-                if (showImageViewer != null) {
-                    Dialog(onDismissRequest = { showImageViewer = null }) {
-                        AsyncImage(
-                            model = showImageViewer,
-                            contentDescription = "Full screen image",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                        )
-                    }
-                }
-
-                if (showImageDeleteDialog != null) {
-                    AlertDialog(
-                        onDismissRequest = { showImageDeleteDialog = null },
-                        title = { Text("Delete Attachment?") },
-                        text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.") },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    viewModel.deleteTransactionImage(showImageDeleteDialog!!)
-                                    showImageDeleteDialog = null
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                            ) { Text("Delete") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showImageDeleteDialog = null }) { Text("Cancel") }
-                        }
-                    )
                 }
             }
         }
@@ -7889,8 +7897,8 @@ private fun CategoryPickerSheet(
                         category.name,
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
-                        maxLines = 1, // --- BUG FIX: Prevent wrapping ---
-                        overflow = TextOverflow.Ellipsis // --- BUG FIX: Add ellipsis for overflow ---
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -8028,7 +8036,8 @@ private fun TransactionHeaderCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(4.dp)
+        elevation = CardDefaults.cardElevation(4.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent) // Make card transparent
     ) {
         Box(
             modifier = Modifier
@@ -8371,8 +8380,7 @@ private fun SelectableTransactionItem(
         }
         Text("₹${"%,.2f".format(transaction.amount)}")
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt ==================
@@ -8656,12 +8664,18 @@ fun AccountDetailScreen(
 package io.pm.finlight.ui.screens
 
 import android.app.Application
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8677,6 +8691,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -8708,7 +8723,16 @@ fun DashboardScreen(
     val dragDropState = rememberDragDropState(onMove = viewModel::updateCardOrder)
 
     if (showAddCardSheet) {
-        ModalBottomSheet(onDismissRequest = { viewModel.onAddCardSheetDismiss() }) {
+        val sheetContainerColor = if (isSystemInDarkTheme()) {
+            Color(0xFF2C2C34)
+        } else {
+            BottomSheetDefaults.ContainerColor
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.onAddCardSheetDismiss() },
+            containerColor = sheetContainerColor
+        ) {
             AddCardSheetContent(
                 hiddenCards = hiddenCards,
                 onAddCard = { cardType ->
@@ -8721,7 +8745,7 @@ fun DashboardScreen(
 
     LazyColumn(
         state = dragDropState.lazyListState,
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.pointerInput(Unit) {
             detectDragGesturesAfterLongPress(
@@ -8749,11 +8773,30 @@ fun DashboardScreen(
     ) {
         itemsIndexed(visibleCards, key = { _, item -> item.name }) { index, cardType ->
             val isBeingDragged = index == dragDropState.draggingItemIndex
-            val animatedRotation by animateFloatAsState(
+
+            val infiniteTransition = rememberInfiniteTransition(label = "giggle_animation")
+            val giggleRotation by infiniteTransition.animateFloat(
+                initialValue = -0.8f,
+                targetValue = 0.8f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(150, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "giggle"
+            )
+
+            val dragTiltRotation by animateFloatAsState(
                 targetValue = if (isBeingDragged) -2f else 0f,
                 animationSpec = tween(300),
                 label = "DragRotation"
             )
+
+            val finalRotation = when {
+                isBeingDragged -> dragTiltRotation
+                isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET -> giggleRotation
+                else -> 0f
+            }
+
             val animatedElevation by animateFloatAsState(
                 targetValue = if (isBeingDragged) 8f else 0f,
                 animationSpec = tween(300),
@@ -8762,9 +8805,11 @@ fun DashboardScreen(
 
             Box(
                 modifier = Modifier
+                    .animateItemPlacement()
                     .graphicsLayer {
-                        translationY = if (isBeingDragged) dragDropState.draggingItemOffset else 0f
-                        rotationZ = animatedRotation
+                        // --- UPDATED: Use the new calculated translationY for smooth dragging ---
+                        translationY = if (isBeingDragged) dragDropState.draggingItemTranslationY else 0f
+                        rotationZ = finalRotation
                     }
                     .shadow(elevation = animatedElevation.dp, shape = MaterialTheme.shapes.extraLarge)
             ) {
@@ -8799,63 +8844,14 @@ private fun DashboardCard(
 
     Box {
         when (cardType) {
-            DashboardCardType.OVERALL_BUDGET -> AuroraMonthlyBudgetCard(
+            DashboardCardType.HERO_BUDGET -> DashboardHeroCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
+                income = monthlyIncome.toFloat(),
+                safeToSpend = safeToSpendPerDay,
                 navController = navController,
             )
-            DashboardCardType.QUICK_STATS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AuroraStatCard(
-                    label = "Income",
-                    amount = monthlyIncome.toFloat(),
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        navController.navigate("income_screen")
-                    }
-                )
-                AuroraStatCard(
-                    label = "Budget",
-                    amount = overallBudget,
-                    modifier = Modifier.weight(1f),
-                    onClick = { navController.navigate("budget_screen") }
-                )
-                AuroraStatCard(
-                    label = "Safe To Spend",
-                    amount = safeToSpendPerDay,
-                    isPerDay = true,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            DashboardCardType.QUICK_ACTIONS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                FilledTonalButton(
-                    onClick = {
-                        navController.navigate(BottomNavItem.Reports.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("View Trends")
-                }
-                FilledTonalButton(
-                    onClick = {
-                        navController.navigate(BottomNavItem.Reports.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("View Categories")
-                }
-            }
+            DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
             DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(recentTransactions, navController)
             DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
@@ -8864,7 +8860,7 @@ private fun DashboardCard(
                 navController = navController,
             )
         }
-        if (isCustomizationMode) {
+        if (isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET) {
             Row(
                 modifier = Modifier.align(Alignment.TopEnd),
                 verticalAlignment = Alignment.CenterVertically
@@ -8892,7 +8888,11 @@ private fun AddCardSheetContent(
     onAddCard: (DashboardCardType) -> Unit
 ) {
     Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
-        Text("Add a Card to Your Dashboard", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "Add a Card to Your Dashboard",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
         Spacer(Modifier.height(16.dp))
         if (hiddenCards.isEmpty()) {
             Text("All available cards are already on your dashboard.")
@@ -11357,10 +11357,15 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -11369,22 +11374,26 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.*
 import io.pm.finlight.ui.theme.AuroraPrimary
+import io.pm.finlight.ui.theme.AuroraSecondary
 import io.pm.finlight.ui.theme.GlassPanelBorder
 import io.pm.finlight.ui.theme.GlassPanelFill
-import io.pm.finlight.ui.theme.TextSecondary
+import androidx.compose.ui.graphics.vector.ImageVector
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * A reusable composable that creates a "glassmorphism" effect panel.
@@ -11427,185 +11436,197 @@ fun GlassPanel(
  * @param navController The NavController for navigation.
  */
 @Composable
-fun AuroraMonthlyBudgetCard(
+fun DashboardHeroCard(
     totalBudget: Float,
     amountSpent: Float,
+    income: Float,
+    safeToSpend: Float,
     navController: NavController
 ) {
-    var targetAmount by remember { mutableStateOf(0f) }
-    val animatedRemainingAmount by animateFloatAsState(
-        targetValue = targetAmount,
-        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
-        label = "RemainingAmountAnimation"
-    )
+    val remainingAmount = totalBudget - amountSpent
 
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
-        animationSpec = tween(durationMillis = 1500),
+        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
         label = "BudgetProgressAnimation"
     )
 
-    LaunchedEffect(totalBudget, amountSpent) {
-        targetAmount = totalBudget - amountSpent
-    }
-
-    GlassPanel(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { navController.navigate("budget_screen") }
+            .padding(vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        Text(
+            text = "Monthly Budget",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "Monthly Budget",
-                style = MaterialTheme.typography.titleMedium,
+                text = "Remaining",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remainingAmount.toInt())}",
+                style = MaterialTheme.typography.displayLarge,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+        }
 
-            Column {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AuroraProgressBar(progress = animatedProgress)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
-                    text = "Remaining",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedRemainingAmount.toInt())}",
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
+                    text = "Total: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(totalBudget.toInt())}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 0.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            StatItem(label = "Income", amount = income, onClick = { navController.navigate("income_screen") })
+            StatItem(label = "Budget", amount = totalBudget, isCurrency = true, onClick = { navController.navigate("budget_screen") })
+            StatItem(label = "Safe to Spend", amount = safeToSpend, isPerDay = true)
+        }
+    }
+}
+
+@Composable
+private fun StatItem(label: String, amount: Float, isCurrency: Boolean = true, isPerDay: Boolean = false, onClick: (() -> Unit)? = null) {
+    val animatedAmount by animateFloatAsState(
+        targetValue = amount,
+        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
+        label = "StatItemAnimation"
+    )
+    val clickableModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = clickableModifier
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isCurrency) {
+                Text(
+                    text = "₹",
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
-
-            Column {
-                AuroraProgressBar(progress = animatedProgress)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                    Text(
-                        text = "Total: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(totalBudget.toInt())}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                }
+            Text(
+                text = NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedAmount.toInt()),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (isPerDay) {
+                Text(
+                    text = "/day",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 2.dp, top = 4.dp)
+                )
             }
         }
     }
 }
 
+
 /**
- * A custom styled LinearProgressIndicator with a gradient progress and decorative track.
+ * A custom styled Progress Bar that includes a percentage indicator.
  *
  * @param progress The progress to display, from 0.0 to 1.0.
  */
 @Composable
 private fun AuroraProgressBar(progress: Float) {
-    val barHeight = 16.dp
-    val trackColor = Color.White.copy(alpha = 0.2f)
-    val progressBrush = Brush.horizontalGradient(
-        colors = listOf(
-            AuroraPrimary.copy(alpha = 0.6f),
-            AuroraPrimary
-        )
-    )
-
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(barHeight)
-    ) {
-        // Draw the track
-        drawLine(
-            color = trackColor,
-            start = Offset(0f, size.height / 2),
-            end = Offset(size.width, size.height / 2),
-            strokeWidth = barHeight.toPx(),
-            cap = StrokeCap.Round
-        )
-
-        // Draw the progress
-        if (progress > 0) {
-            drawLine(
-                brush = progressBrush,
-                start = Offset(0f, size.height / 2),
-                end = Offset(size.width * progress, size.height / 2),
-                strokeWidth = barHeight.toPx(),
-                cap = StrokeCap.Round
-            )
-        }
-
-        // Draw decorative milestone markers on the track
-        val milestoneCount = 10
-        for (i in 1 until milestoneCount) {
-            val x = size.width * (i.toFloat() / milestoneCount)
-            drawLine(
-                color = Color.Black.copy(alpha = 0.2f),
-                start = Offset(x, size.height * 0.25f),
-                end = Offset(x, size.height * 0.75f),
-                strokeWidth = 1.dp.toPx()
-            )
-        }
-    }
-}
-
-/**
- * A small card for displaying a single, quick-glance statistic on the dashboard.
- * It uses the GlassPanel for its background and features an animated number count-up.
- *
- * @param label The text label for the statistic.
- * @param amount The numerical value of the statistic.
- * @param modifier Modifier for this composable.
- * @param isPerDay If true, appends "/day" to the amount.
- * @param onClick A lambda to be invoked when the card is clicked.
- */
-@Composable
-fun AuroraStatCard(
-    label: String,
-    amount: Float,
-    modifier: Modifier = Modifier,
-    isPerDay: Boolean = false,
-    onClick: () -> Unit = {}
-) {
-    var targetAmount by remember { mutableStateOf(0f) }
-    val animatedAmount by animateFloatAsState(
-        targetValue = targetAmount,
-        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
-        label = "StatCardAmountAnimation"
-    )
-
-    LaunchedEffect(amount) {
-        targetAmount = amount
+    val animatedPercentage = (progress * 100).roundToInt()
+    val progressColor = when {
+        progress > 0.9 -> MaterialTheme.colorScheme.error
+        progress > 0.7 -> AuroraSecondary
+        else -> AuroraPrimary
     }
 
-    GlassPanel(
-        modifier = modifier.clickable(onClick = onClick)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.Start,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+    Layout(
+        content = {
             Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
-                textAlign = TextAlign.Start
-            )
-            Text(
-                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedAmount.toInt())}${if (isPerDay) "/day" else ""}",
-                style = MaterialTheme.typography.titleLarge,
+                text = "$animatedPercentage%",
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Start,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.labelSmall
             )
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(20.dp)
+            ) {
+                drawRoundRect(
+                    color = Color.Black.copy(alpha = 0.2f),
+                    size = size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2),
+                    style = Stroke(width = 1.dp.toPx()),
+                    topLeft = Offset(0f, 1.dp.toPx())
+                )
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.1f),
+                    size = size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2)
+                )
+
+                if (progress > 0) {
+                    drawRoundRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(progressColor.copy(alpha = 0.6f), progressColor)
+                        ),
+                        size = Size(width = size.width * progress, height = size.height),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2)
+                    )
+                }
+            }
+        }
+    ) { measurables, constraints ->
+        val textPlaceable = measurables[0].measure(Constraints())
+        val canvasPlaceable = measurables[1].measure(constraints)
+
+        val progressWidth = (canvasPlaceable.width * progress).toInt()
+        val textX = (progressWidth - textPlaceable.width / 2).coerceIn(
+            0,
+            canvasPlaceable.width - textPlaceable.width
+        )
+        val textY = (canvasPlaceable.height - textPlaceable.height) / 2
+
+        layout(canvasPlaceable.width, canvasPlaceable.height + textPlaceable.height + 4.dp.roundToPx()) {
+            canvasPlaceable.placeRelative(0, textPlaceable.height + 4.dp.roundToPx())
+            textPlaceable.placeRelative(textX, 0)
         }
     }
 }
@@ -11677,7 +11698,7 @@ private fun AccountItem(account: AccountWithBalance, navController: NavControlle
                 Text(
                     text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(account.balance)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -11690,7 +11711,6 @@ private fun AccountItem(account: AccountWithBalance, navController: NavControlle
  * @param budgetStatus A list of budgets with their current spending.
  * @param navController The NavController for navigation.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BudgetWatchCard(
     budgetStatus: List<BudgetWithSpending>,
@@ -11712,17 +11732,17 @@ fun BudgetWatchCard(
                 Text(
                     "No category-specific budgets set for this month.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
             } else {
-                FlowRow(
+                // --- UPDATED: Changed from FlowRow to LazyRow for horizontal scrolling ---
+                LazyRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
-                    maxItemsInEachRow = 4
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
-                    budgetStatus.forEach { budget ->
+                    items(budgetStatus) { budget ->
                         CategoryBudgetGauge(budget = budget, navController = navController)
                     }
                 }
@@ -11757,7 +11777,9 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.clickable { navController.navigate("budget_screen") }
+        modifier = Modifier
+            .clickable { navController.navigate("budget_screen") }
+            .width(90.dp) // Give each item a fixed width
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -11786,16 +11808,18 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // --- UPDATED: Increased font size and fixed color for legibility ---
             Text(
                 text = budget.budget.categoryName,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge, // Increased from bodyMedium
+                color = MaterialTheme.colorScheme.onSurface, // Fixed color
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remaining.toInt())} left",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary
+                style = MaterialTheme.typography.bodyMedium, // Increased from bodySmall
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -11860,7 +11884,7 @@ fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navControll
                 Text(
                     "No transactions yet.",
                     modifier = Modifier.padding(vertical = 16.dp),
-                    color = TextSecondary
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -11876,7 +11900,79 @@ fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navControll
             }
         }
     }
-}-e 
+}
+
+/**
+ * --- NEW ---
+ * A dashboard card that provides quick navigation actions.
+ *
+ * @param navController The NavController for navigation.
+ */
+@Composable
+fun AuroraQuickActionsCard(navController: NavController) {
+    GlassPanel(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.height(IntrinsicSize.Min), // Ensures divider stretches
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            QuickActionItem(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Default.Timeline,
+                text = "View Trends",
+                onClick = {
+                    // Navigate to the main reports screen
+                    navController.navigate(BottomNavItem.Reports.route)
+                }
+            )
+            VerticalDivider(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(1.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+            )
+            QuickActionItem(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Default.PieChart,
+                text = "View Categories",
+                onClick = {
+                    // Navigate to the main reports screen
+                    navController.navigate(BottomNavItem.Reports.route)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickActionItem(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    text: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = text,
+            tint = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/UtilityComponents.kt ==================
@@ -12134,7 +12230,6 @@ import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
-import io.pm.finlight.ui.theme.TextSecondary
 
 // Note: The old OverallBudgetCard, StatCard, and AccountSummaryCard have been
 // removed and replaced by the new Aurora-themed components in GlassmorphismComponents.kt
@@ -12172,7 +12267,7 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
             }
             Spacer(modifier = Modifier.height(8.dp))
             if(transactions.isEmpty()){
-                Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp), color = TextSecondary)
+                Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     transactions.forEach { details ->
@@ -12199,6 +12294,7 @@ package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12219,7 +12315,10 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
-import io.pm.finlight.ui.theme.TextSecondary
+import io.pm.finlight.ui.theme.ExpenseRedDark
+import io.pm.finlight.ui.theme.ExpenseRedLight
+import io.pm.finlight.ui.theme.IncomeGreenDark
+import io.pm.finlight.ui.theme.IncomeGreenLight
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -12231,7 +12330,6 @@ fun TransactionItem(
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
 
-    // --- UPDATED: Replaced Card with GlassPanel ---
     GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
@@ -12280,19 +12378,23 @@ fun TransactionItem(
                         text = transactionDetails.transaction.notes!!,
                         style = MaterialTheme.typography.bodyMedium,
                         fontStyle = FontStyle.Italic,
-                        color = TextSecondary.copy(alpha = contentAlpha)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
                     )
                 }
                 Text(
                     text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary.copy(alpha = contentAlpha)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
                 )
             }
 
             val isIncome = transactionDetails.transaction.transactionType == "income"
-            val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
-            val amountColor = baseAmountColor.copy(alpha = contentAlpha)
+            // --- UPDATED: Use theme-aware colors for amount ---
+            val amountColor = if (isSystemInDarkTheme()) {
+                if (isIncome) IncomeGreenDark else ExpenseRedDark
+            } else {
+                if (isIncome) IncomeGreenLight else ExpenseRedLight
+            }.copy(alpha = contentAlpha)
             val icon = if (isIncome) Icons.Default.SouthWest else Icons.Default.NorthEast
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -12338,8 +12440,12 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
             )
         }
         val isIncome = transactionDetails.transaction.transactionType == "income"
-        val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
-        val amountColor = baseAmountColor.copy(alpha = contentAlpha)
+        // --- UPDATED: Use theme-aware colors for amount ---
+        val amountColor = if (isSystemInDarkTheme()) {
+            if (isIncome) IncomeGreenDark else ExpenseRedDark
+        } else {
+            if (isIncome) IncomeGreenLight else ExpenseRedLight
+        }.copy(alpha = contentAlpha)
 
         Text(
             text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
@@ -12922,14 +13028,6 @@ fun FilterBottomSheet(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt
-// REASON: NEW FILE - This file contains the state holder (`DragDropState`) and
-// the remember function (`rememberDragDropState`) required to implement
-// drag-and-drop functionality in a LazyColumn. It encapsulates the complex
-// logic of tracking item positions, offsets, and scroll state during a drag
-// operation, resolving the "Unresolved reference" errors in DashboardScreen.
-// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.lazy.LazyListItemInfo
@@ -12938,7 +13036,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -12956,60 +13053,103 @@ class DragDropState(
     val lazyListState: LazyListState,
     private val onMove: (Int, Int) -> Unit
 ) {
-    var draggingItemIndex by mutableIntStateOf(-1)
-    private var draggingItemInitialOffset by mutableIntStateOf(0)
-    var draggingItemOffset by mutableFloatStateOf(0f)
+    var draggingItemIndex by mutableStateOf<Int?>(null)
+        private set
 
-    private val currentDraggingItemInfo: LazyListItemInfo?
-        get() = lazyListState.layoutInfo.visibleItemsInfo
-            .firstOrNull { it.index == draggingItemIndex }
+    // This is the total displacement of the user's finger since the drag started.
+    private var draggingItemOffset by mutableFloatStateOf(0f)
 
+    // We need to store the initial offset of the item being dragged.
+    private var initialDraggingItemOffset by mutableStateOf<Int?>(null)
+
+    // A reference to the LazyListItemInfo of the item currently being dragged.
+    private val currentDraggingItem: LazyListItemInfo?
+        get() = draggingItemIndex?.let {
+            lazyListState.layoutInfo.visibleItemsInfo.find { item -> item.index == it }
+        }
+
+    // The calculated translationY to be applied in the graphicsLayer.
+    // This is the magic that makes the drag smooth.
+    val draggingItemTranslationY: Float
+        get() = currentDraggingItem?.let {
+            (initialDraggingItemOffset ?: 0) + draggingItemOffset - it.offset
+        } ?: 0f
+
+    /**
+     * Called when a drag gesture starts.
+     * Finds the item under the pointer and initializes the drag state.
+     * Prevents dragging the first item (the Hero Card).
+     */
     fun onDragStart(offset: Offset) {
         lazyListState.layoutInfo.visibleItemsInfo
             .firstOrNull { item -> offset.y.toInt() in item.offset..(item.offset + item.size) }
             ?.also {
+                // Prevent dragging the hero card at index 0
+                if (it.index == 0) return
+
                 draggingItemIndex = it.index
-                draggingItemInitialOffset = it.offset
+                initialDraggingItemOffset = it.offset
             }
     }
 
+    /**
+     * Called for each movement during a drag gesture.
+     * This function accumulates the finger's movement and detects when a swap should occur.
+     */
     fun onDrag(offset: Offset) {
         draggingItemOffset += offset.y
-        val draggingItem = currentDraggingItemInfo ?: return
-        val startOffset = draggingItem.offset + draggingItemOffset
-        val endOffset = startOffset + draggingItem.size
-        val middleOffset = startOffset + (endOffset - startOffset) / 2f
 
+        val currentDraggingIndex = draggingItemIndex ?: return
+        val initialOffset = initialDraggingItemOffset ?: return
+
+        // Calculate the absolute visual position of the item's center.
+        val itemCenter = initialOffset + draggingItemOffset + (currentDraggingItem?.size ?: 0) / 2
+
+        // Find the item that the dragging item is hovering over.
         val targetItem = lazyListState.layoutInfo.visibleItemsInfo.find {
-            middleOffset.toInt() in it.offset..it.offsetEnd && draggingItem.index != it.index
+            // Exclude the item being dragged and the non-movable hero card at index 0.
+            it.index != currentDraggingIndex && it.index != 0 &&
+                    // Check if the center of the dragging item is within the bounds of the target item.
+                    itemCenter.toInt() in it.offset..(it.offset + it.size)
         }
 
         if (targetItem != null) {
-            val targetIndex = targetItem.index
-            onMove.invoke(draggingItemIndex, targetIndex)
-            draggingItemIndex = targetIndex
+            val from = currentDraggingIndex
+            val to = targetItem.index
+            onMove(from, to)
+            // Only update the index. The offset logic will handle the visual position.
+            draggingItemIndex = to
         }
     }
 
+    /**
+     * Called when the drag gesture ends. Resets the state.
+     */
     fun onDragEnd() {
-        draggingItemIndex = -1
+        draggingItemIndex = null
         draggingItemOffset = 0f
+        initialDraggingItemOffset = null
     }
 
+    /**
+     * Calculates the amount to scroll when the dragged item reaches the edge of the viewport.
+     */
     fun checkForOverScroll(): Float {
-        val draggingItem = currentDraggingItemInfo ?: return 0f
-        val startOffset = draggingItem.offset + draggingItemOffset
-        val endOffset = startOffset + draggingItem.size
+        val draggingItem = currentDraggingItem ?: return 0f
+        val viewportStartOffset = lazyListState.layoutInfo.viewportStartOffset
+        val viewportEndOffset = lazyListState.layoutInfo.viewportEndOffset
+
+        val itemTop = draggingItem.offset + draggingItemTranslationY
+        val itemBottom = itemTop + draggingItem.size
+
+        val scrollAmount = 20f
 
         return when {
-            draggingItemOffset > 0 -> (endOffset - lazyListState.layoutInfo.viewportEndOffset + 50f).takeIf { it > 0 }
-            draggingItemOffset < 0 -> (startOffset - 50f).takeIf { it < 0 }
+            itemBottom > viewportEndOffset -> scrollAmount
+            itemTop < viewportStartOffset -> -scrollAmount
             else -> 0f
-        } ?: 0f
+        }
     }
-
-    private val LazyListItemInfo.offsetEnd: Int
-        get() = this.offset + this.size
 }
 -e 
 
@@ -13028,23 +13168,32 @@ val Purple40 = Color(0xFF6650a4)
 val PurpleGrey40 = Color(0xFF625b71)
 val Pink40 = Color(0xFF7D5260)
 
-// --- FIXED: Re-added original custom colors for the light theme ---
-val FinanceGreen = Color(0xFF006A60) // A deep, professional green for primary elements
-val FinanceGreenLight = Color(0xFF50D9C8) // A lighter version for dark theme primary
-val GoldAccent = Color(0xFF815600) // A rich gold/amber for secondary elements
-val GoldAccentLight = Color(0xFFFFBA3F) // A lighter version for dark theme secondary
-val Charcoal = Color(0xFF333333) // A dark gray for text and tertiary elements
-val OffWhite = Color(0xFFF8F9FA) // A very light gray for backgrounds
-val DarkSurface = Color(0xFF1E1E1E) // A slightly lighter-than-black for dark theme surfaces
-
-// --- NEW: Custom colors for the "Aurora" theme ---
+// --- Custom colors for the "Aurora" theme ---
 val AuroraPrimary = Color(0xFF00E5FF) // Vibrant Teal/Cyan
 val AuroraSecondary = Color(0xFFFFBA3F) // Subtle Gold
 val AuroraBackground = Color(0xFF121212) // Very dark charcoal
 val GlassPanelFill = Color(0x1AFFFFFF) // White with 10% opacity
 val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
-val TextPrimary = Color(0xFFF8F9FA) // Off-white
-val TextSecondary = Color(0xFFB0B0B0) // Light gray
+
+// --- Text colors with better contrast ---
+val TextPrimaryDark = Color(0xFFE6E1E5) // Primary text for Dark Theme (Bright off-white)
+val TextSecondaryDark = Color(0xFFC4C7C5) // Secondary text for Dark Theme (Brighter gray)
+
+val TextPrimaryLight = Color(0xFF191C1C) // Primary text for Light Theme (Dark charcoal)
+val TextSecondaryLight = Color(0xFF444746) // Secondary text for Light Theme (Darker gray)
+
+// --- Surface colors ---
+val SurfaceLight = Color(0xE6FFFFFF) // Frosted Glass Fill for Light Theme (White @ 90%)
+val SurfaceDark = Color(0x1AFFFFFF) // Frosted Glass Fill for Dark Theme (White @ 10%)
+
+val SurfaceVariantLight = Color(0xFFDAE5E3) // Subtle dividers/disabled for Light Theme
+val SurfaceVariantDark = Color(0xFF3F4849) // Subtle dividers/disabled for Dark Theme
+
+// --- NEW: High-contrast colors for transaction amounts ---
+val IncomeGreenDark = Color(0xFF66BB6A)
+val ExpenseRedDark = Color(0xFFEF5350)
+val IncomeGreenLight = Color(0xFF2E7D32)
+val ExpenseRedLight = Color(0xFFC62828)
 -e 
 
 
@@ -15392,10 +15541,9 @@ class SettingsRepository(context: Context) {
             val names: List<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
         } else {
-            // --- FIXED: Use the new enum values for the default order ---
+            // --- FIXED: Use the new HERO_BUDGET enum value for the default order ---
             listOf(
-                DashboardCardType.OVERALL_BUDGET,
-                DashboardCardType.QUICK_STATS,
+                DashboardCardType.HERO_BUDGET,
                 DashboardCardType.QUICK_ACTIONS,
                 DashboardCardType.NET_WORTH,
                 DashboardCardType.RECENT_ACTIVITY,
@@ -15714,8 +15862,7 @@ class SettingsRepository(context: Context) {
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/SearchViewModelFactory.kt ==================

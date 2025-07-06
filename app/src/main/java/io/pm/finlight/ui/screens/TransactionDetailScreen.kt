@@ -1,9 +1,13 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: BUG FIX - The `Text` composable inside `CategoryPickerSheet` now uses
-// `maxLines = 1` and `overflow = TextOverflow.Ellipsis` to prevent long
-// category names from wrapping and breaking the grid layout, ensuring a
-// consistent and clean appearance.
+// REASON: MAJOR REFACTOR - This screen has been completely redesigned to match
+// the "Project Aurora" aesthetic. The static header card has been replaced
+// with a dynamic, multi-layered "Spotlight" header. It now uses the
+// transaction's category color to generate a soft, glowing background and
+// renders the category icon as a large, semi-transparent glass emblem, creating
+// a sense of depth. All body content is now housed in individual, floating
+// `GlassPanel` components for a consistent, modern look, while preserving all
+// original functionality.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12,9 +16,14 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -35,8 +44,9 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -57,9 +67,12 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.AuroraAnimatedBackground
 import io.pm.finlight.ui.components.CreateAccountDialog
 import io.pm.finlight.ui.components.CreateCategoryDialog
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TimePickerDialog
+import io.pm.finlight.ui.theme.GlassPanelFill
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLEncoder
@@ -138,7 +151,7 @@ fun TransactionDetailScreen(
     var showImageDeleteDialog by remember { mutableStateOf<TransactionImage?>(null) }
 
     var activeSheetContent by remember { mutableStateOf<SheetContent?>(null) }
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var showCreateAccountDialog by remember { mutableStateOf(false) }
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
@@ -196,7 +209,11 @@ fun TransactionDetailScreen(
             }
 
             if (retroUpdateSheetState != null) {
-                ModalBottomSheet(onDismissRequest = { viewModel.dismissRetroUpdateSheet() }) {
+                ModalBottomSheet(
+                    onDismissRequest = { viewModel.dismissRetroUpdateSheet() },
+                    containerColor = GlassPanelFill,
+                    dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                ) {
                     RetrospectiveUpdateSheetContent(
                         state = retroUpdateSheetState!!,
                         onToggleSelection = viewModel::toggleRetroUpdateSelection,
@@ -209,351 +226,626 @@ fun TransactionDetailScreen(
                 }
             }
 
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text(title) },
-                        navigationIcon = {
-                            IconButton(onClick = { navController.popBackStack() }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                            }
-                        },
-                        actions = {
-                            IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More options")
-                            }
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Delete") },
-                                    onClick = {
-                                        showMenu = false
-                                        showDeleteDialog = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete") }
-                                )
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-                    )
-                },
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            ) { innerPadding ->
-                LazyColumn(
-                    modifier = Modifier
-                        .padding(innerPadding)
-                        .fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
-                ) {
-                    item {
-                        TransactionHeaderCard(
-                            details = details,
-                            visitCount = visitCount,
-                            onDescriptionClick = { activeSheetContent = SheetContent.Description },
-                            onAmountClick = { activeSheetContent = SheetContent.Amount },
-                            onCategoryClick = { activeSheetContent = SheetContent.Category },
-                            onDateTimeClick = { showDatePicker = true }
-                        )
-                    }
-                    item {
-                        AccountCardWithSwitch(
-                            details = details,
-                            onAccountClick = { activeSheetContent = SheetContent.Account },
-                            onExcludeToggled = { isExcluded ->
-                                viewModel.updateTransactionExclusion(details.transaction.id, isExcluded)
-                            }
-                        )
-                    }
-                    item {
-                        InfoCard(
-                            icon = Icons.AutoMirrored.Filled.Notes,
-                            label = "Notes",
-                            value = details.transaction.notes ?: "Tap to add",
-                            onClick = { activeSheetContent = SheetContent.Notes }
-                        )
-                    }
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            elevation = CardDefaults.cardElevation(2.dp),
-                            onClick = { activeSheetContent = SheetContent.Tags }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.NewLabel, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Tags", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    if (selectedTags.isEmpty()) {
-                                        Text("Tap to add tags")
-                                    } else {
-                                        FlowRow(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            selectedTags.forEach { tag ->
-                                                AssistChip(onClick = {}, label = { Text(tag.name) })
-                                            }
-                                        }
-                                    }
+            Box(modifier = Modifier.fillMaxSize()) {
+                AuroraAnimatedBackground()
+                Scaffold(
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(title) },
+                            navigationIcon = {
+                                IconButton(onClick = { navController.popBackStack() }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                                 }
-                                Icon(Icons.Default.Add, contentDescription = "Add Tag")
-                            }
-                        }
-                    }
-
-                    item {
-                        InfoCard(
-                            icon = Icons.Default.Attachment,
-                            label = "Attachments",
-                            value = if (attachedImages.isEmpty()) "Tap to add a receipt or photo" else "${attachedImages.size} image(s) attached",
-                            onClick = { imagePickerLauncher.launch("image/*") }
-                        )
-                    }
-
-                    if (attachedImages.isNotEmpty()) {
-                        item {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(attachedImages) { image ->
-                                    Box {
-                                        AsyncImage(
-                                            model = File(image.imageUri),
-                                            contentDescription = "Transaction Attachment",
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier
-                                                .size(80.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .clickable { showImageViewer = File(image.imageUri).toUri() }
-                                        )
-                                        IconButton(
-                                            onClick = { showImageDeleteDialog = image },
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(4.dp)
-                                                .size(24.dp)
-                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Close,
-                                                contentDescription = "Delete Attachment",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    }
+                            },
+                            actions = {
+                                IconButton(onClick = { showMenu = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
                                 }
-                            }
-                        }
-                    }
-
-                    if (details.transaction.sourceSmsId != null) {
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Delete") },
+                                        onClick = {
+                                            showMenu = false
+                                            showDeleteDialog = true
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete") }
+                                    )
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                        )
+                    },
+                    containerColor = Color.Transparent
+                ) { innerPadding ->
+                    LazyColumn(
+                        modifier = Modifier
+                            .padding(innerPadding)
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
+                    ) {
                         item {
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
-                                        if (smsMessage != null) {
-                                            val potentialTxn = PotentialTransaction(
-                                                sourceSmsId = smsMessage.id,
-                                                smsSender = smsMessage.sender,
-                                                amount = details.transaction.amount,
-                                                transactionType = details.transaction.transactionType,
-                                                merchantName = details.transaction.description,
-                                                originalMessage = smsMessage.body,
-                                                sourceSmsHash = details.transaction.sourceSmsHash
-                                            )
-                                            val json = Gson().toJson(potentialTxn)
-                                            val encodedJson = URLEncoder.encode(json, "UTF-8")
-                                            navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
-                                        } else {
-                                            Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Build, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Fix Parsing")
-                            }
+                            TransactionSpotlightHeader(
+                                details = details,
+                                visitCount = visitCount,
+                                onDescriptionClick = { activeSheetContent = SheetContent.Description },
+                                onAmountClick = { activeSheetContent = SheetContent.Amount },
+                                onCategoryClick = { activeSheetContent = SheetContent.Category },
+                                onDateTimeClick = { showDatePicker = true }
+                            )
                         }
-                    }
 
-                    if (!originalSms.isNullOrBlank()) {
                         item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                elevation = CardDefaults.cardElevation(2.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                            ) {
-                                Column(Modifier.padding(16.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Message,
-                                            contentDescription = "Original SMS",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            "Original SMS Message",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                            AccountCardWithSwitch(
+                                details = details,
+                                onAccountClick = { activeSheetContent = SheetContent.Account },
+                                onExcludeToggled = { isChecked ->
+                                    viewModel.updateTransactionExclusion(details.transaction.id, !isChecked)
+                                }
+                            )
+                        }
+
+                        item {
+                            GlassPanel {
+                                Column {
+                                    NotesRow(
+                                        details = details,
+                                        onClick = { activeSheetContent = SheetContent.Notes }
+                                    )
+                                    if (selectedTags.isNotEmpty() || details.transaction.notes?.isNotBlank() == true) {
+                                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                                     }
-                                    Spacer(Modifier.height(12.dp))
-                                    Text(
-                                        text = originalSms!!,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = 20.sp
+                                    TagsRow(
+                                        selectedTags = selectedTags,
+                                        onClick = { activeSheetContent = SheetContent.Tags }
                                     )
                                 }
                             }
                         }
-                    }
-                }
 
-                if (activeSheetContent != null) {
-                    ModalBottomSheet(
-                        onDismissRequest = { activeSheetContent = null },
-                        sheetState = sheetState
-                    ) {
-                        TransactionEditSheetContent(
-                            sheetContent = activeSheetContent!!,
-                            details = details,
-                            viewModel = viewModel,
-                            accountViewModel = accountViewModel,
-                            onSaveRenameRule = onSaveRenameRule,
-                            accounts = accounts,
-                            categories = categories,
-                            allTags = allTags,
-                            selectedTags = selectedTags,
-                            onDismiss = { activeSheetContent = null },
-                            onAddNewAccount = {
-                                activeSheetContent = null
-                                showCreateAccountDialog = true
-                            },
-                            onAddNewCategory = {
-                                activeSheetContent = null
-                                showCreateCategoryDialog = true
+                        item {
+                            GlassPanel {
+                                AttachmentRow(
+                                    images = attachedImages,
+                                    onAddClick = { imagePickerLauncher.launch("image/*") },
+                                    onViewClick = { showImageViewer = it },
+                                    onDeleteClick = { showImageDeleteDialog = it }
+                                )
                             }
-                        )
-                    }
-                }
-
-                if (showCreateAccountDialog) {
-                    CreateAccountDialog(
-                        onDismiss = { showCreateAccountDialog = false },
-                        onConfirm = { name, type ->
-                            viewModel.createAccount(name, type) { newAccount ->
-                                viewModel.updateTransactionAccount(transactionId, newAccount.id)
-                            }
-                            showCreateAccountDialog = false
                         }
-                    )
-                }
 
-                if (showCreateCategoryDialog) {
-                    CreateCategoryDialog(
-                        onDismiss = { showCreateCategoryDialog = false },
-                        onConfirm = { name, iconKey, colorKey ->
-                            viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
-                                viewModel.updateTransactionCategory(transactionId, newCategory.id)
-                            }
-                            showCreateCategoryDialog = false
-                        }
-                    )
-                }
 
-                if (showDatePicker) {
-                    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
-                    DatePickerDialog(
-                        onDismissRequest = { showDatePicker = false },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                datePickerState.selectedDateMillis?.let {
-                                    calendar.timeInMillis = it
+                        if (details.transaction.sourceSmsId != null) {
+                            item {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
+                                            if (smsMessage != null) {
+                                                val potentialTxn = PotentialTransaction(
+                                                    sourceSmsId = smsMessage.id,
+                                                    smsSender = smsMessage.sender,
+                                                    amount = details.transaction.amount,
+                                                    transactionType = details.transaction.transactionType,
+                                                    merchantName = details.transaction.description,
+                                                    originalMessage = smsMessage.body,
+                                                    sourceSmsHash = details.transaction.sourceSmsHash
+                                                )
+                                                val json = Gson().toJson(potentialTxn)
+                                                val encodedJson = URLEncoder.encode(json, "UTF-8")
+                                                navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
+                                            } else {
+                                                Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.Build, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Fix Parsing")
                                 }
-                                showDatePicker = false
-                                showTimePicker = true
-                            }) { Text("OK") }
+                            }
                         }
-                    ) { DatePicker(state = datePickerState) }
-                }
-                if (showTimePicker) {
-                    val timePickerState = rememberTimePickerState(initialHour = calendar.get(Calendar.HOUR_OF_DAY), initialMinute = calendar.get(Calendar.MINUTE))
-                    TimePickerDialog(
-                        onDismissRequest = { showTimePicker = false },
-                        onConfirm = {
-                            calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                            calendar.set(Calendar.MINUTE, timePickerState.minute)
-                            viewModel.updateTransactionDate(transactionId, calendar.timeInMillis)
-                            showTimePicker = false
-                        }
-                    ) { TimePicker(state = timePickerState) }
-                }
 
-                if (showDeleteDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showDeleteDialog = false },
-                        title = { Text("Delete Transaction?") },
-                        text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.") },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    viewModel.deleteTransaction(details.transaction)
-                                    showDeleteDialog = false
+                        if (!originalSms.isNullOrBlank()) {
+                            item {
+                                GlassPanel(
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(Modifier.padding(16.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Message,
+                                                contentDescription = "Original SMS",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                "Original SMS Message",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Spacer(Modifier.height(12.dp))
+                                        Text(
+                                            text = originalSms!!,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            lineHeight = 20.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (activeSheetContent != null) {
+                        ModalBottomSheet(
+                            onDismissRequest = { activeSheetContent = null },
+                            sheetState = sheetState,
+                            containerColor = GlassPanelFill,
+                            dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        ) {
+                            TransactionEditSheetContent(
+                                sheetContent = activeSheetContent!!,
+                                details = details,
+                                viewModel = viewModel,
+                                accountViewModel = accountViewModel,
+                                onSaveRenameRule = onSaveRenameRule,
+                                accounts = accounts,
+                                categories = categories,
+                                allTags = allTags,
+                                selectedTags = selectedTags,
+                                onDismiss = { activeSheetContent = null },
+                                onAddNewAccount = {
+                                    activeSheetContent = null
+                                    showCreateAccountDialog = true
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                            ) { Text("Delete") }
-                        },
-                        dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
-                    )
-                }
+                                onAddNewCategory = {
+                                    activeSheetContent = null
+                                    showCreateCategoryDialog = true
+                                }
+                            )
+                        }
+                    }
 
-                if (showImageViewer != null) {
-                    Dialog(onDismissRequest = { showImageViewer = null }) {
-                        AsyncImage(
-                            model = showImageViewer,
-                            contentDescription = "Full screen image",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
+                    if (showCreateAccountDialog) {
+                        CreateAccountDialog(
+                            onDismiss = { showCreateAccountDialog = false },
+                            onConfirm = { name, type ->
+                                viewModel.createAccount(name, type) { newAccount ->
+                                    viewModel.updateTransactionAccount(transactionId, newAccount.id)
+                                }
+                                showCreateAccountDialog = false
+                            }
                         )
                     }
-                }
 
-                if (showImageDeleteDialog != null) {
-                    AlertDialog(
-                        onDismissRequest = { showImageDeleteDialog = null },
-                        title = { Text("Delete Attachment?") },
-                        text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.") },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    viewModel.deleteTransactionImage(showImageDeleteDialog!!)
-                                    showImageDeleteDialog = null
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                            ) { Text("Delete") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showImageDeleteDialog = null }) { Text("Cancel") }
+                    if (showCreateCategoryDialog) {
+                        CreateCategoryDialog(
+                            onDismiss = { showCreateCategoryDialog = false },
+                            onConfirm = { name, iconKey, colorKey ->
+                                viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
+                                    viewModel.updateTransactionCategory(transactionId, newCategory.id)
+                                }
+                                showCreateCategoryDialog = false
+                            }
+                        )
+                    }
+
+                    if (showDatePicker) {
+                        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = calendar.timeInMillis)
+                        DatePickerDialog(
+                            onDismissRequest = { showDatePicker = false },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    datePickerState.selectedDateMillis?.let {
+                                        calendar.timeInMillis = it
+                                    }
+                                    showDatePicker = false
+                                    showTimePicker = true
+                                }) { Text("OK") }
+                            }
+                        ) { DatePicker(state = datePickerState) }
+                    }
+                    if (showTimePicker) {
+                        val timePickerState = rememberTimePickerState(initialHour = calendar.get(Calendar.HOUR_OF_DAY), initialMinute = calendar.get(Calendar.MINUTE))
+                        TimePickerDialog(
+                            onDismissRequest = { showTimePicker = false },
+                            onConfirm = {
+                                calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                                calendar.set(Calendar.MINUTE, timePickerState.minute)
+                                viewModel.updateTransactionDate(transactionId, calendar.timeInMillis)
+                                showTimePicker = false
+                            }
+                        ) { TimePicker(state = timePickerState) }
+                    }
+
+                    if (showDeleteDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteDialog = false },
+                            containerColor = GlassPanelFill,
+                            title = { Text("Delete Transaction?", color = MaterialTheme.colorScheme.onSurface) },
+                            text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        viewModel.deleteTransaction(details.transaction)
+                                        showDeleteDialog = false
+                                    },
+                                    shape = CircleShape,
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) { Text("Delete") }
+                            },
+                            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
+                        )
+                    }
+
+                    if (showImageViewer != null) {
+                        Dialog(onDismissRequest = { showImageViewer = null }) {
+                            AsyncImage(
+                                model = showImageViewer,
+                                contentDescription = "Full screen image",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                            )
                         }
-                    )
+                    }
+
+                    if (showImageDeleteDialog != null) {
+                        AlertDialog(
+                            onDismissRequest = { showImageDeleteDialog = null },
+                            containerColor = GlassPanelFill,
+                            title = { Text("Delete Attachment?", color = MaterialTheme.colorScheme.onSurface) },
+                            text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        viewModel.deleteTransactionImage(showImageDeleteDialog!!)
+                                        showImageDeleteDialog = null
+                                    },
+                                    shape = CircleShape,
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) { Text("Delete") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showImageDeleteDialog = null }) { Text("Cancel") }
+                            }
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun TransactionSpotlightHeader(
+    details: TransactionDetails,
+    visitCount: Int,
+    onDescriptionClick: () -> Unit,
+    onAmountClick: () -> Unit,
+    onCategoryClick: () -> Unit,
+    onDateTimeClick: () -> Unit
+) {
+    val categoryColor = CategoryIconHelper.getIconBackgroundColor(details.categoryColorKey ?: "gray_light")
+    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yy, h:mm a", Locale.getDefault()) }
+
+    val animatedAmount by animateFloatAsState(
+        targetValue = details.transaction.amount.toFloat(),
+        animationSpec = tween(1500, easing = EaseOutCubic),
+        label = "AmountAnimation"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(350.dp)
+            .clip(RoundedCornerShape(24.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize(),
+            alpha = 0.3f
+        )
+        Box(modifier = Modifier
+            .matchParentSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.6f))
+                )
+            )
+        )
+        Canvas(modifier = Modifier.matchParentSize()) {
+            drawIntoCanvas {
+                val paint = Paint().asFrameworkPaint()
+                val radius = size.width * 0.8f
+                paint.color = android.graphics.Color.TRANSPARENT
+                paint.setShadowLayer(
+                    radius,
+                    0f,
+                    0f,
+                    categoryColor
+                        .copy(alpha = 0.4f)
+                        .toArgb()
+                )
+                it.drawCircle(center, radius / 2, Paint().apply { this.color = Color.Transparent })
+            }
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = details.transaction.description,
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .clickable(onClick = onDescriptionClick)
+                    .padding(horizontal = 16.dp)
+            )
+            Text(
+                text = "₹${"%,.2f".format(animatedAmount)}",
+                style = MaterialTheme.typography.displayMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier.clickable(onClick = onAmountClick)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            ChipWithIcon(
+                text = details.categoryName ?: "Uncategorized",
+                onClick = onCategoryClick,
+                category = details.toCategory()
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = dateFormatter.format(Date(details.transaction.date)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.clickable(onClick = onDateTimeClick)
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Transaction Source",
+                        tint = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = details.transaction.source,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                }
+            }
+        }
+
+        if (visitCount > 1) {
+            AssistChip(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp),
+                onClick = { /* No action needed */ },
+                label = { Text("$visitCount visits") },
+                leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = Color.White.copy(alpha = 0.2f),
+                    labelColor = Color.White,
+                    leadingIconContentColor = Color.White
+                )
+            )
+        }
+    }
+}
+
+
+@Composable
+private fun AccountCardWithSwitch(
+    details: TransactionDetails,
+    onAccountClick: () -> Unit,
+    onExcludeToggled: (Boolean) -> Unit
+) {
+    val isExcluded = details.transaction.isExcluded
+    val switchLabel = details.transaction.transactionType.replaceFirstChar { it.titlecase(Locale.getDefault()) }
+
+    GlassPanel {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(0.7f)
+                    .clickable(onClick = onAccountClick)
+                    .padding(vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.AccountBalanceWallet,
+                        contentDescription = "Account",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        text = "Account",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = details.accountName ?: "N/A",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(0.3f),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = switchLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(4.dp))
+                Switch(
+                    checked = !isExcluded,
+                    onCheckedChange = onExcludeToggled
+                )
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun NotesRow(details: TransactionDetails, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = "Notes", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Notes", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            details.transaction.notes ?: "Tap to add",
+            fontWeight = if (details.transaction.notes.isNullOrBlank()) FontWeight.Normal else FontWeight.SemiBold,
+            color = if (details.transaction.notes.isNullOrBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Icon(Icons.Default.Edit, contentDescription = "Edit Notes", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TagsRow(selectedTags: Set<Tag>, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Icon(Icons.Default.NewLabel, contentDescription = "Tags", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Tags", color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(8.dp))
+            if(selectedTags.isEmpty()){
+                Text("Tap to add", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    selectedTags.forEach { tag ->
+                        AssistChip(onClick = {}, label = { Text(tag.name) })
+                    }
+                }
+            }
+        }
+        Icon(Icons.Default.Edit, contentDescription = "Edit Tags", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun AttachmentRow(
+    images: List<TransactionImage>,
+    onAddClick: () -> Unit,
+    onViewClick: (Uri) -> Unit,
+    onDeleteClick: (TransactionImage) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Attachment, contentDescription = "Attachments", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(16.dp))
+            Text("Attachments", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+            TextButton(onClick = onAddClick) {
+                Text("Add")
+            }
+        }
+        if (images.isEmpty()) {
+            Text("No photos or receipts attached", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        } else {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(images) { image ->
+                    Box {
+                        AsyncImage(
+                            model = File(image.imageUri),
+                            contentDescription = "Transaction Attachment",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onViewClick(File(image.imageUri).toUri()) }
+                        )
+                        IconButton(
+                            onClick = { onDeleteClick(image) },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .size(24.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Delete Attachment",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun TransactionEditSheetContent(
@@ -824,7 +1116,9 @@ private fun EditTextFieldSheet(
                 capitalization = if (keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None
             ),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("value_input")
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("value_input")
         )
         additionalContent?.invoke()
 
@@ -878,8 +1172,8 @@ private fun CategoryPickerSheet(
                         category.name,
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
-                        maxLines = 1, // --- BUG FIX: Prevent wrapping ---
-                        overflow = TextOverflow.Ellipsis // --- BUG FIX: Add ellipsis for overflow ---
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1002,183 +1296,6 @@ private fun CategoryIconDisplay(category: Category) {
     }
 }
 
-
-@Composable
-private fun TransactionHeaderCard(
-    details: TransactionDetails,
-    visitCount: Int,
-    onDescriptionClick: () -> Unit,
-    onAmountClick: () -> Unit,
-    onCategoryClick: () -> Unit,
-    onDateTimeClick: () -> Unit
-) {
-    val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yy, h:mm a", Locale.getDefault()) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(4.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 400.dp),
-        ) {
-            Image(
-                painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize(),
-                alpha = 0.5f
-            )
-
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = 0.2f),
-                                Color.Black.copy(alpha = 0.7f)
-                            )
-                        )
-                    )
-            )
-
-            if (visitCount > 1) {
-                AssistChip(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp),
-                    onClick = { /* No action needed */ },
-                    label = { Text("$visitCount visits") },
-                    leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = Color.White.copy(alpha = 0.2f),
-                        labelColor = Color.White,
-                        leadingIconContentColor = Color.White
-                    )
-                )
-            }
-
-            Column(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = details.transaction.description,
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = Color.White,
-                    modifier = Modifier.clickable(onClick = onDescriptionClick).padding(bottom = 4.dp)
-                )
-                Text(
-                    text = "₹${"%,.2f".format(details.transaction.amount)}",
-                    fontSize = 48.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.clickable(onClick = onAmountClick)
-                )
-                Spacer(Modifier.height(16.dp))
-                ChipWithIcon(
-                    text = details.categoryName ?: "Uncategorized",
-                    icon = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
-                    colorKey = details.categoryColorKey ?: "gray_light",
-                    onClick = onCategoryClick,
-                    category = details.toCategory()
-                )
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(horizontal = 24.dp, vertical = 24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = dateFormatter.format(Date(details.transaction.date)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.clickable(onClick = onDateTimeClick)
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Transaction Source",
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = details.transaction.source,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.8f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-
-@Composable
-private fun AccountCardWithSwitch(
-    details: TransactionDetails,
-    onAccountClick: () -> Unit,
-    onExcludeToggled: (Boolean) -> Unit
-) {
-    val switchLabel = details.transaction.transactionType.replaceFirstChar { it.titlecase(Locale.getDefault()) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.AccountBalanceWallet,
-                contentDescription = "Account",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(16.dp))
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = onAccountClick),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(details.accountName ?: "N/A", style = MaterialTheme.typography.bodyLarge)
-                Icon(
-                    Icons.Default.Edit,
-                    contentDescription = "Edit Account",
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Text(
-                text = switchLabel,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(end = 8.dp)
-            )
-            Switch(
-                checked = !details.transaction.isExcluded,
-                onCheckedChange = { isChecked ->
-                    onExcludeToggled(!isChecked)
-                }
-            )
-        }
-    }
-}
-
-
 private fun TransactionDetails.toCategory(): Category {
     return Category(
         id = this.transaction.categoryId ?: 0,
@@ -1191,8 +1308,6 @@ private fun TransactionDetails.toCategory(): Category {
 @Composable
 private fun ChipWithIcon(
     text: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    colorKey: String,
     onClick: () -> Unit,
     category: Category
 ) {
@@ -1200,7 +1315,11 @@ private fun ChipWithIcon(
         modifier = Modifier
             .clip(CircleShape)
             .clickable(onClick = onClick)
-            .background(CategoryIconHelper.getIconBackgroundColor(colorKey).copy(alpha = 0.9f))
+            .background(
+                CategoryIconHelper
+                    .getIconBackgroundColor(category.colorKey)
+                    .copy(alpha = 0.9f)
+            )
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1214,7 +1333,7 @@ private fun ChipWithIcon(
             )
         } else {
             Icon(
-                imageVector = icon,
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
                 contentDescription = null,
                 tint = Color.Black,
                 modifier = Modifier.size(20.dp)
@@ -1226,34 +1345,6 @@ private fun ChipWithIcon(
             color = Color.Black,
             style = MaterialTheme.typography.bodyMedium
         )
-    }
-}
-
-@Composable
-fun InfoCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    value: String,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(2.dp),
-        onClick = onClick,
-        enabled = onClick != {}
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(value, style = MaterialTheme.typography.bodyLarge)
-            }
-            Icon(Icons.Default.Edit, contentDescription = "Edit")
-        }
     }
 }
 
@@ -1284,7 +1375,11 @@ private fun RetrospectiveUpdateSheetContent(
         )
 
         if (state.isLoading) {
-            Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp), contentAlignment = Alignment.Center
+            ) {
                 CircularProgressIndicator()
             }
         } else {
