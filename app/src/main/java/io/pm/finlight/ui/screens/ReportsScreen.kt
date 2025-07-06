@@ -4,10 +4,15 @@
 // The screen's header and title are now handled centrally by the `TopAppBar` in
 // `MainActivity`, creating a more consistent UI and simplifying this screen's
 // logic.
+// UPDATE: The entire screen has been redesigned to use GlassPanel components,
+// aligning with the Project Aurora aesthetic for a consistent and modern look.
+// FIX: Removed the misplaced and redundant `Utils.init()` call which was
+// causing a crash.
+// FIX: Corrected the @Composable invocation error by reading the theme color
+// outside the AndroidView factory.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,30 +20,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewDay
 import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
-import androidx.compose.material.icons.filled.PieChart
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.github.mikephil.charting.charts.PieChart
 import io.pm.finlight.ReportsViewModel
 import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
-import com.github.mikephil.charting.charts.PieChart
 
 @Composable
 fun ReportsScreen(
@@ -47,17 +46,21 @@ fun ReportsScreen(
 ) {
     val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
     val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
-
+    val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text("Spending Reports", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Spending Reports",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         item {
-            ReportNavigationCard(
+            GlassReportNavigationCard(
                 title = "Daily Report",
                 subtitle = "View a breakdown of any day's spending.",
                 icon = Icons.Default.CalendarViewDay,
@@ -65,7 +68,7 @@ fun ReportsScreen(
             )
         }
         item {
-            ReportNavigationCard(
+            GlassReportNavigationCard(
                 title = "Weekly Report",
                 subtitle = "Analyze your spending week by week.",
                 icon = Icons.Default.CalendarViewWeek,
@@ -73,7 +76,7 @@ fun ReportsScreen(
             )
         }
         item {
-            ReportNavigationCard(
+            GlassReportNavigationCard(
                 title = "Monthly Report",
                 subtitle = "Get a high-level overview of your monthly habits.",
                 icon = Icons.Default.CalendarViewMonth,
@@ -82,18 +85,33 @@ fun ReportsScreen(
         }
 
         item {
-            Spacer(Modifier.height(16.dp))
-            Text("Analysis", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Analysis",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
-        // --- Pie Chart Card ---
         item {
-            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
-                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Spending by Category for ${viewModel.monthYear}", style = MaterialTheme.typography.titleLarge)
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Spending by Category for ${viewModel.monthYear}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                     if (pieData == null || pieData?.entryCount == 0) {
-                        Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text("No expense data for this month.")
                         }
                     } else {
@@ -102,38 +120,48 @@ fun ReportsScreen(
                                 PieChart(context).apply {
                                     description.isEnabled = false
                                     isDrawHoleEnabled = true
-                                    setHoleColor(
-                                        Color.TRANSPARENT,
-                                    )
-                                    setEntryLabelColor(Color.BLACK)
+                                    setHoleColor(android.graphics.Color.TRANSPARENT)
+                                    setEntryLabelColor(pieChartLabelColor)
                                     setEntryLabelTextSize(12f)
                                     legend.isEnabled = false
                                 }
                             },
                             update = { chart ->
                                 chart.data = pieData
-                                chart.notifyDataSetChanged()
                                 chart.invalidate()
                             },
-                            modifier = Modifier.fillMaxWidth().height(300.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp),
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        pieData?.let { ChartLegend(it) }
+                        ChartLegend(pieData)
                     }
                 }
             }
         }
 
-        // --- Bar Chart Card ---
         item {
-            Card(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), elevation = CardDefaults.cardElevation(4.dp)) {
-                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Income vs. Expense Trend", style = MaterialTheme.typography.titleLarge)
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Income vs. Expense Trend",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                     if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
                         GroupedBarChart(trendDataPair!!)
                     } else {
-                        Box(modifier = Modifier.fillMaxWidth().height(250.dp), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(250.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text("Not enough data for trend analysis.")
                         }
                     }
@@ -144,27 +172,39 @@ fun ReportsScreen(
 }
 
 @Composable
-fun ReportNavigationCard(
+private fun GlassReportNavigationCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
     onClick: () -> Unit
 ) {
-    Card(
+    GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(2.dp)
+            .clickable(onClick = onClick)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(imageVector = icon, contentDescription = title, modifier = Modifier.size(32.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                modifier = Modifier.size(28.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, style = MaterialTheme.typography.titleMedium)
-                Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sun Jul  6 17:02:49 IST 2025
+Generated on: Sun Jul  6 18:51:54 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -7017,6 +7017,8 @@ fun PlaceholderTabContent(title: String) {
 // a sense of depth. All body content is now housed in individual, floating
 // `GlassPanel` components for a consistent, modern look, while preserving all
 // original functionality.
+// UPDATE: The header card is now a true edge-to-edge hero element, with only
+// the bottom corners rounded to blend seamlessly with the top of the screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -7081,7 +7083,8 @@ import io.pm.finlight.ui.components.CreateAccountDialog
 import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TimePickerDialog
-import io.pm.finlight.ui.theme.GlassPanelFill
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLEncoder
@@ -7220,7 +7223,7 @@ fun TransactionDetailScreen(
             if (retroUpdateSheetState != null) {
                 ModalBottomSheet(
                     onDismissRequest = { viewModel.dismissRetroUpdateSheet() },
-                    containerColor = GlassPanelFill,
+                    containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
                     dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 ) {
                     RetrospectiveUpdateSheetContent(
@@ -7270,11 +7273,9 @@ fun TransactionDetailScreen(
                     containerColor = Color.Transparent
                 ) { innerPadding ->
                     LazyColumn(
-                        modifier = Modifier
-                            .padding(innerPadding)
-                            .fillMaxSize(),
+                        modifier = Modifier.padding(innerPadding),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
+                        contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
                         item {
                             TransactionSpotlightHeader(
@@ -7288,108 +7289,118 @@ fun TransactionDetailScreen(
                         }
 
                         item {
-                            AccountCardWithSwitch(
-                                details = details,
-                                onAccountClick = { activeSheetContent = SheetContent.Account },
-                                onExcludeToggled = { isChecked ->
-                                    viewModel.updateTransactionExclusion(details.transaction.id, !isChecked)
-                                }
-                            )
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                AccountCardWithSwitch(
+                                    details = details,
+                                    onAccountClick = { activeSheetContent = SheetContent.Account },
+                                    onExcludeToggled = { isChecked ->
+                                        viewModel.updateTransactionExclusion(details.transaction.id, !isChecked)
+                                    }
+                                )
+                            }
                         }
 
                         item {
-                            GlassPanel {
-                                Column {
-                                    NotesRow(
-                                        details = details,
-                                        onClick = { activeSheetContent = SheetContent.Notes }
-                                    )
-                                    if (selectedTags.isNotEmpty() || details.transaction.notes?.isNotBlank() == true) {
-                                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                GlassPanel {
+                                    Column {
+                                        NotesRow(
+                                            details = details,
+                                            onClick = { activeSheetContent = SheetContent.Notes }
+                                        )
+                                        if (selectedTags.isNotEmpty() || details.transaction.notes?.isNotBlank() == true) {
+                                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                                        }
+                                        TagsRow(
+                                            selectedTags = selectedTags,
+                                            onClick = { activeSheetContent = SheetContent.Tags }
+                                        )
                                     }
-                                    TagsRow(
-                                        selectedTags = selectedTags,
-                                        onClick = { activeSheetContent = SheetContent.Tags }
-                                    )
                                 }
                             }
                         }
 
                         item {
-                            GlassPanel {
-                                AttachmentRow(
-                                    images = attachedImages,
-                                    onAddClick = { imagePickerLauncher.launch("image/*") },
-                                    onViewClick = { showImageViewer = it },
-                                    onDeleteClick = { showImageDeleteDialog = it }
-                                )
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                GlassPanel {
+                                    AttachmentRow(
+                                        images = attachedImages,
+                                        onAddClick = { imagePickerLauncher.launch("image/*") },
+                                        onViewClick = { showImageViewer = it },
+                                        onDeleteClick = { showImageDeleteDialog = it }
+                                    )
+                                }
                             }
                         }
 
 
                         if (details.transaction.sourceSmsId != null) {
                             item {
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
-                                            if (smsMessage != null) {
-                                                val potentialTxn = PotentialTransaction(
-                                                    sourceSmsId = smsMessage.id,
-                                                    smsSender = smsMessage.sender,
-                                                    amount = details.transaction.amount,
-                                                    transactionType = details.transaction.transactionType,
-                                                    merchantName = details.transaction.description,
-                                                    originalMessage = smsMessage.body,
-                                                    sourceSmsHash = details.transaction.sourceSmsHash
-                                                )
-                                                val json = Gson().toJson(potentialTxn)
-                                                val encodedJson = URLEncoder.encode(json, "UTF-8")
-                                                navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
-                                            } else {
-                                                Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
+                                                if (smsMessage != null) {
+                                                    val potentialTxn = PotentialTransaction(
+                                                        sourceSmsId = smsMessage.id,
+                                                        smsSender = smsMessage.sender,
+                                                        amount = details.transaction.amount,
+                                                        transactionType = details.transaction.transactionType,
+                                                        merchantName = details.transaction.description,
+                                                        originalMessage = smsMessage.body,
+                                                        sourceSmsHash = details.transaction.sourceSmsHash
+                                                    )
+                                                    val json = Gson().toJson(potentialTxn)
+                                                    val encodedJson = URLEncoder.encode(json, "UTF-8")
+                                                    navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
+                                                } else {
+                                                    Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Icon(Icons.Default.Build, contentDescription = null)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Fix Parsing")
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.Build, contentDescription = null)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Fix Parsing")
+                                    }
                                 }
                             }
                         }
 
                         if (!originalSms.isNullOrBlank()) {
                             item {
-                                GlassPanel(
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(Modifier.padding(16.dp)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Message,
-                                                contentDescription = "Original SMS",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    GlassPanel(
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(Modifier.padding(16.dp)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Message,
+                                                    contentDescription = "Original SMS",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Text(
+                                                    "Original SMS Message",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                            Spacer(Modifier.height(12.dp))
                                             Text(
-                                                "Original SMS Message",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface
+                                                text = originalSms!!,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                lineHeight = 20.sp
                                             )
                                         }
-                                        Spacer(Modifier.height(12.dp))
-                                        Text(
-                                            text = originalSms!!,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            lineHeight = 20.sp
-                                        )
                                     }
                                 }
                             }
@@ -7400,7 +7411,7 @@ fun TransactionDetailScreen(
                         ModalBottomSheet(
                             onDismissRequest = { activeSheetContent = null },
                             sheetState = sheetState,
-                            containerColor = GlassPanelFill,
+                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
                             dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         ) {
                             TransactionEditSheetContent(
@@ -7481,7 +7492,7 @@ fun TransactionDetailScreen(
                     if (showDeleteDialog) {
                         AlertDialog(
                             onDismissRequest = { showDeleteDialog = false },
-                            containerColor = GlassPanelFill,
+                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
                             title = { Text("Delete Transaction?", color = MaterialTheme.colorScheme.onSurface) },
                             text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             confirmButton = {
@@ -7513,7 +7524,7 @@ fun TransactionDetailScreen(
                     if (showImageDeleteDialog != null) {
                         AlertDialog(
                             onDismissRequest = { showImageDeleteDialog = null },
-                            containerColor = GlassPanelFill,
+                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
                             title = { Text("Delete Attachment?", color = MaterialTheme.colorScheme.onSurface) },
                             text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             confirmButton = {
@@ -7559,7 +7570,7 @@ private fun TransactionSpotlightHeader(
         modifier = Modifier
             .fillMaxWidth()
             .height(350.dp)
-            .clip(RoundedCornerShape(24.dp)),
+            .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)),
         contentAlignment = Alignment.Center
     ) {
         Image(
@@ -7899,9 +7910,20 @@ private fun TransactionEditSheetContent(
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Checkbox(checked = saveForFuture, onCheckedChange = { saveForFuture = it })
+                    Checkbox(
+                        checked = saveForFuture,
+                        onCheckedChange = { saveForFuture = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            checkmarkColor = MaterialTheme.colorScheme.surface
+                        )
+                    )
                     Spacer(Modifier.width(8.dp))
-                    Text("Always rename '$originalNameForRule' to this")
+                    Text(
+                        text = "Always rename '$originalNameForRule' to this",
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }
@@ -7990,7 +8012,8 @@ private fun AccountPickerSheet(
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.onSurface
         )
 
         currentAccount?.let { account ->
@@ -8011,7 +8034,7 @@ private fun AccountPickerSheet(
                 onSelectClick = { onItemSelected(account) },
                 isCurrent = true
             )
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
         }
 
         LazyColumn {
@@ -8035,8 +8058,8 @@ private fun AccountPickerSheet(
             }
             item {
                 ListItem(
-                    headlineContent = { Text("Create New Account") },
-                    leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New Account") },
+                    headlineContent = { Text("Create New Account", color = MaterialTheme.colorScheme.onSurface) },
+                    leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New Account", tint = MaterialTheme.colorScheme.primary) },
                     modifier = Modifier.clickable(onClick = onAddNew)
                 )
             }
@@ -8058,9 +8081,16 @@ private fun AccountPickerItem(
     isCurrent: Boolean = false
 ) {
     val colors = if (isCurrent && !isEditing) {
-        ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            headlineColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            supportingColor = MaterialTheme.colorScheme.onSecondaryContainer
+        )
     } else {
-        ListItemDefaults.colors()
+        ListItemDefaults.colors(
+            headlineColor = MaterialTheme.colorScheme.onSurface,
+            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 
     ListItem(
@@ -8083,14 +8113,14 @@ private fun AccountPickerItem(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isEditing) {
                     IconButton(onClick = onSaveClick, enabled = editingName.isNotBlank()) {
-                        Icon(Icons.Default.Check, contentDescription = "Save Name")
+                        Icon(Icons.Default.Check, contentDescription = "Save Name", tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = onCancelClick) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel Edit")
+                        Icon(Icons.Default.Close, contentDescription = "Cancel Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     IconButton(onClick = onEditClick) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Account Name")
+                        Icon(Icons.Default.Edit, contentDescription = "Edit Account Name", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -8115,7 +8145,7 @@ private fun EditTextFieldSheet(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
@@ -8127,7 +8157,18 @@ private fun EditTextFieldSheet(
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("value_input")
+                .testTag("value_input"),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                cursorColor = MaterialTheme.colorScheme.primary
+            )
         )
         additionalContent?.invoke()
 
@@ -8157,7 +8198,8 @@ private fun CategoryPickerSheet(
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.onSurface
         )
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 100.dp),
@@ -8182,7 +8224,8 @@ private fun CategoryPickerSheet(
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -8197,8 +8240,17 @@ private fun CategoryPickerSheet(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Icon(Icons.Default.AddCircleOutline, contentDescription = "Create New", modifier = Modifier.size(48.dp))
-                        Text("New", style = MaterialTheme.typography.bodyMedium)
+                        Icon(
+                            Icons.Default.AddCircleOutline,
+                            contentDescription = "Create New",
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "New",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             }
@@ -8225,7 +8277,7 @@ private fun TagPickerSheet(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Manage Tags", style = MaterialTheme.typography.titleLarge)
+        Text("Manage Tags", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -8249,7 +8301,15 @@ private fun TagPickerSheet(
                 value = newTagName,
                 onValueChange = { newTagName = it },
                 label = { Text("New Tag Name") },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             )
             IconButton(
                 onClick = {
@@ -8258,7 +8318,7 @@ private fun TagPickerSheet(
                 },
                 enabled = newTagName.isNotBlank()
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+                Icon(Icons.Default.Add, contentDescription = "Add New Tag", tint = MaterialTheme.colorScheme.primary)
             }
         }
         Row(
@@ -8375,12 +8435,14 @@ private fun RetrospectiveUpdateSheetContent(
         Text(
             "Update Similar Transactions",
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.padding(bottom = 8.dp),
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             "You've changed the $changeType for transactions like '${state.originalDescription}'. Apply this change to other similar transactions?",
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(bottom = 16.dp)
+            modifier = Modifier.padding(bottom = 16.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         if (state.isLoading) {
@@ -8399,11 +8461,19 @@ private fun RetrospectiveUpdateSheetContent(
                 val allSelected = state.selectedIds.size == state.similarTransactions.size
                 Checkbox(
                     checked = allSelected,
-                    onCheckedChange = { onToggleSelectAll() }
+                    onCheckedChange = { onToggleSelectAll() },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        checkmarkColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-                Text(if (allSelected) "Deselect All" else "Select All")
+                Text(
+                    text = if (allSelected) "Deselect All" else "Select All",
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
             LazyColumn(
                 modifier = Modifier.heightIn(max = 250.dp),
@@ -8457,12 +8527,31 @@ private fun SelectableTransactionItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
+        Checkbox(
+            checked = isSelected,
+            onCheckedChange = { onToggle() },
+            colors = CheckboxDefaults.colors(
+                checkedColor = MaterialTheme.colorScheme.primary,
+                uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                checkmarkColor = MaterialTheme.colorScheme.surface
+            )
+        )
         Column(modifier = Modifier.weight(1f)) {
-            Text(transaction.description, fontWeight = FontWeight.SemiBold)
-            Text(dateFormatter.format(Date(transaction.date)), style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = transaction.description,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = dateFormatter.format(Date(transaction.date)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        Text("₹${"%,.2f".format(transaction.amount)}")
+        Text(
+            text = "₹${"%,.2f".format(transaction.amount)}",
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 -e 
@@ -11150,10 +11239,15 @@ private fun hasSmsPermission(context: Context): Boolean {
 // The screen's header and title are now handled centrally by the `TopAppBar` in
 // `MainActivity`, creating a more consistent UI and simplifying this screen's
 // logic.
+// UPDATE: The entire screen has been redesigned to use GlassPanel components,
+// aligning with the Project Aurora aesthetic for a consistent and modern look.
+// FIX: Removed the misplaced and redundant `Utils.init()` call which was
+// causing a crash.
+// FIX: Corrected the @Composable invocation error by reading the theme color
+// outside the AndroidView factory.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11161,30 +11255,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewDay
 import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
-import androidx.compose.material.icons.filled.PieChart
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.github.mikephil.charting.charts.PieChart
 import io.pm.finlight.ReportsViewModel
 import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
-import com.github.mikephil.charting.charts.PieChart
 
 @Composable
 fun ReportsScreen(
@@ -11193,17 +11281,21 @@ fun ReportsScreen(
 ) {
     val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
     val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
-
+    val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text("Spending Reports", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Spending Reports",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         item {
-            ReportNavigationCard(
+            GlassReportNavigationCard(
                 title = "Daily Report",
                 subtitle = "View a breakdown of any day's spending.",
                 icon = Icons.Default.CalendarViewDay,
@@ -11211,7 +11303,7 @@ fun ReportsScreen(
             )
         }
         item {
-            ReportNavigationCard(
+            GlassReportNavigationCard(
                 title = "Weekly Report",
                 subtitle = "Analyze your spending week by week.",
                 icon = Icons.Default.CalendarViewWeek,
@@ -11219,7 +11311,7 @@ fun ReportsScreen(
             )
         }
         item {
-            ReportNavigationCard(
+            GlassReportNavigationCard(
                 title = "Monthly Report",
                 subtitle = "Get a high-level overview of your monthly habits.",
                 icon = Icons.Default.CalendarViewMonth,
@@ -11228,18 +11320,33 @@ fun ReportsScreen(
         }
 
         item {
-            Spacer(Modifier.height(16.dp))
-            Text("Analysis", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Analysis",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
-        // --- Pie Chart Card ---
         item {
-            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(4.dp)) {
-                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Spending by Category for ${viewModel.monthYear}", style = MaterialTheme.typography.titleLarge)
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Spending by Category for ${viewModel.monthYear}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                     if (pieData == null || pieData?.entryCount == 0) {
-                        Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text("No expense data for this month.")
                         }
                     } else {
@@ -11248,38 +11355,48 @@ fun ReportsScreen(
                                 PieChart(context).apply {
                                     description.isEnabled = false
                                     isDrawHoleEnabled = true
-                                    setHoleColor(
-                                        Color.TRANSPARENT,
-                                    )
-                                    setEntryLabelColor(Color.BLACK)
+                                    setHoleColor(android.graphics.Color.TRANSPARENT)
+                                    setEntryLabelColor(pieChartLabelColor)
                                     setEntryLabelTextSize(12f)
                                     legend.isEnabled = false
                                 }
                             },
                             update = { chart ->
                                 chart.data = pieData
-                                chart.notifyDataSetChanged()
                                 chart.invalidate()
                             },
-                            modifier = Modifier.fillMaxWidth().height(300.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp),
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        pieData?.let { ChartLegend(it) }
+                        ChartLegend(pieData)
                     }
                 }
             }
         }
 
-        // --- Bar Chart Card ---
         item {
-            Card(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), elevation = CardDefaults.cardElevation(4.dp)) {
-                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Income vs. Expense Trend", style = MaterialTheme.typography.titleLarge)
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Income vs. Expense Trend",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                     if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
                         GroupedBarChart(trendDataPair!!)
                     } else {
-                        Box(modifier = Modifier.fillMaxWidth().height(250.dp), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(250.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text("Not enough data for trend analysis.")
                         }
                     }
@@ -11290,27 +11407,39 @@ fun ReportsScreen(
 }
 
 @Composable
-fun ReportNavigationCard(
+private fun GlassReportNavigationCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
     onClick: () -> Unit
 ) {
-    Card(
+    GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(2.dp)
+            .clickable(onClick = onClick)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(imageVector = icon, contentDescription = title, modifier = Modifier.size(32.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                modifier = Modifier.size(28.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, style = MaterialTheme.typography.titleMedium)
-                Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -12075,6 +12204,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -12082,6 +12212,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.github.mikephil.charting.charts.BarChart
@@ -12121,11 +12252,8 @@ fun TimePickerDialog(
 
 @Composable
 fun ChartLegend(pieData: PieData?) {
-    // Safely get the dataset from the PieData object.
     val dataSet = pieData?.dataSet as? PieDataSet ?: return
 
-    // Use a classic for loop for maximum compatibility with the Java library.
-    // This explicitly gets each entry and its corresponding color by index.
     Column {
         for (i in 0 until dataSet.entryCount) {
             val entry = dataSet.getEntryForIndex(i)
@@ -12140,11 +12268,13 @@ fun ChartLegend(pieData: PieData?) {
                         Modifier
                             .size(12.dp)
                             .clip(CircleShape)
-                            .background(Color(color)), // Convert the Android integer color to a Compose Color
+                            .background(Color(color)),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                // The 'label' property of PieEntry holds the category name.
-                Text(text = "${entry.label} - ₹${"%.2f".format(entry.value)}")
+                Text(
+                    text = "${entry.label} - ₹${"%.2f".format(entry.value)}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -12153,10 +12283,11 @@ fun ChartLegend(pieData: PieData?) {
 @Composable
 fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
     val (barData, labels) = trendDataPair
+    val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val legendColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
 
     AndroidView(
         factory = { context ->
-            // FACTORY: For one-time, data-independent setup
             BarChart(context).apply {
                 description.isEnabled = false
                 legend.isEnabled = true
@@ -12164,7 +12295,7 @@ fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
 
                 xAxis.position = XAxis.XAxisPosition.BOTTOM
                 xAxis.setDrawGridLines(false)
-                xAxis.granularity = 1f // Essential for labels to align with bars
+                xAxis.granularity = 1f
 
                 axisLeft.axisMinimum = 0f
                 axisLeft.setDrawGridLines(true)
@@ -12173,32 +12304,22 @@ fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
             }
         },
         update = { chart ->
-            // UPDATE: For applying data and data-dependent properties
-
-            // 1. Define the widths and spacing for the grouped bars
             val barWidth = 0.25f
             val barSpace = 0.05f
             val groupSpace = 0.4f
             barData.barWidth = barWidth
 
-            // 2. Apply the data to the chart
             chart.data = barData
-
-            // 3. Set the labels for the X-Axis
             chart.xAxis.valueFormatter = IndexAxisValueFormatter(labels)
-
-            // 4. Set the visible range of the x-axis
-            // This is crucial for groupBars to work correctly
             chart.xAxis.axisMinimum = 0f
             chart.xAxis.axisMaximum = labels.size.toFloat()
-
-            // 5. Center the labels under the groups
             chart.xAxis.setCenterAxisLabels(true)
 
-            // 6. Group the bars. The 'fromX' (first param) should be the starting point.
-            chart.groupBars(0f, groupSpace, barSpace)
+            chart.legend.textColor = legendColor
+            chart.xAxis.textColor = textColor
+            chart.axisLeft.textColor = textColor
 
-            // 7. Refresh the chart to apply all changes
+            chart.groupBars(0f, groupSpace, barSpace)
             chart.invalidate()
         },
         modifier =
@@ -13260,9 +13381,9 @@ val AuroraBackground = Color(0xFF121212) // Very dark charcoal
 val GlassPanelFill = Color(0x1AFFFFFF) // White with 10% opacity
 val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
 
-// --- NEW: Opaque colors for popup surfaces for better legibility ---
-val PopupSurfaceDark = Color(0xE6212125) // 90% opaque dark charcoal
-val PopupSurfaceLight = Color(0xE6FFFFFF) // 90% opaque white
+// --- UPDATED: Opaque colors for popup surfaces, now at 60% opacity ---
+val PopupSurfaceDark = Color(0x99212125) // 60% opaque dark charcoal
+val PopupSurfaceLight = Color(0x99FFFFFF) // 60% opaque white
 
 // --- Text colors with better contrast ---
 val TextPrimaryDark = Color(0xFFE6E1E5) // Primary text for Dark Theme (Bright off-white)
