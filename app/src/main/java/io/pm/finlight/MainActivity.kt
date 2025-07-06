@@ -232,7 +232,6 @@ fun MainAppScreen() {
 
     val activity = LocalContext.current as AppCompatActivity
 
-    // --- NEW: Wrap the entire Scaffold content in a Box with the animated background ---
     Box(modifier = Modifier.fillMaxSize()) {
         AuroraAnimatedBackground()
 
@@ -303,7 +302,6 @@ fun MainAppScreen() {
                                 }
                             }
                         },
-                        // --- NEW: Make TopAppBar transparent ---
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                     )
                 }
@@ -311,7 +309,6 @@ fun MainAppScreen() {
             bottomBar = {
                 if (showBottomBar) {
                     NavigationBar(
-                        // --- NEW: Make NavigationBar transparent ---
                         containerColor = Color.Transparent
                     ) {
                         bottomNavItems.forEach { screen ->
@@ -351,7 +348,6 @@ fun MainAppScreen() {
                     }
                 }
             },
-            // --- NEW: Make Scaffold container transparent ---
             containerColor = Color.Transparent
         ) { innerPadding ->
             AppNavHost(
@@ -403,7 +399,8 @@ fun AppNavHost(
         }
 
         composable(BottomNavItem.Dashboard.route) {
-            DashboardScreen(navController, dashboardViewModel, budgetViewModel)
+            // --- FIXED: Removed the extra budgetViewModel argument ---
+            DashboardScreen(navController, dashboardViewModel)
         }
         composable(
             route = BottomNavItem.Transactions.route

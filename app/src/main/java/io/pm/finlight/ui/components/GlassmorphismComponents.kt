@@ -16,15 +16,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -33,14 +32,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import io.pm.finlight.AccountWithBalance
-import io.pm.finlight.BankLogoHelper
-import io.pm.finlight.BudgetWithSpending
-import io.pm.finlight.CategoryIconHelper
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import io.pm.finlight.*
 import io.pm.finlight.ui.theme.AuroraPrimary
 import io.pm.finlight.ui.theme.GlassPanelBorder
 import io.pm.finlight.ui.theme.GlassPanelFill
-import io.pm.finlight.ui.theme.TextSecondary
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.min
@@ -49,18 +45,30 @@ import kotlin.math.min
  * A reusable composable that creates a "glassmorphism" effect panel.
  *
  * @param modifier The modifier to be applied to the panel.
+ * @param isCustomizationMode If true, a dashed border is shown.
  * @param content The content to be placed inside the panel.
  */
 @Composable
 fun GlassPanel(
     modifier: Modifier = Modifier,
+    isCustomizationMode: Boolean = false,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val borderModifier = if (isCustomizationMode) {
+        Modifier.border(
+            width = 1.dp,
+            brush = Brush.horizontalGradient(listOf(GlassPanelBorder, GlassPanelBorder.copy(alpha = 0.5f))),
+            shape = RoundedCornerShape(24.dp)
+        )
+    } else {
+        Modifier.border(1.dp, GlassPanelBorder, RoundedCornerShape(24.dp))
+    }
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(24.dp))
             .background(GlassPanelFill)
-            .border(1.dp, GlassPanelBorder, RoundedCornerShape(24.dp)),
+            .then(borderModifier),
         content = content
     )
 }
@@ -116,7 +124,7 @@ fun AuroraMonthlyBudgetCard(
                 Text(
                     text = "Remaining",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
                 )
                 Text(
                     text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedRemainingAmount.toInt())}",
@@ -135,12 +143,12 @@ fun AuroraMonthlyBudgetCard(
                     Text(
                         text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
+                        color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
                     )
                     Text(
                         text = "Total: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(totalBudget.toInt())}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
+                        color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
                     )
                 }
             }
@@ -243,7 +251,7 @@ fun AuroraStatCard(
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, // Corrected
                 textAlign = TextAlign.Start
             )
             Text(
@@ -324,7 +332,7 @@ private fun AccountItem(account: AccountWithBalance, navController: NavControlle
                 Text(
                     text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(account.balance)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
+                    color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
                 )
             }
         }
@@ -359,7 +367,7 @@ fun BudgetWatchCard(
                 Text(
                     "No category-specific budgets set for this month.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, // Corrected
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
             } else {
@@ -442,8 +450,85 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
             Text(
                 text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remaining.toInt())} left",
                 style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary
+                color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
             )
+        }
+    }
+}
+
+/**
+ * A dashboard card for displaying the user's net worth.
+ *
+ * @param netWorth The calculated net worth.
+ */
+@Composable
+fun AuroraNetWorthCard(netWorth: Double) {
+    GlassPanel {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Text(
+                "Net Worth",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(netWorth)}",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/**
+ * A dashboard card for displaying recent transactions.
+ *
+ * @param transactions The list of recent transactions.
+ * @param navController The NavController for navigation.
+ */
+@Composable
+fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
+    GlassPanel {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                Text(
+                    "Recent Activity",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                TextButton(
+                    onClick = {
+                        navController.navigate(BottomNavItem.Transactions.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                ) { Text("View All") }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            if (transactions.isEmpty()) {
+                Text(
+                    "No transactions yet.",
+                    modifier = Modifier.padding(vertical = 16.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    transactions.forEach { details ->
+                        TransactionItem(
+                            transactionDetails = details,
+                            onClick = {
+                                navController.navigate("transaction_detail/${details.transaction.id}")
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jul  5 23:32:49 IST 2025
+Generated on: Sun Jul  6 11:41:32 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -2052,12 +2052,6 @@ val screenTitles = mapOf(
 
 
 ================== FILE: ./app/src/main/java/DashboardCardType.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/DashboardCardType.kt
-// REASON: NEW FILE - This enum defines all the possible cards that can be
-// displayed on the dashboard. It provides a type-safe way to manage the layout
-// configuration, making it easy to reference and reorder the dashboard components.
-// =================================================================================
 package io.pm.finlight
 
 /**
@@ -2066,11 +2060,13 @@ package io.pm.finlight
  */
 enum class DashboardCardType {
     OVERALL_BUDGET,
-    MONTHLY_STATS,
+    // --- UPDATED: Replaced MONTHLY_STATS with QUICK_STATS ---
+    QUICK_STATS,
     QUICK_ACTIONS,
     NET_WORTH,
     RECENT_ACTIVITY,
-    ACCOUNTS_SUMMARY,
+    // --- UPDATED: Replaced ACCOUNTS_SUMMARY with ACCOUNTS_CAROUSEL ---
+    ACCOUNTS_CAROUSEL,
     BUDGET_WATCH
 }
 -e 
@@ -8657,16 +8653,11 @@ fun AccountDetailScreen(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FEATURE - The screen now fully supports dashboard customization. A
-// "hide" icon appears on cards in customization mode. An "Add Card" FAB is
-// shown, which triggers a ModalBottomSheet displaying hidden cards. Tapping a
-// hidden card adds it back to the dashboard, completing the hide/show workflow.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -8685,6 +8676,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -8693,17 +8685,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.BottomNavItem
-import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.DashboardCardType
 import io.pm.finlight.DashboardViewModel
 import io.pm.finlight.DashboardViewModelFactory
-import io.pm.finlight.ui.components.AccountSummaryCard
-import io.pm.finlight.ui.components.BudgetWatchCard
-import io.pm.finlight.ui.components.NetWorthCard
-import io.pm.finlight.ui.components.OverallBudgetCard
-import io.pm.finlight.ui.components.RecentActivityCard
-import io.pm.finlight.ui.components.StatCard
-import io.pm.finlight.ui.components.rememberDragDropState
+import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -8712,7 +8697,6 @@ import kotlinx.coroutines.launch
 fun DashboardScreen(
     navController: NavController,
     viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
-    budgetViewModel: BudgetViewModel,
 ) {
     val visibleCards by viewModel.visibleCards.collectAsState()
     val isCustomizationMode by viewModel.isCustomizationMode.collectAsState()
@@ -8764,20 +8748,30 @@ fun DashboardScreen(
         }
     ) {
         itemsIndexed(visibleCards, key = { _, item -> item.name }) { index, cardType ->
-            val displacementOffset = if (index == dragDropState.draggingItemIndex) {
-                dragDropState.draggingItemOffset
-            } else {
-                0f
-            }
+            val isBeingDragged = index == dragDropState.draggingItemIndex
+            val animatedRotation by animateFloatAsState(
+                targetValue = if (isBeingDragged) -2f else 0f,
+                animationSpec = tween(300),
+                label = "DragRotation"
+            )
+            val animatedElevation by animateFloatAsState(
+                targetValue = if (isBeingDragged) 8f else 0f,
+                animationSpec = tween(300),
+                label = "DragElevation"
+            )
+
             Box(
                 modifier = Modifier
-                    .graphicsLayer { translationY = displacementOffset }
+                    .graphicsLayer {
+                        translationY = if (isBeingDragged) dragDropState.draggingItemOffset else 0f
+                        rotationZ = animatedRotation
+                    }
+                    .shadow(elevation = animatedElevation.dp, shape = MaterialTheme.shapes.extraLarge)
             ) {
                 DashboardCard(
                     cardType = cardType,
                     navController = navController,
                     viewModel = viewModel,
-                    budgetViewModel = budgetViewModel,
                     isCustomizationMode = isCustomizationMode,
                     onHide = { viewModel.hideCard(cardType) }
                 )
@@ -8791,7 +8785,6 @@ private fun DashboardCard(
     cardType: DashboardCardType,
     navController: NavController,
     viewModel: DashboardViewModel,
-    budgetViewModel: BudgetViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit
 ) {
@@ -8806,27 +8799,27 @@ private fun DashboardCard(
 
     Box {
         when (cardType) {
-            DashboardCardType.OVERALL_BUDGET -> OverallBudgetCard(
+            DashboardCardType.OVERALL_BUDGET -> AuroraMonthlyBudgetCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
                 navController = navController,
             )
-            DashboardCardType.MONTHLY_STATS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard(
-                    label = "Monthly Income",
+            DashboardCardType.QUICK_STATS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AuroraStatCard(
+                    label = "Income",
                     amount = monthlyIncome.toFloat(),
                     modifier = Modifier.weight(1f),
                     onClick = {
                         navController.navigate("income_screen")
                     }
                 )
-                StatCard(
-                    label = "Total Budget",
+                AuroraStatCard(
+                    label = "Budget",
                     amount = overallBudget,
                     modifier = Modifier.weight(1f),
                     onClick = { navController.navigate("budget_screen") }
                 )
-                StatCard(
+                AuroraStatCard(
                     label = "Safe To Spend",
                     amount = safeToSpendPerDay,
                     isPerDay = true,
@@ -8863,12 +8856,11 @@ private fun DashboardCard(
                     Text("View Categories")
                 }
             }
-            DashboardCardType.NET_WORTH -> NetWorthCard(netWorth)
-            DashboardCardType.RECENT_ACTIVITY -> RecentActivityCard(recentTransactions, navController)
-            DashboardCardType.ACCOUNTS_SUMMARY -> AccountSummaryCard(accounts = accountsSummary, navController = navController)
+            DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
+            DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(recentTransactions, navController)
+            DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
             DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
                 budgetStatus = budgetStatus,
-                viewModel = budgetViewModel,
                 navController = navController,
             )
         }
@@ -11241,6 +11233,652 @@ fun ReportNavigationCard(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/AuroraAnimatedBackground.kt ==================
+package io.pm.finlight.ui.components
+
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import kotlin.math.sin
+
+/**
+ * A composable that renders a slow, gently moving aurora-like background effect.
+ * It uses an infinite transition to animate the properties of several large,
+ * blurred, overlapping circles.
+ */
+@Composable
+fun AuroraAnimatedBackground() {
+    val transition = rememberInfiniteTransition(label = "AuroraBackgroundTransition")
+
+    // Animate the sine wave over time to create a gentle vertical bobbing motion.
+    val time by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 30000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "AuroraTime"
+    )
+
+    // Define the properties of the circles that will form the aurora.
+    val circles = listOf(
+        AnimatedCircle(
+            color = Color(0xFF8A2BE2), // Deep Purple
+            baseRadiusMultiplier = 0.8f,
+            baseCenter = Offset(0.2f, 0.2f),
+            speedMultiplier = 0.6f
+        ),
+        AnimatedCircle(
+            color = Color(0xFF00008B), // Midnight Blue
+            baseRadiusMultiplier = 0.9f,
+            baseCenter = Offset(0.8f, 0.3f),
+            speedMultiplier = 0.4f
+        ),
+        AnimatedCircle(
+            color = Color(0xFF008080), // Dark Teal
+            baseRadiusMultiplier = 1.0f,
+            baseCenter = Offset(0.4f, 0.8f),
+            speedMultiplier = 0.5f
+        ),
+        AnimatedCircle(
+            color = Color(0xFF4B0082), // Indigo
+            baseRadiusMultiplier = 0.7f,
+            baseCenter = Offset(0.9f, 0.9f),
+            speedMultiplier = 0.7f
+        )
+    )
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        circles.forEach { circle ->
+            // Calculate the vertical offset using a sine wave for a smooth bobbing effect.
+            val yOffset = sin(time * circle.speedMultiplier) * size.height * 0.1f
+
+            // Create a radial gradient brush to simulate a blurred, glowing effect.
+            val brush = Brush.radialGradient(
+                colors = listOf(circle.color.copy(alpha = 0.3f), Color.Transparent),
+                center = Offset(
+                    x = circle.baseCenter.x * size.width,
+                    y = (circle.baseCenter.y * size.height) + yOffset
+                ),
+                radius = size.maxDimension * circle.baseRadiusMultiplier
+            )
+
+            // Draw the circle onto the canvas.
+            drawCircle(
+                brush = brush,
+                radius = size.maxDimension * circle.baseRadiusMultiplier,
+                center = Offset(
+                    x = circle.baseCenter.x * size.width,
+                    y = (circle.baseCenter.y * size.height) + yOffset
+                )
+            )
+        }
+    }
+}
+
+/**
+ * Data class to hold the properties of each animated circle.
+ *
+ * @param color The base color of the circle.
+ * @param baseRadiusMultiplier The radius of the circle as a multiplier of the canvas's max dimension.
+ * @param baseCenter The center of the circle as a fraction of the canvas's width and height.
+ * @param speedMultiplier A multiplier to vary the animation speed of each circle.
+ */
+private data class AnimatedCircle(
+    val color: Color,
+    val baseRadiusMultiplier: Float,
+    val baseCenter: Offset,
+    val speedMultiplier: Float
+)
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt ==================
+package io.pm.finlight.ui.components
+
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import io.pm.finlight.*
+import io.pm.finlight.ui.theme.AuroraPrimary
+import io.pm.finlight.ui.theme.GlassPanelBorder
+import io.pm.finlight.ui.theme.GlassPanelFill
+import io.pm.finlight.ui.theme.TextSecondary
+import java.text.NumberFormat
+import java.util.Locale
+import kotlin.math.min
+
+/**
+ * A reusable composable that creates a "glassmorphism" effect panel.
+ *
+ * @param modifier The modifier to be applied to the panel.
+ * @param isCustomizationMode If true, a dashed border is shown.
+ * @param content The content to be placed inside the panel.
+ */
+@Composable
+fun GlassPanel(
+    modifier: Modifier = Modifier,
+    isCustomizationMode: Boolean = false,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val borderModifier = if (isCustomizationMode) {
+        Modifier.border(
+            width = 1.dp,
+            brush = Brush.horizontalGradient(listOf(GlassPanelBorder, GlassPanelBorder.copy(alpha = 0.5f))),
+            shape = RoundedCornerShape(24.dp)
+        )
+    } else {
+        Modifier.border(1.dp, GlassPanelBorder, RoundedCornerShape(24.dp))
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(24.dp))
+            .background(GlassPanelFill)
+            .then(borderModifier),
+        content = content
+    )
+}
+
+/**
+ * The new hero card for the dashboard, displaying the monthly budget status
+ * with a visually rich "Aurora" theme and glassmorphism effect.
+ *
+ * @param totalBudget The total budget for the month.
+ * @param amountSpent The amount spent so far in the month.
+ * @param navController The NavController for navigation.
+ */
+@Composable
+fun AuroraMonthlyBudgetCard(
+    totalBudget: Float,
+    amountSpent: Float,
+    navController: NavController
+) {
+    var targetAmount by remember { mutableStateOf(0f) }
+    val animatedRemainingAmount by animateFloatAsState(
+        targetValue = targetAmount,
+        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
+        label = "RemainingAmountAnimation"
+    )
+
+    val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 1500),
+        label = "BudgetProgressAnimation"
+    )
+
+    LaunchedEffect(totalBudget, amountSpent) {
+        targetAmount = totalBudget - amountSpent
+    }
+
+    GlassPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { navController.navigate("budget_screen") }
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "Monthly Budget",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Column {
+                Text(
+                    text = "Remaining",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+                Text(
+                    text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedRemainingAmount.toInt())}",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Column {
+                AuroraProgressBar(progress = animatedProgress)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                    Text(
+                        text = "Total: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(totalBudget.toInt())}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A custom styled LinearProgressIndicator with a gradient progress and decorative track.
+ *
+ * @param progress The progress to display, from 0.0 to 1.0.
+ */
+@Composable
+private fun AuroraProgressBar(progress: Float) {
+    val barHeight = 16.dp
+    val trackColor = Color.White.copy(alpha = 0.2f)
+    val progressBrush = Brush.horizontalGradient(
+        colors = listOf(
+            AuroraPrimary.copy(alpha = 0.6f),
+            AuroraPrimary
+        )
+    )
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(barHeight)
+    ) {
+        // Draw the track
+        drawLine(
+            color = trackColor,
+            start = Offset(0f, size.height / 2),
+            end = Offset(size.width, size.height / 2),
+            strokeWidth = barHeight.toPx(),
+            cap = StrokeCap.Round
+        )
+
+        // Draw the progress
+        if (progress > 0) {
+            drawLine(
+                brush = progressBrush,
+                start = Offset(0f, size.height / 2),
+                end = Offset(size.width * progress, size.height / 2),
+                strokeWidth = barHeight.toPx(),
+                cap = StrokeCap.Round
+            )
+        }
+
+        // Draw decorative milestone markers on the track
+        val milestoneCount = 10
+        for (i in 1 until milestoneCount) {
+            val x = size.width * (i.toFloat() / milestoneCount)
+            drawLine(
+                color = Color.Black.copy(alpha = 0.2f),
+                start = Offset(x, size.height * 0.25f),
+                end = Offset(x, size.height * 0.75f),
+                strokeWidth = 1.dp.toPx()
+            )
+        }
+    }
+}
+
+/**
+ * A small card for displaying a single, quick-glance statistic on the dashboard.
+ * It uses the GlassPanel for its background and features an animated number count-up.
+ *
+ * @param label The text label for the statistic.
+ * @param amount The numerical value of the statistic.
+ * @param modifier Modifier for this composable.
+ * @param isPerDay If true, appends "/day" to the amount.
+ * @param onClick A lambda to be invoked when the card is clicked.
+ */
+@Composable
+fun AuroraStatCard(
+    label: String,
+    amount: Float,
+    modifier: Modifier = Modifier,
+    isPerDay: Boolean = false,
+    onClick: () -> Unit = {}
+) {
+    var targetAmount by remember { mutableStateOf(0f) }
+    val animatedAmount by animateFloatAsState(
+        targetValue = targetAmount,
+        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
+        label = "StatCardAmountAnimation"
+    )
+
+    LaunchedEffect(amount) {
+        targetAmount = amount
+    }
+
+    GlassPanel(
+        modifier = modifier.clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+                textAlign = TextAlign.Start
+            )
+            Text(
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedAmount.toInt())}${if (isPerDay) "/day" else ""}",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Start,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/**
+ * A dashboard card that displays a horizontally scrolling carousel of user accounts.
+ *
+ * @param accounts The list of accounts with their balances.
+ * @param navController The NavController for navigation.
+ */
+@Composable
+fun AccountsCarouselCard(
+    accounts: List<AccountWithBalance>,
+    navController: NavController
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Accounts",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(horizontal = 4.dp)
+        ) {
+            items(accounts) { account ->
+                AccountItem(account = account, navController = navController)
+            }
+        }
+    }
+}
+
+/**
+ * An individual item in the AccountsCarouselCard, styled to look like a mini glass credit card.
+ *
+ * @param account The account data to display.
+ * @param navController The NavController for navigation.
+ */
+@Composable
+private fun AccountItem(account: AccountWithBalance, navController: NavController) {
+    GlassPanel(
+        modifier = Modifier
+            .width(180.dp)
+            .height(110.dp)
+            .clickable { navController.navigate("account_detail/${account.account.id}") }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Image(
+                painter = painterResource(id = BankLogoHelper.getLogoForAccount(account.account.name)),
+                contentDescription = "${account.account.name} Logo",
+                modifier = Modifier.height(24.dp)
+            )
+            Column {
+                Text(
+                    text = account.account.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(account.balance)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A dashboard card that displays radial gauges for individual category budgets.
+ *
+ * @param budgetStatus A list of budgets with their current spending.
+ * @param navController The NavController for navigation.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun BudgetWatchCard(
+    budgetStatus: List<BudgetWithSpending>,
+    navController: NavController
+) {
+    GlassPanel {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Budget Watch",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (budgetStatus.isEmpty()) {
+                Text(
+                    "No category-specific budgets set for this month.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    maxItemsInEachRow = 4
+                ) {
+                    budgetStatus.forEach { budget ->
+                        CategoryBudgetGauge(budget = budget, navController = navController)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A radial gauge for displaying the status of a single category budget.
+ *
+ * @param budget The budget data with spending information.
+ * @param navController The NavController for navigation.
+ */
+@Composable
+private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavController) {
+    val progress = if (budget.budget.amount > 0) (budget.spent / budget.budget.amount).toFloat() else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(1500),
+        label = "CategoryBudgetGaugeAnimation"
+    )
+    val remaining = budget.budget.amount - budget.spent
+
+    val progressBrush = Brush.sweepGradient(
+        colors = listOf(
+            AuroraPrimary.copy(alpha = 0.5f),
+            AuroraPrimary
+        )
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.clickable { navController.navigate("budget_screen") }
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 8.dp.toPx()
+                val diameter = min(size.width, size.height) - strokeWidth
+                drawArc(
+                    color = Color.White.copy(alpha = 0.1f),
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth)
+                )
+                drawArc(
+                    brush = progressBrush,
+                    startAngle = -90f,
+                    sweepAngle = 360 * animatedProgress,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(budget.iconKey ?: "category"),
+                contentDescription = budget.budget.categoryName,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = budget.budget.categoryName,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remaining.toInt())} left",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
+        }
+    }
+}
+
+/**
+ * A dashboard card for displaying the user's net worth.
+ *
+ * @param netWorth The calculated net worth.
+ */
+@Composable
+fun AuroraNetWorthCard(netWorth: Double) {
+    GlassPanel {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Text(
+                "Net Worth",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(netWorth)}",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/**
+ * A dashboard card for displaying recent transactions.
+ *
+ * @param transactions The list of recent transactions.
+ * @param navController The NavController for navigation.
+ */
+@Composable
+fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
+    GlassPanel {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                Text(
+                    "Recent Activity",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                TextButton(
+                    onClick = {
+                        navController.navigate(BottomNavItem.Transactions.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                ) { Text("View All") }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            if (transactions.isEmpty()) {
+                Text(
+                    "No transactions yet.",
+                    modifier = Modifier.padding(vertical = 16.dp),
+                    color = TextSecondary
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    transactions.forEach { details ->
+                        TransactionItem(
+                            transactionDetails = details,
+                            onClick = {
+                                navController.navigate("transaction_detail/${details.transaction.id}")
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/UtilityComponents.kt ==================
 package io.pm.finlight.ui.components
 
@@ -11452,18 +12090,8 @@ fun Modifier.pagerTabIndicatorOffset(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt
-// REASON: FEATURE - The `AccountSummaryCard` has been updated to display bank
-// logos. It now uses the new `BankLogoHelper` to fetch the appropriate drawable
-// for each account, providing a richer and more intuitive visual representation
-// of the user's accounts directly on the dashboard.
-// =================================================================================
 package io.pm.finlight.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11472,7 +12100,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -11481,7 +12108,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Category
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -11491,16 +12117,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -11512,172 +12134,10 @@ import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
+import io.pm.finlight.ui.theme.TextSecondary
 
-private fun formatAmountCompact(amount: Float): String {
-    return when {
-        amount >= 1_000_000 -> "₹${"%.1f".format(amount / 1_000_000)}M"
-        amount >= 1_000 -> "₹${"%.1f".format(amount / 1_000)}k"
-        else -> "₹${"%.0f".format(amount)}"
-    }
-}
-
-@Composable
-fun StatCard(
-    label: String,
-    amount: Float,
-    modifier: Modifier = Modifier,
-    isPerDay: Boolean = false,
-    onClick: () -> Unit = {}
-) {
-    Card(
-        modifier = modifier.clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${formatAmountCompact(amount)}${if (isPerDay) "/day" else ""}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-fun BudgetGauge(
-    progress: Float,
-    modifier: Modifier = Modifier
-) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 1000),
-        label = "BudgetGaugeAnimation"
-    )
-
-    val progressColor = when {
-        animatedProgress > 1f -> MaterialTheme.colorScheme.error
-        animatedProgress > 0.8f -> Color(0xFFFBC02D) // Amber
-        else -> MaterialTheme.colorScheme.primary
-    }
-
-    // Read the color from the theme within the composable scope, before the Canvas
-    val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = size.width / 10f
-            drawArc(
-                color = surfaceVariantColor, // Use the variable here
-                startAngle = 135f,
-                sweepAngle = 270f,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-            )
-            drawArc(
-                color = progressColor,
-                startAngle = 135f,
-                sweepAngle = 270 * animatedProgress,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-            )
-        }
-        Text(
-            text = "${(animatedProgress * 100).toInt()}%",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-
-@Composable
-fun OverallBudgetCard(
-    totalBudget: Float,
-    amountSpent: Float,
-    navController: NavController
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { navController.navigate("budget_screen") },
-        elevation = CardDefaults.cardElevation(4.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Monthly Budget", style = MaterialTheme.typography.titleLarge)
-                if (totalBudget > 0) {
-                    TextButton(onClick = { navController.navigate("budget_screen") }) {
-                        Text("Edit")
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (totalBudget <= 0) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        "You haven't set a budget for this month yet.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = { navController.navigate("budget_screen") }) {
-                        Text("Set Budget")
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceAround
-                ) {
-                    BudgetGauge(
-                        progress = (amountSpent / totalBudget),
-                        modifier = Modifier.size(120.dp)
-                    )
-                    Column {
-                        Text("Spent", style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            text = "₹${"%,.2f".format(amountSpent)}",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Remaining", style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            text = "₹${"%,.2f".format(totalBudget - amountSpent)}",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
+// Note: The old OverallBudgetCard, StatCard, and AccountSummaryCard have been
+// removed and replaced by the new Aurora-themed components in GlassmorphismComponents.kt
 
 @Composable
 fun NetWorthCard(netWorth: Double) {
@@ -11694,79 +12154,12 @@ fun NetWorthCard(netWorth: Double) {
 }
 
 @Composable
-fun AccountSummaryCard(accounts: List<AccountWithBalance>, navController: NavController) {
-    Card(
-        elevation = CardDefaults.cardElevation(4.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Your Accounts",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(
-                    onClick = {
-                        navController.navigate("account_list")
-                    }
-                ) { Text("View All") }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            if (accounts.isEmpty()) {
-                Text("No accounts found. Add one from the Settings.", modifier = Modifier.padding(vertical = 16.dp))
-            } else {
-                Column {
-                    // --- UPDATED: Loop through accounts and display with logos ---
-                    for ((index, accountWithBalance) in accounts.take(3).withIndex()) { // Show max 3
-                        if (index > 0) {
-                            HorizontalDivider()
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { navController.navigate("account_detail/${accountWithBalance.account.id}") }
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            Image(
-                                painter = painterResource(id = BankLogoHelper.getLogoForAccount(accountWithBalance.account.name)),
-                                contentDescription = "${accountWithBalance.account.name} Logo",
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = accountWithBalance.account.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = accountWithBalance.account.type,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                text = "₹${"%,.2f".format(accountWithBalance.balance)}",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (accountWithBalance.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun RecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
-    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
+    // --- UPDATED: Use GlassPanel for the root of this card ---
+    GlassPanel(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Recent Transactions", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text("Recent Activity", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 TextButton(
                     onClick = {
                         navController.navigate(BottomNavItem.Transactions.route) {
@@ -11779,10 +12172,10 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
             }
             Spacer(modifier = Modifier.height(8.dp))
             if(transactions.isEmpty()){
-                Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp))
+                Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp), color = TextSecondary)
             } else {
-                Column {
-                    for (details in transactions) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    transactions.forEach { details ->
                         TransactionItem(
                             transactionDetails = details,
                             onClick = {
@@ -11796,102 +12189,16 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
     }
 }
 
-@Composable
-fun BudgetWatchCard(
-    budgetStatus: List<BudgetWithSpending>,
-    viewModel: BudgetViewModel,
-    navController: NavController
-) {
-    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Budget Watch", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = { navController.navigate("add_budget") }) { Text("+ Add Category Budget") }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            if (budgetStatus.isEmpty()) {
-                Text("No category-specific budgets set for this month.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
-            } else {
-                Column {
-                    for (budgetWithSpendingItem in budgetStatus) {
-                        BudgetItem(budgetWithSpending = budgetWithSpendingItem)
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-@Composable
-fun BudgetItem(budgetWithSpending: BudgetWithSpending) {
-    val budget = budgetWithSpending.budget
-    val actualSpending = budgetWithSpending.spent
-    val progress = if (budget.amount > 0) (actualSpending / budget.amount).toFloat() else 0f
-    val amountRemaining = budget.amount - actualSpending
-    val progressColor = when {
-        progress > 1f -> MaterialTheme.colorScheme.error
-        progress > 0.8f -> Color(0xFFFBC02D) // Amber
-        else -> MaterialTheme.colorScheme.primary
-    }
-
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        CategoryIconHelper.getIconBackgroundColor(
-                            budgetWithSpending.colorKey ?: "gray_light"
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (budgetWithSpending.iconKey == "letter_default") {
-                    Text(
-                        text = budgetWithSpending.budget.categoryName.firstOrNull()?.uppercase() ?: "?",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = Color.Black
-                    )
-                } else {
-                    Icon(
-                        imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
-                        contentDescription = budgetWithSpending.budget.categoryName,
-                        tint = Color.Black,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(text = budget.categoryName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            Text(text = "₹${"%.0f".format(budget.amount)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp), color = progressColor)
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(text = "Spent: ₹${"%.2f".format(actualSpending)}", style = MaterialTheme.typography.bodySmall)
-            Text(text = "Remaining: ₹${"%.2f".format(amountRemaining)}", style = MaterialTheme.typography.bodySmall, color = if (amountRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-        }
-    }
-}
+// --- REMOVED: The old BudgetWatchCard and BudgetItem are no longer needed ---
+// They have been replaced by the new components in GlassmorphismComponents.kt
 -e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: UX IMPROVEMENT - Added logic to visually dim transactions that are
-// excluded from calculations. If `transaction.isExcluded` is true, a lower
-// alpha is applied to the category icon's background, the icon itself, and the
-// transaction amount text. This provides an immediate, at-a-glance indicator
-// of the transaction's status directly in the list view.
-// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11912,6 +12219,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
+import io.pm.finlight.ui.theme.TextSecondary
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -11921,24 +12229,25 @@ fun TransactionItem(
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
 ) {
-    // Determine the alpha based on the exclusion status for a dimmed effect
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
 
-    Card(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-        onClick = onClick,
+    // --- UPDATED: Replaced Card with GlassPanel ---
+    GlassPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
     ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(
                         CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")
-                            .copy(alpha = contentAlpha) // Apply alpha to background
+                            .copy(alpha = contentAlpha)
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -11947,13 +12256,13 @@ fun TransactionItem(
                         text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
-                        color = Color.Black.copy(alpha = contentAlpha) // Apply alpha to text
+                        color = Color.Black.copy(alpha = contentAlpha)
                     )
                 } else {
                     Icon(
                         imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
                         contentDescription = transactionDetails.categoryName,
-                        tint = Color.Black.copy(alpha = contentAlpha), // Apply alpha to icon
+                        tint = Color.Black.copy(alpha = contentAlpha),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -11964,31 +12273,26 @@ fun TransactionItem(
                     text = transactionDetails.transaction.description,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
-                    color = LocalContentColor.current.copy(alpha = contentAlpha) // Apply alpha
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                 )
                 if (!transactionDetails.transaction.notes.isNullOrBlank()) {
                     Text(
                         text = transactionDetails.transaction.notes!!,
                         style = MaterialTheme.typography.bodyMedium,
                         fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha) // Apply alpha
+                        color = TextSecondary.copy(alpha = contentAlpha)
                     )
                 }
                 Text(
-                    text = "${transactionDetails.categoryName ?: "Uncategorized"} • ${transactionDetails.accountName ?: "Unknown"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = contentAlpha) // Apply alpha
-                )
-                Text(
                     text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha) // Apply alpha
+                    color = TextSecondary.copy(alpha = contentAlpha)
                 )
             }
 
             val isIncome = transactionDetails.transaction.transactionType == "income"
             val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
-            val amountColor = baseAmountColor.copy(alpha = contentAlpha) // Apply alpha
+            val amountColor = baseAmountColor.copy(alpha = contentAlpha)
             val icon = if (isIncome) Icons.Default.SouthWest else Icons.Default.NorthEast
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -12012,7 +12316,6 @@ fun TransactionItem(
 
 @Composable
 fun AccountTransactionItem(transactionDetails: TransactionDetails) {
-    // Determine the alpha based on the exclusion status for a dimmed effect
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
 
     Row(
@@ -12026,17 +12329,17 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
             Text(
                 text = transactionDetails.transaction.description,
                 style = MaterialTheme.typography.bodyLarge,
-                color = LocalContentColor.current.copy(alpha = contentAlpha) // Apply alpha
+                color = LocalContentColor.current.copy(alpha = contentAlpha)
             )
             Text(
                 text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha) // Apply alpha
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
             )
         }
         val isIncome = transactionDetails.transaction.transactionType == "income"
         val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
-        val amountColor = baseAmountColor.copy(alpha = contentAlpha) // Apply alpha
+        val amountColor = baseAmountColor.copy(alpha = contentAlpha)
 
         Text(
             text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
@@ -12725,7 +13028,7 @@ val Purple40 = Color(0xFF6650a4)
 val PurpleGrey40 = Color(0xFF625b71)
 val Pink40 = Color(0xFF7D5260)
 
-// --- ADDED: Custom colors for our new theme ---
+// --- FIXED: Re-added original custom colors for the light theme ---
 val FinanceGreen = Color(0xFF006A60) // A deep, professional green for primary elements
 val FinanceGreenLight = Color(0xFF50D9C8) // A lighter version for dark theme primary
 val GoldAccent = Color(0xFF815600) // A rich gold/amber for secondary elements
@@ -12733,6 +13036,15 @@ val GoldAccentLight = Color(0xFFFFBA3F) // A lighter version for dark theme seco
 val Charcoal = Color(0xFF333333) // A dark gray for text and tertiary elements
 val OffWhite = Color(0xFFF8F9FA) // A very light gray for backgrounds
 val DarkSurface = Color(0xFF1E1E1E) // A slightly lighter-than-black for dark theme surfaces
+
+// --- NEW: Custom colors for the "Aurora" theme ---
+val AuroraPrimary = Color(0xFF00E5FF) // Vibrant Teal/Cyan
+val AuroraSecondary = Color(0xFFFFBA3F) // Subtle Gold
+val AuroraBackground = Color(0xFF121212) // Very dark charcoal
+val GlassPanelFill = Color(0x1AFFFFFF) // White with 10% opacity
+val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
+val TextPrimary = Color(0xFFF8F9FA) // Off-white
+val TextSecondary = Color(0xFFB0B0B0) // Light gray
 -e 
 
 
@@ -12750,40 +13062,43 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-// --- UPDATED: Dark theme color scheme using our new custom colors ---
-private val DarkColorScheme =
-    darkColorScheme(
-        primary = FinanceGreenLight,
-        secondary = GoldAccentLight,
-        tertiary = Charcoal,
-        background = Color(0xFF121212),
-        surface = DarkSurface,
-        onPrimary = Color.Black,
-        onSecondary = Color.Black,
-        onBackground = Color.White,
-        onSurface = Color.White,
-        onError = Color.Red,
-    )
+// --- UPDATED: Dark theme color scheme using our new Aurora colors ---
+private val DarkColorScheme = darkColorScheme(
+    primary = Color(0xFF00E5FF), // Vibrant Teal/Cyan
+    onPrimary = Color(0xFF00363A), // Dark color for text/icons on primary
+    secondary = Color(0xFFFFBA3F), // Muted Gold
+    onSecondary = Color(0xFF452B00), // Dark color for text on secondary
+    background = Color(0xFF121212), // Very dark charcoal
+    onBackground = Color(0xFFE6E1E5), // Off-white for text on background
+    surface = Color(0x1AFFFFFF), // Frosted Glass Fill (White @ 10%)
+    onSurface = Color(0xFFE6E1E5), // Off-white for text on glass panels
+    surfaceVariant = Color(0xFF3F4849), // For subtle dividers or disabled components
+    onSurfaceVariant = Color(0xFFBFC8C9), // For secondary text
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005)
+)
 
-// --- UPDATED: Light theme color scheme using our new custom colors ---
-private val LightColorScheme =
-    lightColorScheme(
-        primary = FinanceGreen,
-        secondary = GoldAccent,
-        tertiary = Charcoal,
-        background = OffWhite,
-        surface = Color.White,
-        onPrimary = Color.White,
-        onSecondary = Color.White,
-        onBackground = Color(0xFF1C1B1F),
-        onSurface = Color(0xFF1C1B1F),
-        error = Color(0xFFB00020),
-    )
+// Light theme remains unchanged for now
+private val LightColorScheme = lightColorScheme(
+    primary = Color(0xFF006A60), // Professional Deep Green
+    onPrimary = Color.White,
+    secondary = Color(0xFF815600), // Rich Gold/Amber
+    onSecondary = Color.White,
+    background = Color(0xFFF8F9FA), // A very light off-white
+    onBackground = Color(0xFF191C1C), // Dark charcoal for text on background
+    surface = Color(0xE6FFFFFF), // Frosted Glass Fill (White @ 90%)
+    onSurface = Color(0xFF191C1C), // Dark charcoal for text on glass panels
+    surfaceVariant = Color(0xFFDAE5E3), // For subtle dividers or disabled components
+    onSurfaceVariant = Color(0xFF3F4947), // For secondary text
+    error = Color(0xFFB00020),
+    onError = Color.White
+)
 
 @Composable
 fun PersonalFinanceAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true, // Set to false to always use your custom theme
+    // --- UPDATED: Set dynamicColor to false to enforce our custom theme ---
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colorScheme =
@@ -12944,13 +13259,6 @@ val Typography = Typography(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: UX REFINEMENT - The "Add Card" action has been moved from the FAB to
-// an IconButton in the TopAppBar, appearing next to the "Done" button during
-// customization mode. The main FAB is now hidden when customization mode is
-// active, eliminating the confusing dual-purpose "+" button.
-// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -12978,7 +13286,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -12987,8 +13295,6 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import androidx.navigation.NavDeepLinkRequest
-import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -12996,9 +13302,9 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
-import androidx.navigation.navOptions
 import coil.compose.AsyncImage
 import com.google.gson.Gson
+import io.pm.finlight.ui.components.AuroraAnimatedBackground
 import io.pm.finlight.ui.screens.*
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
 import java.net.URLDecoder
@@ -13183,136 +13489,142 @@ fun MainAppScreen() {
         "account_list",
         "recurring_transactions"
     )
-    // --- UPDATED: Hide FAB in customization mode ---
     val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
 
     val activity = LocalContext.current as AppCompatActivity
 
-    Scaffold(
-        topBar = {
-            if (showMainTopBar) {
-                TopAppBar(
-                    title = { Text(currentTitle) },
-                    navigationIcon = {
-                        if (showProfileIcon) {
-                            AsyncImage(
-                                model = profilePictureUri,
-                                contentDescription = "User Profile Picture",
-                                placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                                error = painterResource(id = R.drawable.ic_launcher_foreground),
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .padding(start = 16.dp)
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable { navController.navigate("profile") }
-                            )
-                        } else if (!showBottomBar) {
-                            IconButton(onClick = { navController.popBackStack() }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                            }
-                        }
-                    },
-                    actions = {
-                        // --- UPDATED: Show different actions for customization mode ---
-                        if (isCustomizationMode) {
-                            IconButton(onClick = { dashboardViewModel.onAddCardClick() }) {
-                                Icon(Icons.Default.Add, contentDescription = "Add Card")
-                            }
-                            TextButton(onClick = { dashboardViewModel.exitCustomizationModeAndSave() }) {
-                                Text("Done")
-                            }
-                        } else {
-                            when (baseCurrentRoute) {
-                                BottomNavItem.Dashboard.route -> {
-                                    IconButton(onClick = { navController.navigate("search_screen") }) {
-                                        Icon(Icons.Default.Search, contentDescription = "Search")
-                                    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        AuroraAnimatedBackground()
+
+        Scaffold(
+            topBar = {
+                if (showMainTopBar) {
+                    TopAppBar(
+                        title = { Text(currentTitle) },
+                        navigationIcon = {
+                            if (showProfileIcon) {
+                                AsyncImage(
+                                    model = profilePictureUri,
+                                    contentDescription = "User Profile Picture",
+                                    placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                                    error = painterResource(id = R.drawable.ic_launcher_foreground),
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .padding(start = 16.dp)
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { navController.navigate("profile") }
+                                )
+                            } else if (!showBottomBar) {
+                                IconButton(onClick = { navController.popBackStack() }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                                 }
-                                BottomNavItem.Transactions.route -> {
-                                    val areFiltersActive by remember(filterState) {
-                                        derivedStateOf {
-                                            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+                            }
+                        },
+                        actions = {
+                            if (isCustomizationMode) {
+                                IconButton(onClick = { dashboardViewModel.onAddCardClick() }) {
+                                    Icon(Icons.Default.Add, contentDescription = "Add Card")
+                                }
+                                TextButton(onClick = { dashboardViewModel.exitCustomizationModeAndSave() }) {
+                                    Text("Done")
+                                }
+                            } else {
+                                when (baseCurrentRoute) {
+                                    BottomNavItem.Dashboard.route -> {
+                                        IconButton(onClick = { navController.navigate("search_screen") }) {
+                                            Icon(Icons.Default.Search, contentDescription = "Search")
                                         }
                                     }
-                                    BadgedBox(
-                                        badge = {
-                                            if (areFiltersActive) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .clip(CircleShape)
-                                                        .background(MaterialTheme.colorScheme.primary)
-                                                )
+                                    BottomNavItem.Transactions.route -> {
+                                        val areFiltersActive by remember(filterState) {
+                                            derivedStateOf {
+                                                filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
                                             }
                                         }
-                                    ) {
-                                        IconButton(onClick = { transactionViewModel.onFilterClick() }) {
-                                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                                        BadgedBox(
+                                            badge = {
+                                                if (areFiltersActive) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(8.dp)
+                                                            .clip(CircleShape)
+                                                            .background(MaterialTheme.colorScheme.primary)
+                                                    )
+                                                }
+                                            }
+                                        ) {
+                                            IconButton(onClick = { transactionViewModel.onFilterClick() }) {
+                                                Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                    }
-                )
-            }
-        },
-        bottomBar = {
-            if (showBottomBar) {
-                NavigationBar {
-                    bottomNavItems.forEach { screen ->
-                        val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
-                        NavigationBarItem(
-                            icon = { Icon(screen.icon, contentDescription = screen.label) },
-                            label = { Text(screen.label) },
-                            selected = isSelected,
-                            onClick = {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                    )
+                }
+            },
+            bottomBar = {
+                if (showBottomBar) {
+                    NavigationBar(
+                        containerColor = Color.Transparent
+                    ) {
+                        bottomNavItems.forEach { screen ->
+                            val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                            NavigationBarItem(
+                                icon = { Icon(screen.icon, contentDescription = screen.label) },
+                                label = { Text(screen.label) },
+                                selected = isSelected,
+                                onClick = {
+                                    navController.navigate(screen.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
+                            )
+                        }
+                    }
+                }
+            },
+            floatingActionButton = {
+                if (showFab) {
+                    FloatingActionButton(onClick = {
+                        when (baseCurrentRoute) {
+                            BottomNavItem.Dashboard.route, BottomNavItem.Transactions.route -> {
+                                navController.navigate("add_transaction")
                             }
-                        )
+                            "account_list" -> {
+                                navController.navigate("add_account")
+                            }
+                            "recurring_transactions" -> {
+                                navController.navigate("add_recurring_transaction")
+                            }
+                        }
+                    }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Add Transaction or Account")
                     }
                 }
-            }
-        },
-        floatingActionButton = {
-            if (showFab) {
-                FloatingActionButton(onClick = {
-                    when (baseCurrentRoute) {
-                        BottomNavItem.Dashboard.route, BottomNavItem.Transactions.route -> {
-                            navController.navigate("add_transaction")
-                        }
-                        "account_list" -> {
-                            navController.navigate("add_account")
-                        }
-                        "recurring_transactions" -> {
-                            navController.navigate("add_recurring_transaction")
-                        }
-                    }
-                }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add Transaction or Account")
-                }
-            }
+            },
+            containerColor = Color.Transparent
+        ) { innerPadding ->
+            AppNavHost(
+                navController = navController,
+                modifier = Modifier.padding(innerPadding),
+                activity = activity,
+                dashboardViewModel = dashboardViewModel,
+                settingsViewModel = settingsViewModel,
+                transactionViewModel = transactionViewModel,
+                accountViewModel = accountViewModel,
+                categoryViewModel = categoryViewModel,
+                budgetViewModel = budgetViewModel,
+                profileViewModel = profileViewModel,
+                incomeViewModel = incomeViewModel
+            )
         }
-    ) { innerPadding ->
-        AppNavHost(
-            navController = navController,
-            modifier = Modifier.padding(innerPadding),
-            activity = activity,
-            dashboardViewModel = dashboardViewModel,
-            settingsViewModel = settingsViewModel,
-            transactionViewModel = transactionViewModel,
-            accountViewModel = accountViewModel,
-            categoryViewModel = categoryViewModel,
-            budgetViewModel = budgetViewModel,
-            profileViewModel = profileViewModel,
-            incomeViewModel = incomeViewModel
-        )
     }
 }
 
@@ -13348,7 +13660,8 @@ fun AppNavHost(
         }
 
         composable(BottomNavItem.Dashboard.route) {
-            DashboardScreen(navController, dashboardViewModel, budgetViewModel)
+            // --- FIXED: Removed the extra budgetViewModel argument ---
+            DashboardScreen(navController, dashboardViewModel)
         }
         composable(
             route = BottomNavItem.Transactions.route
@@ -14995,14 +15308,6 @@ data class AppDataBackup(
 
 
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: FEATURE - New functions (`saveDashboardLayout`, `getDashboardCardOrder`,
-// `getDashboardVisibleCards`) have been added to manage the user's custom
-// dashboard layout. These functions handle the serialization and deserialization
-// of the card order and visibility settings into SharedPreferences, providing
-// the persistence layer for the customizable dashboard.
-// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -15041,12 +15346,9 @@ class SettingsRepository(context: Context) {
         private const val KEY_MONTHLY_REPORT_HOUR = "monthly_report_hour"
         private const val KEY_MONTHLY_REPORT_MINUTE = "monthly_report_minute"
         private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
-        // --- NEW: Keys for dashboard layout ---
         private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
         private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
     }
-
-    // --- NEW: Functions to save and load dashboard layout ---
 
     fun saveDashboardLayout(order: List<DashboardCardType>, visible: Set<DashboardCardType>) {
         val orderJson = gson.toJson(order.map { it.name })
@@ -15090,14 +15392,14 @@ class SettingsRepository(context: Context) {
             val names: List<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
         } else {
-            // Default order
+            // --- FIXED: Use the new enum values for the default order ---
             listOf(
                 DashboardCardType.OVERALL_BUDGET,
-                DashboardCardType.MONTHLY_STATS,
+                DashboardCardType.QUICK_STATS,
                 DashboardCardType.QUICK_ACTIONS,
                 DashboardCardType.NET_WORTH,
                 DashboardCardType.RECENT_ACTIVITY,
-                DashboardCardType.ACCOUNTS_SUMMARY,
+                DashboardCardType.ACCOUNTS_CAROUSEL,
                 DashboardCardType.BUDGET_WATCH
             )
         }

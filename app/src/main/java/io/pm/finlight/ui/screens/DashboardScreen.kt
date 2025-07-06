@@ -1,6 +1,8 @@
 package io.pm.finlight.ui.screens
 
 import android.app.Application
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -19,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -27,7 +30,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.BottomNavItem
-import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.DashboardCardType
 import io.pm.finlight.DashboardViewModel
 import io.pm.finlight.DashboardViewModelFactory
@@ -40,7 +42,6 @@ import kotlinx.coroutines.launch
 fun DashboardScreen(
     navController: NavController,
     viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
-    budgetViewModel: BudgetViewModel,
 ) {
     val visibleCards by viewModel.visibleCards.collectAsState()
     val isCustomizationMode by viewModel.isCustomizationMode.collectAsState()
@@ -92,14 +93,25 @@ fun DashboardScreen(
         }
     ) {
         itemsIndexed(visibleCards, key = { _, item -> item.name }) { index, cardType ->
-            val displacementOffset = if (index == dragDropState.draggingItemIndex) {
-                dragDropState.draggingItemOffset
-            } else {
-                0f
-            }
+            val isBeingDragged = index == dragDropState.draggingItemIndex
+            val animatedRotation by animateFloatAsState(
+                targetValue = if (isBeingDragged) -2f else 0f,
+                animationSpec = tween(300),
+                label = "DragRotation"
+            )
+            val animatedElevation by animateFloatAsState(
+                targetValue = if (isBeingDragged) 8f else 0f,
+                animationSpec = tween(300),
+                label = "DragElevation"
+            )
+
             Box(
                 modifier = Modifier
-                    .graphicsLayer { translationY = displacementOffset }
+                    .graphicsLayer {
+                        translationY = if (isBeingDragged) dragDropState.draggingItemOffset else 0f
+                        rotationZ = animatedRotation
+                    }
+                    .shadow(elevation = animatedElevation.dp, shape = MaterialTheme.shapes.extraLarge)
             ) {
                 DashboardCard(
                     cardType = cardType,
@@ -189,8 +201,8 @@ private fun DashboardCard(
                     Text("View Categories")
                 }
             }
-            DashboardCardType.NET_WORTH -> NetWorthCard(netWorth)
-            DashboardCardType.RECENT_ACTIVITY -> RecentActivityCard(recentTransactions, navController)
+            DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
+            DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(recentTransactions, navController)
             DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
             DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
                 budgetStatus = budgetStatus,

@@ -42,7 +42,6 @@ import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
-import io.pm.finlight.ui.theme.TextSecondary
 
 // Note: The old OverallBudgetCard, StatCard, and AccountSummaryCard have been
 // removed and replaced by the new Aurora-themed components in GlassmorphismComponents.kt
@@ -80,7 +79,7 @@ fun RecentActivityCard(transactions: List<TransactionDetails>, navController: Na
             }
             Spacer(modifier = Modifier.height(8.dp))
             if(transactions.isEmpty()){
-                Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp), color = TextSecondary)
+                Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     transactions.forEach { details ->
