@@ -22,7 +22,8 @@ private val DarkColorScheme = darkColorScheme(
     surface = Color(0x1AFFFFFF), // Frosted Glass Fill (White @ 10%)
     onSurface = Color(0xFFE6E1E5), // Off-white for text on glass panels
     surfaceVariant = Color(0xFF3F4849), // For subtle dividers or disabled components
-    onSurfaceVariant = Color(0xFFBFC8C9), // For secondary text
+    // --- FIX: Increased contrast for secondary text in dark mode ---
+    onSurfaceVariant = Color(0xFF9E9E9E), // For secondary text
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005)
 )

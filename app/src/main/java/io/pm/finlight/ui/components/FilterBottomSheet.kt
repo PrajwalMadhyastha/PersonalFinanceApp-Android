@@ -2,6 +2,7 @@
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/FilterBottomSheet.kt
 // REASON: NEW FILE - A reusable composable for the filter bottom sheet to be
 // used across the Transaction and Income screens, avoiding code duplication.
+// FIX: Explicitly set the title's text color to ensure proper contrast in dark mode.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -33,7 +34,12 @@ fun FilterBottomSheet(
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Filter Transactions", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "Filter Transactions",
+            style = MaterialTheme.typography.titleLarge,
+            // --- FIX: Explicitly set color for dark mode contrast ---
+            color = MaterialTheme.colorScheme.onSurface
+        )
 
         OutlinedTextField(
             value = filterState.keyword,

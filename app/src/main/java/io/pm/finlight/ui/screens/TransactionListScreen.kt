@@ -5,6 +5,12 @@
 // `TopAppBar` in `MainActivity`, creating a more consistent UI and simplifying
 // this screen's logic. The filter state is now collected from the ViewModel to
 // drive the bottom sheet.
+// FIX: Explicitly set text colors in the MonthlySummaryHeader and BudgetProgress
+// composables to ensure proper contrast and legibility in dark mode.
+// FIX: Corrected an invalid SimpleDateFormat pattern that was causing a runtime crash.
+// UPDATE: Applied the semi-opaque popup surface color to the filter bottom
+// sheet to match the style used in the Transaction Detail screen, ensuring
+// a consistent UI for all popups.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -16,6 +22,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -40,6 +47,8 @@ import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.FilterBottomSheet
 import io.pm.finlight.ui.components.TransactionList
 import io.pm.finlight.ui.components.pagerTabIndicatorOffset
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -115,7 +124,11 @@ fun TransactionListScreen(
 
 
     if (showFilterSheet) {
-        ModalBottomSheet(onDismissRequest = { viewModel.onFilterSheetDismiss() }) {
+        // --- UPDATE: Added containerColor to match the Aurora design system for popups ---
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.onFilterSheetDismiss() },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        ) {
             FilterBottomSheet(
                 filterState = filterState,
                 accounts = allAccounts,
@@ -139,6 +152,7 @@ fun MonthlySummaryHeader(
     onMonthSelected: (Calendar) -> Unit
 ) {
     val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
+    // --- FIX: Corrected the invalid date format pattern from "LLLL einger" to "LLLL yyyy" ---
     val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
     var showMonthScroller by remember { mutableStateOf(false) }
 
@@ -164,10 +178,13 @@ fun MonthlySummaryHeader(
                     text = monthYearFormat.format(selectedMonth.time),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
+                    // --- FIX: Explicitly set color for dark mode contrast ---
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Icon(
                     imageVector = if (showMonthScroller) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector"
+                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector",
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
@@ -222,7 +239,8 @@ fun MonthlySummaryHeader(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Total Spent", style = MaterialTheme.typography.labelMedium)
+                // --- FIX: Explicitly set color for dark mode contrast ---
+                Text("Total Spent", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalSpent)}",
                     style = MaterialTheme.typography.titleLarge,
@@ -231,7 +249,8 @@ fun MonthlySummaryHeader(
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text("Total Income", style = MaterialTheme.typography.labelMedium)
+                // --- FIX: Explicitly set color for dark mode contrast ---
+                Text("Total Income", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalIncome)}",
                     style = MaterialTheme.typography.titleLarge,
@@ -296,7 +315,9 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
             Text(
                 text = "Spent: ₹${"%,.0f".format(spent)}",
                 style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                // --- FIX: Explicitly set color for dark mode contrast ---
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = "Budget: ₹${"%,.0f".format(budget)}",

@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,7 +16,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.data.PieData
@@ -27,6 +24,7 @@ import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.PercentFormatter
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.CategorySpending
+import io.pm.finlight.ui.components.GlassPanel
 
 @Composable
 fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
@@ -42,21 +40,23 @@ fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
 
     val totalSpending = spendingList.sumOf { it.totalAmount }
     val pieData = createPieData(spendingList)
+    val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(4.dp)
-            ) {
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Category Breakdown", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Category Breakdown",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Spacer(Modifier.height(16.dp))
                     AndroidView(
                         factory = { context ->
@@ -64,7 +64,7 @@ fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
                                 description.isEnabled = false
                                 isDrawHoleEnabled = true
                                 setHoleColor(Color.TRANSPARENT)
-                                setEntryLabelColor(Color.BLACK)
+                                setEntryLabelColor(pieChartLabelColor)
                                 setEntryLabelTextSize(12f)
                                 legend.isEnabled = false
                                 setUsePercentValues(true)
@@ -93,11 +93,10 @@ fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
 
 @Composable
 fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Double) {
-    val percentage = (categorySpending.totalAmount / totalSpending * 100)
+    val percentage = if (totalSpending > 0) (categorySpending.totalAmount / totalSpending * 100) else 0.0
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(2.dp)
+    GlassPanel(
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -123,7 +122,11 @@ fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Doub
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(categorySpending.categoryName, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    categorySpending.categoryName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 Text(
                     "${"%.1f".format(percentage)}% of total spending",
                     style = MaterialTheme.typography.bodySmall,
@@ -133,13 +136,13 @@ fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Doub
             Text(
                 "₹${"%,.2f".format(categorySpending.totalAmount)}",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
 }
 
-// --- FIX: Removed 'private' modifier to make the function accessible from other files ---
 fun createPieData(spendingList: List<CategorySpending>): PieData {
     val entries = spendingList.map {
         PieEntry(it.totalAmount.toFloat(), it.categoryName)
@@ -152,6 +155,7 @@ fun createPieData(spendingList: List<CategorySpending>): PieData {
         valueFormatter = PercentFormatter()
         valueTextSize = 12f
         valueTextColor = Color.BLACK
+        setDrawValues(false) // Hiding values on the chart itself for a cleaner look
     }
     return PieData(dataSet)
 }
