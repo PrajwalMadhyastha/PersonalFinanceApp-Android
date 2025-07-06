@@ -3,11 +3,17 @@
 // REASON: NEW FILE - A reusable composable for the filter bottom sheet to be
 // used across the Transaction and Income screens, avoiding code duplication.
 // FIX: Explicitly set the title's text color to ensure proper contrast in dark mode.
+// FIX: Applied a semi-opaque background to the filter dropdown menus to ensure
+// legibility and consistency with other popups in dark mode.
 // =================================================================================
 package io.pm.finlight.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -16,7 +22,8 @@ import androidx.compose.ui.unit.dp
 import io.pm.finlight.Account
 import io.pm.finlight.Category
 import io.pm.finlight.TransactionFilterState
-import io.pm.finlight.ui.screens.SearchableDropdown
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 
 @Composable
 fun FilterBottomSheet(
@@ -37,7 +44,6 @@ fun FilterBottomSheet(
         Text(
             "Filter Transactions",
             style = MaterialTheme.typography.titleLarge,
-            // --- FIX: Explicitly set color for dark mode contrast ---
             color = MaterialTheme.colorScheme.onSurface
         )
 
@@ -71,6 +77,62 @@ fun FilterBottomSheet(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Clear All Filters")
+        }
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> SearchableDropdown(
+    label: String,
+    options: List<T>,
+    selectedOption: T?,
+    onOptionSelected: (T?) -> Unit,
+    getDisplayName: (T) -> String,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+    ) {
+        OutlinedTextField(
+            value = selectedOption?.let { getDisplayName(it) } ?: "All",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = {
+                Row {
+                    if (selectedOption != null) {
+                        IconButton(onClick = { onOptionSelected(null) }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear selection")
+                        }
+                    }
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                }
+            },
+            modifier =
+                Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(
+                if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            )
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(getDisplayName(option)) },
+                    onClick = {
+                        onOptionSelected(option)
+                        expanded = false
+                    },
+                )
+            }
         }
     }
 }

@@ -5,6 +5,10 @@
 // dynamic and responsive search experience.
 // UPDATE: Redesigned the layout to hide advanced filters in a collapsible
 // section, providing a cleaner initial view and an indicator for active filters.
+// UPDATE: The filter section has been redesigned to use a GlassPanel, aligning
+// it with the "Project Aurora" aesthetic for a consistent and modern look.
+// FIX: Applied a semi-opaque background to the filter dropdown menus to ensure
+// legibility and consistency with other popups in dark mode.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -14,6 +18,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,7 +39,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionItem
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -50,66 +58,36 @@ fun SearchScreen(navController: NavController) {
 
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
-    var showAdvancedFilters by remember { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
-    val areFiltersActive by remember(searchUiState) {
-        derivedStateOf {
-            searchUiState.selectedAccount != null ||
-                    searchUiState.selectedCategory != null ||
-                    searchUiState.transactionType != "All" ||
-                    searchUiState.startDate != null ||
-                    searchUiState.endDate != null
-        }
-    }
-
     Column(modifier = Modifier.fillMaxSize()) {
-        // Search Bar and Filter Toggle
+        // Search Bar and Filter Section
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchUiState.keyword,
-                    onValueChange = { viewModel.onKeywordChange(it) },
-                    label = { Text("Keyword (description, notes)") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester),
-                    singleLine = true
-                )
-                BadgedBox(
-                    badge = {
-                        if (areFiltersActive) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                            )
-                        }
-                    }
-                ) {
-                    IconButton(onClick = { showAdvancedFilters = !showAdvancedFilters }) {
-                        Icon(Icons.Default.FilterList, contentDescription = "Toggle Advanced Filters")
-                    }
-                }
-            }
+            OutlinedTextField(
+                value = searchUiState.keyword,
+                onValueChange = { viewModel.onKeywordChange(it) },
+                label = { Text("Keyword (description, notes)") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+                singleLine = true
+            )
 
-            // Collapsible Advanced Filters Section
-            AnimatedVisibility(
-                visible = showAdvancedFilters,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // --- UPDATE: Filters are now inside a GlassPanel ---
+            GlassPanel {
                 Column(
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    Text(
+                        "Filters",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     SearchableDropdown(
                         label = "Account",
                         options = searchUiState.accounts,
@@ -166,12 +144,14 @@ fun SearchScreen(navController: NavController) {
         if (searchResults.isNotEmpty()) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(16.dp)
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
                     Text(
                         text = "Results (${searchResults.size})",
                         style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                 }
@@ -273,6 +253,10 @@ fun <T> SearchableDropdown(
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            // --- FIX: Apply a background to the dropdown menu for better legibility ---
+            modifier = Modifier.background(
+                if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            )
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
