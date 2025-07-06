@@ -94,23 +94,16 @@ fun DashboardHeroCard(
     safeToSpend: Float,
     navController: NavController
 ) {
-    var targetAmount by remember { mutableStateOf(0f) }
-    val animatedRemainingAmount by animateFloatAsState(
-        targetValue = targetAmount,
-        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
-        label = "RemainingAmountAnimation"
-    )
+    // --- UPDATED: Removed animation from the remaining amount text ---
+    val remainingAmount = totalBudget - amountSpent
 
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
+    // --- UPDATED: The progress bar animation is now the primary motion ---
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
-        animationSpec = tween(durationMillis = 1500),
+        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
         label = "BudgetProgressAnimation"
     )
-
-    LaunchedEffect(totalBudget, amountSpent) {
-        targetAmount = totalBudget - amountSpent
-    }
 
     // This component does NOT use GlassPanel to blend with the background
     Column(
@@ -134,7 +127,7 @@ fun DashboardHeroCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedRemainingAmount.toInt())}",
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remainingAmount.toInt())}",
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -145,26 +138,26 @@ fun DashboardHeroCard(
             modifier = Modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // --- UPDATED: Pass progress to the enhanced progress bar ---
             AuroraProgressBar(progress = animatedProgress)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                // --- UPDATED: Increased font size for better legibility ---
                 Text(
                     text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = "Total: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(totalBudget.toInt())}",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 0.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
         Row(
             modifier = Modifier
