@@ -13,11 +13,15 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +45,7 @@ import io.pm.finlight.ui.theme.AuroraPrimary
 import io.pm.finlight.ui.theme.AuroraSecondary
 import io.pm.finlight.ui.theme.GlassPanelBorder
 import io.pm.finlight.ui.theme.GlassPanelFill
+import androidx.compose.ui.graphics.vector.ImageVector
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.min
@@ -94,24 +99,21 @@ fun DashboardHeroCard(
     safeToSpend: Float,
     navController: NavController
 ) {
-    // --- UPDATED: Removed animation from the remaining amount text ---
     val remainingAmount = totalBudget - amountSpent
 
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
-    // --- UPDATED: The progress bar animation is now the primary motion ---
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
         animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
         label = "BudgetProgressAnimation"
     )
 
-    // This component does NOT use GlassPanel to blend with the background
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp), // Add vertical padding for more space
+            .padding(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp) // Increase space between elements
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         Text(
             text = "Monthly Budget",
@@ -128,7 +130,7 @@ fun DashboardHeroCard(
             )
             Text(
                 text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remainingAmount.toInt())}",
-                style = MaterialTheme.typography.displayMedium,
+                style = MaterialTheme.typography.displayLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -143,15 +145,14 @@ fun DashboardHeroCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // --- UPDATED: Increased font size for better legibility ---
                 Text(
                     text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = "Total: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(totalBudget.toInt())}",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -231,23 +232,19 @@ private fun AuroraProgressBar(progress: Float) {
         else -> AuroraPrimary
     }
 
-    // Use a custom Layout to position the percentage text relative to the progress bar fill
     Layout(
         content = {
-            // Content for the layout: the percentage text
             Text(
                 text = "$animatedPercentage%",
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.labelSmall
             )
-            // The Canvas for drawing the bar
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(20.dp) // Made the bar thicker
+                    .height(20.dp)
             ) {
-                // Draw the track with a subtle 3D effect
                 drawRoundRect(
                     color = Color.Black.copy(alpha = 0.2f),
                     size = size,
@@ -261,7 +258,6 @@ private fun AuroraProgressBar(progress: Float) {
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2)
                 )
 
-                // Draw the progress fill
                 if (progress > 0) {
                     drawRoundRect(
                         brush = Brush.horizontalGradient(
@@ -274,7 +270,6 @@ private fun AuroraProgressBar(progress: Float) {
             }
         }
     ) { measurables, constraints ->
-        // This is the measurement and placement logic for the custom Layout
         val textPlaceable = measurables[0].measure(Constraints())
         val canvasPlaceable = measurables[1].measure(constraints)
 
@@ -286,9 +281,7 @@ private fun AuroraProgressBar(progress: Float) {
         val textY = (canvasPlaceable.height - textPlaceable.height) / 2
 
         layout(canvasPlaceable.width, canvasPlaceable.height + textPlaceable.height + 4.dp.roundToPx()) {
-            // Place the Canvas (the progress bar)
             canvasPlaceable.placeRelative(0, textPlaceable.height + 4.dp.roundToPx())
-            // Place the Text (the percentage) above the bar
             textPlaceable.placeRelative(textX, 0)
         }
     }
@@ -559,5 +552,76 @@ fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navControll
                 }
             }
         }
+    }
+}
+
+/**
+ * --- NEW ---
+ * A dashboard card that provides quick navigation actions.
+ *
+ * @param navController The NavController for navigation.
+ */
+@Composable
+fun AuroraQuickActionsCard(navController: NavController) {
+    GlassPanel(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.height(IntrinsicSize.Min), // Ensures divider stretches
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            QuickActionItem(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Default.Timeline,
+                text = "View Trends",
+                onClick = {
+                    // Navigate to the main reports screen
+                    navController.navigate(BottomNavItem.Reports.route)
+                }
+            )
+            VerticalDivider(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(1.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+            )
+            QuickActionItem(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Default.PieChart,
+                text = "View Categories",
+                onClick = {
+                    // Navigate to the main reports screen
+                    navController.navigate(BottomNavItem.Reports.route)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickActionItem(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    text: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = text,
+            tint = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }

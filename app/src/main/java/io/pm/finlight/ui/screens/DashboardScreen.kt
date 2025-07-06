@@ -145,7 +145,6 @@ private fun DashboardCard(
 
     Box {
         when (cardType) {
-            // --- UPDATED: Use the new single HERO_BUDGET card ---
             DashboardCardType.HERO_BUDGET -> DashboardHeroCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
@@ -153,36 +152,8 @@ private fun DashboardCard(
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,
             )
-            DashboardCardType.QUICK_ACTIONS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                FilledTonalButton(
-                    onClick = {
-                        navController.navigate(BottomNavItem.Reports.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("View Trends")
-                }
-                FilledTonalButton(
-                    onClick = {
-                        navController.navigate(BottomNavItem.Reports.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Default.PieChart, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("View Categories")
-                }
-            }
+            // --- UPDATED: This now calls our new, single-panel card ---
+            DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
             DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(recentTransactions, navController)
             DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
