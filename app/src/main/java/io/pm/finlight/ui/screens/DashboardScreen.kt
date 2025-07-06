@@ -12,6 +12,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -41,8 +43,6 @@ import io.pm.finlight.DashboardViewModelFactory
 import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.isSystemInDarkTheme
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -60,11 +60,10 @@ fun DashboardScreen(
     val dragDropState = rememberDragDropState(onMove = viewModel::updateCardOrder)
 
     if (showAddCardSheet) {
-        // --- UPDATED: Conditionally set container color for dark mode only ---
         val sheetContainerColor = if (isSystemInDarkTheme()) {
-            Color(0xFF2C2C34) // A solid, opaque dark color
+            Color(0xFF2C2C34)
         } else {
-            BottomSheetDefaults.ContainerColor // Use default for light mode
+            BottomSheetDefaults.ContainerColor
         }
 
         ModalBottomSheet(
@@ -112,7 +111,6 @@ fun DashboardScreen(
         itemsIndexed(visibleCards, key = { _, item -> item.name }) { index, cardType ->
             val isBeingDragged = index == dragDropState.draggingItemIndex
 
-            // --- NEW: Animation for the "giggle" effect in customization mode ---
             val infiniteTransition = rememberInfiniteTransition(label = "giggle_animation")
             val giggleRotation by infiniteTransition.animateFloat(
                 initialValue = -0.8f,
@@ -124,14 +122,12 @@ fun DashboardScreen(
                 label = "giggle"
             )
 
-            // Animation for the "lift and tilt" effect when dragging
             val dragTiltRotation by animateFloatAsState(
                 targetValue = if (isBeingDragged) -2f else 0f,
                 animationSpec = tween(300),
                 label = "DragRotation"
             )
 
-            // Combine animations: "lift" takes precedence over "giggle"
             val finalRotation = when {
                 isBeingDragged -> dragTiltRotation
                 isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET -> giggleRotation
@@ -148,7 +144,8 @@ fun DashboardScreen(
                 modifier = Modifier
                     .animateItemPlacement()
                     .graphicsLayer {
-                        translationY = if (isBeingDragged) dragDropState.draggingItemOffset else 0f
+                        // --- UPDATED: Use the new calculated translationY for smooth dragging ---
+                        translationY = if (isBeingDragged) dragDropState.draggingItemTranslationY else 0f
                         rotationZ = finalRotation
                     }
                     .shadow(elevation = animatedElevation.dp, shape = MaterialTheme.shapes.extraLarge)
@@ -200,8 +197,6 @@ private fun DashboardCard(
                 navController = navController,
             )
         }
-        // --- UPDATED: Customization controls are now conditional ---
-        // They will not appear for the HERO_BUDGET card.
         if (isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET) {
             Row(
                 modifier = Modifier.align(Alignment.TopEnd),
