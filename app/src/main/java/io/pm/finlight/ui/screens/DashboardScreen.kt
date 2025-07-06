@@ -41,6 +41,8 @@ import io.pm.finlight.DashboardViewModelFactory
 import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.isSystemInDarkTheme
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -58,7 +60,17 @@ fun DashboardScreen(
     val dragDropState = rememberDragDropState(onMove = viewModel::updateCardOrder)
 
     if (showAddCardSheet) {
-        ModalBottomSheet(onDismissRequest = { viewModel.onAddCardSheetDismiss() }) {
+        // --- UPDATED: Conditionally set container color for dark mode only ---
+        val sheetContainerColor = if (isSystemInDarkTheme()) {
+            Color(0xFF2C2C34) // A solid, opaque dark color
+        } else {
+            BottomSheetDefaults.ContainerColor // Use default for light mode
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.onAddCardSheetDismiss() },
+            containerColor = sheetContainerColor
+        ) {
             AddCardSheetContent(
                 hiddenCards = hiddenCards,
                 onAddCard = { cardType ->
@@ -218,7 +230,11 @@ private fun AddCardSheetContent(
     onAddCard: (DashboardCardType) -> Unit
 ) {
     Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
-        Text("Add a Card to Your Dashboard", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "Add a Card to Your Dashboard",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
         Spacer(Modifier.height(16.dp))
         if (hiddenCards.isEmpty()) {
             Text("All available cards are already on your dashboard.")
