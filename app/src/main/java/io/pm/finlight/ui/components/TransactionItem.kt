@@ -2,6 +2,7 @@ package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,6 +23,10 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.TransactionDetails
+import io.pm.finlight.ui.theme.ExpenseRedDark
+import io.pm.finlight.ui.theme.ExpenseRedLight
+import io.pm.finlight.ui.theme.IncomeGreenDark
+import io.pm.finlight.ui.theme.IncomeGreenLight
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -33,7 +38,6 @@ fun TransactionItem(
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
 
-    // --- UPDATED: Replaced Card with GlassPanel ---
     GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
@@ -93,8 +97,12 @@ fun TransactionItem(
             }
 
             val isIncome = transactionDetails.transaction.transactionType == "income"
-            val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
-            val amountColor = baseAmountColor.copy(alpha = contentAlpha)
+            // --- UPDATED: Use theme-aware colors for amount ---
+            val amountColor = if (isSystemInDarkTheme()) {
+                if (isIncome) IncomeGreenDark else ExpenseRedDark
+            } else {
+                if (isIncome) IncomeGreenLight else ExpenseRedLight
+            }.copy(alpha = contentAlpha)
             val icon = if (isIncome) Icons.Default.SouthWest else Icons.Default.NorthEast
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -140,8 +148,12 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
             )
         }
         val isIncome = transactionDetails.transaction.transactionType == "income"
-        val baseAmountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
-        val amountColor = baseAmountColor.copy(alpha = contentAlpha)
+        // --- UPDATED: Use theme-aware colors for amount ---
+        val amountColor = if (isSystemInDarkTheme()) {
+            if (isIncome) IncomeGreenDark else ExpenseRedDark
+        } else {
+            if (isIncome) IncomeGreenLight else ExpenseRedLight
+        }.copy(alpha = contentAlpha)
 
         Text(
             text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",

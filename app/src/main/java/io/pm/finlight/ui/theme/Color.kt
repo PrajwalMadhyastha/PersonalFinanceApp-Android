@@ -31,3 +31,9 @@ val SurfaceDark = Color(0x1AFFFFFF) // Frosted Glass Fill for Dark Theme (White 
 
 val SurfaceVariantLight = Color(0xFFDAE5E3) // Subtle dividers/disabled for Light Theme
 val SurfaceVariantDark = Color(0xFF3F4849) // Subtle dividers/disabled for Dark Theme
+
+// --- NEW: High-contrast colors for transaction amounts ---
+val IncomeGreenDark = Color(0xFF66BB6A)
+val ExpenseRedDark = Color(0xFFEF5350)
+val IncomeGreenLight = Color(0xFF2E7D32)
+val ExpenseRedLight = Color(0xFFC62828)
