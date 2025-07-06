@@ -1,7 +1,12 @@
 package io.pm.finlight.ui.screens
 
 import android.app.Application
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -66,7 +71,7 @@ fun DashboardScreen(
 
     LazyColumn(
         state = dragDropState.lazyListState,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), // Adjusted padding
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.pointerInput(Unit) {
             detectDragGesturesAfterLongPress(
@@ -94,11 +99,33 @@ fun DashboardScreen(
     ) {
         itemsIndexed(visibleCards, key = { _, item -> item.name }) { index, cardType ->
             val isBeingDragged = index == dragDropState.draggingItemIndex
-            val animatedRotation by animateFloatAsState(
+
+            // --- NEW: Animation for the "giggle" effect in customization mode ---
+            val infiniteTransition = rememberInfiniteTransition(label = "giggle_animation")
+            val giggleRotation by infiniteTransition.animateFloat(
+                initialValue = -0.8f,
+                targetValue = 0.8f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(150, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "giggle"
+            )
+
+            // Animation for the "lift and tilt" effect when dragging
+            val dragTiltRotation by animateFloatAsState(
                 targetValue = if (isBeingDragged) -2f else 0f,
                 animationSpec = tween(300),
                 label = "DragRotation"
             )
+
+            // Combine animations: "lift" takes precedence over "giggle"
+            val finalRotation = when {
+                isBeingDragged -> dragTiltRotation
+                isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET -> giggleRotation
+                else -> 0f
+            }
+
             val animatedElevation by animateFloatAsState(
                 targetValue = if (isBeingDragged) 8f else 0f,
                 animationSpec = tween(300),
@@ -107,10 +134,10 @@ fun DashboardScreen(
 
             Box(
                 modifier = Modifier
-                    .animateItemPlacement() // Animate card reordering
+                    .animateItemPlacement()
                     .graphicsLayer {
                         translationY = if (isBeingDragged) dragDropState.draggingItemOffset else 0f
-                        rotationZ = animatedRotation
+                        rotationZ = finalRotation
                     }
                     .shadow(elevation = animatedElevation.dp, shape = MaterialTheme.shapes.extraLarge)
             ) {
@@ -152,7 +179,6 @@ private fun DashboardCard(
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,
             )
-            // --- UPDATED: This now calls our new, single-panel card ---
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
             DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(recentTransactions, navController)
@@ -162,7 +188,9 @@ private fun DashboardCard(
                 navController = navController,
             )
         }
-        if (isCustomizationMode) {
+        // --- UPDATED: Customization controls are now conditional ---
+        // They will not appear for the HERO_BUDGET card.
+        if (isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET) {
             Row(
                 modifier = Modifier.align(Alignment.TopEnd),
                 verticalAlignment = Alignment.CenterVertically
