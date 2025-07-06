@@ -4,6 +4,11 @@
 // a modern, visually appealing layout. It now features a new summary header,
 // a restyled bar chart with a highlighted selected day, and swipe-based
 // navigation to move between periods, removing the old navigation arrows.
+// FIX: Corrected the horizontal drag gesture detection to use the correct
+// parameter type, resolving a compilation error.
+// UPDATE: The ReportHeader is now more dynamic, displaying more specific and
+// user-friendly date ranges for the Daily, Weekly, and Monthly views to make
+// each report feel distinct.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -108,6 +113,7 @@ fun TimePeriodReportScreen(
                         },
                         onDragCancel = { dragAmount = 0f }
                     ) { change, drag ->
+                        // --- FIX: The 'drag' parameter is a Float, not an Offset ---
                         dragAmount += drag
                         change.consume()
                     }
@@ -169,19 +175,26 @@ fun TimePeriodReportScreen(
 @Composable
 private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDate: Date) {
     val title = when (timePeriod) {
-        TimePeriod.DAILY -> "Today's Spend"
-        TimePeriod.WEEKLY -> "This Week's Spend"
-        TimePeriod.MONTHLY -> "This Month's Spend"
+        TimePeriod.DAILY -> "Total Spend"
+        TimePeriod.WEEKLY -> "Total Spend"
+        TimePeriod.MONTHLY -> "Total Spend"
     }
 
+    // --- UPDATE: More descriptive and dynamic subtitles for each time period ---
     val subtitle = when(timePeriod) {
-        TimePeriod.DAILY -> "since 11 pm yesterday" // As per screenshot
-        TimePeriod.WEEKLY -> {
-            val cal = Calendar.getInstance().apply { time = selectedDate }
-            val startOfWeek = cal.apply { set(Calendar.DAY_OF_WEEK, firstDayOfWeek) }.time
-            "Since ${SimpleDateFormat("dd MMM", Locale.getDefault()).format(startOfWeek)}"
+        TimePeriod.DAILY -> {
+            SimpleDateFormat("EEEE, dd MMMM yyyy", Locale.getDefault()).format(selectedDate)
         }
-        TimePeriod.MONTHLY -> "For ${SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(selectedDate)}"
+        TimePeriod.WEEKLY -> {
+            val calendar = Calendar.getInstance().apply { time = selectedDate }
+            val startOfWeek = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_WEEK, firstDayOfWeek) }.time
+            val endOfWeek = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 6) }.time
+            val formatter = SimpleDateFormat("dd MMM", Locale.getDefault())
+            "For the week of ${formatter.format(startOfWeek)} - ${formatter.format(endOfWeek)}"
+        }
+        TimePeriod.MONTHLY -> {
+            "For ${SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(selectedDate)}"
+        }
     }
 
     Row(
