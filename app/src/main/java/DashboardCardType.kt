@@ -5,13 +5,11 @@ package io.pm.finlight
  * Used for managing customizable dashboard layouts.
  */
 enum class DashboardCardType {
-    OVERALL_BUDGET,
-    // --- UPDATED: Replaced MONTHLY_STATS with QUICK_STATS ---
-    QUICK_STATS,
+    // --- UPDATED: Replaced OVERALL_BUDGET and QUICK_STATS with a single HERO_BUDGET ---
+    HERO_BUDGET,
     QUICK_ACTIONS,
     NET_WORTH,
     RECENT_ACTIVITY,
-    // --- UPDATED: Replaced ACCOUNTS_SUMMARY with ACCOUNTS_CAROUSEL ---
     ACCOUNTS_CAROUSEL,
     BUDGET_WATCH
 }

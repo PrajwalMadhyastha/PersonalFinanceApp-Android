@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -82,9 +83,11 @@ fun GlassPanel(
  * @param navController The NavController for navigation.
  */
 @Composable
-fun AuroraMonthlyBudgetCard(
+fun DashboardHeroCard(
     totalBudget: Float,
     amountSpent: Float,
+    income: Float,
+    safeToSpend: Float,
     navController: NavController
 ) {
     var targetAmount by remember { mutableStateOf(0f) }
@@ -105,56 +108,120 @@ fun AuroraMonthlyBudgetCard(
         targetAmount = totalBudget - amountSpent
     }
 
-    GlassPanel(
+    // This component does NOT use GlassPanel to blend with the background
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { navController.navigate("budget_screen") }
+            .padding(vertical = 16.dp), // Add vertical padding for more space
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(24.dp) // Increase space between elements
     ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        // --- UPDATED: Larger, bolder title ---
+        Text(
+            text = "Monthly Budget",
+            style = MaterialTheme.typography.headlineSmall, // Bigger style
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // --- UPDATED: Larger "Remaining" text ---
             Text(
-                text = "Monthly Budget",
-                style = MaterialTheme.typography.titleMedium,
+                text = "Remaining",
+                style = MaterialTheme.typography.titleLarge, // Bigger style
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedRemainingAmount.toInt())}",
+                style = MaterialTheme.typography.displayMedium, // Much bigger style
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+        }
 
-            Column {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp) // Space between bar and text
+        ) {
+            AuroraProgressBar(progress = animatedProgress)
+            // --- UPDATED: Better layout for Spent/Total text ---
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
-                    text = "Remaining",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
+                    text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
+                    style = MaterialTheme.typography.bodyMedium, // Larger, more legible
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedRemainingAmount.toInt())}",
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
+                    text = "Total: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(totalBudget.toInt())}",
+                    style = MaterialTheme.typography.bodyMedium, // Larger, more legible
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+        // --- NEW: Merged stats section ---
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            StatItem(label = "Income", amount = income, onClick = { navController.navigate("income_screen") })
+            StatItem(label = "Budget", amount = totalBudget, isCurrency = true, onClick = { navController.navigate("budget_screen") })
+            StatItem(label = "Safe to Spend", amount = safeToSpend, isPerDay = true)
+        }
+    }
+}
+
+@Composable
+private fun StatItem(label: String, amount: Float, isCurrency: Boolean = true, isPerDay: Boolean = false, onClick: (() -> Unit)? = null) {
+    val animatedAmount by animateFloatAsState(
+        targetValue = amount,
+        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
+        label = "StatItemAnimation"
+    )
+    val clickableModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = clickableModifier
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isCurrency) {
+                Text(
+                    text = "₹",
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
-
-            Column {
-                AuroraProgressBar(progress = animatedProgress)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
-                    )
-                    Text(
-                        text = "Total: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(totalBudget.toInt())}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
-                    )
-                }
+            Text(
+                text = NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedAmount.toInt()),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (isPerDay) {
+                Text(
+                    text = "/day",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 2.dp, top = 4.dp)
+                )
             }
         }
     }
 }
+
 
 /**
  * A custom styled LinearProgressIndicator with a gradient progress and decorative track.
@@ -164,7 +231,7 @@ fun AuroraMonthlyBudgetCard(
 @Composable
 private fun AuroraProgressBar(progress: Float) {
     val barHeight = 16.dp
-    val trackColor = Color.White.copy(alpha = 0.2f)
+    val trackColor = Color.White.copy(alpha = 0.1f)
     val progressBrush = Brush.horizontalGradient(
         colors = listOf(
             AuroraPrimary.copy(alpha = 0.6f),
@@ -206,60 +273,6 @@ private fun AuroraProgressBar(progress: Float) {
                 start = Offset(x, size.height * 0.25f),
                 end = Offset(x, size.height * 0.75f),
                 strokeWidth = 1.dp.toPx()
-            )
-        }
-    }
-}
-
-/**
- * A small card for displaying a single, quick-glance statistic on the dashboard.
- * It uses the GlassPanel for its background and features an animated number count-up.
- *
- * @param label The text label for the statistic.
- * @param amount The numerical value of the statistic.
- * @param modifier Modifier for this composable.
- * @param isPerDay If true, appends "/day" to the amount.
- * @param onClick A lambda to be invoked when the card is clicked.
- */
-@Composable
-fun AuroraStatCard(
-    label: String,
-    amount: Float,
-    modifier: Modifier = Modifier,
-    isPerDay: Boolean = false,
-    onClick: () -> Unit = {}
-) {
-    var targetAmount by remember { mutableStateOf(0f) }
-    val animatedAmount by animateFloatAsState(
-        targetValue = targetAmount,
-        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
-        label = "StatCardAmountAnimation"
-    )
-
-    LaunchedEffect(amount) {
-        targetAmount = amount
-    }
-
-    GlassPanel(
-        modifier = modifier.clickable(onClick = onClick)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.Start,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, // Corrected
-                textAlign = TextAlign.Start
-            )
-            Text(
-                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(animatedAmount.toInt())}${if (isPerDay) "/day" else ""}",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Start,
-                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
@@ -332,7 +345,7 @@ private fun AccountItem(account: AccountWithBalance, navController: NavControlle
                 Text(
                     text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(account.balance)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -367,7 +380,7 @@ fun BudgetWatchCard(
                 Text(
                     "No category-specific budgets set for this month.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, // Corrected
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
             } else {
@@ -450,7 +463,7 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
             Text(
                 text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remaining.toInt())} left",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -515,7 +528,7 @@ fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navControll
                 Text(
                     "No transactions yet.",
                     modifier = Modifier.padding(vertical = 16.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant // Corrected
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

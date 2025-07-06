@@ -82,10 +82,9 @@ class SettingsRepository(context: Context) {
             val names: List<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
         } else {
-            // --- FIXED: Use the new enum values for the default order ---
+            // --- FIXED: Use the new HERO_BUDGET enum value for the default order ---
             listOf(
-                DashboardCardType.OVERALL_BUDGET,
-                DashboardCardType.QUICK_STATS,
+                DashboardCardType.HERO_BUDGET,
                 DashboardCardType.QUICK_ACTIONS,
                 DashboardCardType.NET_WORTH,
                 DashboardCardType.RECENT_ACTIVITY,

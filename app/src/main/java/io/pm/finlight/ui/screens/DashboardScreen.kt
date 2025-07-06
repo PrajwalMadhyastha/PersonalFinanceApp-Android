@@ -66,7 +66,7 @@ fun DashboardScreen(
 
     LazyColumn(
         state = dragDropState.lazyListState,
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), // Adjusted padding
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.pointerInput(Unit) {
             detectDragGesturesAfterLongPress(
@@ -107,6 +107,7 @@ fun DashboardScreen(
 
             Box(
                 modifier = Modifier
+                    .animateItemPlacement() // Animate card reordering
                     .graphicsLayer {
                         translationY = if (isBeingDragged) dragDropState.draggingItemOffset else 0f
                         rotationZ = animatedRotation
@@ -144,33 +145,14 @@ private fun DashboardCard(
 
     Box {
         when (cardType) {
-            DashboardCardType.OVERALL_BUDGET -> AuroraMonthlyBudgetCard(
+            // --- UPDATED: Use the new single HERO_BUDGET card ---
+            DashboardCardType.HERO_BUDGET -> DashboardHeroCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
+                income = monthlyIncome.toFloat(),
+                safeToSpend = safeToSpendPerDay,
                 navController = navController,
             )
-            DashboardCardType.QUICK_STATS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AuroraStatCard(
-                    label = "Income",
-                    amount = monthlyIncome.toFloat(),
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        navController.navigate("income_screen")
-                    }
-                )
-                AuroraStatCard(
-                    label = "Budget",
-                    amount = overallBudget,
-                    modifier = Modifier.weight(1f),
-                    onClick = { navController.navigate("budget_screen") }
-                )
-                AuroraStatCard(
-                    label = "Safe To Spend",
-                    amount = safeToSpendPerDay,
-                    isPerDay = true,
-                    modifier = Modifier.weight(1f)
-                )
-            }
             DashboardCardType.QUICK_ACTIONS -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 FilledTonalButton(
                     onClick = {
