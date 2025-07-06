@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
+// REASON: REFACTOR - The logic for `showMainTopBar` has been updated to exclude
+// the "add_transaction" route. This prevents the default TopAppBar from
+// appearing on the newly redesigned "Transaction Composer" screen, which now
+// manages its own header.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -207,6 +214,8 @@ fun MainAppScreen() {
     val baseCurrentRoute = currentRoute?.split("?")?.firstOrNull()?.split("/")?.firstOrNull()
 
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
+
+    // --- UPDATED: Exclude add_transaction from the main TopAppBar ---
     val showMainTopBar = baseCurrentRoute !in setOf(
         "transaction_detail",
         "income_screen",

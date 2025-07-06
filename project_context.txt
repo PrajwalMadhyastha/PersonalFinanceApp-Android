@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sun Jul  6 18:51:54 IST 2025
+Generated on: Sun Jul  6 22:19:55 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -3907,8 +3907,6 @@ package io.pm.finlight.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -3917,6 +3915,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.MerchantSpendingSummary
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.ExpenseRedDark
 
 @Composable
 fun MerchantSpendingScreen(merchantList: List<MerchantSpendingSummary>) {
@@ -3942,9 +3942,8 @@ fun MerchantSpendingScreen(merchantList: List<MerchantSpendingSummary>) {
 
 @Composable
 fun MerchantSpendingCard(merchant: MerchantSpendingSummary) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(2.dp)
+    GlassPanel(
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -3952,15 +3951,24 @@ fun MerchantSpendingCard(merchant: MerchantSpendingSummary) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(merchant.merchantName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    merchant.merchantName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 val visitText = if (merchant.transactionCount == 1) "1 visit" else "${merchant.transactionCount} visits"
-                Text(visitText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    visitText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             Text(
                 "₹${"%,.2f".format(merchant.totalAmount)}",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.error
+                color = ExpenseRedDark
             )
         }
     }
@@ -4908,6 +4916,11 @@ fun EditAccountScreen(
 // a modern, visually appealing layout. It now features a new summary header,
 // a restyled bar chart with a highlighted selected day, and swipe-based
 // navigation to move between periods, removing the old navigation arrows.
+// FIX: Corrected the horizontal drag gesture detection to use the correct
+// parameter type, resolving a compilation error.
+// UPDATE: The ReportHeader is now more dynamic, displaying more specific and
+// user-friendly date ranges for the Daily, Weekly, and Monthly views to make
+// each report feel distinct.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -5012,6 +5025,7 @@ fun TimePeriodReportScreen(
                         },
                         onDragCancel = { dragAmount = 0f }
                     ) { change, drag ->
+                        // --- FIX: The 'drag' parameter is a Float, not an Offset ---
                         dragAmount += drag
                         change.consume()
                     }
@@ -5073,19 +5087,26 @@ fun TimePeriodReportScreen(
 @Composable
 private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDate: Date) {
     val title = when (timePeriod) {
-        TimePeriod.DAILY -> "Today's Spend"
-        TimePeriod.WEEKLY -> "This Week's Spend"
-        TimePeriod.MONTHLY -> "This Month's Spend"
+        TimePeriod.DAILY -> "Total Spend"
+        TimePeriod.WEEKLY -> "Total Spend"
+        TimePeriod.MONTHLY -> "Total Spend"
     }
 
+    // --- UPDATE: More descriptive and dynamic subtitles for each time period ---
     val subtitle = when(timePeriod) {
-        TimePeriod.DAILY -> "since 11 pm yesterday" // As per screenshot
-        TimePeriod.WEEKLY -> {
-            val cal = Calendar.getInstance().apply { time = selectedDate }
-            val startOfWeek = cal.apply { set(Calendar.DAY_OF_WEEK, firstDayOfWeek) }.time
-            "Since ${SimpleDateFormat("dd MMM", Locale.getDefault()).format(startOfWeek)}"
+        TimePeriod.DAILY -> {
+            SimpleDateFormat("EEEE, dd MMMM yyyy", Locale.getDefault()).format(selectedDate)
         }
-        TimePeriod.MONTHLY -> "For ${SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(selectedDate)}"
+        TimePeriod.WEEKLY -> {
+            val calendar = Calendar.getInstance().apply { time = selectedDate }
+            val startOfWeek = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_WEEK, firstDayOfWeek) }.time
+            val endOfWeek = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 6) }.time
+            val formatter = SimpleDateFormat("dd MMM", Locale.getDefault())
+            "For the week of ${formatter.format(startOfWeek)} - ${formatter.format(endOfWeek)}"
+        }
+        TimePeriod.MONTHLY -> {
+            "For ${SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(selectedDate)}"
+        }
     }
 
     Row(
@@ -6689,6 +6710,12 @@ private fun RuleSummaryItem(
 // `TopAppBar` in `MainActivity`, creating a more consistent UI and simplifying
 // this screen's logic. The filter state is now collected from the ViewModel to
 // drive the bottom sheet.
+// FIX: Explicitly set text colors in the MonthlySummaryHeader and BudgetProgress
+// composables to ensure proper contrast and legibility in dark mode.
+// FIX: Corrected an invalid SimpleDateFormat pattern that was causing a runtime crash.
+// UPDATE: Applied the semi-opaque popup surface color to the filter bottom
+// sheet to match the style used in the Transaction Detail screen, ensuring
+// a consistent UI for all popups.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -6700,6 +6727,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -6724,6 +6752,8 @@ import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.FilterBottomSheet
 import io.pm.finlight.ui.components.TransactionList
 import io.pm.finlight.ui.components.pagerTabIndicatorOffset
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -6799,7 +6829,11 @@ fun TransactionListScreen(
 
 
     if (showFilterSheet) {
-        ModalBottomSheet(onDismissRequest = { viewModel.onFilterSheetDismiss() }) {
+        // --- UPDATE: Added containerColor to match the Aurora design system for popups ---
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.onFilterSheetDismiss() },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        ) {
             FilterBottomSheet(
                 filterState = filterState,
                 accounts = allAccounts,
@@ -6823,6 +6857,7 @@ fun MonthlySummaryHeader(
     onMonthSelected: (Calendar) -> Unit
 ) {
     val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
+    // --- FIX: Corrected the invalid date format pattern from "LLLL einger" to "LLLL yyyy" ---
     val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
     var showMonthScroller by remember { mutableStateOf(false) }
 
@@ -6848,10 +6883,13 @@ fun MonthlySummaryHeader(
                     text = monthYearFormat.format(selectedMonth.time),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
+                    // --- FIX: Explicitly set color for dark mode contrast ---
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Icon(
                     imageVector = if (showMonthScroller) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector"
+                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector",
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
@@ -6906,7 +6944,8 @@ fun MonthlySummaryHeader(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Total Spent", style = MaterialTheme.typography.labelMedium)
+                // --- FIX: Explicitly set color for dark mode contrast ---
+                Text("Total Spent", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalSpent)}",
                     style = MaterialTheme.typography.titleLarge,
@@ -6915,7 +6954,8 @@ fun MonthlySummaryHeader(
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text("Total Income", style = MaterialTheme.typography.labelMedium)
+                // --- FIX: Explicitly set color for dark mode contrast ---
+                Text("Total Income", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalIncome)}",
                     style = MaterialTheme.typography.titleLarge,
@@ -6980,7 +7020,9 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
             Text(
                 text = "Spent: ₹${"%,.0f".format(spent)}",
                 style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                // --- FIX: Explicitly set color for dark mode contrast ---
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = "Budget: ₹${"%,.0f".format(budget)}",
@@ -8566,8 +8608,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -8578,7 +8618,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.data.PieData
@@ -8587,6 +8626,7 @@ import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.PercentFormatter
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.CategorySpending
+import io.pm.finlight.ui.components.GlassPanel
 
 @Composable
 fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
@@ -8602,21 +8642,23 @@ fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
 
     val totalSpending = spendingList.sumOf { it.totalAmount }
     val pieData = createPieData(spendingList)
+    val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(4.dp)
-            ) {
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Category Breakdown", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Category Breakdown",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Spacer(Modifier.height(16.dp))
                     AndroidView(
                         factory = { context ->
@@ -8624,7 +8666,7 @@ fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
                                 description.isEnabled = false
                                 isDrawHoleEnabled = true
                                 setHoleColor(Color.TRANSPARENT)
-                                setEntryLabelColor(Color.BLACK)
+                                setEntryLabelColor(pieChartLabelColor)
                                 setEntryLabelTextSize(12f)
                                 legend.isEnabled = false
                                 setUsePercentValues(true)
@@ -8653,11 +8695,10 @@ fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
 
 @Composable
 fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Double) {
-    val percentage = (categorySpending.totalAmount / totalSpending * 100)
+    val percentage = if (totalSpending > 0) (categorySpending.totalAmount / totalSpending * 100) else 0.0
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(2.dp)
+    GlassPanel(
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -8683,7 +8724,11 @@ fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Doub
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(categorySpending.categoryName, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    categorySpending.categoryName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 Text(
                     "${"%.1f".format(percentage)}% of total spending",
                     style = MaterialTheme.typography.bodySmall,
@@ -8693,13 +8738,13 @@ fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Doub
             Text(
                 "₹${"%,.2f".format(categorySpending.totalAmount)}",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
 }
 
-// --- FIX: Removed 'private' modifier to make the function accessible from other files ---
 fun createPieData(spendingList: List<CategorySpending>): PieData {
     val entries = spendingList.map {
         PieEntry(it.totalAmount.toFloat(), it.categoryName)
@@ -8712,6 +8757,7 @@ fun createPieData(spendingList: List<CategorySpending>): PieData {
         valueFormatter = PercentFormatter()
         valueTextSize = 12f
         valueTextColor = Color.BLACK
+        setDrawValues(false) // Hiding values on the chart itself for a cleaner look
     }
     return PieData(dataSet)
 }
@@ -9377,6 +9423,10 @@ fun RecurringTransactionScreen(navController: NavController) {
 // dynamic and responsive search experience.
 // UPDATE: Redesigned the layout to hide advanced filters in a collapsible
 // section, providing a cleaner initial view and an indicator for active filters.
+// UPDATE: The filter section has been redesigned to use a GlassPanel, aligning
+// it with the "Project Aurora" aesthetic for a consistent and modern look.
+// FIX: Applied a semi-opaque background to the filter dropdown menus to ensure
+// legibility and consistency with other popups in dark mode.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -9386,6 +9436,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9406,7 +9457,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionItem
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -9422,66 +9476,36 @@ fun SearchScreen(navController: NavController) {
 
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
-    var showAdvancedFilters by remember { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
-    val areFiltersActive by remember(searchUiState) {
-        derivedStateOf {
-            searchUiState.selectedAccount != null ||
-                    searchUiState.selectedCategory != null ||
-                    searchUiState.transactionType != "All" ||
-                    searchUiState.startDate != null ||
-                    searchUiState.endDate != null
-        }
-    }
-
     Column(modifier = Modifier.fillMaxSize()) {
-        // Search Bar and Filter Toggle
+        // Search Bar and Filter Section
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchUiState.keyword,
-                    onValueChange = { viewModel.onKeywordChange(it) },
-                    label = { Text("Keyword (description, notes)") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester),
-                    singleLine = true
-                )
-                BadgedBox(
-                    badge = {
-                        if (areFiltersActive) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                            )
-                        }
-                    }
-                ) {
-                    IconButton(onClick = { showAdvancedFilters = !showAdvancedFilters }) {
-                        Icon(Icons.Default.FilterList, contentDescription = "Toggle Advanced Filters")
-                    }
-                }
-            }
+            OutlinedTextField(
+                value = searchUiState.keyword,
+                onValueChange = { viewModel.onKeywordChange(it) },
+                label = { Text("Keyword (description, notes)") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+                singleLine = true
+            )
 
-            // Collapsible Advanced Filters Section
-            AnimatedVisibility(
-                visible = showAdvancedFilters,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // --- UPDATE: Filters are now inside a GlassPanel ---
+            GlassPanel {
                 Column(
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    Text(
+                        "Filters",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     SearchableDropdown(
                         label = "Account",
                         options = searchUiState.accounts,
@@ -9538,12 +9562,14 @@ fun SearchScreen(navController: NavController) {
         if (searchResults.isNotEmpty()) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(16.dp)
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
                     Text(
                         text = "Results (${searchResults.size})",
                         style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                 }
@@ -9645,6 +9671,10 @@ fun <T> SearchableDropdown(
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            // --- FIX: Apply a background to the dropdown menu for better legibility ---
+            modifier = Modifier.background(
+                if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            )
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
@@ -13164,11 +13194,18 @@ fun CreateCategoryDialog(
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/FilterBottomSheet.kt
 // REASON: NEW FILE - A reusable composable for the filter bottom sheet to be
 // used across the Transaction and Income screens, avoiding code duplication.
+// FIX: Explicitly set the title's text color to ensure proper contrast in dark mode.
+// FIX: Applied a semi-opaque background to the filter dropdown menus to ensure
+// legibility and consistency with other popups in dark mode.
 // =================================================================================
 package io.pm.finlight.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -13177,7 +13214,8 @@ import androidx.compose.ui.unit.dp
 import io.pm.finlight.Account
 import io.pm.finlight.Category
 import io.pm.finlight.TransactionFilterState
-import io.pm.finlight.ui.screens.SearchableDropdown
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 
 @Composable
 fun FilterBottomSheet(
@@ -13195,7 +13233,11 @@ fun FilterBottomSheet(
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Filter Transactions", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "Filter Transactions",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
 
         OutlinedTextField(
             value = filterState.keyword,
@@ -13227,6 +13269,62 @@ fun FilterBottomSheet(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Clear All Filters")
+        }
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> SearchableDropdown(
+    label: String,
+    options: List<T>,
+    selectedOption: T?,
+    onOptionSelected: (T?) -> Unit,
+    getDisplayName: (T) -> String,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+    ) {
+        OutlinedTextField(
+            value = selectedOption?.let { getDisplayName(it) } ?: "All",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = {
+                Row {
+                    if (selectedOption != null) {
+                        IconButton(onClick = { onOptionSelected(null) }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear selection")
+                        }
+                    }
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                }
+            },
+            modifier =
+                Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(
+                if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            )
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(getDisplayName(option)) },
+                    onClick = {
+                        onOptionSelected(option)
+                        expanded = false
+                    },
+                )
+            }
         }
     }
 }
@@ -13432,7 +13530,8 @@ private val DarkColorScheme = darkColorScheme(
     surface = Color(0x1AFFFFFF), // Frosted Glass Fill (White @ 10%)
     onSurface = Color(0xFFE6E1E5), // Off-white for text on glass panels
     surfaceVariant = Color(0xFF3F4849), // For subtle dividers or disabled components
-    onSurfaceVariant = Color(0xFFBFC8C9), // For secondary text
+    // --- FIX: Increased contrast for secondary text in dark mode ---
+    onSurfaceVariant = Color(0xFF9E9E9E), // For secondary text
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005)
 )

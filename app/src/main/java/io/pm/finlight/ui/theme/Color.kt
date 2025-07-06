@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt
+// REASON: FEATURE - Added the `AuroraNumpadHighlight` color. This new color
+// will be used to provide visual feedback when a key on the new glassmorphic
+// numpad is pressed, enhancing the interactive feel of the "Transaction
+// Composer" screen.
+// =================================================================================
 package io.pm.finlight.ui.theme
 
 import androidx.compose.ui.graphics.Color
@@ -17,6 +24,9 @@ val AuroraSecondary = Color(0xFFFFBA3F) // Subtle Gold
 val AuroraBackground = Color(0xFF121212) // Very dark charcoal
 val GlassPanelFill = Color(0x1AFFFFFF) // White with 10% opacity
 val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
+
+// --- NEW: Color for Numpad press highlight ---
+val AuroraNumpadHighlight = Color(0x29FFFFFF) // White with 16% opacity
 
 // --- UPDATED: Opaque colors for popup surfaces, now at 60% opacity ---
 val PopupSurfaceDark = Color(0x99212125) // 60% opaque dark charcoal
