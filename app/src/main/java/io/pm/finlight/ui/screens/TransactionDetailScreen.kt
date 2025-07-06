@@ -8,6 +8,8 @@
 // a sense of depth. All body content is now housed in individual, floating
 // `GlassPanel` components for a consistent, modern look, while preserving all
 // original functionality.
+// UPDATE: The header card is now a true edge-to-edge hero element, with only
+// the bottom corners rounded to blend seamlessly with the top of the screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -262,11 +264,9 @@ fun TransactionDetailScreen(
                     containerColor = Color.Transparent
                 ) { innerPadding ->
                     LazyColumn(
-                        modifier = Modifier
-                            .padding(innerPadding)
-                            .fillMaxSize(),
+                        modifier = Modifier.padding(innerPadding),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
+                        contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
                         item {
                             TransactionSpotlightHeader(
@@ -280,108 +280,118 @@ fun TransactionDetailScreen(
                         }
 
                         item {
-                            AccountCardWithSwitch(
-                                details = details,
-                                onAccountClick = { activeSheetContent = SheetContent.Account },
-                                onExcludeToggled = { isChecked ->
-                                    viewModel.updateTransactionExclusion(details.transaction.id, !isChecked)
-                                }
-                            )
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                AccountCardWithSwitch(
+                                    details = details,
+                                    onAccountClick = { activeSheetContent = SheetContent.Account },
+                                    onExcludeToggled = { isChecked ->
+                                        viewModel.updateTransactionExclusion(details.transaction.id, !isChecked)
+                                    }
+                                )
+                            }
                         }
 
                         item {
-                            GlassPanel {
-                                Column {
-                                    NotesRow(
-                                        details = details,
-                                        onClick = { activeSheetContent = SheetContent.Notes }
-                                    )
-                                    if (selectedTags.isNotEmpty() || details.transaction.notes?.isNotBlank() == true) {
-                                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                GlassPanel {
+                                    Column {
+                                        NotesRow(
+                                            details = details,
+                                            onClick = { activeSheetContent = SheetContent.Notes }
+                                        )
+                                        if (selectedTags.isNotEmpty() || details.transaction.notes?.isNotBlank() == true) {
+                                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                                        }
+                                        TagsRow(
+                                            selectedTags = selectedTags,
+                                            onClick = { activeSheetContent = SheetContent.Tags }
+                                        )
                                     }
-                                    TagsRow(
-                                        selectedTags = selectedTags,
-                                        onClick = { activeSheetContent = SheetContent.Tags }
-                                    )
                                 }
                             }
                         }
 
                         item {
-                            GlassPanel {
-                                AttachmentRow(
-                                    images = attachedImages,
-                                    onAddClick = { imagePickerLauncher.launch("image/*") },
-                                    onViewClick = { showImageViewer = it },
-                                    onDeleteClick = { showImageDeleteDialog = it }
-                                )
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                GlassPanel {
+                                    AttachmentRow(
+                                        images = attachedImages,
+                                        onAddClick = { imagePickerLauncher.launch("image/*") },
+                                        onViewClick = { showImageViewer = it },
+                                        onDeleteClick = { showImageDeleteDialog = it }
+                                    )
+                                }
                             }
                         }
 
 
                         if (details.transaction.sourceSmsId != null) {
                             item {
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
-                                            if (smsMessage != null) {
-                                                val potentialTxn = PotentialTransaction(
-                                                    sourceSmsId = smsMessage.id,
-                                                    smsSender = smsMessage.sender,
-                                                    amount = details.transaction.amount,
-                                                    transactionType = details.transaction.transactionType,
-                                                    merchantName = details.transaction.description,
-                                                    originalMessage = smsMessage.body,
-                                                    sourceSmsHash = details.transaction.sourceSmsHash
-                                                )
-                                                val json = Gson().toJson(potentialTxn)
-                                                val encodedJson = URLEncoder.encode(json, "UTF-8")
-                                                navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
-                                            } else {
-                                                Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                val smsMessage = viewModel.getOriginalSmsMessage(details.transaction.sourceSmsId!!)
+                                                if (smsMessage != null) {
+                                                    val potentialTxn = PotentialTransaction(
+                                                        sourceSmsId = smsMessage.id,
+                                                        smsSender = smsMessage.sender,
+                                                        amount = details.transaction.amount,
+                                                        transactionType = details.transaction.transactionType,
+                                                        merchantName = details.transaction.description,
+                                                        originalMessage = smsMessage.body,
+                                                        sourceSmsHash = details.transaction.sourceSmsHash
+                                                    )
+                                                    val json = Gson().toJson(potentialTxn)
+                                                    val encodedJson = URLEncoder.encode(json, "UTF-8")
+                                                    navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
+                                                } else {
+                                                    Toast.makeText(context, "Original SMS not found.", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Icon(Icons.Default.Build, contentDescription = null)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Fix Parsing")
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.Build, contentDescription = null)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Fix Parsing")
+                                    }
                                 }
                             }
                         }
 
                         if (!originalSms.isNullOrBlank()) {
                             item {
-                                GlassPanel(
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(Modifier.padding(16.dp)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Message,
-                                                contentDescription = "Original SMS",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    GlassPanel(
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(Modifier.padding(16.dp)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Message,
+                                                    contentDescription = "Original SMS",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Text(
+                                                    "Original SMS Message",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                            Spacer(Modifier.height(12.dp))
                                             Text(
-                                                "Original SMS Message",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface
+                                                text = originalSms!!,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                lineHeight = 20.sp
                                             )
                                         }
-                                        Spacer(Modifier.height(12.dp))
-                                        Text(
-                                            text = originalSms!!,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            lineHeight = 20.sp
-                                        )
                                     }
                                 }
                             }
@@ -551,7 +561,7 @@ private fun TransactionSpotlightHeader(
         modifier = Modifier
             .fillMaxWidth()
             .height(350.dp)
-            .clip(RoundedCornerShape(24.dp)),
+            .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)),
         contentAlignment = Alignment.Center
     ) {
         Image(
@@ -993,7 +1003,8 @@ private fun AccountPickerSheet(
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.onSurface
         )
 
         currentAccount?.let { account ->
@@ -1014,7 +1025,7 @@ private fun AccountPickerSheet(
                 onSelectClick = { onItemSelected(account) },
                 isCurrent = true
             )
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
         }
 
         LazyColumn {
@@ -1038,8 +1049,8 @@ private fun AccountPickerSheet(
             }
             item {
                 ListItem(
-                    headlineContent = { Text("Create New Account") },
-                    leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New Account") },
+                    headlineContent = { Text("Create New Account", color = MaterialTheme.colorScheme.onSurface) },
+                    leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New Account", tint = MaterialTheme.colorScheme.primary) },
                     modifier = Modifier.clickable(onClick = onAddNew)
                 )
             }
@@ -1061,9 +1072,16 @@ private fun AccountPickerItem(
     isCurrent: Boolean = false
 ) {
     val colors = if (isCurrent && !isEditing) {
-        ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            headlineColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            supportingColor = MaterialTheme.colorScheme.onSecondaryContainer
+        )
     } else {
-        ListItemDefaults.colors()
+        ListItemDefaults.colors(
+            headlineColor = MaterialTheme.colorScheme.onSurface,
+            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 
     ListItem(
@@ -1086,14 +1104,14 @@ private fun AccountPickerItem(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isEditing) {
                     IconButton(onClick = onSaveClick, enabled = editingName.isNotBlank()) {
-                        Icon(Icons.Default.Check, contentDescription = "Save Name")
+                        Icon(Icons.Default.Check, contentDescription = "Save Name", tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = onCancelClick) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel Edit")
+                        Icon(Icons.Default.Close, contentDescription = "Cancel Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     IconButton(onClick = onEditClick) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Account Name")
+                        Icon(Icons.Default.Edit, contentDescription = "Edit Account Name", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -1171,7 +1189,8 @@ private fun CategoryPickerSheet(
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.onSurface
         )
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 100.dp),
@@ -1196,7 +1215,8 @@ private fun CategoryPickerSheet(
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -1211,8 +1231,17 @@ private fun CategoryPickerSheet(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Icon(Icons.Default.AddCircleOutline, contentDescription = "Create New", modifier = Modifier.size(48.dp))
-                        Text("New", style = MaterialTheme.typography.bodyMedium)
+                        Icon(
+                            Icons.Default.AddCircleOutline,
+                            contentDescription = "Create New",
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "New",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             }
@@ -1239,7 +1268,7 @@ private fun TagPickerSheet(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Manage Tags", style = MaterialTheme.typography.titleLarge)
+        Text("Manage Tags", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1263,7 +1292,15 @@ private fun TagPickerSheet(
                 value = newTagName,
                 onValueChange = { newTagName = it },
                 label = { Text("New Tag Name") },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             )
             IconButton(
                 onClick = {
@@ -1272,7 +1309,7 @@ private fun TagPickerSheet(
                 },
                 enabled = newTagName.isNotBlank()
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add New Tag")
+                Icon(Icons.Default.Add, contentDescription = "Add New Tag", tint = MaterialTheme.colorScheme.primary)
             }
         }
         Row(
