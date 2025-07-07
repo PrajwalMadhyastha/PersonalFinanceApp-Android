@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt
-// REASON: BUG FIX - The Daybreak theme's text colors (`onSurface`,
-// `onSurfaceVariant`) have been corrected to use high-contrast dark colors,
-// resolving the legibility issues and making the theme fully usable.
+// REASON: REFINEMENT - The opacity of the popup surfaces has been increased
+// from 80% to 85%. This makes the popups more solid, reducing the distraction
+// from background text and improving overall legibility on both light and dark
+// themes.
 // =================================================================================
 package io.pm.finlight.ui.theme
 
@@ -19,7 +20,6 @@ val AuroraDarkOnSurfaceVariant = Color(0xFFC4C7C5) // Brighter gray for secondar
 val DaybreakPrimary = Color(0xFF6650a4) // Original Light Purple
 val DaybreakSecondary = Color(0xFF815600) // Rich Gold/Amber
 val DaybreakBackground = Color(0xFFF8F9FA) // A very light off-white
-// --- FIX: Use high-contrast dark text colors for the light background ---
 val DaybreakOnSurface = Color(0xFF1C1B1F) // Near-black for text
 val DaybreakOnSurfaceVariant = Color(0xFF49454F) // Dark gray for secondary text
 
@@ -42,8 +42,9 @@ val PaperOnSurfaceVariant = Color(0xFF555555) // Dark gray for secondary text
 // --- Shared Colors ---
 val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
 val AuroraNumpadHighlight = Color(0x29FFFFFF) // White with 16% opacity
-val PopupSurfaceDark = Color(0x99212125) // 60% opaque dark charcoal
-val PopupSurfaceLight = Color(0x99FFFFFF) // 60% opaque white
+// --- UPDATED: Increased opacity from 80% (0xCC) to 85% (0xD9) ---
+val PopupSurfaceDark = Color(0xD9212125) // 85% opaque dark charcoal
+val PopupSurfaceLight = Color(0xD9FFFFFF) // 85% opaque white
 
 // High-contrast colors for transaction amounts
 val IncomeGreenDark = Color(0xFF66BB6A)
