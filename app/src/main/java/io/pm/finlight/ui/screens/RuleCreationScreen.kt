@@ -1,34 +1,46 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt
-// REASON: FEATURE - The screen now supports both "create" and "edit" modes. It
-// accepts an optional `ruleId` from navigation. If the ID is present, it calls
-// the ViewModel to load the rule's data, including the `sourceSmsBody`, and
-// pre-populates the UI, enabling the user to modify and update existing rules.
+// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with the
+// "Project Aurora" vision. All standard Card components have been replaced
+// with GlassPanels. Buttons and text fields have been restyled for a cohesive,
+// modern look, and all text colors are now theme-aware to ensure high contrast
+// and legibility.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.google.gson.Gson
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.max
@@ -62,7 +74,6 @@ fun RuleCreationScreen(
     LaunchedEffect(key1 = ruleId, key2 = potentialTransactionJson) {
         if (isEditMode) {
             viewModel.loadRuleForEditing(ruleId!!)
-            // Fetch the rule and set its body to the text field
             val rule = AppDatabase.getInstance(context).customSmsRuleDao().getRuleById(ruleId).firstOrNull()
             if (rule != null) {
                 textFieldValue = TextFieldValue(rule.sourceSmsBody)
@@ -77,9 +88,16 @@ fun RuleCreationScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isEditMode) "Edit Parsing Rule" else "Create Parsing Rule") }
+                title = { Text(if (isEditMode) "Edit Parsing Rule" else "Create Parsing Rule") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
-        }
+        },
+        containerColor = Color.Transparent
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -89,51 +107,73 @@ fun RuleCreationScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = "Info")
-                    Spacer(Modifier.width(12.dp))
+            GlassPanel {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Info",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Text(
-                        text = "Long-press text to select it, then tap a 'Mark as...' button below. Manage your rules later in Settings.",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = "Long-press text to select it, then tap a 'Mark as...' button below.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Full SMS Message", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    BasicTextField(
-                        value = textFieldValue,
-                        onValueChange = { textFieldValue = it },
-                        readOnly = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                    Text(
+                        "Full SMS Message",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
+                    Spacer(Modifier.height(12.dp))
+                    val customTextSelectionColors = TextSelectionColors(
+                        handleColor = MaterialTheme.colorScheme.primary,
+                        backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                    )
+                    CompositionLocalProvider(LocalTextSelectionColors provides customTextSelectionColors) {
+                        BasicTextField(
+                            value = textFieldValue,
+                            onValueChange = { textFieldValue = it },
+                            readOnly = true,
+                            textStyle = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                        )
+                    }
                 }
             }
 
             val selection = textFieldValue.selection
             val isSelectionActive = !selection.collapsed
 
-            Button(
-                onClick = {
-                    val start = min(selection.start, selection.end)
-                    val end = max(selection.start, selection.end)
-                    val selectedText = textFieldValue.text.substring(start, end)
-                    viewModel.onMarkAsTrigger(RuleSelection(selectedText, start, end))
-                },
-                enabled = isSelectionActive,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Mark as Trigger Phrase")
-            }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = {
+                        val start = min(selection.start, selection.end)
+                        val end = max(selection.start, selection.end)
+                        val selectedText = textFieldValue.text.substring(start, end)
+                        viewModel.onMarkAsTrigger(RuleSelection(selectedText, start, end))
+                    },
+                    enabled = isSelectionActive,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Mark as Trigger Phrase")
+                }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(
                         onClick = {
                             val start = min(selection.start, selection.end)
@@ -142,7 +182,8 @@ fun RuleCreationScreen(
                             viewModel.onMarkAsMerchant(RuleSelection(selectedText, start, end))
                         },
                         enabled = isSelectionActive,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
                         Text("Mark as Merchant")
                     }
@@ -154,7 +195,8 @@ fun RuleCreationScreen(
                             viewModel.onMarkAsAmount(RuleSelection(selectedText, start, end))
                         },
                         enabled = isSelectionActive,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
                         Text("Mark as Amount")
                     }
@@ -167,17 +209,23 @@ fun RuleCreationScreen(
                         viewModel.onMarkAsAccount(RuleSelection(selectedText, start, end))
                     },
                     enabled = isSelectionActive,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
                     Text("Mark as Account Info")
                 }
             }
 
 
-            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Defined Rule", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    HorizontalDivider()
+                    Text(
+                        "Defined Rule",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                     RuleSummaryItem(
                         icon = Icons.Default.Flag,
                         label = "Trigger",
@@ -185,12 +233,12 @@ fun RuleCreationScreen(
                         isError = uiState.triggerSelection.selectedText.isBlank()
                     )
                     RuleSummaryItem(
-                        icon = Icons.Default.Title,
+                        icon = Icons.Default.Store,
                         label = "Merchant",
                         value = uiState.merchantSelection.selectedText.ifBlank { "Not set" }
                     )
                     RuleSummaryItem(
-                        icon = Icons.Default.Pin,
+                        icon = Icons.Default.Paid,
                         label = "Amount",
                         value = uiState.amountSelection.selectedText.ifBlank { "Not set" }
                     )
@@ -237,15 +285,24 @@ private fun RuleSummaryItem(
     value: String,
     isError: Boolean = false
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+            tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
         )
-        Spacer(Modifier.width(16.dp))
-        Text("$label:", fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.width(8.dp))
-        Text(value, style = MaterialTheme.typography.bodyMedium, color = if (isError) MaterialTheme.colorScheme.error else LocalContentColor.current)
+        Column {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (isError) FontWeight.Bold else FontWeight.Normal
+            )
+        }
     }
 }
