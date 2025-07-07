@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - The logic for `showMainTopBar` has been updated to exclude
-// the "add_transaction" route. This prevents the default TopAppBar from
-// appearing on the newly redesigned "Transaction Composer" screen, which now
-// manages its own header.
+// REASON: REFACTOR - The NavHost has been updated to use the new, unified
+// `AddEditAccountScreen`. The routes for "add_account" and "edit_account" now
+// both point to this single composable, streamlining the navigation graph and
+// reducing code duplication.
 // =================================================================================
 package io.pm.finlight
 
@@ -215,7 +215,6 @@ fun MainAppScreen() {
 
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
 
-    // --- UPDATED: Exclude add_transaction from the main TopAppBar ---
     val showMainTopBar = baseCurrentRoute !in setOf(
         "transaction_detail",
         "income_screen",
@@ -408,7 +407,6 @@ fun AppNavHost(
         }
 
         composable(BottomNavItem.Dashboard.route) {
-            // --- FIXED: Removed the extra budgetViewModel argument ---
             DashboardScreen(navController, dashboardViewModel)
         }
         composable(
@@ -510,10 +508,23 @@ fun AppNavHost(
         }
 
         composable("account_list") { AccountListScreen(navController, accountViewModel) }
-        composable("add_account") { AddAccountScreen(navController, accountViewModel) }
-        composable("edit_account/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
-            EditAccountScreen(navController, accountViewModel, backStackEntry.arguments!!.getInt("accountId"))
+
+        // --- UPDATED: Navigation for Add/Edit Account ---
+        composable("add_account") {
+            AddEditAccountScreen(navController, accountViewModel, null)
         }
+        composable(
+            "edit_account/{accountId}",
+            arguments = listOf(navArgument("accountId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            AddEditAccountScreen(
+                navController,
+                accountViewModel,
+                backStackEntry.arguments!!.getInt("accountId")
+            )
+        }
+        // --- END UPDATED ---
+
         composable("account_detail/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
             AccountDetailScreen(navController, accountViewModel, backStackEntry.arguments!!.getInt("accountId"))
         }
