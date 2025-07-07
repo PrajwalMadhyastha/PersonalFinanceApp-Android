@@ -1,15 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: REFACTOR - The local `Scaffold` and `TopAppBar` have been removed.
-// The screen's header and title are now handled centrally by the `TopAppBar` in
-// `MainActivity`, creating a more consistent UI and simplifying this screen's
-// logic.
-// UPDATE: The entire screen has been redesigned to use GlassPanel components,
-// aligning with the Project Aurora aesthetic for a consistent and modern look.
-// FIX: Removed the misplaced and redundant `Utils.init()` call which was
-// causing a crash.
-// FIX: Corrected the @Composable invocation error by reading the theme color
-// outside the AndroidView factory.
+// REASON: REFACTOR - The screen has been updated to fully align with the Project
+// Aurora aesthetic. All cards now use the GlassPanel component, and chart
+// text colors have been explicitly set from the MaterialTheme to ensure
+// high-contrast legibility in dark mode, creating a cohesive and polished look.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -112,7 +106,10 @@ fun ReportsScreen(
                                 .height(300.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("No expense data for this month.")
+                            Text(
+                                "No expense data for this month.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     } else {
                         AndroidView(
@@ -162,7 +159,10 @@ fun ReportsScreen(
                                 .height(250.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Not enough data for trend analysis.")
+                            Text(
+                                "Not enough data for trend analysis.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }

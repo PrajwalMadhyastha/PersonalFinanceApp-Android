@@ -1,14 +1,14 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
-// REASON: MAJOR REFACTOR - This screen has been completely redesigned to match
-// a modern, visually appealing layout. It now features a new summary header,
-// a restyled bar chart with a highlighted selected day, and swipe-based
-// navigation to move between periods, removing the old navigation arrows.
-// FIX: Corrected the horizontal drag gesture detection to use the correct
-// parameter type, resolving a compilation error.
-// UPDATE: The ReportHeader is now more dynamic, displaying more specific and
-// user-friendly date ranges for the Daily, Weekly, and Monthly views to make
-// each report feel distinct.
+// REASON: MAJOR REFACTOR - This screen has been completely redesigned to align
+// with the "Project Aurora" vision. It now features a dynamic header, a restyled
+// bar chart, and a fully glassmorphic layout, creating a modern and cohesive
+// user experience for all time-period-based reports. All text and chart colors
+// have been carefully selected for high contrast and legibility.
+// FIX: Corrected an unresolved reference error by changing the icon from
+// InfoOutline to the standard Info icon.
+// FIX: Resolved a NullPointerException by ensuring the chart's data is set
+// before its properties are accessed in the AndroidView's update block.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -21,7 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ShoppingBasket
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,9 +31,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -42,12 +40,13 @@ import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
-import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import io.pm.finlight.TimePeriod
 import io.pm.finlight.TimePeriodReportViewModel
 import io.pm.finlight.TimePeriodReportViewModelFactory
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionItem
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
@@ -78,13 +77,15 @@ fun TimePeriodReportScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(
-                    text = when(timePeriod) {
-                        TimePeriod.DAILY -> "Daily Report"
-                        TimePeriod.WEEKLY -> "Weekly Report"
-                        TimePeriod.MONTHLY -> "Monthly Report"
-                    }
-                ) },
+                title = {
+                    Text(
+                        text = when (timePeriod) {
+                            TimePeriod.DAILY -> "Daily Report"
+                            TimePeriod.WEEKLY -> "Weekly Report"
+                            TimePeriod.MONTHLY -> "Monthly Report"
+                        }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -92,11 +93,12 @@ fun TimePeriodReportScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
-        }
+        },
+        containerColor = Color.Transparent // Make scaffold background transparent
     ) { innerPadding ->
         var dragAmount by remember { mutableStateOf(0f) }
 
-        Box(
+        Column(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
@@ -113,7 +115,6 @@ fun TimePeriodReportScreen(
                         },
                         onDragCancel = { dragAmount = 0f }
                     ) { change, drag ->
-                        // --- FIX: The 'drag' parameter is a Float, not an Offset ---
                         dragAmount += drag
                         change.consume()
                     }
@@ -133,23 +134,47 @@ fun TimePeriodReportScreen(
                 }
 
                 item {
-                    chartDataPair?.let {
-                        SpendingBarChart(
-                            chartData = it,
-                            timePeriod = timePeriod
-                        )
+                    GlassPanel {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "Spending Chart",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            if (chartDataPair != null) {
+                                SpendingBarChart(
+                                    chartData = chartDataPair!!
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "No chart data for this period.",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
                 if (transactions.isNotEmpty()) {
                     item {
                         Text(
-                            "Top Spends",
+                            "Transactions in this Period",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    items(transactions) { transaction ->
+                    items(transactions, key = { it.transaction.id }) { transaction ->
                         TransactionItem(
                             transactionDetails = transaction,
                             onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") }
@@ -157,13 +182,24 @@ fun TimePeriodReportScreen(
                     }
                 } else {
                     item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("No transactions for this period.")
+                        GlassPanel {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = "Info",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "No transactions recorded for this period.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -174,14 +210,7 @@ fun TimePeriodReportScreen(
 
 @Composable
 private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDate: Date) {
-    val title = when (timePeriod) {
-        TimePeriod.DAILY -> "Total Spend"
-        TimePeriod.WEEKLY -> "Total Spend"
-        TimePeriod.MONTHLY -> "Total Spend"
-    }
-
-    // --- UPDATE: More descriptive and dynamic subtitles for each time period ---
-    val subtitle = when(timePeriod) {
+    val subtitle = when (timePeriod) {
         TimePeriod.DAILY -> {
             SimpleDateFormat("EEEE, dd MMMM yyyy", Locale.getDefault()).format(selectedDate)
         }
@@ -197,96 +226,84 @@ private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDat
         }
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.ShoppingBasket,
-            contentDescription = "Spending",
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Column {
+    GlassPanel {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
+                text = "Total Spent",
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "₹${"%,.0f".format(totalSpent)}",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold
+                text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalSpent).drop(1)}",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.primary
             )
         }
     }
 }
 
 @Composable
-private fun SpendingBarChart(chartData: Pair<BarData, List<String>>, timePeriod: TimePeriod) {
+private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
     val (barData, labels) = chartData
-    val selectedIndex = labels.size - 1 // The last item is the current period
+    val selectedIndex = labels.size - 1
 
-    // --- FIX: Read theme colors in the composable scope, not in the factory lambda ---
     val highlightColor = MaterialTheme.colorScheme.primary.toArgb()
     val defaultColor = MaterialTheme.colorScheme.surfaceVariant.toArgb()
     val axisTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val valueTextColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
 
     val colors = labels.indices.map { if (it == selectedIndex) highlightColor else defaultColor }
     (barData.dataSets.first() as BarDataSet).colors = colors
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(0.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            AndroidView(
-                factory = { context ->
-                    BarChart(context).apply {
-                        description.isEnabled = false
-                        legend.isEnabled = false
-                        setDrawGridBackground(false)
-                        setDrawValueAboveBar(true)
-                        setTouchEnabled(false)
+    AndroidView(
+        factory = { context ->
+            BarChart(context).apply {
+                description.isEnabled = false
+                legend.isEnabled = false
+                setDrawGridBackground(false)
+                setDrawValueAboveBar(true)
+                setTouchEnabled(false)
 
-                        xAxis.apply {
-                            position = XAxis.XAxisPosition.BOTTOM
-                            setDrawGridLines(false)
-                            setDrawAxisLine(false)
-                            granularity = 1f
-                            valueFormatter = IndexAxisValueFormatter(labels)
-                            // --- FIX: Use the color variable read from the theme ---
-                            textColor = axisTextColor
-                            textSize = 12f
-                            typeface = Typeface.DEFAULT_BOLD
-                        }
-                        axisLeft.apply {
-                            setDrawGridLines(false)
-                            setDrawLabels(false)
-                            setDrawAxisLine(false)
-                            axisMinimum = 0f
-                        }
-                        axisRight.isEnabled = false
-                    }
-                },
-                update = { chart ->
-                    chart.data = barData
-                    chart.invalidate()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-            )
-        }
-    }
+                xAxis.apply {
+                    position = XAxis.XAxisPosition.BOTTOM
+                    setDrawGridLines(false)
+                    setDrawAxisLine(false)
+                    granularity = 1f
+                    valueFormatter = IndexAxisValueFormatter(labels)
+                    textColor = axisTextColor
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
+                }
+                axisLeft.apply {
+                    setDrawGridLines(true)
+                    gridColor = axisTextColor and 0x22FFFFFF // Transparent grid lines
+                    setDrawLabels(false)
+                    setDrawAxisLine(false)
+                    axisMinimum = 0f
+                }
+                axisRight.isEnabled = false
+            }
+        },
+        update = { chart ->
+            // --- FIX: Assign data to the chart *before* modifying its properties ---
+            chart.data = barData
+            (chart.data.dataSets.first() as BarDataSet).valueTextColor = valueTextColor
+            chart.invalidate()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+    )
 }
