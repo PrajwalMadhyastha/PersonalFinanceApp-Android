@@ -4,6 +4,9 @@
 // and "Income" transaction types, completing the core functionality of the
 // Transaction Composer. The control is styled to match the "Project Aurora"
 // glassmorphism aesthetic.
+// BUG FIX - Replaced direct use of `GlassPanelFill` with the `GlassPanel`
+// composable to ensure the component is theme-aware and to resolve the
+// "Unresolved reference" build error.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -62,9 +65,7 @@ import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
 import io.pm.finlight.ui.theme.AuroraNumpadHighlight
-import io.pm.finlight.ui.theme.AuroraPrimary
 import io.pm.finlight.ui.theme.GlassPanelBorder
-import io.pm.finlight.ui.theme.GlassPanelFill
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
@@ -138,7 +139,6 @@ fun AddTransactionScreen(
         selectedCategory = null
         selectedDateTime.timeInMillis = System.currentTimeMillis()
         viewModel.clearAddTransactionState()
-        // Keep selected account for convenience
     }
 
     LaunchedEffect(Unit) {
@@ -200,7 +200,6 @@ fun AddTransactionScreen(
     )
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Dynamic Spotlight Background
         SpotlightBackground(color = animatedCategoryColor)
 
         Scaffold(
@@ -224,7 +223,6 @@ fun AddTransactionScreen(
                     .padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Main Composer Area
                 Spacer(Modifier.weight(0.5f))
                 AmountComposer(
                     amount = amount,
@@ -233,12 +231,10 @@ fun AddTransactionScreen(
                 )
                 Spacer(Modifier.height(24.dp))
 
-                // --- NEW: Income/Expense Toggle ---
                 TransactionTypeToggle(
                     selectedType = transactionType,
                     onTypeSelected = { transactionType = it }
                 )
-                // --- END NEW ---
 
                 Spacer(Modifier.height(24.dp))
                 OrbitalChips(
@@ -251,7 +247,6 @@ fun AddTransactionScreen(
                 )
                 Spacer(Modifier.weight(1f))
 
-                // Action Buttons
                 ActionRow(
                     notes = notes,
                     tags = selectedTags,
@@ -261,7 +256,6 @@ fun AddTransactionScreen(
                     onAttachmentClick = { imagePickerLauncher.launch("image/*") }
                 )
 
-                // Glassmorphic Numpad
                 GlassmorphicNumpad(
                     onDigitClick = { digit -> if (amount.length < 9) amount += digit },
                     onBackspaceClick = { if (amount.isNotEmpty()) amount = amount.dropLast(1) },
@@ -904,17 +898,22 @@ fun TextInputSheet(
     }
 }
 
-// --- NEW: Composable for the Income/Expense toggle ---
 @Composable
 private fun TransactionTypeToggle(
     selectedType: String,
     onTypeSelected: (String) -> Unit
 ) {
+    val glassFillColor = if (isSystemInDarkTheme()) {
+        Color.White.copy(alpha = 0.08f)
+    } else {
+        Color.Black.copy(alpha = 0.04f)
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(CircleShape)
-            .background(GlassPanelFill)
+            .background(glassFillColor)
             .border(1.dp, GlassPanelBorder, CircleShape)
             .padding(4.dp),
         horizontalArrangement = Arrangement.Center,
@@ -923,7 +922,6 @@ private fun TransactionTypeToggle(
         val expenseSelected = selectedType == "expense"
         val incomeSelected = selectedType == "income"
 
-        // Expense Button
         Button(
             onClick = { onTypeSelected("expense") },
             modifier = Modifier
@@ -931,15 +929,14 @@ private fun TransactionTypeToggle(
                 .height(48.dp),
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (expenseSelected) AuroraPrimary else Color.Transparent,
-                contentColor = if (expenseSelected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
+                containerColor = if (expenseSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                contentColor = if (expenseSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
             ),
             elevation = null
         ) {
             Text("Expense", fontWeight = FontWeight.Bold)
         }
 
-        // Income Button
         Button(
             onClick = { onTypeSelected("income") },
             modifier = Modifier
@@ -947,8 +944,8 @@ private fun TransactionTypeToggle(
                 .height(48.dp),
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (incomeSelected) AuroraPrimary else Color.Transparent,
-                contentColor = if (incomeSelected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
+                containerColor = if (incomeSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                contentColor = if (incomeSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
             ),
             elevation = null
         ) {
@@ -956,4 +953,3 @@ private fun TransactionTypeToggle(
         }
     }
 }
-// endregion

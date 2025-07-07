@@ -1,3 +1,11 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Theme.kt
+// REASON: FEATURE - The logic inside the PersonalFinanceAppTheme composable has
+// been updated to fully decouple the themes from the system setting. It now
+// correctly forces "Aurora" and "Midnight" to use their dark color schemes,
+// and "Daybreak" and "Paper" to use their light color schemes, regardless of
+// the phone's light/dark mode. "System" continues to respect the device setting.
+// =================================================================================
 package io.pm.finlight.ui.theme
 
 import android.os.Build
@@ -11,55 +19,92 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-// --- UPDATED: Dark theme color scheme using our new Aurora colors ---
-private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF00E5FF), // Vibrant Teal/Cyan
-    onPrimary = Color(0xFF00363A), // Dark color for text/icons on primary
-    secondary = Color(0xFFFFBA3F), // Muted Gold
-    onSecondary = Color(0xFF452B00), // Dark color for text on secondary
-    background = Color(0xFF121212), // Very dark charcoal
-    onBackground = Color(0xFFE6E1E5), // Off-white for text on background
-    surface = Color(0x1AFFFFFF), // Frosted Glass Fill (White @ 10%)
-    onSurface = Color(0xFFE6E1E5), // Off-white for text on glass panels
-    surfaceVariant = Color(0xFF3F4849), // For subtle dividers or disabled components
-    // --- FIX: Increased contrast for secondary text in dark mode ---
-    onSurfaceVariant = Color(0xFF9E9E9E), // For secondary text
+// --- Aurora Dark Theme ---
+private val AuroraDarkColorScheme = darkColorScheme(
+    primary = AuroraDarkPrimary,
+    onPrimary = Color(0xFF00363A),
+    secondary = AuroraDarkSecondary,
+    onSecondary = Color(0xFF452B00),
+    background = AuroraDarkBackground,
+    onBackground = AuroraDarkOnSurface,
+    surface = Color.Transparent,
+    onSurface = AuroraDarkOnSurface,
+    surfaceVariant = Color(0xFF3F4849),
+    onSurfaceVariant = AuroraDarkOnSurfaceVariant,
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005)
 )
 
-// Light theme remains unchanged for now
-private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF006A60), // Professional Deep Green
+// --- Daybreak Light Theme ---
+private val DaybreakColorScheme = lightColorScheme(
+    primary = DaybreakPrimary,
     onPrimary = Color.White,
-    secondary = Color(0xFF815600), // Rich Gold/Amber
+    secondary = DaybreakSecondary,
     onSecondary = Color.White,
-    background = Color(0xFFF8F9FA), // A very light off-white
-    onBackground = Color(0xFF191C1C), // Dark charcoal for text on background
-    surface = Color(0xE6FFFFFF), // Frosted Glass Fill (White @ 90%)
-    onSurface = Color(0xFF191C1C), // Dark charcoal for text on glass panels
-    surfaceVariant = Color(0xFFDAE5E3), // For subtle dividers or disabled components
-    onSurfaceVariant = Color(0xFF3F4947), // For secondary text
+    background = DaybreakBackground,
+    onBackground = DaybreakOnSurface,
+    surface = Color.Transparent,
+    onSurface = DaybreakOnSurface,
+    surfaceVariant = Color(0xFFDAE5E3),
+    onSurfaceVariant = DaybreakOnSurfaceVariant,
+    error = Color(0xFFB00020),
+    onError = Color.White
+)
+
+// --- Midnight Theme (Monochrome Dark) ---
+private val MidnightColorScheme = darkColorScheme(
+    primary = MidnightPrimary,
+    onPrimary = Color.Black,
+    secondary = MidnightSecondary,
+    onSecondary = Color.Black,
+    background = MidnightBackground,
+    onBackground = MidnightOnSurface,
+    surface = Color.Transparent,
+    onSurface = MidnightOnSurface,
+    surfaceVariant = Color(0xFF2C2C2C),
+    onSurfaceVariant = MidnightOnSurfaceVariant,
+    error = Color(0xFFCF6679),
+    onError = Color.Black
+)
+
+// --- Paper Theme (Monochrome Light) ---
+private val PaperColorScheme = lightColorScheme(
+    primary = PaperPrimary,
+    onPrimary = Color.White,
+    secondary = PaperSecondary,
+    onSecondary = Color.White,
+    background = PaperBackground,
+    onBackground = PaperOnSurface,
+    surface = Color.Transparent,
+    onSurface = PaperOnSurface,
+    surfaceVariant = Color(0xFFE0E0E0),
+    onSurfaceVariant = PaperOnSurfaceVariant,
     error = Color(0xFFB00020),
     onError = Color.White
 )
 
 @Composable
 fun PersonalFinanceAppTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // --- UPDATED: Set dynamicColor to false to enforce our custom theme ---
+    selectedTheme: AppTheme = AppTheme.SYSTEM_DEFAULT,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme =
-        when {
-            dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                val context = LocalContext.current
-                if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            }
-            darkTheme -> DarkColorScheme
-            else -> LightColorScheme
+    val systemIsDark = isSystemInDarkTheme()
+
+    val colorScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = LocalContext.current
+            if (systemIsDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
+        // --- UPDATED: Decoupled theme logic ---
+        else -> when (selectedTheme) {
+            AppTheme.SYSTEM_DEFAULT -> if (systemIsDark) MidnightColorScheme else PaperColorScheme
+            AppTheme.AURORA -> AuroraDarkColorScheme
+            AppTheme.DAYBREAK -> DaybreakColorScheme
+            AppTheme.MIDNIGHT -> MidnightColorScheme
+            AppTheme.PAPER -> PaperColorScheme
+        }
+    }
 
     MaterialTheme(
         colorScheme = colorScheme,

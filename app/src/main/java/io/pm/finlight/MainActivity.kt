@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - The NavHost has been updated to use the new, unified
-// `AddEditAccountScreen`. The routes for "add_account" and "edit_account" now
-// both point to this single composable, streamlining the navigation graph and
-// reducing code duplication.
+// REASON: FIX - The background rendering logic is now fully decoupled. A `when`
+// statement handles each theme individually. For themes with animated backgrounds
+// (Aurora, Daybreak), it now correctly draws a solid Surface with the theme's
+// specific background color first, and then renders the animated effect on top,
+// ensuring the correct appearance regardless of the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight
 
@@ -20,7 +21,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -51,7 +51,9 @@ import androidx.navigation.navDeepLink
 import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.ui.components.AuroraAnimatedBackground
+import io.pm.finlight.ui.components.DaybreakAnimatedBackground
 import io.pm.finlight.ui.screens.*
+import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
 import java.net.URLDecoder
 import java.util.concurrent.Executor
@@ -65,7 +67,10 @@ class MainActivity : AppCompatActivity() {
         val hasSeenOnboarding = settingsRepository.hasSeenOnboarding()
 
         setContent {
-            PersonalFinanceAppTheme {
+            val settingsViewModel: SettingsViewModel = viewModel()
+            val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
+
+            PersonalFinanceAppTheme(selectedTheme = selectedTheme) {
                 var showOnboarding by remember { mutableStateOf(!hasSeenOnboarding) }
 
                 if (showOnboarding) {
@@ -200,6 +205,7 @@ fun MainAppScreen() {
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
     val filterState by transactionViewModel.filterState.collectAsState()
     val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
+    val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
 
 
     val bottomNavItems = listOf(
@@ -241,7 +247,29 @@ fun MainAppScreen() {
     val activity = LocalContext.current as AppCompatActivity
 
     Box(modifier = Modifier.fillMaxSize()) {
-        AuroraAnimatedBackground()
+        // --- THE FIX ---
+        // We now use a `when` statement to handle each theme individually.
+        // Crucially, for themes with animated backgrounds, we first draw a
+        // solid Surface with the theme's background color, and then draw the
+        // animated component on top of it. This decouples the background
+        // completely from the system's light/dark mode.
+        when (selectedTheme) {
+            AppTheme.AURORA -> {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
+                AuroraAnimatedBackground()
+            }
+            AppTheme.DAYBREAK -> {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
+                DaybreakAnimatedBackground()
+            }
+            else -> {
+                // For System, Midnight, and Paper, we just need the solid background color.
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {}
+            }
+        }
 
         Scaffold(
             topBar = {
@@ -509,7 +537,6 @@ fun AppNavHost(
 
         composable("account_list") { AccountListScreen(navController, accountViewModel) }
 
-        // --- UPDATED: Navigation for Add/Edit Account ---
         composable("add_account") {
             AddEditAccountScreen(navController, accountViewModel, null)
         }
@@ -523,7 +550,6 @@ fun AppNavHost(
                 backStackEntry.arguments!!.getInt("accountId")
             )
         }
-        // --- END UPDATED ---
 
         composable("account_detail/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
             AccountDetailScreen(navController, accountViewModel, backStackEntry.arguments!!.getInt("accountId"))
@@ -580,11 +606,13 @@ fun AppNavHost(
             "time_period_report_screen/{timePeriod}",
             arguments = listOf(navArgument("timePeriod") {
                 type = NavType.EnumType(TimePeriod::class.java)
-            }),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}" })
+            })
         ) { backStackEntry ->
-            val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod") as TimePeriod
-            TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
+            val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
+
+            if (timePeriod != null) {
+                TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
+            }
         }
     }
 }

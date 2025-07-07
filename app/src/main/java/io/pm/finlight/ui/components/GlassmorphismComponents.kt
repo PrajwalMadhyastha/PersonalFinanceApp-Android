@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
+// REASON: FEATURE - The GlassPanel composable is now fully theme-aware. It
+// dynamically changes its background fill color (semi-transparent white for
+// dark themes, semi-transparent black for light themes) to ensure the frosted
+// glass effect is visually correct and appealing across all app themes.
+// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.EaseOutCubic
@@ -8,6 +15,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -41,10 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.*
-import io.pm.finlight.ui.theme.AuroraPrimary
-import io.pm.finlight.ui.theme.AuroraSecondary
 import io.pm.finlight.ui.theme.GlassPanelBorder
-import io.pm.finlight.ui.theme.GlassPanelFill
 import androidx.compose.ui.graphics.vector.ImageVector
 import java.text.NumberFormat
 import java.util.Locale
@@ -74,10 +79,17 @@ fun GlassPanel(
         Modifier.border(1.dp, GlassPanelBorder, RoundedCornerShape(24.dp))
     }
 
+    // --- NEW: Dynamically set fill color based on theme brightness ---
+    val glassFillColor = if (isSystemInDarkTheme()) {
+        Color.White.copy(alpha = 0.08f) // Slightly less opaque for better dark contrast
+    } else {
+        Color.Black.copy(alpha = 0.04f) // Very subtle black for light themes
+    }
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(24.dp))
-            .background(GlassPanelFill)
+            .background(glassFillColor) // Use the dynamic color
             .then(borderModifier),
         content = content
     )
@@ -228,8 +240,8 @@ private fun AuroraProgressBar(progress: Float) {
     val animatedPercentage = (progress * 100).roundToInt()
     val progressColor = when {
         progress > 0.9 -> MaterialTheme.colorScheme.error
-        progress > 0.7 -> AuroraSecondary
-        else -> AuroraPrimary
+        progress > 0.7 -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.primary
     }
 
     Layout(
@@ -392,7 +404,6 @@ fun BudgetWatchCard(
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
             } else {
-                // --- UPDATED: Changed from FlowRow to LazyRow for horizontal scrolling ---
                 LazyRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -425,8 +436,8 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
 
     val progressBrush = Brush.sweepGradient(
         colors = listOf(
-            AuroraPrimary.copy(alpha = 0.5f),
-            AuroraPrimary
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+            MaterialTheme.colorScheme.primary
         )
     )
 
@@ -435,7 +446,7 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
             .clickable { navController.navigate("budget_screen") }
-            .width(90.dp) // Give each item a fixed width
+            .width(90.dp)
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -464,17 +475,16 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // --- UPDATED: Increased font size and fixed color for legibility ---
             Text(
                 text = budget.budget.categoryName,
-                style = MaterialTheme.typography.bodyLarge, // Increased from bodyMedium
-                color = MaterialTheme.colorScheme.onSurface, // Fixed color
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remaining.toInt())} left",
-                style = MaterialTheme.typography.bodyMedium, // Increased from bodySmall
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -578,7 +588,6 @@ fun AuroraQuickActionsCard(navController: NavController) {
                 icon = Icons.Default.Timeline,
                 text = "View Trends",
                 onClick = {
-                    // Navigate to the main reports screen
                     navController.navigate(BottomNavItem.Reports.route)
                 }
             )
@@ -593,7 +602,6 @@ fun AuroraQuickActionsCard(navController: NavController) {
                 icon = Icons.Default.PieChart,
                 text = "View Categories",
                 onClick = {
-                    // Navigate to the main reports screen
                     navController.navigate(BottomNavItem.Reports.route)
                 }
             )

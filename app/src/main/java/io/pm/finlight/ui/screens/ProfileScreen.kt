@@ -1,9 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: MAJOR REFACTOR - The entire screen has been redesigned to align with
-// the "Project Aurora" vision. The layout now uses GlassPanel components to
-// group related settings, creating a cleaner, more organized, and visually
-// stunning interface that matches the rest of the application.
+// REASON: FEATURE - Added a new "Appearance" section with a theme picker UI.
+// This allows the user to select their preferred theme from the available
+// options. The UI is designed with the Project Aurora aesthetic, using GlassPanel
+// and providing visual previews for each theme.
+// BUG FIX - Corrected the unresolved references in the ThemePickerItem by using
+// the correct property names (`lightColor`, `darkColor`) from the AppTheme enum.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -32,6 +34,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -44,6 +47,7 @@ import io.pm.finlight.*
 import io.pm.finlight.R
 import io.pm.finlight.ui.components.*
 import androidx.compose.ui.unit.dp
+import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
@@ -80,6 +84,7 @@ fun ProfileScreen(
     var showMonthlyTimePicker by remember { mutableStateOf(false) }
     var showImportJsonDialog by remember { mutableStateOf(false) }
     var showImportCsvDialog by remember { mutableStateOf(false) }
+    val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
     // endregion
 
     // region Event Handlers & Launchers
@@ -208,6 +213,36 @@ fun ProfileScreen(
                         contentDescription = "Edit Profile",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = "Appearance") {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Theme",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Select the app's color palette.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround
+                    ) {
+                        AppTheme.entries.forEach { theme ->
+                            ThemePickerItem(
+                                theme = theme,
+                                isSelected = selectedTheme == theme,
+                                onClick = { settingsViewModel.saveSelectedTheme(theme) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -546,5 +581,56 @@ private fun SettingsSection(
                 content()
             }
         }
+    }
+}
+
+@Composable
+private fun ThemePickerItem(
+    theme: AppTheme,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .border(2.dp, borderColor, CircleShape)
+                .padding(4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                if (isDark) theme.darkColor else theme.lightColor,
+                                if (isDark) theme.darkColor.copy(alpha = 0.7f) else theme.lightColor.copy(alpha = 0.7f)
+                            )
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = theme.icon,
+                    contentDescription = theme.displayName,
+                    tint = if (isDark) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.8f),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+        Text(
+            text = theme.displayName,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

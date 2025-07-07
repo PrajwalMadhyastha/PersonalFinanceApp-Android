@@ -1,9 +1,17 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
+// REASON: FEATURE - Added functions to save and retrieve the user's selected
+// theme preference. `saveSelectedTheme` persists the theme's key to
+// SharedPreferences, and `getSelectedTheme` provides a Flow to observe
+// the current choice, enabling the app-wide theme-switching functionality.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import io.pm.finlight.ui.theme.AppTheme
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -38,7 +46,33 @@ class SettingsRepository(context: Context) {
         private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
         private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
         private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
+        // --- NEW: Key for storing the selected theme ---
+        private const val KEY_SELECTED_THEME = "selected_app_theme"
     }
+
+    // --- NEW: Function to save the chosen theme ---
+    fun saveSelectedTheme(theme: AppTheme) {
+        prefs.edit().putString(KEY_SELECTED_THEME, theme.key).apply()
+    }
+
+    // --- NEW: Function to get the chosen theme as a Flow ---
+    fun getSelectedTheme(): Flow<AppTheme> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_SELECTED_THEME) {
+                    val themeKey = sp.getString(key, AppTheme.SYSTEM_DEFAULT.key)
+                    trySend(AppTheme.fromKey(themeKey))
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            // Send the initial value
+            val initialThemeKey = prefs.getString(KEY_SELECTED_THEME, AppTheme.SYSTEM_DEFAULT.key)
+            trySend(AppTheme.fromKey(initialThemeKey))
+            // Unregister the listener when the flow is closed
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
 
     fun saveDashboardLayout(order: List<DashboardCardType>, visible: Set<DashboardCardType>) {
         val orderJson = gson.toJson(order.map { it.name })
@@ -82,7 +116,6 @@ class SettingsRepository(context: Context) {
             val names: List<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
         } else {
-            // --- FIXED: Use the new HERO_BUDGET enum value for the default order ---
             listOf(
                 DashboardCardType.HERO_BUDGET,
                 DashboardCardType.QUICK_ACTIONS,
@@ -101,7 +134,6 @@ class SettingsRepository(context: Context) {
             val names: Set<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }.toSet()
         } else {
-            // Default visibility (all cards)
             DashboardCardType.values().toSet()
         }
     }

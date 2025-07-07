@@ -1,11 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: FEATURE - The `rescanSmsForReview` function now passes the `ignoreRuleDao`
-// to the SmsParser. This ensures that manual SMS scans from the settings screen
-// will also respect the user's defined list of ignore phrases.
-// FEATURE - Added the `onTransactionLinked` function to remove a potential
-// transaction from the review list after it has been successfully linked to an
-// existing manual entry, completing the feature's cleanup workflow.
+// REASON: FEATURE - The ViewModel now exposes the user's selected theme as a
+// StateFlow, allowing the entire app's UI to react to changes. It also includes
+// the `saveSelectedTheme` function to persist the user's choice via the repository.
 // =================================================================================
 package io.pm.finlight
 
@@ -18,6 +15,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import io.pm.finlight.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -119,6 +117,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = Triple(1, 9, 0)
         )
 
+    // --- NEW: Expose the selected theme as a StateFlow ---
+    val selectedTheme: StateFlow<AppTheme> =
+        settingsRepository.getSelectedTheme().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = AppTheme.SYSTEM_DEFAULT
+        )
+
     init {
         smsScanStartDate =
             settingsRepository.getSmsScanStartDate()
@@ -138,6 +144,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = 0f,
             )
+    }
+
+    // --- NEW: Function to save the user's theme choice ---
+    fun saveSelectedTheme(theme: AppTheme) {
+        settingsRepository.saveSelectedTheme(theme)
     }
 
     fun setBackupEnabled(enabled: Boolean) {
@@ -197,7 +208,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- NEW: Function to remove a linked transaction from the review list ---
     fun onTransactionLinked(smsId: Long) {
         _potentialTransactions.update { currentList ->
             currentList.filterNot { it.sourceSmsId == smsId }

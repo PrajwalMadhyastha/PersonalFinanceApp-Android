@@ -4,6 +4,9 @@
 // with the "Project Aurora" vision. It now mirrors the modern "Transaction
 // Composer" layout, using GlassPanel components for all form elements and
 // ensuring a cohesive, high-contrast, and visually appealing experience.
+// BUG FIX - Replaced direct use of `GlassPanelFill` with the `GlassPanel`
+// composable to ensure the component is theme-aware and to resolve the
+// "Unresolved reference" build error.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -32,9 +35,7 @@ import io.pm.finlight.Category
 import io.pm.finlight.RecurringTransactionViewModel
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.GlassPanel
-import io.pm.finlight.ui.theme.AuroraPrimary
 import io.pm.finlight.ui.theme.GlassPanelBorder
-import io.pm.finlight.ui.theme.GlassPanelFill
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 
@@ -42,7 +43,6 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 @Composable
 fun AddRecurringTransactionScreen(navController: NavController) {
     val recurringViewModel: RecurringTransactionViewModel = viewModel()
-    // Use TransactionViewModel to get access to accounts and categories
     val transactionViewModel: TransactionViewModel = viewModel()
 
     var description by remember { mutableStateOf("") }
@@ -122,7 +122,9 @@ fun AddRecurringTransactionScreen(navController: NavController) {
                                 readOnly = true,
                                 label = { Text("Repeats") },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = intervalExpanded) },
-                                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
                                 colors = auroraTextFieldColors()
                             )
                             ExposedDropdownMenu(
@@ -146,7 +148,9 @@ fun AddRecurringTransactionScreen(navController: NavController) {
                                 readOnly = true,
                                 label = { Text("Account") },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountExpanded) },
-                                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
                                 colors = auroraTextFieldColors()
                             )
                             ExposedDropdownMenu(
@@ -170,7 +174,9 @@ fun AddRecurringTransactionScreen(navController: NavController) {
                                 readOnly = true,
                                 label = { Text("Category") },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
-                                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
                                 colors = auroraTextFieldColors()
                             )
                             ExposedDropdownMenu(
@@ -192,7 +198,9 @@ fun AddRecurringTransactionScreen(navController: NavController) {
 
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
@@ -230,11 +238,17 @@ private fun TransactionTypeToggle(
     selectedType: String,
     onTypeSelected: (String) -> Unit
 ) {
+    val glassFillColor = if (isSystemInDarkTheme()) {
+        Color.White.copy(alpha = 0.08f)
+    } else {
+        Color.Black.copy(alpha = 0.04f)
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(CircleShape)
-            .background(GlassPanelFill)
+            .background(glassFillColor)
             .border(1.dp, GlassPanelBorder, CircleShape)
             .padding(4.dp),
         horizontalArrangement = Arrangement.Center,
@@ -245,11 +259,13 @@ private fun TransactionTypeToggle(
 
         Button(
             onClick = { onTypeSelected("expense") },
-            modifier = Modifier.weight(1f).height(48.dp),
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp),
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (expenseSelected) AuroraPrimary else Color.Transparent,
-                contentColor = if (expenseSelected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
+                containerColor = if (expenseSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                contentColor = if (expenseSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
             ),
             elevation = null
         ) {
@@ -258,11 +274,13 @@ private fun TransactionTypeToggle(
 
         Button(
             onClick = { onTypeSelected("income") },
-            modifier = Modifier.weight(1f).height(48.dp),
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp),
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (incomeSelected) AuroraPrimary else Color.Transparent,
-                contentColor = if (incomeSelected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
+                containerColor = if (incomeSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                contentColor = if (incomeSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
             ),
             elevation = null
         ) {

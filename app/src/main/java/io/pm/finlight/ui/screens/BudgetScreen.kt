@@ -49,8 +49,8 @@ import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.ui.components.GlassPanel
-import io.pm.finlight.ui.theme.AuroraPrimary
-import io.pm.finlight.ui.theme.AuroraSecondary
+//import io.pm.finlight.ui.theme.AuroraPrimary
+//import io.pm.finlight.ui.theme.AuroraSecondary
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.NumberFormat
@@ -231,9 +231,9 @@ private fun OverallBudgetHub(
 private fun OverallBudgetGauge(progress: Float) {
     val progressBrush = Brush.sweepGradient(
         colors = listOf(
-            AuroraPrimary,
-            AuroraSecondary,
-            AuroraPrimary
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.secondary,
+            MaterialTheme.colorScheme.primary
         )
     )
     // --- FIX: Read color from theme outside the Canvas scope ---
@@ -278,8 +278,8 @@ private fun CategoryBudgetItem(
     )
     val progressColor = when {
         progress > 1f -> MaterialTheme.colorScheme.error
-        progress > 0.8f -> AuroraSecondary
-        else -> AuroraPrimary
+        progress > 0.8f -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.primary
     }
 
     GlassPanel {
