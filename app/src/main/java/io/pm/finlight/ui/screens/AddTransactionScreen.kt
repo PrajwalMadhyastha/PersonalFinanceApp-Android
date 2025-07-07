@@ -1,16 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: REFACTOR - Based on user feedback, the editing interaction for
-// "Description" and "Notes" has been changed. The separate `TextInputDialog`
-// has been removed. Both fields are now edited using a consistent, non-disruptive
-// `ModalBottomSheet`, which provides a more fluid user experience and avoids
-// jarring popups.
-//
-// KEY CHANGES:
-// - Removed `TextInputDialog` and associated state variables.
-// - Implemented a reusable `TextInputSheet` for use within the ModalBottomSheet.
-// - Tapping "Paid to..." (Description) or the "Notes" action now opens this
-//   new bottom sheet instead of a dialog, creating a unified editing flow.
+// REASON: FEATURE - Added a segmented button to allow toggling between "Expense"
+// and "Income" transaction types, completing the core functionality of the
+// Transaction Composer. The control is styled to match the "Project Aurora"
+// glassmorphism aesthetic.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -23,6 +16,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -68,7 +62,9 @@ import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
 import io.pm.finlight.ui.theme.AuroraNumpadHighlight
+import io.pm.finlight.ui.theme.AuroraPrimary
 import io.pm.finlight.ui.theme.GlassPanelBorder
+import io.pm.finlight.ui.theme.GlassPanelFill
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
@@ -80,7 +76,6 @@ private sealed class ComposerSheet {
     object Category : ComposerSheet()
     object Account : ComposerSheet()
     object Tags : ComposerSheet()
-    // --- NEW: Add sheets for text input ---
     object Description : ComposerSheet()
     object Notes : ComposerSheet()
 }
@@ -100,7 +95,7 @@ fun AddTransactionScreen(
 
     var amount by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var transactionType by remember { mutableStateOf("expense") }
+    var transactionType by remember { mutableStateOf("expense") } // Default to expense
     var notes by remember { mutableStateOf("") }
     var attachedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
@@ -124,7 +119,6 @@ fun AddTransactionScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
 
-    // --- UPDATED: Centralized sheet state ---
     var activeSheet by remember { mutableStateOf<ComposerSheet?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -235,9 +229,18 @@ fun AddTransactionScreen(
                 AmountComposer(
                     amount = amount,
                     description = description,
-                    onDescriptionClick = { activeSheet = ComposerSheet.Description } // --- UPDATED ---
+                    onDescriptionClick = { activeSheet = ComposerSheet.Description }
                 )
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(24.dp))
+
+                // --- NEW: Income/Expense Toggle ---
+                TransactionTypeToggle(
+                    selectedType = transactionType,
+                    onTypeSelected = { transactionType = it }
+                )
+                // --- END NEW ---
+
+                Spacer(Modifier.height(24.dp))
                 OrbitalChips(
                     selectedCategory = selectedCategory,
                     selectedAccount = selectedAccount,
@@ -253,7 +256,7 @@ fun AddTransactionScreen(
                     notes = notes,
                     tags = selectedTags,
                     imageCount = attachedImageUris.size,
-                    onNotesClick = { activeSheet = ComposerSheet.Notes }, // --- UPDATED ---
+                    onNotesClick = { activeSheet = ComposerSheet.Notes },
                     onTagsClick = { activeSheet = ComposerSheet.Tags },
                     onAttachmentClick = { imagePickerLauncher.launch("image/*") }
                 )
@@ -293,7 +296,7 @@ fun AddTransactionScreen(
             sheetState = sheetState,
             containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         ) {
-            when (val sheet = activeSheet) { // --- UPDATED: Use 'val sheet' for smart casting
+            when (val sheet = activeSheet) {
                 is ComposerSheet.Account -> PickerSheet(
                     title = "Select Account",
                     items = accounts,
@@ -319,7 +322,6 @@ fun AddTransactionScreen(
                     onAddNewTag = viewModel::addTagOnTheGo,
                     onConfirm = { activeSheet = null }
                 )
-                // --- NEW: Handle Description and Notes sheets ---
                 is ComposerSheet.Description -> TextInputSheet(
                     title = "Paid to",
                     initialValue = description,
@@ -860,7 +862,6 @@ private fun TagPickerSheet(
     }
 }
 
-// --- NEW: Reusable text input sheet ---
 @Composable
 fun TextInputSheet(
     title: String,
@@ -899,6 +900,59 @@ fun TextInputSheet(
             TextButton(onClick = { onConfirm(initialValue) }) { Text("Cancel") } // Revert on cancel
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = { onConfirm(text) }) { Text("Done") }
+        }
+    }
+}
+
+// --- NEW: Composable for the Income/Expense toggle ---
+@Composable
+private fun TransactionTypeToggle(
+    selectedType: String,
+    onTypeSelected: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CircleShape)
+            .background(GlassPanelFill)
+            .border(1.dp, GlassPanelBorder, CircleShape)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val expenseSelected = selectedType == "expense"
+        val incomeSelected = selectedType == "income"
+
+        // Expense Button
+        Button(
+            onClick = { onTypeSelected("expense") },
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp),
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (expenseSelected) AuroraPrimary else Color.Transparent,
+                contentColor = if (expenseSelected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
+            ),
+            elevation = null
+        ) {
+            Text("Expense", fontWeight = FontWeight.Bold)
+        }
+
+        // Income Button
+        Button(
+            onClick = { onTypeSelected("income") },
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp),
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (incomeSelected) AuroraPrimary else Color.Transparent,
+                contentColor = if (incomeSelected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
+            ),
+            elevation = null
+        ) {
+            Text("Income", fontWeight = FontWeight.Bold)
         }
     }
 }

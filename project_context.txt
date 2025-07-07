@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sun Jul  6 22:19:55 IST 2025
+Generated on: Mon Jul  7 11:16:36 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -5208,13 +5208,17 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>, timePeriod:
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: BUG FIX - The `Text` composable inside `AddCategoryPickerSheet` now
-// uses `maxLines = 1` and `overflow = TextOverflow.Ellipsis` to prevent long
-// category names from wrapping and breaking the grid layout.
-// BUG FIX - The `LaunchedEffect` that sets the default account is now keyed to
-// the `defaultAccount` state. This ensures the effect runs only after the
-// default account has been loaded from the database, fixing the bug where it
-// wasn't being selected on screen open.
+// REASON: REFACTOR - Based on user feedback, the editing interaction for
+// "Description" and "Notes" has been changed. The separate `TextInputDialog`
+// has been removed. Both fields are now edited using a consistent, non-disruptive
+// `ModalBottomSheet`, which provides a more fluid user experience and avoids
+// jarring popups.
+//
+// KEY CHANGES:
+// - Removed `TextInputDialog` and associated state variables.
+// - Implemented a reusable `TextInputSheet` for use within the ModalBottomSheet.
+// - Tapping "Paid to..." (Description) or the "Notes" action now opens this
+//   new bottom sheet instead of a dialog, creating a unified editing flow.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -5222,20 +5226,25 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -5245,11 +5254,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -5259,23 +5274,26 @@ import androidx.navigation.NavController
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
-import io.pm.finlight.ui.components.CreateAccountDialog
-import io.pm.finlight.ui.components.CreateCategoryDialog
-import io.pm.finlight.ui.components.TimePickerDialog
+import io.pm.finlight.ui.components.*
+import io.pm.finlight.ui.theme.AuroraNumpadHighlight
+import io.pm.finlight.ui.theme.GlassPanelBorder
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.*
 
-private sealed class AddSheetContent {
-    object Account : AddSheetContent()
-    object Category : AddSheetContent()
-    object Tags : AddSheetContent()
-    object Notes : AddSheetContent()
+private sealed class ComposerSheet {
+    object Category : ComposerSheet()
+    object Account : ComposerSheet()
+    object Tags : ComposerSheet()
+    // --- NEW: Add sheets for text input ---
+    object Description : ComposerSheet()
+    object Notes : ComposerSheet()
 }
 
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddTransactionScreen(
     navController: NavController,
@@ -5313,13 +5331,13 @@ fun AddTransactionScreen(
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
-    var activeSheetContent by remember { mutableStateOf<AddSheetContent?>(null) }
-    val sheetState = rememberModalBottomSheetState()
+
+    // --- UPDATED: Centralized sheet state ---
+    var activeSheet by remember { mutableStateOf<ComposerSheet?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     var showCreateAccountDialog by remember { mutableStateOf(false) }
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
-    var showTypeDropdown by remember { mutableStateOf(false) }
-
-    val amountFocusRequester = remember { FocusRequester() }
 
     val isSaveEnabled = amount.isNotBlank() && description.isNotBlank() && selectedAccount != null && selectedCategory != null
     // endregion
@@ -5338,18 +5356,15 @@ fun AddTransactionScreen(
     }
 
     LaunchedEffect(Unit) {
-        amountFocusRequester.requestFocus()
         viewModel.clearAddTransactionState()
     }
 
-    // --- BUG FIX: Key the effect on defaultAccount to ensure it runs after it's loaded ---
     LaunchedEffect(defaultAccount) {
         if (!isCsvEdit && selectedAccount == null) {
             selectedAccount = defaultAccount
         }
     }
 
-    // Handle initial data for CSV editing
     LaunchedEffect(initialDataJson, accounts, categories) {
         if (isCsvEdit && initialDataJson != null) {
             try {
@@ -5363,7 +5378,7 @@ fun AddTransactionScreen(
                     } catch (e: Exception) { /* Keep default date on parse error */ }
                 }
                 description = initialData.getOrElse(1) { "" }
-                amount = initialData.getOrElse(2) { "" }
+                amount = initialData.getOrElse(2) { "" }.replace(".0", "")
                 transactionType = initialData.getOrElse(3) { "expense" }
                 val categoryName = initialData.getOrElse(4) { "" }
                 val accountName = initialData.getOrElse(5) { "" }
@@ -5378,7 +5393,6 @@ fun AddTransactionScreen(
         }
     }
 
-    // Display validation errors
     LaunchedEffect(validationError) {
         validationError?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
@@ -5387,589 +5401,520 @@ fun AddTransactionScreen(
     }
     // endregion
 
-    Scaffold(
-        topBar = {
-            AddTransactionTopBar(
-                transactionType = transactionType,
-                onTypeChange = { transactionType = it },
-                onClose = { navController.popBackStack() }
-            )
-        },
-        bottomBar = {
-            AddTransactionBottomBar(
-                isSaveEnabled = isSaveEnabled,
-                onSave = {
-                    scope.launch {
-                        val success = viewModel.addTransaction(
-                            description = description,
-                            categoryId = selectedCategory?.id,
-                            amountStr = amount,
-                            accountId = selectedAccount!!.id,
-                            notes = notes.takeIf { it.isNotBlank() },
-                            date = selectedDateTime.timeInMillis,
-                            transactionType = transactionType,
-                            imageUris = attachedImageUris
-                        )
-                        if (success) {
-                            navController.popBackStack()
-                        }
-                    }
-                },
-                onSaveAndAddAnother = {
-                    scope.launch {
-                        val success = viewModel.addTransaction(
-                            description = description,
-                            categoryId = selectedCategory?.id,
-                            amountStr = amount,
-                            accountId = selectedAccount!!.id,
-                            notes = notes.takeIf { it.isNotBlank() },
-                            date = selectedDateTime.timeInMillis,
-                            transactionType = transactionType,
-                            imageUris = attachedImageUris
-                        )
-                        if (success) {
-                            resetAllState()
-                            amountFocusRequester.requestFocus()
-                        }
-                    }
-                }
-            )
+    val categoryColor by remember(selectedCategory) {
+        derivedStateOf {
+            selectedCategory?.let { CategoryIconHelper.getIconBackgroundColor(it.colorKey) }
         }
-    ) { innerPadding ->
-        // region Main Layout
-        LazyColumn(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                AmountInput(
-                    amount = amount,
-                    onAmountChange = { amount = it },
-                    focusRequester = amountFocusRequester
-                )
-            }
-
-            item {
-                DescriptionDateTimeCard(
-                    description = description,
-                    onDescriptionChange = { description = it },
-                    dateTime = selectedDateTime.time,
-                    onDateTimeClick = { showDatePicker = true }
-                )
-            }
-
-            item {
-                AccountTypeCard(
-                    selectedAccount = selectedAccount,
-                    transactionType = transactionType,
-                    onAccountClick = { activeSheetContent = AddSheetContent.Account },
-                    onTypeChange = { newType -> transactionType = newType }
-                )
-            }
-
-            item {
-                DetailActionRow(
-                    icon = Icons.Default.Category,
-                    label = "Category",
-                    value = selectedCategory?.name,
-                    onClick = { activeSheetContent = AddSheetContent.Category }
-                )
-            }
-
-            item {
-                DetailActionRow(
-                    icon = Icons.AutoMirrored.Filled.Notes,
-                    label = "Notes",
-                    value = notes.ifBlank { null },
-                    onClick = { activeSheetContent = AddSheetContent.Notes }
-                )
-            }
-
-            item {
-                DetailActionRow(
-                    icon = Icons.Default.NewLabel,
-                    label = "Tags",
-                    value = if (selectedTags.isEmpty()) null else selectedTags.joinToString { it.name },
-                    onClick = { activeSheetContent = AddSheetContent.Tags }
-                )
-            }
-
-            item {
-                DetailActionRow(
-                    icon = Icons.Default.Attachment,
-                    label = "Attachment",
-                    value = if (attachedImageUris.isEmpty()) "Photo of a receipt/warranty" else "${attachedImageUris.size} image(s)",
-                    onClick = {
-                        imagePickerLauncher.launch("image/*")
-                    }
-                )
-            }
-        }
-        // endregion
-
-        // region Modals and Dialogs
-        if (activeSheetContent != null) {
-            ModalBottomSheet(
-                onDismissRequest = { activeSheetContent = null },
-                sheetState = sheetState
-            ) {
-                when (val sheet = activeSheetContent) {
-                    is AddSheetContent.Account -> AddAccountPickerSheet(
-                        items = accounts,
-                        onItemSelected = { selectedAccount = it; activeSheetContent = null },
-                        onAddNew = { showCreateAccountDialog = true; activeSheetContent = null },
-                        onDismiss = { activeSheetContent = null }
-                    )
-                    is AddSheetContent.Category -> AddCategoryPickerSheet(
-                        items = categories,
-                        onItemSelected = { selectedCategory = it; activeSheetContent = null },
-                        onAddNew = { showCreateCategoryDialog = true; activeSheetContent = null },
-                        onDismiss = { activeSheetContent = null }
-                    )
-                    is AddSheetContent.Tags -> AddTagPickerSheet(
-                        allTags = allTags,
-                        selectedTags = selectedTags,
-                        onTagSelected = viewModel::onTagSelected,
-                        onAddNewTag = viewModel::addTagOnTheGo,
-                        onConfirm = { activeSheetContent = null },
-                        onDismiss = { activeSheetContent = null }
-                    )
-                    is AddSheetContent.Notes -> NotesInputSheet(
-                        initialValue = notes,
-                        onConfirm = { notes = it; activeSheetContent = null },
-                        onDismiss = { activeSheetContent = null }
-                    )
-                    null -> { /* This case is added to make the 'when' exhaustive */ }
-                }
-            }
-        }
-
-        if (showDatePicker) {
-            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
-            DatePickerDialog(
-                onDismissRequest = { showDatePicker = false },
-                confirmButton = {
-                    TextButton(onClick = {
-                        datePickerState.selectedDateMillis?.let {
-                            val cal = Calendar.getInstance().apply { timeInMillis = it }
-                            selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR))
-                            selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH))
-                            selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH))
-                        }
-                        showDatePicker = false
-                        showTimePicker = true
-                    }) { Text("OK") }
-                },
-                dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
-            ) { DatePicker(state = datePickerState) }
-        }
-
-        if (showTimePicker) {
-            val timePickerState = rememberTimePickerState(
-                initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
-                initialMinute = selectedDateTime.get(Calendar.MINUTE)
-            )
-            TimePickerDialog(
-                onDismissRequest = { showTimePicker = false },
-                onConfirm = {
-                    selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                    selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
-                    showTimePicker = false
-                }
-            ) { TimePicker(state = timePickerState) }
-        }
-
-        if (showCreateAccountDialog) {
-            CreateAccountDialog(
-                onDismiss = { showCreateAccountDialog = false },
-                onConfirm = { name, type ->
-                    viewModel.createAccount(name, type) { newAccount ->
-                        selectedAccount = newAccount
-                    }
-                    showCreateAccountDialog = false
-                }
-            )
-        }
-
-        if (showCreateCategoryDialog) {
-            CreateCategoryDialog(
-                onDismiss = { showCreateCategoryDialog = false },
-                onConfirm = { name, iconKey, colorKey ->
-                    viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
-                        selectedCategory = newCategory
-                    }
-                    showCreateCategoryDialog = false
-                }
-            )
-        }
-        // endregion
     }
-}
 
-// region New UI Components
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AddTransactionTopBar(
-    transactionType: String,
-    onTypeChange: (String) -> Unit,
-    onClose: () -> Unit
-) {
-    var showDropdown by remember { mutableStateOf(false) }
-    val icon = if (transactionType == "expense") Icons.Default.NorthEast else Icons.Default.SouthWest
-
-    CenterAlignedTopAppBar(
-        title = {
-            Box {
-                Row(
-                    modifier = Modifier.clickable { showDropdown = true },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Text(
-                        text = transactionType.replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Change transaction type")
-                }
-                DropdownMenu(
-                    expanded = showDropdown,
-                    onDismissRequest = { showDropdown = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Expense") },
-                        onClick = { onTypeChange("expense"); showDropdown = false },
-                        leadingIcon = { Icon(Icons.Default.NorthEast, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Income") },
-                        onClick = { onTypeChange("income"); showDropdown = false },
-                        leadingIcon = { Icon(Icons.Default.SouthWest, contentDescription = null) }
-                    )
-                }
-            }
-        },
-        navigationIcon = {
-            IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-        },
-        actions = {
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
-            }
-        },
-        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-            containerColor = Color.Transparent
-        )
+    val animatedCategoryColor by animateColorAsState(
+        targetValue = categoryColor ?: Color.Transparent,
+        animationSpec = tween(durationMillis = 500),
+        label = "CategoryColorAnimation"
     )
-}
 
-@Composable
-private fun AmountInput(
-    amount: String,
-    onAmountChange: (String) -> Unit,
-    focusRequester: FocusRequester
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-        Text("Amount spent", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        BasicTextField(
-            value = amount,
-            onValueChange = onAmountChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            textStyle = MaterialTheme.typography.displayMedium.copy(
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurface
-            ),
-            decorationBox = { innerTextField ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "₹",
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (amount.isEmpty()) {
-                            Text(
-                                "Enter amount",
-                                style = MaterialTheme.typography.displayMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Dynamic Spotlight Background
+        SpotlightBackground(color = animatedCategoryColor)
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Compose Transaction") },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
-                        innerTextField()
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
+            },
+            containerColor = Color.Transparent
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Main Composer Area
+                Spacer(Modifier.weight(0.5f))
+                AmountComposer(
+                    amount = amount,
+                    description = description,
+                    onDescriptionClick = { activeSheet = ComposerSheet.Description } // --- UPDATED ---
+                )
+                Spacer(Modifier.height(32.dp))
+                OrbitalChips(
+                    selectedCategory = selectedCategory,
+                    selectedAccount = selectedAccount,
+                    selectedDateTime = selectedDateTime.time,
+                    onCategoryClick = { activeSheet = ComposerSheet.Category },
+                    onAccountClick = { activeSheet = ComposerSheet.Account },
+                    onDateClick = { showDatePicker = true }
+                )
+                Spacer(Modifier.weight(1f))
+
+                // Action Buttons
+                ActionRow(
+                    notes = notes,
+                    tags = selectedTags,
+                    imageCount = attachedImageUris.size,
+                    onNotesClick = { activeSheet = ComposerSheet.Notes }, // --- UPDATED ---
+                    onTagsClick = { activeSheet = ComposerSheet.Tags },
+                    onAttachmentClick = { imagePickerLauncher.launch("image/*") }
+                )
+
+                // Glassmorphic Numpad
+                GlassmorphicNumpad(
+                    onDigitClick = { digit -> if (amount.length < 9) amount += digit },
+                    onBackspaceClick = { if (amount.isNotEmpty()) amount = amount.dropLast(1) },
+                    onConfirm = {
+                        scope.launch {
+                            val success = viewModel.addTransaction(
+                                description = description,
+                                categoryId = selectedCategory?.id,
+                                amountStr = amount,
+                                accountId = selectedAccount!!.id,
+                                notes = notes.takeIf { it.isNotBlank() },
+                                date = selectedDateTime.timeInMillis,
+                                transactionType = transactionType,
+                                imageUris = attachedImageUris
+                            )
+                            if (success) {
+                                navController.popBackStack()
+                            }
+                        }
+                    },
+                    isConfirmEnabled = isSaveEnabled
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+
+    // region Modals and Dialogs
+    if (activeSheet != null) {
+        ModalBottomSheet(
+            onDismissRequest = { activeSheet = null },
+            sheetState = sheetState,
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        ) {
+            when (val sheet = activeSheet) { // --- UPDATED: Use 'val sheet' for smart casting
+                is ComposerSheet.Account -> PickerSheet(
+                    title = "Select Account",
+                    items = accounts,
+                    onItemSelected = { selectedAccount = it; activeSheet = null },
+                    onAddNew = { showCreateAccountDialog = true; activeSheet = null },
+                    itemContent = { account ->
+                        Text(account.name, color = MaterialTheme.colorScheme.onSurface)
                     }
-                    // Spacer for the right side to keep it centered
-                    Spacer(Modifier.width(32.dp))
+                )
+                is ComposerSheet.Category -> PickerSheet(
+                    title = "Select Category",
+                    items = categories,
+                    onItemSelected = { selectedCategory = it; activeSheet = null },
+                    onAddNew = { showCreateCategoryDialog = true; activeSheet = null },
+                    itemContent = { category ->
+                        CategoryPickerItem(category)
+                    }
+                )
+                is ComposerSheet.Tags -> TagPickerSheet(
+                    allTags = allTags,
+                    selectedTags = selectedTags,
+                    onTagSelected = viewModel::onTagSelected,
+                    onAddNewTag = viewModel::addTagOnTheGo,
+                    onConfirm = { activeSheet = null }
+                )
+                // --- NEW: Handle Description and Notes sheets ---
+                is ComposerSheet.Description -> TextInputSheet(
+                    title = "Paid to",
+                    initialValue = description,
+                    onConfirm = {
+                        description = it
+                        activeSheet = null
+                    }
+                )
+                is ComposerSheet.Notes -> TextInputSheet(
+                    title = "Add Notes",
+                    initialValue = notes,
+                    onConfirm = {
+                        notes = it
+                        activeSheet = null
+                    }
+                )
+                null -> {}
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateTime.timeInMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let {
+                        val cal = Calendar.getInstance().apply { timeInMillis = it }
+                        selectedDateTime.set(Calendar.YEAR, cal.get(Calendar.YEAR))
+                        selectedDateTime.set(Calendar.MONTH, cal.get(Calendar.MONTH))
+                        selectedDateTime.set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH))
+                    }
+                    showDatePicker = false
+                    showTimePicker = true
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
+        ) { DatePicker(state = datePickerState) }
+    }
+
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = selectedDateTime.get(Calendar.HOUR_OF_DAY),
+            initialMinute = selectedDateTime.get(Calendar.MINUTE)
+        )
+        TimePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            onConfirm = {
+                selectedDateTime.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                selectedDateTime.set(Calendar.MINUTE, timePickerState.minute)
+                showTimePicker = false
+            }
+        ) { TimePicker(state = timePickerState) }
+    }
+
+    if (showCreateAccountDialog) {
+        CreateAccountDialog(
+            onDismiss = { showCreateAccountDialog = false },
+            onConfirm = { name, type ->
+                viewModel.createAccount(name, type) { newAccount ->
+                    selectedAccount = newAccount
                 }
+                showCreateAccountDialog = false
             }
         )
-        HorizontalDivider(modifier = Modifier.padding(top = 16.dp))
+    }
+
+    if (showCreateCategoryDialog) {
+        CreateCategoryDialog(
+            onDismiss = { showCreateCategoryDialog = false },
+            onConfirm = { name, iconKey, colorKey ->
+                viewModel.createCategory(name, iconKey, colorKey) { newCategory ->
+                    selectedCategory = newCategory
+                }
+                showCreateCategoryDialog = false
+            }
+        )
+    }
+    // endregion
+}
+
+// region New UI Components for Composer
+@Composable
+private fun SpotlightBackground(color: Color) {
+    val animatedAlpha by animateFloatAsState(
+        targetValue = if (color == Color.Transparent) 0f else 0.3f,
+        animationSpec = tween(500),
+        label = "SpotlightAlpha"
+    )
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        drawIntoCanvas {
+            val paint = Paint().asFrameworkPaint()
+            val radius = size.width * 1.2f
+            paint.color = android.graphics.Color.TRANSPARENT
+            paint.setShadowLayer(
+                radius,
+                0f,
+                0f,
+                color
+                    .copy(alpha = animatedAlpha)
+                    .toArgb()
+            )
+            it.nativeCanvas.drawCircle(center.x, center.y, radius / 2, paint)
+        }
     }
 }
 
 @Composable
-private fun DescriptionDateTimeCard(
+private fun AmountComposer(
+    amount: String,
     description: String,
-    onDescriptionChange: (String) -> Unit,
-    dateTime: Date,
-    onDateTimeClick: () -> Unit
+    onDescriptionClick: () -> Unit
 ) {
-    val dateFormatter = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
-
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Date & time", modifier = Modifier.weight(1f))
-                Text(
-                    text = dateFormatter.format(dateTime),
-                    modifier = Modifier.clickable(onClick = onDateTimeClick),
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            HorizontalDivider()
-            OutlinedTextField(
-                value = description,
-                onValueChange = onDescriptionChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Paid to") },
-                placeholder = { Text("Enter the name or place") },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedBorderColor = Color.Transparent
-                )
-            )
-        }
-    }
-}
-
-@Composable
-private fun AccountTypeCard(
-    selectedAccount: Account?,
-    transactionType: String,
-    onAccountClick: () -> Unit,
-    onTypeChange: (String) -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        onClick = onAccountClick
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.AccountBalanceWallet, contentDescription = "Account")
-            Spacer(Modifier.width(16.dp))
-            Text(
-                text = selectedAccount?.name ?: "Select Account",
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = transactionType.replaceFirstChar { it.uppercase() },
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(end = 8.dp)
-            )
-            Switch(
-                checked = transactionType == "expense",
-                onCheckedChange = { isChecked ->
-                    onTypeChange(if (isChecked) "expense" else "income")
-                },
-                thumbContent = {
-                    Icon(
-                        if (transactionType == "expense") Icons.Default.NorthEast else Icons.Default.SouthWest,
-                        contentDescription = null,
-                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                    )
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun DetailActionRow(
-    icon: ImageVector,
-    label: String,
-    value: String?,
-    onClick: () -> Unit
-) {
-    val hasValue = !value.isNullOrBlank()
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        onClick = onClick
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, contentDescription = label)
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = label,
-                    style = if (hasValue) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,
-                    color = if (hasValue) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-                )
-                if (hasValue) {
-                    Text(
-                        text = value!!,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-            Icon(Icons.Default.Add, contentDescription = "Add $label")
-        }
-    }
-}
-
-
-@Composable
-private fun AddTransactionBottomBar(
-    isSaveEnabled: Boolean,
-    onSave: () -> Unit,
-    onSaveAndAddAnother: () -> Unit
-) {
-    Surface(shadowElevation = 8.dp) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .navigationBarsPadding(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            OutlinedButton(
-                onClick = onSaveAndAddAnother,
-                modifier = Modifier.weight(1f),
-                enabled = isSaveEnabled
-            ) {
-                Text("Save & add another")
-            }
-            Button(
-                onClick = onSave,
-                modifier = Modifier.weight(1f),
-                enabled = isSaveEnabled
-            ) {
-                Text("Save")
-            }
-        }
-    }
-}
-
-@Composable
-private fun NotesInputSheet(
-    initialValue: String,
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var text by remember { mutableStateOf(initialValue) }
-
     Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onDescriptionClick)
+    ) {
+        Text(
+            text = description.ifBlank { "Paid to..." },
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "₹",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.Top)
+            )
+            Text(
+                text = if (amount.isEmpty()) "0" else amount,
+                style = MaterialTheme.typography.displayLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun OrbitalChips(
+    selectedCategory: Category?,
+    selectedAccount: Account?,
+    selectedDateTime: Date,
+    onCategoryClick: () -> Unit,
+    onAccountClick: () -> Unit,
+    onDateClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        DetailChip(
+            icon = selectedCategory?.let { CategoryIconHelper.getIcon(it.iconKey) } ?: Icons.Default.Category,
+            text = selectedCategory?.name ?: "Category",
+            onClick = onCategoryClick
+        )
+        DetailChip(
+            icon = Icons.Default.AccountBalanceWallet,
+            text = selectedAccount?.name ?: "Account",
+            onClick = onAccountClick
+        )
+        DetailChip(
+            icon = Icons.Default.CalendarToday,
+            text = SimpleDateFormat("dd MMM", Locale.getDefault()).format(selectedDateTime),
+            onClick = onDateClick
+        )
+    }
+}
+
+@Composable
+private fun DetailChip(icon: ImageVector, text: String, onClick: () -> Unit) {
+    GlassPanel(
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = text,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActionRow(
+    notes: String,
+    tags: Set<Tag>,
+    imageCount: Int,
+    onNotesClick: () -> Unit,
+    onTagsClick: () -> Unit,
+    onAttachmentClick: () -> Unit
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
-            .navigationBarsPadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally)
     ) {
-        Text("Add Notes", style = MaterialTheme.typography.titleLarge)
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            label = { Text("Your notes") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(150.dp)
+        ActionIcon(
+            icon = Icons.AutoMirrored.Filled.Notes,
+            text = "Notes",
+            isHighlighted = notes.isNotBlank(),
+            onClick = onNotesClick
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
+        ActionIcon(
+            icon = Icons.Default.NewLabel,
+            text = "Tags",
+            isHighlighted = tags.isNotEmpty(),
+            onClick = onTagsClick
+        )
+        ActionIcon(
+            icon = Icons.Default.Attachment,
+            text = "Attach",
+            isHighlighted = imageCount > 0,
+            badgeCount = imageCount,
+            onClick = onAttachmentClick
+        )
+    }
+}
+
+@Composable
+private fun ActionIcon(
+    icon: ImageVector,
+    text: String,
+    isHighlighted: Boolean,
+    onClick: () -> Unit,
+    badgeCount: Int = 0
+) {
+    val color = if (isHighlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        BadgedBox(badge = {
+            if (badgeCount > 0) {
+                Badge(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) { Text("$badgeCount") }
+            }
+        }) {
+            Icon(
+                imageVector = icon,
+                contentDescription = text,
+                tint = color,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = color)
+    }
+}
+
+@Composable
+private fun GlassmorphicNumpad(
+    onDigitClick: (String) -> Unit,
+    onBackspaceClick: () -> Unit,
+    onConfirm: () -> Unit,
+    isConfirmEnabled: Boolean
+) {
+    val buttons = listOf(
+        "1", "2", "3",
+        "4", "5", "6",
+        "7", "8", "9",
+        ".", "0"
+    )
+
+    GlassPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = { onConfirm(text) }) { Text("Done") }
+            buttons.chunked(3).forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    row.forEach { digit ->
+                        NumpadButton(text = digit, modifier = Modifier.weight(1f)) {
+                            onDigitClick(digit)
+                        }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                NumpadButton(icon = Icons.AutoMirrored.Filled.Backspace, modifier = Modifier.weight(1f)) {
+                    onBackspaceClick()
+                }
+                Button(
+                    onClick = onConfirm,
+                    enabled = isConfirmEnabled,
+                    modifier = Modifier
+                        .weight(2f)
+                        .height(64.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = "Confirm", modifier = Modifier.size(32.dp))
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun AddAccountPickerSheet(
-    items: List<Account>,
-    onItemSelected: (Account) -> Unit,
-    onAddNew: () -> Unit,
-    onDismiss: () -> Unit
+private fun NumpadButton(
+    modifier: Modifier = Modifier,
+    text: String? = null,
+    icon: ImageVector? = null,
+    onClick: () -> Unit
 ) {
-    Column(modifier = Modifier.navigationBarsPadding()) {
-        Text(
-            "Select Account",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(16.dp)
-        )
-        LazyColumn {
-            items(items) { item ->
-                ListItem(
-                    headlineContent = { Text(item.name) },
-                    modifier = Modifier.clickable { onItemSelected(item) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val backgroundColor = if (isPressed) AuroraNumpadHighlight else Color.Transparent
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(64.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = backgroundColor,
+        interactionSource = interactionSource
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (text != null) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            item {
-                ListItem(
-                    headlineContent = { Text("+ Create New Account") },
-                    leadingContent = { Icon(Icons.Default.Add, contentDescription = "Create New Account") },
-                    modifier = Modifier.clickable(onClick = onAddNew)
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
-        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-private fun AddCategoryPickerSheet(
-    items: List<Category>,
-    onItemSelected: (Category) -> Unit,
-    onAddNew: () -> Unit,
-    onDismiss: () -> Unit
+private fun <T> PickerSheet(
+    title: String,
+    items: List<T>,
+    onItemSelected: (T) -> Unit,
+    onAddNew: (() -> Unit)? = null,
+    itemContent: @Composable (T) -> Unit
 ) {
     Column(modifier = Modifier.navigationBarsPadding()) {
         Text(
-            "Select Category",
+            title,
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.onSurface
         )
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 100.dp),
@@ -5977,37 +5922,42 @@ private fun AddCategoryPickerSheet(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(items) { category ->
+            items(items) { item ->
                 Column(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable { onItemSelected(category) }
+                        .clickable { onItemSelected(item) }
                         .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    CategoryIcon(category, Modifier.size(48.dp))
-                    Text(
-                        category.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1, // --- BUG FIX: Prevent wrapping ---
-                        overflow = TextOverflow.Ellipsis // --- BUG FIX: Add ellipsis for overflow ---
-                    )
+                    itemContent(item)
                 }
             }
-            item {
-                Column(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(onClick = onAddNew)
-                        .padding(vertical = 12.dp)
-                        .height(76.dp), // Match height of other items
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Default.AddCircleOutline, contentDescription = "Create New", modifier = Modifier.size(48.dp))
-                    Text("New", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            if (onAddNew != null) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(onClick = onAddNew)
+                            .padding(vertical = 12.dp)
+                            .height(76.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.AddCircleOutline,
+                            contentDescription = "Create New",
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "New",
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             }
         }
@@ -6015,15 +5965,49 @@ private fun AddCategoryPickerSheet(
     }
 }
 
+@Composable
+private fun CategoryPickerItem(category: Category) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+                fontSize = 22.sp
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.padding(12.dp)
+            )
+        }
+    }
+    Text(
+        category.name,
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AddTagPickerSheet(
+private fun TagPickerSheet(
     allTags: List<Tag>,
     selectedTags: Set<Tag>,
     onTagSelected: (Tag) -> Unit,
     onAddNewTag: (String) -> Unit,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
 ) {
     var newTagName by remember { mutableStateOf("") }
 
@@ -6034,7 +6018,7 @@ private fun AddTagPickerSheet(
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Manage Tags", style = MaterialTheme.typography.titleLarge)
+        Text("Manage Tags", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -6048,7 +6032,7 @@ private fun AddTagPickerSheet(
                 )
             }
         }
-        HorizontalDivider()
+        HorizontalDivider(color = GlassPanelBorder)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -6072,11 +6056,8 @@ private fun AddTagPickerSheet(
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.End
         ) {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-            Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {
                 if (newTagName.isNotBlank()) {
                     onAddNewTag(newTagName)
@@ -6087,32 +6068,49 @@ private fun AddTagPickerSheet(
     }
 }
 
-
+// --- NEW: Reusable text input sheet ---
 @Composable
-private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .clip(CircleShape)
-            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
-        contentAlignment = Alignment.Center
+fun TextInputSheet(
+    title: String,
+    initialValue: String,
+    onConfirm: (String) -> Unit
+) {
+    var text by remember { mutableStateOf(initialValue) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        if (category.iconKey == "letter_default") {
-            Text(
-                text = category.name.firstOrNull()?.uppercase() ?: "?",
-                fontWeight = FontWeight.Bold,
-                color = Color.Black,
-                fontSize = 22.sp
-            )
-        } else {
-            Icon(
-                imageVector = CategoryIconHelper.getIcon(category.iconKey),
-                contentDescription = null,
-                tint = Color.Black,
-                modifier = Modifier.padding(12.dp)
-            )
+        Text(title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            label = { Text("Value") },
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { onConfirm(initialValue) }) { Text("Cancel") } // Revert on cancel
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = { onConfirm(text) }) { Text("Done") }
         }
     }
 }
+// endregion
 -e 
 
 
@@ -13459,6 +13457,13 @@ class DragDropState(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt
+// REASON: FEATURE - Added the `AuroraNumpadHighlight` color. This new color
+// will be used to provide visual feedback when a key on the new glassmorphic
+// numpad is pressed, enhancing the interactive feel of the "Transaction
+// Composer" screen.
+// =================================================================================
 package io.pm.finlight.ui.theme
 
 import androidx.compose.ui.graphics.Color
@@ -13478,6 +13483,9 @@ val AuroraSecondary = Color(0xFFFFBA3F) // Subtle Gold
 val AuroraBackground = Color(0xFF121212) // Very dark charcoal
 val GlassPanelFill = Color(0x1AFFFFFF) // White with 10% opacity
 val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
+
+// --- NEW: Color for Numpad press highlight ---
+val AuroraNumpadHighlight = Color(0x29FFFFFF) // White with 16% opacity
 
 // --- UPDATED: Opaque colors for popup surfaces, now at 60% opacity ---
 val PopupSurfaceDark = Color(0x99212125) // 60% opaque dark charcoal
@@ -13717,6 +13725,13 @@ val Typography = Typography(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
+// REASON: REFACTOR - The logic for `showMainTopBar` has been updated to exclude
+// the "add_transaction" route. This prevents the default TopAppBar from
+// appearing on the newly redesigned "Transaction Composer" screen, which now
+// manages its own header.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -13926,6 +13941,8 @@ fun MainAppScreen() {
     val baseCurrentRoute = currentRoute?.split("?")?.firstOrNull()?.split("/")?.firstOrNull()
 
     val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
+
+    // --- UPDATED: Exclude add_transaction from the main TopAppBar ---
     val showMainTopBar = baseCurrentRoute !in setOf(
         "transaction_detail",
         "income_screen",
