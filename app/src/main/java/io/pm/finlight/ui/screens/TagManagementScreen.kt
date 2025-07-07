@@ -1,7 +1,14 @@
+// =================================================================================
 // FILE: app/src/main/java/io/pm/finlight/ui/screens/TagManagementScreen.kt
-
+// REASON: MAJOR REFACTOR - The screen has been completely redesigned to align
+// with the "Project Aurora" vision. All standard components (TextFields,
+// Buttons, ListItems, Dialogs) have been replaced with GlassPanel-based
+// layouts and styled to ensure a cohesive, modern, and high-contrast user
+// experience for managing tags.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,24 +20,24 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.pm.finlight.Tag
 import io.pm.finlight.TagViewModel
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TagManagementScreen(viewModel: TagViewModel = viewModel()) {
     val tags by viewModel.allTags.collectAsState()
-    var newTagName by remember { mutableStateOf("") }
-
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var selectedTag by remember { mutableStateOf<Tag?>(null) }
-
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // This listens for one-time events from the ViewModel
     LaunchedEffect(key1 = viewModel.uiEvent) {
         viewModel.uiEvent.collect { message ->
             snackbarHostState.showSnackbar(message)
@@ -38,77 +45,68 @@ fun TagManagementScreen(viewModel: TagViewModel = viewModel()) {
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.Transparent
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = newTagName,
-                    onValueChange = { newTagName = it },
-                    label = { Text("New Tag Name") },
-                    modifier = Modifier.weight(1f)
-                )
-                Button(
-                    onClick = {
-                        viewModel.addTag(newTagName)
-                        newTagName = "" // Clear input field
-                    },
-                    enabled = newTagName.isNotBlank()
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Tag")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider()
+            AddTagInput(onAddTag = viewModel::addTag)
 
             if (tags.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No tags created yet. Add one above!")
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "No tags created yet. Add one above!",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             } else {
-                LazyColumn {
-                    items(tags) { tag ->
-                        ListItem(
-                            headlineContent = { Text(tag.name) },
-                            trailingContent = {
-                                Row {
-                                    IconButton(onClick = {
-                                        selectedTag = tag
-                                        showEditDialog = true
-                                    }) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Edit Tag")
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(tags, key = { it.id }) { tag ->
+                        GlassPanel {
+                            ListItem(
+                                headlineContent = { Text(tag.name, color = MaterialTheme.colorScheme.onSurface) },
+                                trailingContent = {
+                                    Row {
+                                        IconButton(onClick = {
+                                            selectedTag = tag
+                                            showEditDialog = true
+                                        }) {
+                                            Icon(
+                                                Icons.Default.Edit,
+                                                contentDescription = "Edit Tag",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        IconButton(onClick = {
+                                            selectedTag = tag
+                                            showDeleteDialog = true
+                                        }) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Delete Tag",
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
-                                    IconButton(onClick = {
-                                        selectedTag = tag
-                                        showDeleteDialog = true
-                                    }) {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            contentDescription = "Delete Tag",
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                }
-                            }
-                        )
-                        HorizontalDivider()
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                        }
                     }
                 }
             }
         }
     }
-
-    // --- DIALOGS ---
 
     if (showEditDialog && selectedTag != null) {
         EditTagDialog(
@@ -133,6 +131,46 @@ fun TagManagementScreen(viewModel: TagViewModel = viewModel()) {
     }
 }
 
+@Composable
+private fun AddTagInput(onAddTag: (String) -> Unit) {
+    var newTagName by remember { mutableStateOf("") }
+    GlassPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = newTagName,
+                onValueChange = { newTagName = it },
+                label = { Text("New Tag Name") },
+                modifier = Modifier.weight(1f),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                )
+            )
+            Button(
+                onClick = {
+                    onAddTag(newTagName)
+                    newTagName = ""
+                },
+                enabled = newTagName.isNotBlank()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Tag")
+            }
+        }
+    }
+}
 
 @Composable
 private fun EditTagDialog(
@@ -162,7 +200,8 @@ private fun EditTagDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
+        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
     )
 }
 
@@ -186,7 +225,7 @@ private fun DeleteTagDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
+        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
     )
 }
-
