@@ -1,14 +1,15 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt
-// REASON: FEATURE - The UI has been enhanced to differentiate between default
-// and user-added ignore rules. Default rules are now displayed with a toggle
-// Switch to enable/disable them, while user-added rules have a delete button,
-// providing a more intuitive and powerful management interface.
-// BUG FIX - Corrected the function call to `updateIgnoreRule` to match the
-// function name in the ViewModel, resolving the persistent compilation error.
+// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with the
+// "Project Aurora" vision. All list items and input fields are now housed in
+// GlassPanel components.
+// BUG FIX: All text and component colors have been explicitly set using
+// MaterialTheme.colorScheme to ensure high contrast and legibility in dark
+// mode, resolving the visibility issues.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,12 +20,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.pm.finlight.IgnoreRule
 import io.pm.finlight.ManageIgnoreRulesViewModel
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ManageIgnoreRulesScreen(
     viewModel: ManageIgnoreRulesViewModel = viewModel()
@@ -35,54 +40,80 @@ fun ManageIgnoreRulesScreen(
 
     val (defaultRules, customRules) = rules.partition { it.isDefault }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            "Manage Ignore Phrases",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Text(
-            "Add phrases that, if found in an SMS, will cause the message to be ignored by the parser. You can also toggle the app's default ignore rules.",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = newPhrase,
-                onValueChange = { newPhrase = it },
-                label = { Text("Add custom phrase to ignore") },
-                modifier = Modifier.weight(1f)
-            )
-            Button(
-                onClick = {
-                    viewModel.addIgnoreRule(newPhrase)
-                    newPhrase = "" // Clear input
-                },
-                enabled = newPhrase.isNotBlank()
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Phrase")
+        item {
+            Column {
+                Text(
+                    "Manage Ignore Phrases",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Add phrases to ignore messages from the SMS parser. You can also toggle the app's default rules.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        LazyColumn {
-            if (customRules.isNotEmpty()) {
-                item {
-                    Text("Your Custom Rules", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp))
+        item {
+            GlassPanel {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newPhrase,
+                        onValueChange = { newPhrase = it },
+                        label = { Text("Add custom phrase") },
+                        modifier = Modifier.weight(1f),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                            focusedLabelColor = MaterialTheme.colorScheme.primary,
+                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            cursorColor = MaterialTheme.colorScheme.primary,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                        )
+                    )
+                    Button(
+                        onClick = {
+                            viewModel.addIgnoreRule(newPhrase)
+                            newPhrase = "" // Clear input
+                        },
+                        enabled = newPhrase.isNotBlank()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Phrase")
+                    }
                 }
-                items(customRules, key = { "custom-${it.id}" }) { rule ->
+            }
+        }
+
+        if (customRules.isNotEmpty()) {
+            item {
+                Text(
+                    "Your Custom Rules",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            items(customRules, key = { "custom-${it.id}" }) { rule ->
+                GlassPanel {
                     ListItem(
-                        headlineContent = { Text(rule.phrase) },
+                        headlineContent = { Text(rule.phrase, color = MaterialTheme.colorScheme.onSurface) },
                         trailingContent = {
                             IconButton(onClick = { ruleToDelete = rule }) {
                                 Icon(
@@ -91,19 +122,26 @@ fun ManageIgnoreRulesScreen(
                                     tint = MaterialTheme.colorScheme.error
                                 )
                             }
-                        }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
-                    HorizontalDivider()
                 }
             }
+        }
 
-            if (defaultRules.isNotEmpty()) {
-                item {
-                    Text("Default App Rules", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
-                }
-                items(defaultRules, key = { "default-${it.id}" }) { rule ->
+        if (defaultRules.isNotEmpty()) {
+            item {
+                Text(
+                    "Default App Rules",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            items(defaultRules, key = { "default-${it.id}" }) { rule ->
+                GlassPanel {
                     ListItem(
-                        headlineContent = { Text(rule.phrase) },
+                        headlineContent = { Text(rule.phrase, color = MaterialTheme.colorScheme.onSurface) },
                         trailingContent = {
                             Switch(
                                 checked = rule.isEnabled,
@@ -111,9 +149,9 @@ fun ManageIgnoreRulesScreen(
                                     viewModel.updateIgnoreRule(rule.copy(isEnabled = isEnabled))
                                 }
                             )
-                        }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
-                    HorizontalDivider()
                 }
             }
         }
@@ -135,7 +173,8 @@ fun ManageIgnoreRulesScreen(
             },
             dismissButton = {
                 TextButton(onClick = { ruleToDelete = null }) { Text("Cancel") }
-            }
+            },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         )
     }
 }
