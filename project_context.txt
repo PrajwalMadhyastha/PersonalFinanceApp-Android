@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Mon Jul  7 11:16:36 IST 2025
+Generated on: Mon Jul  7 14:11:23 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -3977,8 +3977,16 @@ fun MerchantSpendingCard(merchant: MerchantSpendingSummary) {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditBudgetScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditBudgetScreen.kt
+// REASON: REFACTOR - The dialog has been updated to use GlassPanel components
+// and align with the Project Aurora aesthetic, ensuring a consistent and modern
+// look for adding and editing budgets.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -3990,6 +3998,9 @@ import androidx.navigation.NavController
 import io.pm.finlight.Budget
 import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.Category
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -4000,6 +4011,7 @@ fun AddEditBudgetScreen(
 ) {
     val isEditMode = budgetId != null
     val buttonText = if (isEditMode) "Update Budget" else "Save Budget"
+    val titleText = if (isEditMode) "Edit Budget" else "Add Budget"
 
     var amount by remember { mutableStateOf("") }
     val availableCategories by viewModel.availableCategoriesForNewBudget.collectAsState(initial = emptyList())
@@ -4023,63 +4035,68 @@ fun AddEditBudgetScreen(
     }
 
     Column(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        val isDropdownEnabled = !isEditMode && availableCategories.isNotEmpty()
+        Text(titleText, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
 
-        ExposedDropdownMenuBox(
-            expanded = isCategoryDropdownExpanded && isDropdownEnabled,
-            onExpandedChange = { if (isDropdownEnabled) isCategoryDropdownExpanded = !isCategoryDropdownExpanded },
-        ) {
-            OutlinedTextField(
-                value = selectedCategory?.name ?: "Select Category",
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Category") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded && isDropdownEnabled) },
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(),
-                enabled = isDropdownEnabled,
-            )
-            ExposedDropdownMenu(
-                expanded = isCategoryDropdownExpanded && isDropdownEnabled,
-                onDismissRequest = { isCategoryDropdownExpanded = false },
-            ) {
-                availableCategories.forEach { category ->
-                    DropdownMenuItem(
-                        text = { Text(category.name) },
-                        onClick = {
-                            selectedCategory = category
-                            isCategoryDropdownExpanded = false
-                        },
+        GlassPanel {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                val isDropdownEnabled = !isEditMode && availableCategories.isNotEmpty()
+
+                ExposedDropdownMenuBox(
+                    expanded = isCategoryDropdownExpanded && isDropdownEnabled,
+                    onExpandedChange = { if (isDropdownEnabled) isCategoryDropdownExpanded = !isCategoryDropdownExpanded },
+                ) {
+                    OutlinedTextField(
+                        value = selectedCategory?.name ?: "Select Category",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded && isDropdownEnabled) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        enabled = isDropdownEnabled,
+                    )
+                    ExposedDropdownMenu(
+                        expanded = isCategoryDropdownExpanded && isDropdownEnabled,
+                        onDismissRequest = { isCategoryDropdownExpanded = false },
+                        modifier = Modifier.background(if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight)
+                    ) {
+                        availableCategories.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text(category.name) },
+                                onClick = {
+                                    selectedCategory = category
+                                    isCategoryDropdownExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+
+                if (availableCategories.isEmpty() && !isEditMode) {
+                    Text(
+                        text = "All categories already have a budget for this month. You can edit existing budgets from the previous screen.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("Budget Amount") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    leadingIcon = { Text("₹") },
+                )
             }
         }
-
-        if (availableCategories.isEmpty() && !isEditMode) {
-            Text(
-                text = "All categories already have a budget for this month. You can edit existing budgets from the previous screen.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        OutlinedTextField(
-            value = amount,
-            onValueChange = { amount = it },
-            label = { Text("Budget Amount") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            leadingIcon = { Text("₹") },
-        )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.weight(1f))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -4912,15 +4929,15 @@ fun EditAccountScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
-// REASON: MAJOR REFACTOR - This screen has been completely redesigned to match
-// a modern, visually appealing layout. It now features a new summary header,
-// a restyled bar chart with a highlighted selected day, and swipe-based
-// navigation to move between periods, removing the old navigation arrows.
-// FIX: Corrected the horizontal drag gesture detection to use the correct
-// parameter type, resolving a compilation error.
-// UPDATE: The ReportHeader is now more dynamic, displaying more specific and
-// user-friendly date ranges for the Daily, Weekly, and Monthly views to make
-// each report feel distinct.
+// REASON: MAJOR REFACTOR - This screen has been completely redesigned to align
+// with the "Project Aurora" vision. It now features a dynamic header, a restyled
+// bar chart, and a fully glassmorphic layout, creating a modern and cohesive
+// user experience for all time-period-based reports. All text and chart colors
+// have been carefully selected for high contrast and legibility.
+// FIX: Corrected an unresolved reference error by changing the icon from
+// InfoOutline to the standard Info icon.
+// FIX: Resolved a NullPointerException by ensuring the chart's data is set
+// before its properties are accessed in the AndroidView's update block.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -4933,7 +4950,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ShoppingBasket
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -4943,9 +4960,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -4954,12 +4969,13 @@ import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
-import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import io.pm.finlight.TimePeriod
 import io.pm.finlight.TimePeriodReportViewModel
 import io.pm.finlight.TimePeriodReportViewModelFactory
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionItem
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
@@ -4990,13 +5006,15 @@ fun TimePeriodReportScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(
-                    text = when(timePeriod) {
-                        TimePeriod.DAILY -> "Daily Report"
-                        TimePeriod.WEEKLY -> "Weekly Report"
-                        TimePeriod.MONTHLY -> "Monthly Report"
-                    }
-                ) },
+                title = {
+                    Text(
+                        text = when (timePeriod) {
+                            TimePeriod.DAILY -> "Daily Report"
+                            TimePeriod.WEEKLY -> "Weekly Report"
+                            TimePeriod.MONTHLY -> "Monthly Report"
+                        }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -5004,11 +5022,12 @@ fun TimePeriodReportScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
-        }
+        },
+        containerColor = Color.Transparent // Make scaffold background transparent
     ) { innerPadding ->
         var dragAmount by remember { mutableStateOf(0f) }
 
-        Box(
+        Column(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
@@ -5025,7 +5044,6 @@ fun TimePeriodReportScreen(
                         },
                         onDragCancel = { dragAmount = 0f }
                     ) { change, drag ->
-                        // --- FIX: The 'drag' parameter is a Float, not an Offset ---
                         dragAmount += drag
                         change.consume()
                     }
@@ -5045,23 +5063,47 @@ fun TimePeriodReportScreen(
                 }
 
                 item {
-                    chartDataPair?.let {
-                        SpendingBarChart(
-                            chartData = it,
-                            timePeriod = timePeriod
-                        )
+                    GlassPanel {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "Spending Chart",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            if (chartDataPair != null) {
+                                SpendingBarChart(
+                                    chartData = chartDataPair!!
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "No chart data for this period.",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
                 if (transactions.isNotEmpty()) {
                     item {
                         Text(
-                            "Top Spends",
+                            "Transactions in this Period",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    items(transactions) { transaction ->
+                    items(transactions, key = { it.transaction.id }) { transaction ->
                         TransactionItem(
                             transactionDetails = transaction,
                             onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") }
@@ -5069,13 +5111,24 @@ fun TimePeriodReportScreen(
                     }
                 } else {
                     item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("No transactions for this period.")
+                        GlassPanel {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = "Info",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "No transactions recorded for this period.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -5086,14 +5139,7 @@ fun TimePeriodReportScreen(
 
 @Composable
 private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDate: Date) {
-    val title = when (timePeriod) {
-        TimePeriod.DAILY -> "Total Spend"
-        TimePeriod.WEEKLY -> "Total Spend"
-        TimePeriod.MONTHLY -> "Total Spend"
-    }
-
-    // --- UPDATE: More descriptive and dynamic subtitles for each time period ---
-    val subtitle = when(timePeriod) {
+    val subtitle = when (timePeriod) {
         TimePeriod.DAILY -> {
             SimpleDateFormat("EEEE, dd MMMM yyyy", Locale.getDefault()).format(selectedDate)
         }
@@ -5109,98 +5155,86 @@ private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDat
         }
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.ShoppingBasket,
-            contentDescription = "Spending",
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Column {
+    GlassPanel {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
+                text = "Total Spent",
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "₹${"%,.0f".format(totalSpent)}",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold
+                text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalSpent).drop(1)}",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.primary
             )
         }
     }
 }
 
 @Composable
-private fun SpendingBarChart(chartData: Pair<BarData, List<String>>, timePeriod: TimePeriod) {
+private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
     val (barData, labels) = chartData
-    val selectedIndex = labels.size - 1 // The last item is the current period
+    val selectedIndex = labels.size - 1
 
-    // --- FIX: Read theme colors in the composable scope, not in the factory lambda ---
     val highlightColor = MaterialTheme.colorScheme.primary.toArgb()
     val defaultColor = MaterialTheme.colorScheme.surfaceVariant.toArgb()
     val axisTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val valueTextColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
 
     val colors = labels.indices.map { if (it == selectedIndex) highlightColor else defaultColor }
     (barData.dataSets.first() as BarDataSet).colors = colors
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(0.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            AndroidView(
-                factory = { context ->
-                    BarChart(context).apply {
-                        description.isEnabled = false
-                        legend.isEnabled = false
-                        setDrawGridBackground(false)
-                        setDrawValueAboveBar(true)
-                        setTouchEnabled(false)
+    AndroidView(
+        factory = { context ->
+            BarChart(context).apply {
+                description.isEnabled = false
+                legend.isEnabled = false
+                setDrawGridBackground(false)
+                setDrawValueAboveBar(true)
+                setTouchEnabled(false)
 
-                        xAxis.apply {
-                            position = XAxis.XAxisPosition.BOTTOM
-                            setDrawGridLines(false)
-                            setDrawAxisLine(false)
-                            granularity = 1f
-                            valueFormatter = IndexAxisValueFormatter(labels)
-                            // --- FIX: Use the color variable read from the theme ---
-                            textColor = axisTextColor
-                            textSize = 12f
-                            typeface = Typeface.DEFAULT_BOLD
-                        }
-                        axisLeft.apply {
-                            setDrawGridLines(false)
-                            setDrawLabels(false)
-                            setDrawAxisLine(false)
-                            axisMinimum = 0f
-                        }
-                        axisRight.isEnabled = false
-                    }
-                },
-                update = { chart ->
-                    chart.data = barData
-                    chart.invalidate()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-            )
-        }
-    }
+                xAxis.apply {
+                    position = XAxis.XAxisPosition.BOTTOM
+                    setDrawGridLines(false)
+                    setDrawAxisLine(false)
+                    granularity = 1f
+                    valueFormatter = IndexAxisValueFormatter(labels)
+                    textColor = axisTextColor
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
+                }
+                axisLeft.apply {
+                    setDrawGridLines(true)
+                    gridColor = axisTextColor and 0x22FFFFFF // Transparent grid lines
+                    setDrawLabels(false)
+                    setDrawAxisLine(false)
+                    axisMinimum = 0f
+                }
+                axisRight.isEnabled = false
+            }
+        },
+        update = { chart ->
+            // --- FIX: Assign data to the chart *before* modifying its properties ---
+            chart.data = barData
+            (chart.data.dataSets.first() as BarDataSet).valueTextColor = valueTextColor
+            chart.invalidate()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+    )
 }
 -e 
 
@@ -5208,17 +5242,10 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>, timePeriod:
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: REFACTOR - Based on user feedback, the editing interaction for
-// "Description" and "Notes" has been changed. The separate `TextInputDialog`
-// has been removed. Both fields are now edited using a consistent, non-disruptive
-// `ModalBottomSheet`, which provides a more fluid user experience and avoids
-// jarring popups.
-//
-// KEY CHANGES:
-// - Removed `TextInputDialog` and associated state variables.
-// - Implemented a reusable `TextInputSheet` for use within the ModalBottomSheet.
-// - Tapping "Paid to..." (Description) or the "Notes" action now opens this
-//   new bottom sheet instead of a dialog, creating a unified editing flow.
+// REASON: FEATURE - Added a segmented button to allow toggling between "Expense"
+// and "Income" transaction types, completing the core functionality of the
+// Transaction Composer. The control is styled to match the "Project Aurora"
+// glassmorphism aesthetic.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -5231,6 +5258,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -5276,7 +5304,9 @@ import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
 import io.pm.finlight.ui.theme.AuroraNumpadHighlight
+import io.pm.finlight.ui.theme.AuroraPrimary
 import io.pm.finlight.ui.theme.GlassPanelBorder
+import io.pm.finlight.ui.theme.GlassPanelFill
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
@@ -5288,7 +5318,6 @@ private sealed class ComposerSheet {
     object Category : ComposerSheet()
     object Account : ComposerSheet()
     object Tags : ComposerSheet()
-    // --- NEW: Add sheets for text input ---
     object Description : ComposerSheet()
     object Notes : ComposerSheet()
 }
@@ -5308,7 +5337,7 @@ fun AddTransactionScreen(
 
     var amount by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var transactionType by remember { mutableStateOf("expense") }
+    var transactionType by remember { mutableStateOf("expense") } // Default to expense
     var notes by remember { mutableStateOf("") }
     var attachedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
@@ -5332,7 +5361,6 @@ fun AddTransactionScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
 
-    // --- UPDATED: Centralized sheet state ---
     var activeSheet by remember { mutableStateOf<ComposerSheet?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -5443,9 +5471,18 @@ fun AddTransactionScreen(
                 AmountComposer(
                     amount = amount,
                     description = description,
-                    onDescriptionClick = { activeSheet = ComposerSheet.Description } // --- UPDATED ---
+                    onDescriptionClick = { activeSheet = ComposerSheet.Description }
                 )
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(24.dp))
+
+                // --- NEW: Income/Expense Toggle ---
+                TransactionTypeToggle(
+                    selectedType = transactionType,
+                    onTypeSelected = { transactionType = it }
+                )
+                // --- END NEW ---
+
+                Spacer(Modifier.height(24.dp))
                 OrbitalChips(
                     selectedCategory = selectedCategory,
                     selectedAccount = selectedAccount,
@@ -5461,7 +5498,7 @@ fun AddTransactionScreen(
                     notes = notes,
                     tags = selectedTags,
                     imageCount = attachedImageUris.size,
-                    onNotesClick = { activeSheet = ComposerSheet.Notes }, // --- UPDATED ---
+                    onNotesClick = { activeSheet = ComposerSheet.Notes },
                     onTagsClick = { activeSheet = ComposerSheet.Tags },
                     onAttachmentClick = { imagePickerLauncher.launch("image/*") }
                 )
@@ -5501,7 +5538,7 @@ fun AddTransactionScreen(
             sheetState = sheetState,
             containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         ) {
-            when (val sheet = activeSheet) { // --- UPDATED: Use 'val sheet' for smart casting
+            when (val sheet = activeSheet) {
                 is ComposerSheet.Account -> PickerSheet(
                     title = "Select Account",
                     items = accounts,
@@ -5527,7 +5564,6 @@ fun AddTransactionScreen(
                     onAddNewTag = viewModel::addTagOnTheGo,
                     onConfirm = { activeSheet = null }
                 )
-                // --- NEW: Handle Description and Notes sheets ---
                 is ComposerSheet.Description -> TextInputSheet(
                     title = "Paid to",
                     initialValue = description,
@@ -6068,7 +6104,6 @@ private fun TagPickerSheet(
     }
 }
 
-// --- NEW: Reusable text input sheet ---
 @Composable
 fun TextInputSheet(
     title: String,
@@ -6107,6 +6142,59 @@ fun TextInputSheet(
             TextButton(onClick = { onConfirm(initialValue) }) { Text("Cancel") } // Revert on cancel
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = { onConfirm(text) }) { Text("Done") }
+        }
+    }
+}
+
+// --- NEW: Composable for the Income/Expense toggle ---
+@Composable
+private fun TransactionTypeToggle(
+    selectedType: String,
+    onTypeSelected: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CircleShape)
+            .background(GlassPanelFill)
+            .border(1.dp, GlassPanelBorder, CircleShape)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val expenseSelected = selectedType == "expense"
+        val incomeSelected = selectedType == "income"
+
+        // Expense Button
+        Button(
+            onClick = { onTypeSelected("expense") },
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp),
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (expenseSelected) AuroraPrimary else Color.Transparent,
+                contentColor = if (expenseSelected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
+            ),
+            elevation = null
+        ) {
+            Text("Expense", fontWeight = FontWeight.Bold)
+        }
+
+        // Income Button
+        Button(
+            onClick = { onTypeSelected("income") },
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp),
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (incomeSelected) AuroraPrimary else Color.Transparent,
+                contentColor = if (incomeSelected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
+            ),
+            elevation = null
+        ) {
+            Text("Income", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -6171,6 +6259,17 @@ fun AccountListScreen(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/BudgetScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/BudgetScreen.kt
+// REASON: MAJOR REFACTOR - The entire screen has been redesigned to align with
+// the "Project Aurora" vision. Standard cards and progress bars have been
+// replaced with custom GlassPanel components and more artistic, animated data
+// visualizations. The layout is now more dynamic and visually engaging,
+// transforming it into a "Budget Hub" while preserving all original
+// functionality and ensuring high-contrast legibility.
+// FIX: Corrected a @Composable invocation error by reading the theme color
+// outside the Canvas draw scope.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -6178,6 +6277,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -6185,10 +6285,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -6198,10 +6296,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -6211,98 +6307,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.Budget
 import io.pm.finlight.BudgetViewModel
-import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.BudgetWithSpending
-import kotlin.math.cos
-import kotlin.math.sin
-
-@Composable
-fun GaugeChart(progress: Float) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 1000)
-    )
-
-    Canvas(modifier = Modifier.size(150.dp)) {
-        val arcSize = size.width
-        val arcRadius = arcSize / 2
-        val strokeWidth = 20f
-
-        drawArc(
-            color = Color.LightGray.copy(alpha = 0.3f),
-            startAngle = 135f,
-            sweepAngle = 270f,
-            useCenter = false,
-            topLeft = Offset.Zero,
-            size = Size(arcSize, arcSize),
-            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-        )
-
-        drawArc(
-            brush = Brush.horizontalGradient(
-                colors = listOf(Color(0xFF00E5FF), Color(0xFF18A0FF), Color(0xFF0052D4))
-            ),
-            startAngle = 135f,
-            sweepAngle = 270 * animatedProgress,
-            useCenter = false,
-            topLeft = Offset.Zero,
-            size = Size(arcSize, arcSize),
-            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-        )
-
-        val angle = (135 + 270 * animatedProgress).coerceIn(135f, 405f)
-        val angleInRadians = Math.toRadians(angle.toDouble())
-        val lineStart = center
-        val lineEnd = Offset(
-            x = center.x + (arcRadius * 0.8f) * cos(angleInRadians).toFloat(),
-            y = center.y + (arcRadius * 0.8f) * sin(angleInRadians).toFloat()
-        )
-        drawLine(
-            color = Color.White,
-            start = lineStart,
-            end = lineEnd,
-            strokeWidth = 8f,
-            cap = StrokeCap.Round
-        )
-        drawCircle(color = Color.White, radius = 15f, center = center)
-        drawCircle(color = Color.Black, radius = 10f, center = center)
-
-        // --- NEW: Draw the stars ---
-        for (i in 0..4) {
-            val starProgress = i / 4f
-            val starAngle = 135f + (270f * starProgress)
-            val starAngleRad = Math.toRadians(starAngle.toDouble())
-            val starRadius = arcRadius * 0.9f
-            val starCenter = Offset(
-                center.x + starRadius * cos(starAngleRad).toFloat(),
-                center.y + starRadius * sin(starAngleRad).toFloat()
-            )
-            val starColor = if(animatedProgress >= starProgress) Color(0xFF81D4FA) else Color.Gray.copy(alpha = 0.5f)
-
-            rotate(degrees = starAngle - 90, pivot = starCenter) {
-                val path = Path().apply {
-                    val outerR = 12f
-                    val innerR = 5f
-                    moveTo(starCenter.x, starCenter.y - outerR)
-                    for (j in 1..4) {
-                        val outerAngle = j * (360.0 / 5.0) + -90.0
-                        val innerAngle = outerAngle + (360.0 / 10.0)
-                        lineTo(
-                            starCenter.x + (innerR * cos(Math.toRadians(innerAngle))).toFloat(),
-                            starCenter.y + (innerR * sin(Math.toRadians(innerAngle))).toFloat()
-                        )
-                        lineTo(
-                            starCenter.x + (outerR * cos(Math.toRadians(outerAngle + 360.0/5.0))).toFloat(),
-                            starCenter.y + (outerR * sin(Math.toRadians(outerAngle + 360.0/5.0))).toFloat()
-                        )
-                    }
-                    close()
-                }
-                drawPath(path, color = starColor)
-            }
-        }
-    }
-}
+import io.pm.finlight.CategoryIconHelper
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.AuroraPrimary
+import io.pm.finlight.ui.theme.AuroraSecondary
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
+import java.text.NumberFormat
+import java.util.*
+import kotlin.math.min
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -6317,61 +6331,275 @@ fun BudgetScreen(
     var budgetToDelete by remember { mutableStateOf<Budget?>(null) }
     var showOverallBudgetDialog by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Set monthly budget", style = MaterialTheme.typography.headlineSmall)
-                        Text("Setting a budget reduces expenditures about 10% on an average.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                    }
-                    GaugeChart(progress = if (overallBudget > 0) (totalSpending.toFloat() / overallBudget) else 0f)
-                }
-            }
-            item {
-                Card(modifier = Modifier.fillMaxWidth().clickable { showOverallBudgetDialog = true }, elevation = CardDefaults.cardElevation(2.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Default.MonetizationOn, contentDescription = "Overall Budget", modifier = Modifier.size(40.dp))
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text("Overall budget", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        Text("₹${"%,.0f".format(overallBudget)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Category wise budget", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
-                    IconButton(onClick = { navController.navigate("add_budget") }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Category Budget")
-                    }
-                }
-            }
-            if (categoryBudgets.isEmpty()) {
-                item {
-                    Text("No category budgets set. Tap the '+' icon to add one.", modifier = Modifier.padding(16.dp), textAlign = TextAlign.Center, color = Color.Gray)
-                }
-            } else {
-                items(categoryBudgets) { budgetWithSpending ->
-                    CategoryBudgetItem(
-                        budgetWithSpending = budgetWithSpending,
-                        onEdit = { navController.navigate("edit_budget/${budgetWithSpending.budget.id}") },
-                        onDelete = { budgetToDelete = budgetWithSpending.budget; showDeleteDialog = true }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            OverallBudgetHub(
+                totalBudget = overallBudget,
+                totalSpent = totalSpending,
+                onEditClick = { showOverallBudgetDialog = true }
+            )
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Category Budgets",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                IconButton(onClick = { navController.navigate("add_budget") }) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add Category Budget",
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
         }
+
+        if (categoryBudgets.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "No category budgets set. Tap the '+' icon to add one.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            items(categoryBudgets, key = { it.budget.id }) { budgetWithSpending ->
+                CategoryBudgetItem(
+                    budgetWithSpending = budgetWithSpending,
+                    onEdit = { navController.navigate("edit_budget/${budgetWithSpending.budget.id}") },
+                    onDelete = {
+                        budgetToDelete = budgetWithSpending.budget
+                        showDeleteDialog = true
+                    }
+                )
+            }
+        }
     }
-    if (showDeleteDialog) {
+
+    if (showDeleteDialog && budgetToDelete != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete Budget?") },
             text = { Text("Are you sure you want to delete the budget for '${budgetToDelete?.categoryName}'?") },
-            confirmButton = { Button(onClick = { budgetToDelete?.let { viewModel.deleteBudget(it) }; showDeleteDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Delete") } },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        budgetToDelete?.let { viewModel.deleteBudget(it) }
+                        showDeleteDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
             dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         )
     }
+
     if (showOverallBudgetDialog) {
-        EditOverallBudgetDialog(currentBudget = overallBudget, onDismiss = { showOverallBudgetDialog = false }, onConfirm = { newAmount -> viewModel.saveOverallBudget(newAmount); showOverallBudgetDialog = false })
+        EditOverallBudgetDialog(
+            currentBudget = overallBudget,
+            onDismiss = { showOverallBudgetDialog = false },
+            onConfirm = { newAmount ->
+                viewModel.saveOverallBudget(newAmount)
+                showOverallBudgetDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun OverallBudgetHub(
+    totalBudget: Float,
+    totalSpent: Double,
+    onEditClick: () -> Unit
+) {
+    val progress = if (totalBudget > 0) (totalSpent.toFloat() / totalBudget) else 0f
+    val remaining = totalBudget - totalSpent
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 1500), label = "OverallBudgetProgress"
+    )
+
+    GlassPanel(modifier = Modifier.clickable(onClick = onEditClick)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Overall Monthly Budget",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(180.dp)) {
+                OverallBudgetGauge(progress = animatedProgress)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Remaining",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(remaining).drop(1)}",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "Spent: ₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalSpent).drop(1)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "Budget: ₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalBudget).drop(1)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverallBudgetGauge(progress: Float) {
+    val progressBrush = Brush.sweepGradient(
+        colors = listOf(
+            AuroraPrimary,
+            AuroraSecondary,
+            AuroraPrimary
+        )
+    )
+    // --- FIX: Read color from theme outside the Canvas scope ---
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val strokeWidth = 12.dp.toPx()
+        val diameter = min(size.width, size.height) - strokeWidth
+        val radius = diameter / 2
+        val center = Offset(size.width / 2, size.height / 2)
+
+        drawCircle(
+            color = trackColor, // Use the variable here
+            style = Stroke(width = strokeWidth),
+            radius = radius,
+            center = center
+        )
+
+        drawArc(
+            brush = progressBrush,
+            startAngle = -90f,
+            sweepAngle = 360 * progress,
+            useCenter = false,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+            size = Size(diameter, diameter),
+            topLeft = Offset(center.x - radius, center.y - radius)
+        )
+    }
+}
+
+@Composable
+private fun CategoryBudgetItem(
+    budgetWithSpending: BudgetWithSpending,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val progress = if (budgetWithSpending.budget.amount > 0) (budgetWithSpending.spent / budgetWithSpending.budget.amount).toFloat() else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(1000),
+        label = "CategoryProgress"
+    )
+    val progressColor = when {
+        progress > 1f -> MaterialTheme.colorScheme.error
+        progress > 0.8f -> AuroraSecondary
+        else -> AuroraPrimary
+    }
+
+    GlassPanel {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            CategoryIconHelper.getIconBackgroundColor(
+                                budgetWithSpending.colorKey ?: "gray_light"
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
+                        contentDescription = budgetWithSpending.budget.categoryName,
+                        tint = Color.Black,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        budgetWithSpending.budget.categoryName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(budgetWithSpending.spent).drop(1)} of ₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(budgetWithSpending.budget.amount).drop(1)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit Budget", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Budget", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(CircleShape),
+                color = progressColor,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                strokeCap = StrokeCap.Round
+            )
+        }
     }
 }
 
@@ -6385,62 +6613,25 @@ fun EditOverallBudgetDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Set Overall Budget") },
-        text = { OutlinedTextField(value = budgetInput, onValueChange = { budgetInput = it.filter { char -> char.isDigit() } }, label = { Text("Total Monthly Budget Amount") }, leadingIcon = { Text("₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true) },
-        confirmButton = { Button(onClick = { onConfirm(budgetInput) }, enabled = budgetInput.isNotBlank()) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        text = {
+            OutlinedTextField(
+                value = budgetInput,
+                onValueChange = { budgetInput = it.filter { char -> char.isDigit() } },
+                label = { Text("Total Monthly Budget Amount") },
+                leadingIcon = { Text("₹") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(budgetInput) },
+                enabled = budgetInput.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
     )
-}
-
-
-@Composable
-fun CategoryBudgetItem(
-    budgetWithSpending: BudgetWithSpending,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
-) {
-    val progress = if (budgetWithSpending.budget.amount > 0) (budgetWithSpending.spent / budgetWithSpending.budget.amount).toFloat() else 0f
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), elevation = CardDefaults.cardElevation(2.dp)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        CategoryIconHelper.getIconBackgroundColor(
-                            budgetWithSpending.colorKey ?: "gray_light"
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (budgetWithSpending.iconKey == "letter_default") {
-                    Text(
-                        text = budgetWithSpending.budget.categoryName.firstOrNull()?.uppercase() ?: "?",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = Color.Black
-                    )
-                } else {
-                    Icon(
-                        imageVector = CategoryIconHelper.getIcon(budgetWithSpending.iconKey ?: "category"),
-                        contentDescription = budgetWithSpending.budget.categoryName,
-                        tint = Color.Black,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(budgetWithSpending.budget.categoryName, style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(4.dp))
-                LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("₹${"%,.0f".format(budgetWithSpending.spent)} of ₹${"%,.0f".format(budgetWithSpending.budget.amount)}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit") }
-            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Delete") }
-        }
-    }
 }
 -e 
 
@@ -10659,12 +10850,10 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: FEATURE - Re-implemented the "Scan from specific date" UI that was
-// lost during a previous refactor. A new `ListItem` has been added under the
-// "Automation & AI" section, which displays the selected start date, allows
-// the user to change it via a `DatePickerDialog`, and includes a "Scan"
-// button to trigger a historical SMS scan. This restores critical app
-// functionality.
+// REASON: MAJOR REFACTOR - The entire screen has been redesigned to align with
+// the "Project Aurora" vision. The layout now uses GlassPanel components to
+// group related settings, creating a cleaner, more organized, and visually
+// stunning interface that matches the rest of the application.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -10681,6 +10870,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -10692,6 +10882,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -10703,6 +10894,8 @@ import io.pm.finlight.*
 import io.pm.finlight.R
 import io.pm.finlight.ui.components.*
 import androidx.compose.ui.unit.dp
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -10714,34 +10907,32 @@ fun ProfileScreen(
     profileViewModel: ProfileViewModel = viewModel(),
     settingsViewModel: SettingsViewModel
 ) {
-    // --- State from ProfileViewModel ---
+    // region State Variables
     val userName by profileViewModel.userName.collectAsState()
     val savedProfilePictureUri by profileViewModel.profilePictureUri.collectAsState()
-
-    // --- State and Logic from SettingsViewModel ---
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isScanning by settingsViewModel.isScanning.collectAsState()
-
     var showDatePickerDialog by remember { mutableStateOf(false) }
     val smsScanStartDate by settingsViewModel.smsScanStartDate.collectAsState()
     val dateFormatter = remember { SimpleDateFormat("dd MMMM, yyyy", Locale.getDefault()) }
-
     val isAppLockEnabled by settingsViewModel.appLockEnabled.collectAsState()
     val isWeeklySummaryEnabled by settingsViewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReportEnabled by settingsViewModel.dailyReportEnabled.collectAsState()
     val isMonthlySummaryEnabled by settingsViewModel.monthlySummaryEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by settingsViewModel.unknownTransactionPopupEnabled.collectAsState()
     val isBackupEnabled by settingsViewModel.backupEnabled.collectAsState()
-
     val dailyReportTime by settingsViewModel.dailyReportTime.collectAsState()
     var showDailyTimePicker by remember { mutableStateOf(false) }
-
     val weeklyReportTime by settingsViewModel.weeklyReportTime.collectAsState()
     var showWeeklyTimePicker by remember { mutableStateOf(false) }
     val monthlyReportTime by settingsViewModel.monthlyReportTime.collectAsState()
     var showMonthlyTimePicker by remember { mutableStateOf(false) }
+    var showImportJsonDialog by remember { mutableStateOf(false) }
+    var showImportCsvDialog by remember { mutableStateOf(false) }
+    // endregion
 
+    // region Event Handlers & Launchers
     LaunchedEffect(key1 = settingsViewModel.scanEvent) {
         settingsViewModel.scanEvent.collect { result ->
             if (result is ScanResult.Success) {
@@ -10756,387 +10947,319 @@ fun ProfileScreen(
         }
     }
 
-    val jsonFileSaverLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("application/json"),
-            onResult = { uri ->
-                uri?.let {
-                    scope.launch {
-                        val jsonString = DataExportService.exportToJsonString(context)
-                        if (jsonString != null) {
-                            try {
-                                context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                                    outputStream.write(jsonString.toByteArray())
-                                }
-                                Toast.makeText(context, "Data exported successfully!", Toast.LENGTH_LONG).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Error saving file.", Toast.LENGTH_LONG).show()
+    val jsonFileSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    val jsonString = DataExportService.exportToJsonString(context)
+                    if (jsonString != null) {
+                        try {
+                            context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                                outputStream.write(jsonString.toByteArray())
                             }
-                        } else {
-                            Toast.makeText(context, "Error exporting data.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Data exported successfully!", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error saving file.", Toast.LENGTH_LONG).show()
                         }
-                    }
-                }
-            },
-        )
-
-    var showImportJsonDialog by remember { mutableStateOf(false) }
-    var showImportCsvDialog by remember { mutableStateOf(false) }
-
-    val csvFileSaverLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
-            onResult = { uri ->
-                uri?.let {
-                    scope.launch {
-                        val csvString = DataExportService.exportToCsvString(context)
-                        if (csvString != null) {
-                            try {
-                                context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                                    outputStream.write(csvString.toByteArray())
-                                }
-                                Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_LONG).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Error saving CSV file.", Toast.LENGTH_LONG).show()
-                            }
-                        } else {
-                            Toast.makeText(context, "Error exporting CSV data.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            },
-        )
-
-    val csvImportLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
-            onResult = { uri ->
-                uri?.let {
-                    Log.d("SettingsScreen", "CSV file selected: $it. Starting validation.")
-                    settingsViewModel.validateCsvFile(it)
-                    navController.navigate("csv_validation_screen")
-                }
-            },
-        )
-
-    val jsonImportLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
-            onResult = { uri ->
-                uri?.let {
-                    scope.launch {
-                        if (DataExportService.importDataFromJson(context, it)) {
-                            Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
-                        } else {
-                            Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            },
-        )
-
-    // --- UI Layout ---
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp) // Let items control their own padding
-    ) {
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .clickable { navController.navigate("edit_profile") },
-                elevation = CardDefaults.cardElevation(4.dp)
-            ) {
-                Box(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AsyncImage(
-                            model = savedProfilePictureUri,
-                            contentDescription = "User Profile Picture",
-                            placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                            error = painterResource(id = R.drawable.ic_launcher_foreground),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                        )
-
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(userName, style = MaterialTheme.typography.titleLarge)
-                        }
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Profile",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    } else {
+                        Toast.makeText(context, "Error exporting data.", Toast.LENGTH_LONG).show()
                     }
                 }
             }
         }
+    )
 
-        item { SettingSectionHeader("General") }
-        item {
-            SettingsActionItem(
-                text = "Manage Accounts",
-                subtitle = "View, add, or edit your financial accounts",
-                icon = Icons.Default.AccountBalanceWallet,
-                onClick = { navController.navigate("account_list") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Categories",
-                subtitle = "Add, edit, or remove transaction categories",
-                icon = Icons.Default.Category,
-                onClick = { navController.navigate("category_list") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Budgets",
-                subtitle = "Set and edit your monthly budgets",
-                icon = Icons.Default.Savings,
-                onClick = { navController.navigate("budget_screen") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Tags",
-                subtitle = "Create and organize custom tags",
-                icon = Icons.Default.NewLabel,
-                onClick = { navController.navigate("tag_management") },
-            )
-        }
-
-        item { SettingSectionHeader("Automation & AI") }
-        item {
-            SettingsActionItem(
-                text = "Scan Full Inbox",
-                subtitle = "Scan all messages to find transactions for review",
-                icon = Icons.AutoMirrored.Filled.ManageSearch,
-                onClick = {
-                    if (hasSmsPermission(context)) {
-                        if (!isScanning) {
-                            settingsViewModel.rescanSmsForReview(null)
+    val csvFileSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    val csvString = DataExportService.exportToCsvString(context)
+                    if (csvString != null) {
+                        try {
+                            context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                                outputStream.write(csvString.toByteArray())
+                            }
+                            Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error saving CSV file.", Toast.LENGTH_LONG).show()
                         }
                     } else {
-                        Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Error exporting CSV data.", Toast.LENGTH_LONG).show()
                     }
-                },
-            )
+                }
+            }
         }
-        // --- FEATURE: Restored Scan From Date UI ---
+    )
+
+    val csvImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                Log.d("SettingsScreen", "CSV file selected: $it. Starting validation.")
+                settingsViewModel.validateCsvFile(it)
+                navController.navigate("csv_validation_screen")
+            }
+        }
+    )
+
+    val jsonImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    if (DataExportService.importDataFromJson(context, it)) {
+                        Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+    // endregion
+
+    // --- UI Layout ---
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         item {
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            ListItem(
-                headlineContent = { Text("Scan from specific date") },
-                supportingContent = {
-                    Text(
-                        text = "Current start date: ${dateFormatter.format(Date(smsScanStartDate))}",
-                        modifier = Modifier.clickable { showDatePickerDialog = true },
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodySmall
+            GlassPanel(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { navController.navigate("edit_profile") }
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = savedProfilePictureUri,
+                        contentDescription = "User Profile Picture",
+                        placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                        error = painterResource(id = R.drawable.ic_launcher_foreground),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                     )
-                },
-                leadingContent = {
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(userName, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+                        Text("Edit Profile", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Icon(
-                        imageVector = Icons.Default.Event,
-                        contentDescription = "Scan from date",
-                        modifier = Modifier.size(24.dp)
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Profile",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                },
-                trailingContent = {
-                    Button(
-                        onClick = {
-                            if (hasSmsPermission(context)) {
-                                if (!isScanning) {
-                                    settingsViewModel.rescanSmsForReview(smsScanStartDate)
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = "General") {
+                SettingsActionItem(
+                    text = "Manage Accounts",
+                    subtitle = "View, add, or edit your financial accounts",
+                    icon = Icons.Default.AccountBalanceWallet,
+                    onClick = { navController.navigate("account_list") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Categories",
+                    subtitle = "Add, edit, or remove transaction categories",
+                    icon = Icons.Default.Category,
+                    onClick = { navController.navigate("category_list") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Budgets",
+                    subtitle = "Set and edit your monthly budgets",
+                    icon = Icons.Default.Savings,
+                    onClick = { navController.navigate("budget_screen") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Tags",
+                    subtitle = "Create and organize custom tags",
+                    icon = Icons.Default.NewLabel,
+                    onClick = { navController.navigate("tag_management") },
+                )
+            }
+        }
+
+        item {
+            SettingsSection(title = "Automation & AI") {
+                SettingsActionItem(
+                    text = "Scan Full Inbox",
+                    subtitle = "Scan all messages to find transactions",
+                    icon = Icons.AutoMirrored.Filled.ManageSearch,
+                    onClick = {
+                        if (hasSmsPermission(context)) {
+                            if (!isScanning) settingsViewModel.rescanSmsForReview(null)
+                        } else {
+                            Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = { Text("Scan from specific date", color = MaterialTheme.colorScheme.onSurface) },
+                    supportingContent = {
+                        Text(
+                            text = "Start date: ${dateFormatter.format(Date(smsScanStartDate))}",
+                            modifier = Modifier.clickable { showDatePickerDialog = true },
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    leadingContent = { Icon(Icons.Default.Event, "Scan from date", tint = MaterialTheme.colorScheme.primary) },
+                    trailingContent = {
+                        Button(
+                            onClick = {
+                                if (hasSmsPermission(context)) {
+                                    if (!isScanning) settingsViewModel.rescanSmsForReview(smsScanStartDate)
+                                } else {
+                                    Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
                                 }
-                            } else {
-                                Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        enabled = !isScanning
-                    ) {
-                        Text("Scan")
+                            },
+                            enabled = !isScanning
+                        ) { Text("Scan") }
                     }
-                }
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Custom Parse Rules",
-                subtitle = "View or delete your custom SMS parsing rules",
-                icon = Icons.Default.Rule,
-                onClick = { navController.navigate("manage_parse_rules") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Parser Ignore List",
-                subtitle = "Add or remove phrases to ignore during parsing",
-                icon = Icons.Default.Block,
-                onClick = { navController.navigate("manage_ignore_rules") },
-            )
-        }
-        item {
-            SettingsToggleItem(
-                title = "Popup for Unknown Transactions",
-                subtitle = "Show notification for SMS from new merchants",
-                icon = Icons.Default.HelpOutline,
-                checked = isUnknownTransactionPopupEnabled,
-                onCheckedChange = { settingsViewModel.setUnknownTransactionPopupEnabled(it) },
-            )
-        }
-
-
-        item { SettingSectionHeader("Notifications") }
-        item {
-            SettingsToggleItem(
-                title = "Daily Summary",
-                subtitle = "Get a report of yesterday's spending each day",
-                icon = Icons.Default.Notifications,
-                checked = isDailyReportEnabled,
-                onCheckedChange = { settingsViewModel.setDailyReportEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Daily Report Time",
-                subtitle = "Current: ${String.format("%02d:%02d", dailyReportTime.first, dailyReportTime.second)}",
-                icon = Icons.Default.Schedule,
-                onClick = { showDailyTimePicker = true },
-                enabled = isDailyReportEnabled
-            )
-        }
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
-        item {
-            SettingsToggleItem(
-                title = "Weekly Summary",
-                subtitle = "Receive a summary of your finances every week",
-                icon = Icons.Default.CalendarToday,
-                checked = isWeeklySummaryEnabled,
-                onCheckedChange = { settingsViewModel.setWeeklySummaryEnabled(it) },
-            )
-        }
-        item {
-            val dayName = SimpleDateFormat("EEEE", Locale.getDefault()).format(
-                Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, weeklyReportTime.first) }.time
-            )
-            SettingsActionItem(
-                text = "Weekly Report Time",
-                subtitle = "Current: $dayName at ${String.format("%02d:%02d", weeklyReportTime.second, weeklyReportTime.third)}",
-                icon = Icons.Default.Schedule,
-                onClick = { showWeeklyTimePicker = true },
-                enabled = isWeeklySummaryEnabled
-            )
-        }
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
-        item {
-            SettingsToggleItem(
-                title = "Monthly Summary",
-                subtitle = "Receive a summary of last month's finances",
-                icon = Icons.Default.Event,
-                checked = isMonthlySummaryEnabled,
-                onCheckedChange = { settingsViewModel.setMonthlySummaryEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Monthly Report Time",
-                subtitle = "Current: Day ${monthlyReportTime.first} of the month at ${String.format("%02d:%02d", monthlyReportTime.second, monthlyReportTime.third)}",
-                icon = Icons.Default.Schedule,
-                onClick = { showMonthlyTimePicker = true },
-                enabled = isMonthlySummaryEnabled
-            )
-        }
-
-        item { SettingSectionHeader("Security & Privacy") }
-        item {
-            SettingsToggleItem(
-                title = "Enable App Lock",
-                subtitle = "Use biometrics or screen lock to secure the app",
-                icon = Icons.Default.Fingerprint,
-                checked = isAppLockEnabled,
-                onCheckedChange = { settingsViewModel.setAppLockEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage App Permissions",
-                subtitle = "Control access to SMS, notifications, etc.",
-                icon = Icons.Default.Shield,
-                onClick = {
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                    val uri = Uri.fromParts("package", context.packageName, null)
-                    intent.data = uri
-                    context.startActivity(intent)
-                }
-            )
-        }
-
-
-        item { SettingSectionHeader("Data Management") }
-        item {
-            SettingsToggleItem(
-                title = "Enable Google Drive Backup",
-                subtitle = "Automatically back up app data to your Google account",
-                icon = Icons.Default.CloudUpload,
-                checked = isBackupEnabled,
-                onCheckedChange = { settingsViewModel.setBackupEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Export Data as JSON",
-                subtitle = "Create a full backup of all your app data",
-                icon = Icons.Default.DataObject,
-                onClick = {
-                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
-                    jsonFileSaverLauncher.launch(fileName)
-                },
-            )
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Custom Parse Rules",
+                    subtitle = "View or delete your SMS parsing rules",
+                    icon = Icons.Default.Rule,
+                    onClick = { navController.navigate("manage_parse_rules") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Parser Ignore List",
+                    subtitle = "Add or remove phrases to ignore",
+                    icon = Icons.Default.Block,
+                    onClick = { navController.navigate("manage_ignore_rules") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsToggleItem(
+                    title = "Popup for Unknown Transactions",
+                    subtitle = "Show notification for new merchants",
+                    icon = Icons.Default.HelpOutline,
+                    checked = isUnknownTransactionPopupEnabled,
+                    onCheckedChange = { settingsViewModel.setUnknownTransactionPopupEnabled(it) },
+                )
+            }
         }
 
         item {
-            SettingsActionItem(
-                text = "Export Transactions as CSV",
-                subtitle = "Save all transactions in a spreadsheet-compatible format",
-                icon = Icons.Default.GridOn,
-                onClick = {
-                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
-                    csvFileSaverLauncher.launch(fileName)
-                },
-            )
+            SettingsSection("Notifications") {
+                SettingsToggleItem(
+                    title = "Daily Summary",
+                    subtitle = "Report of yesterday's spending",
+                    icon = Icons.Default.Notifications,
+                    checked = isDailyReportEnabled,
+                    onCheckedChange = { settingsViewModel.setDailyReportEnabled(it) },
+                )
+                SettingsActionItem(
+                    text = "Daily Report Time",
+                    subtitle = "Current: ${String.format("%02d:%02d", dailyReportTime.first, dailyReportTime.second)}",
+                    icon = Icons.Default.Schedule,
+                    onClick = { showDailyTimePicker = true },
+                    enabled = isDailyReportEnabled
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsToggleItem(
+                    title = "Weekly Summary",
+                    subtitle = "Summary of your finances every week",
+                    icon = Icons.Default.CalendarViewWeek,
+                    checked = isWeeklySummaryEnabled,
+                    onCheckedChange = { settingsViewModel.setWeeklySummaryEnabled(it) },
+                )
+                SettingsActionItem(
+                    text = "Weekly Report Time",
+                    subtitle = "Current: ${SimpleDateFormat("EEEE", Locale.getDefault()).format(
+                        Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, weeklyReportTime.first) }.time
+                    )} at ${String.format("%02d:%02d", weeklyReportTime.second, weeklyReportTime.third)}",
+                    icon = Icons.Default.Schedule,
+                    onClick = { showWeeklyTimePicker = true },
+                    enabled = isWeeklySummaryEnabled
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsToggleItem(
+                    title = "Monthly Summary",
+                    subtitle = "Summary of last month's finances",
+                    icon = Icons.Default.CalendarViewMonth,
+                    checked = isMonthlySummaryEnabled,
+                    onCheckedChange = { settingsViewModel.setMonthlySummaryEnabled(it) },
+                )
+                SettingsActionItem(
+                    text = "Monthly Report Time",
+                    subtitle = "Current: Day ${monthlyReportTime.first} at ${String.format("%02d:%02d", monthlyReportTime.second, monthlyReportTime.third)}",
+                    icon = Icons.Default.Schedule,
+                    onClick = { showMonthlyTimePicker = true },
+                    enabled = isMonthlySummaryEnabled
+                )
+            }
         }
 
         item {
-            SettingsActionItem(
-                text = "Import from JSON",
-                subtitle = "Restore your app data from a full backup file",
-                icon = Icons.Default.Download,
-                onClick = { showImportJsonDialog = true },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Import from CSV",
-                subtitle = "Add new transactions from a CSV file",
-                icon = Icons.Default.PostAdd,
-                onClick = { showImportCsvDialog = true },
-            )
+            SettingsSection("Security & Data") {
+                SettingsToggleItem(
+                    title = "Enable App Lock",
+                    subtitle = "Use biometrics to secure the app",
+                    icon = Icons.Default.Fingerprint,
+                    checked = isAppLockEnabled,
+                    onCheckedChange = { settingsViewModel.setAppLockEnabled(it) },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Export Data (JSON)",
+                    subtitle = "Create a full backup of all your data",
+                    icon = Icons.Default.DataObject,
+                    onClick = {
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                        val fileName = "Finlight_Backup_${sdf.format(Date())}.json"
+                        jsonFileSaverLauncher.launch(fileName)
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Export Transactions (CSV)",
+                    subtitle = "Save transactions in a spreadsheet format",
+                    icon = Icons.Default.GridOn,
+                    onClick = {
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                        val fileName = "Finlight_Transactions_${sdf.format(Date())}.csv"
+                        csvFileSaverLauncher.launch(fileName)
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Import from JSON",
+                    subtitle = "Restore data from a backup file",
+                    icon = Icons.Default.Download,
+                    onClick = { showImportJsonDialog = true },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Import from CSV",
+                    subtitle = "Add new transactions from a CSV file",
+                    icon = Icons.Default.PostAdd,
+                    onClick = { showImportCsvDialog = true },
+                )
+            }
         }
     }
 
-    // --- Dialogs ---
+    // region Dialogs
     if (showDatePickerDialog) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
         DatePickerDialog(
@@ -11209,7 +11332,7 @@ fun ProfileScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
                     Spacer(Modifier.height(16.dp))
-                    Text("Scanning SMS Inbox...", style = MaterialTheme.typography.titleMedium)
+                    Text("Scanning SMS Inbox...", style = MaterialTheme.typography.titleMedium, color = Color.White)
                 }
             }
         }
@@ -11219,20 +11342,15 @@ fun ProfileScreen(
         AlertDialog(
             onDismissRequest = { showImportCsvDialog = false },
             title = { Text("Import from CSV?") },
-            text = {
-                Text(
-                    "This will add transactions from the CSV file. If transactions already exist, this may create duplicates. Are you sure you want to continue?",
-                )
-            },
+            text = { Text("This will add transactions from the CSV file. This may create duplicates. Continue?") },
             confirmButton = {
                 Button(onClick = {
                     showImportCsvDialog = false
                     csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values"))
                 }) { Text("Continue") }
             },
-            dismissButton = {
-                TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") }
-            },
+            dismissButton = { TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") } },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         )
     }
 
@@ -11240,22 +11358,45 @@ fun ProfileScreen(
         AlertDialog(
             onDismissRequest = { showImportJsonDialog = false },
             title = { Text("Import from JSON?") },
-            text = { Text("This will DELETE all current data and replace it. This cannot be undone.") },
+            text = { Text("WARNING: This will DELETE all current data and replace it. This cannot be undone.") },
             confirmButton = {
-                Button(onClick = {
-                    showImportJsonDialog = false
-                    jsonImportLauncher.launch(arrayOf("application/json"))
-                }) { Text("Wipe and Import") }
+                Button(
+                    onClick = {
+                        showImportJsonDialog = false
+                        jsonImportLauncher.launch(arrayOf("application/json"))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Wipe and Import") }
             },
-            dismissButton = {
-                TextButton(onClick = { showImportJsonDialog = false }) { Text("Cancel") }
-            },
+            dismissButton = { TextButton(onClick = { showImportJsonDialog = false }) { Text("Cancel") } },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         )
     }
+    // endregion
 }
 
 private fun hasSmsPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+        )
+        GlassPanel {
+            Column {
+                content()
+            }
+        }
+    }
 }
 -e 
 
@@ -11263,16 +11404,10 @@ private fun hasSmsPermission(context: Context): Boolean {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: REFACTOR - The local `Scaffold` and `TopAppBar` have been removed.
-// The screen's header and title are now handled centrally by the `TopAppBar` in
-// `MainActivity`, creating a more consistent UI and simplifying this screen's
-// logic.
-// UPDATE: The entire screen has been redesigned to use GlassPanel components,
-// aligning with the Project Aurora aesthetic for a consistent and modern look.
-// FIX: Removed the misplaced and redundant `Utils.init()` call which was
-// causing a crash.
-// FIX: Corrected the @Composable invocation error by reading the theme color
-// outside the AndroidView factory.
+// REASON: REFACTOR - The screen has been updated to fully align with the Project
+// Aurora aesthetic. All cards now use the GlassPanel component, and chart
+// text colors have been explicitly set from the MaterialTheme to ensure
+// high-contrast legibility in dark mode, creating a cohesive and polished look.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -11375,7 +11510,10 @@ fun ReportsScreen(
                                 .height(300.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("No expense data for this month.")
+                            Text(
+                                "No expense data for this month.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     } else {
                         AndroidView(
@@ -11425,7 +11563,10 @@ fun ReportsScreen(
                                 .height(250.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Not enough data for trend analysis.")
+                            Text(
+                                "Not enough data for trend analysis.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -12808,15 +12949,18 @@ fun DeleteCategoryDialog(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt
-// REASON: REFACTOR - Both `SettingsActionItem` and `SettingsToggleItem` have
-// been refactored to use the Material3 `ListItem` composable as their base.
-// This enforces a consistent layout structure, fixing the alignment issues
-// where toggle rows were previously indented differently from action rows.
+// REASON: REFACTOR - The ListItem components have been updated to use a
+// transparent container color. This ensures they blend seamlessly when placed
+// inside a GlassPanel, allowing the frosted glass effect to show through and
+// creating a visually consistent settings screen.
+// FIX: Removed the duplicate TimePickerDialog definition to resolve the
+// "Conflicting overloads" compilation error.
 // =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -12829,21 +12973,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.SimpleDateFormat
 import java.util.*
 
-@Composable
-fun SettingSectionHeader(title: String) {
-    Text(
-        text = title.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 16.dp, end = 16.dp),
-    )
-    HorizontalDivider()
-}
+// --- FIX: Removed duplicate TimePickerDialog definition ---
 
 @Composable
 fun SettingsToggleItem(
@@ -12861,6 +12999,7 @@ fun SettingsToggleItem(
         trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
         modifier = Modifier.clickable(enabled = enabled) { onCheckedChange(!checked) },
         colors = ListItemDefaults.colors(
+            containerColor = Color.Transparent, // Make transparent to show GlassPanel behind
             headlineColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
             supportingColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
             leadingIconColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
@@ -12882,6 +13021,7 @@ fun SettingsActionItem(
         leadingContent = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
         modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
         colors = ListItemDefaults.colors(
+            containerColor = Color.Transparent, // Make transparent to show GlassPanel behind
             headlineColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
             supportingColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
             leadingIconColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
@@ -12949,7 +13089,8 @@ fun WeeklyReportTimePicker(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
+        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
     )
 }
 
@@ -13020,7 +13161,8 @@ fun MonthlyReportTimePicker(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
+        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
     )
 }
 -e 

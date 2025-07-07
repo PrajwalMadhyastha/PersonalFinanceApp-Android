@@ -1,11 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: FEATURE - Re-implemented the "Scan from specific date" UI that was
-// lost during a previous refactor. A new `ListItem` has been added under the
-// "Automation & AI" section, which displays the selected start date, allows
-// the user to change it via a `DatePickerDialog`, and includes a "Scan"
-// button to trigger a historical SMS scan. This restores critical app
-// functionality.
+// REASON: MAJOR REFACTOR - The entire screen has been redesigned to align with
+// the "Project Aurora" vision. The layout now uses GlassPanel components to
+// group related settings, creating a cleaner, more organized, and visually
+// stunning interface that matches the rest of the application.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -22,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -33,6 +32,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -44,6 +44,8 @@ import io.pm.finlight.*
 import io.pm.finlight.R
 import io.pm.finlight.ui.components.*
 import androidx.compose.ui.unit.dp
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -55,34 +57,32 @@ fun ProfileScreen(
     profileViewModel: ProfileViewModel = viewModel(),
     settingsViewModel: SettingsViewModel
 ) {
-    // --- State from ProfileViewModel ---
+    // region State Variables
     val userName by profileViewModel.userName.collectAsState()
     val savedProfilePictureUri by profileViewModel.profilePictureUri.collectAsState()
-
-    // --- State and Logic from SettingsViewModel ---
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isScanning by settingsViewModel.isScanning.collectAsState()
-
     var showDatePickerDialog by remember { mutableStateOf(false) }
     val smsScanStartDate by settingsViewModel.smsScanStartDate.collectAsState()
     val dateFormatter = remember { SimpleDateFormat("dd MMMM, yyyy", Locale.getDefault()) }
-
     val isAppLockEnabled by settingsViewModel.appLockEnabled.collectAsState()
     val isWeeklySummaryEnabled by settingsViewModel.weeklySummaryEnabled.collectAsState()
     val isDailyReportEnabled by settingsViewModel.dailyReportEnabled.collectAsState()
     val isMonthlySummaryEnabled by settingsViewModel.monthlySummaryEnabled.collectAsState()
     val isUnknownTransactionPopupEnabled by settingsViewModel.unknownTransactionPopupEnabled.collectAsState()
     val isBackupEnabled by settingsViewModel.backupEnabled.collectAsState()
-
     val dailyReportTime by settingsViewModel.dailyReportTime.collectAsState()
     var showDailyTimePicker by remember { mutableStateOf(false) }
-
     val weeklyReportTime by settingsViewModel.weeklyReportTime.collectAsState()
     var showWeeklyTimePicker by remember { mutableStateOf(false) }
     val monthlyReportTime by settingsViewModel.monthlyReportTime.collectAsState()
     var showMonthlyTimePicker by remember { mutableStateOf(false) }
+    var showImportJsonDialog by remember { mutableStateOf(false) }
+    var showImportCsvDialog by remember { mutableStateOf(false) }
+    // endregion
 
+    // region Event Handlers & Launchers
     LaunchedEffect(key1 = settingsViewModel.scanEvent) {
         settingsViewModel.scanEvent.collect { result ->
             if (result is ScanResult.Success) {
@@ -97,387 +97,319 @@ fun ProfileScreen(
         }
     }
 
-    val jsonFileSaverLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("application/json"),
-            onResult = { uri ->
-                uri?.let {
-                    scope.launch {
-                        val jsonString = DataExportService.exportToJsonString(context)
-                        if (jsonString != null) {
-                            try {
-                                context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                                    outputStream.write(jsonString.toByteArray())
-                                }
-                                Toast.makeText(context, "Data exported successfully!", Toast.LENGTH_LONG).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Error saving file.", Toast.LENGTH_LONG).show()
+    val jsonFileSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    val jsonString = DataExportService.exportToJsonString(context)
+                    if (jsonString != null) {
+                        try {
+                            context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                                outputStream.write(jsonString.toByteArray())
                             }
-                        } else {
-                            Toast.makeText(context, "Error exporting data.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Data exported successfully!", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error saving file.", Toast.LENGTH_LONG).show()
                         }
-                    }
-                }
-            },
-        )
-
-    var showImportJsonDialog by remember { mutableStateOf(false) }
-    var showImportCsvDialog by remember { mutableStateOf(false) }
-
-    val csvFileSaverLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
-            onResult = { uri ->
-                uri?.let {
-                    scope.launch {
-                        val csvString = DataExportService.exportToCsvString(context)
-                        if (csvString != null) {
-                            try {
-                                context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                                    outputStream.write(csvString.toByteArray())
-                                }
-                                Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_LONG).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Error saving CSV file.", Toast.LENGTH_LONG).show()
-                            }
-                        } else {
-                            Toast.makeText(context, "Error exporting CSV data.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            },
-        )
-
-    val csvImportLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
-            onResult = { uri ->
-                uri?.let {
-                    Log.d("SettingsScreen", "CSV file selected: $it. Starting validation.")
-                    settingsViewModel.validateCsvFile(it)
-                    navController.navigate("csv_validation_screen")
-                }
-            },
-        )
-
-    val jsonImportLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
-            onResult = { uri ->
-                uri?.let {
-                    scope.launch {
-                        if (DataExportService.importDataFromJson(context, it)) {
-                            Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
-                        } else {
-                            Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            },
-        )
-
-    // --- UI Layout ---
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp) // Let items control their own padding
-    ) {
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .clickable { navController.navigate("edit_profile") },
-                elevation = CardDefaults.cardElevation(4.dp)
-            ) {
-                Box(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AsyncImage(
-                            model = savedProfilePictureUri,
-                            contentDescription = "User Profile Picture",
-                            placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                            error = painterResource(id = R.drawable.ic_launcher_foreground),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                        )
-
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(userName, style = MaterialTheme.typography.titleLarge)
-                        }
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Profile",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    } else {
+                        Toast.makeText(context, "Error exporting data.", Toast.LENGTH_LONG).show()
                     }
                 }
             }
         }
+    )
 
-        item { SettingSectionHeader("General") }
-        item {
-            SettingsActionItem(
-                text = "Manage Accounts",
-                subtitle = "View, add, or edit your financial accounts",
-                icon = Icons.Default.AccountBalanceWallet,
-                onClick = { navController.navigate("account_list") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Categories",
-                subtitle = "Add, edit, or remove transaction categories",
-                icon = Icons.Default.Category,
-                onClick = { navController.navigate("category_list") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Budgets",
-                subtitle = "Set and edit your monthly budgets",
-                icon = Icons.Default.Savings,
-                onClick = { navController.navigate("budget_screen") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Tags",
-                subtitle = "Create and organize custom tags",
-                icon = Icons.Default.NewLabel,
-                onClick = { navController.navigate("tag_management") },
-            )
-        }
-
-        item { SettingSectionHeader("Automation & AI") }
-        item {
-            SettingsActionItem(
-                text = "Scan Full Inbox",
-                subtitle = "Scan all messages to find transactions for review",
-                icon = Icons.AutoMirrored.Filled.ManageSearch,
-                onClick = {
-                    if (hasSmsPermission(context)) {
-                        if (!isScanning) {
-                            settingsViewModel.rescanSmsForReview(null)
+    val csvFileSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    val csvString = DataExportService.exportToCsvString(context)
+                    if (csvString != null) {
+                        try {
+                            context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                                outputStream.write(csvString.toByteArray())
+                            }
+                            Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error saving CSV file.", Toast.LENGTH_LONG).show()
                         }
                     } else {
-                        Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Error exporting CSV data.", Toast.LENGTH_LONG).show()
                     }
-                },
-            )
+                }
+            }
         }
-        // --- FEATURE: Restored Scan From Date UI ---
+    )
+
+    val csvImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                Log.d("SettingsScreen", "CSV file selected: $it. Starting validation.")
+                settingsViewModel.validateCsvFile(it)
+                navController.navigate("csv_validation_screen")
+            }
+        }
+    )
+
+    val jsonImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    if (DataExportService.importDataFromJson(context, it)) {
+                        Toast.makeText(context, "Data imported successfully! Please restart the app.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Failed to import data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+    // endregion
+
+    // --- UI Layout ---
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         item {
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            ListItem(
-                headlineContent = { Text("Scan from specific date") },
-                supportingContent = {
-                    Text(
-                        text = "Current start date: ${dateFormatter.format(Date(smsScanStartDate))}",
-                        modifier = Modifier.clickable { showDatePickerDialog = true },
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodySmall
+            GlassPanel(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { navController.navigate("edit_profile") }
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = savedProfilePictureUri,
+                        contentDescription = "User Profile Picture",
+                        placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
+                        error = painterResource(id = R.drawable.ic_launcher_foreground),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                     )
-                },
-                leadingContent = {
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(userName, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+                        Text("Edit Profile", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Icon(
-                        imageVector = Icons.Default.Event,
-                        contentDescription = "Scan from date",
-                        modifier = Modifier.size(24.dp)
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Profile",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                },
-                trailingContent = {
-                    Button(
-                        onClick = {
-                            if (hasSmsPermission(context)) {
-                                if (!isScanning) {
-                                    settingsViewModel.rescanSmsForReview(smsScanStartDate)
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = "General") {
+                SettingsActionItem(
+                    text = "Manage Accounts",
+                    subtitle = "View, add, or edit your financial accounts",
+                    icon = Icons.Default.AccountBalanceWallet,
+                    onClick = { navController.navigate("account_list") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Categories",
+                    subtitle = "Add, edit, or remove transaction categories",
+                    icon = Icons.Default.Category,
+                    onClick = { navController.navigate("category_list") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Budgets",
+                    subtitle = "Set and edit your monthly budgets",
+                    icon = Icons.Default.Savings,
+                    onClick = { navController.navigate("budget_screen") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Tags",
+                    subtitle = "Create and organize custom tags",
+                    icon = Icons.Default.NewLabel,
+                    onClick = { navController.navigate("tag_management") },
+                )
+            }
+        }
+
+        item {
+            SettingsSection(title = "Automation & AI") {
+                SettingsActionItem(
+                    text = "Scan Full Inbox",
+                    subtitle = "Scan all messages to find transactions",
+                    icon = Icons.AutoMirrored.Filled.ManageSearch,
+                    onClick = {
+                        if (hasSmsPermission(context)) {
+                            if (!isScanning) settingsViewModel.rescanSmsForReview(null)
+                        } else {
+                            Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = { Text("Scan from specific date", color = MaterialTheme.colorScheme.onSurface) },
+                    supportingContent = {
+                        Text(
+                            text = "Start date: ${dateFormatter.format(Date(smsScanStartDate))}",
+                            modifier = Modifier.clickable { showDatePickerDialog = true },
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    leadingContent = { Icon(Icons.Default.Event, "Scan from date", tint = MaterialTheme.colorScheme.primary) },
+                    trailingContent = {
+                        Button(
+                            onClick = {
+                                if (hasSmsPermission(context)) {
+                                    if (!isScanning) settingsViewModel.rescanSmsForReview(smsScanStartDate)
+                                } else {
+                                    Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
                                 }
-                            } else {
-                                Toast.makeText(context, "SMS permission is required.", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        enabled = !isScanning
-                    ) {
-                        Text("Scan")
+                            },
+                            enabled = !isScanning
+                        ) { Text("Scan") }
                     }
-                }
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Custom Parse Rules",
-                subtitle = "View or delete your custom SMS parsing rules",
-                icon = Icons.Default.Rule,
-                onClick = { navController.navigate("manage_parse_rules") },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage Parser Ignore List",
-                subtitle = "Add or remove phrases to ignore during parsing",
-                icon = Icons.Default.Block,
-                onClick = { navController.navigate("manage_ignore_rules") },
-            )
-        }
-        item {
-            SettingsToggleItem(
-                title = "Popup for Unknown Transactions",
-                subtitle = "Show notification for SMS from new merchants",
-                icon = Icons.Default.HelpOutline,
-                checked = isUnknownTransactionPopupEnabled,
-                onCheckedChange = { settingsViewModel.setUnknownTransactionPopupEnabled(it) },
-            )
-        }
-
-
-        item { SettingSectionHeader("Notifications") }
-        item {
-            SettingsToggleItem(
-                title = "Daily Summary",
-                subtitle = "Get a report of yesterday's spending each day",
-                icon = Icons.Default.Notifications,
-                checked = isDailyReportEnabled,
-                onCheckedChange = { settingsViewModel.setDailyReportEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Daily Report Time",
-                subtitle = "Current: ${String.format("%02d:%02d", dailyReportTime.first, dailyReportTime.second)}",
-                icon = Icons.Default.Schedule,
-                onClick = { showDailyTimePicker = true },
-                enabled = isDailyReportEnabled
-            )
-        }
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
-        item {
-            SettingsToggleItem(
-                title = "Weekly Summary",
-                subtitle = "Receive a summary of your finances every week",
-                icon = Icons.Default.CalendarToday,
-                checked = isWeeklySummaryEnabled,
-                onCheckedChange = { settingsViewModel.setWeeklySummaryEnabled(it) },
-            )
-        }
-        item {
-            val dayName = SimpleDateFormat("EEEE", Locale.getDefault()).format(
-                Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, weeklyReportTime.first) }.time
-            )
-            SettingsActionItem(
-                text = "Weekly Report Time",
-                subtitle = "Current: $dayName at ${String.format("%02d:%02d", weeklyReportTime.second, weeklyReportTime.third)}",
-                icon = Icons.Default.Schedule,
-                onClick = { showWeeklyTimePicker = true },
-                enabled = isWeeklySummaryEnabled
-            )
-        }
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)) }
-        item {
-            SettingsToggleItem(
-                title = "Monthly Summary",
-                subtitle = "Receive a summary of last month's finances",
-                icon = Icons.Default.Event,
-                checked = isMonthlySummaryEnabled,
-                onCheckedChange = { settingsViewModel.setMonthlySummaryEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Monthly Report Time",
-                subtitle = "Current: Day ${monthlyReportTime.first} of the month at ${String.format("%02d:%02d", monthlyReportTime.second, monthlyReportTime.third)}",
-                icon = Icons.Default.Schedule,
-                onClick = { showMonthlyTimePicker = true },
-                enabled = isMonthlySummaryEnabled
-            )
-        }
-
-        item { SettingSectionHeader("Security & Privacy") }
-        item {
-            SettingsToggleItem(
-                title = "Enable App Lock",
-                subtitle = "Use biometrics or screen lock to secure the app",
-                icon = Icons.Default.Fingerprint,
-                checked = isAppLockEnabled,
-                onCheckedChange = { settingsViewModel.setAppLockEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Manage App Permissions",
-                subtitle = "Control access to SMS, notifications, etc.",
-                icon = Icons.Default.Shield,
-                onClick = {
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                    val uri = Uri.fromParts("package", context.packageName, null)
-                    intent.data = uri
-                    context.startActivity(intent)
-                }
-            )
-        }
-
-
-        item { SettingSectionHeader("Data Management") }
-        item {
-            SettingsToggleItem(
-                title = "Enable Google Drive Backup",
-                subtitle = "Automatically back up app data to your Google account",
-                icon = Icons.Default.CloudUpload,
-                checked = isBackupEnabled,
-                onCheckedChange = { settingsViewModel.setBackupEnabled(it) },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Export Data as JSON",
-                subtitle = "Create a full backup of all your app data",
-                icon = Icons.Default.DataObject,
-                onClick = {
-                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    val fileName = "FinanceApp_Backup_${sdf.format(Date())}.json"
-                    jsonFileSaverLauncher.launch(fileName)
-                },
-            )
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Custom Parse Rules",
+                    subtitle = "View or delete your SMS parsing rules",
+                    icon = Icons.Default.Rule,
+                    onClick = { navController.navigate("manage_parse_rules") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Manage Parser Ignore List",
+                    subtitle = "Add or remove phrases to ignore",
+                    icon = Icons.Default.Block,
+                    onClick = { navController.navigate("manage_ignore_rules") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsToggleItem(
+                    title = "Popup for Unknown Transactions",
+                    subtitle = "Show notification for new merchants",
+                    icon = Icons.Default.HelpOutline,
+                    checked = isUnknownTransactionPopupEnabled,
+                    onCheckedChange = { settingsViewModel.setUnknownTransactionPopupEnabled(it) },
+                )
+            }
         }
 
         item {
-            SettingsActionItem(
-                text = "Export Transactions as CSV",
-                subtitle = "Save all transactions in a spreadsheet-compatible format",
-                icon = Icons.Default.GridOn,
-                onClick = {
-                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    val fileName = "FinanceApp_Transactions_${sdf.format(Date())}.csv"
-                    csvFileSaverLauncher.launch(fileName)
-                },
-            )
+            SettingsSection("Notifications") {
+                SettingsToggleItem(
+                    title = "Daily Summary",
+                    subtitle = "Report of yesterday's spending",
+                    icon = Icons.Default.Notifications,
+                    checked = isDailyReportEnabled,
+                    onCheckedChange = { settingsViewModel.setDailyReportEnabled(it) },
+                )
+                SettingsActionItem(
+                    text = "Daily Report Time",
+                    subtitle = "Current: ${String.format("%02d:%02d", dailyReportTime.first, dailyReportTime.second)}",
+                    icon = Icons.Default.Schedule,
+                    onClick = { showDailyTimePicker = true },
+                    enabled = isDailyReportEnabled
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsToggleItem(
+                    title = "Weekly Summary",
+                    subtitle = "Summary of your finances every week",
+                    icon = Icons.Default.CalendarViewWeek,
+                    checked = isWeeklySummaryEnabled,
+                    onCheckedChange = { settingsViewModel.setWeeklySummaryEnabled(it) },
+                )
+                SettingsActionItem(
+                    text = "Weekly Report Time",
+                    subtitle = "Current: ${SimpleDateFormat("EEEE", Locale.getDefault()).format(
+                        Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, weeklyReportTime.first) }.time
+                    )} at ${String.format("%02d:%02d", weeklyReportTime.second, weeklyReportTime.third)}",
+                    icon = Icons.Default.Schedule,
+                    onClick = { showWeeklyTimePicker = true },
+                    enabled = isWeeklySummaryEnabled
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsToggleItem(
+                    title = "Monthly Summary",
+                    subtitle = "Summary of last month's finances",
+                    icon = Icons.Default.CalendarViewMonth,
+                    checked = isMonthlySummaryEnabled,
+                    onCheckedChange = { settingsViewModel.setMonthlySummaryEnabled(it) },
+                )
+                SettingsActionItem(
+                    text = "Monthly Report Time",
+                    subtitle = "Current: Day ${monthlyReportTime.first} at ${String.format("%02d:%02d", monthlyReportTime.second, monthlyReportTime.third)}",
+                    icon = Icons.Default.Schedule,
+                    onClick = { showMonthlyTimePicker = true },
+                    enabled = isMonthlySummaryEnabled
+                )
+            }
         }
 
         item {
-            SettingsActionItem(
-                text = "Import from JSON",
-                subtitle = "Restore your app data from a full backup file",
-                icon = Icons.Default.Download,
-                onClick = { showImportJsonDialog = true },
-            )
-        }
-        item {
-            SettingsActionItem(
-                text = "Import from CSV",
-                subtitle = "Add new transactions from a CSV file",
-                icon = Icons.Default.PostAdd,
-                onClick = { showImportCsvDialog = true },
-            )
+            SettingsSection("Security & Data") {
+                SettingsToggleItem(
+                    title = "Enable App Lock",
+                    subtitle = "Use biometrics to secure the app",
+                    icon = Icons.Default.Fingerprint,
+                    checked = isAppLockEnabled,
+                    onCheckedChange = { settingsViewModel.setAppLockEnabled(it) },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Export Data (JSON)",
+                    subtitle = "Create a full backup of all your data",
+                    icon = Icons.Default.DataObject,
+                    onClick = {
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                        val fileName = "Finlight_Backup_${sdf.format(Date())}.json"
+                        jsonFileSaverLauncher.launch(fileName)
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Export Transactions (CSV)",
+                    subtitle = "Save transactions in a spreadsheet format",
+                    icon = Icons.Default.GridOn,
+                    onClick = {
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                        val fileName = "Finlight_Transactions_${sdf.format(Date())}.csv"
+                        csvFileSaverLauncher.launch(fileName)
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Import from JSON",
+                    subtitle = "Restore data from a backup file",
+                    icon = Icons.Default.Download,
+                    onClick = { showImportJsonDialog = true },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                SettingsActionItem(
+                    text = "Import from CSV",
+                    subtitle = "Add new transactions from a CSV file",
+                    icon = Icons.Default.PostAdd,
+                    onClick = { showImportCsvDialog = true },
+                )
+            }
         }
     }
 
-    // --- Dialogs ---
+    // region Dialogs
     if (showDatePickerDialog) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
         DatePickerDialog(
@@ -550,7 +482,7 @@ fun ProfileScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
                     Spacer(Modifier.height(16.dp))
-                    Text("Scanning SMS Inbox...", style = MaterialTheme.typography.titleMedium)
+                    Text("Scanning SMS Inbox...", style = MaterialTheme.typography.titleMedium, color = Color.White)
                 }
             }
         }
@@ -560,20 +492,15 @@ fun ProfileScreen(
         AlertDialog(
             onDismissRequest = { showImportCsvDialog = false },
             title = { Text("Import from CSV?") },
-            text = {
-                Text(
-                    "This will add transactions from the CSV file. If transactions already exist, this may create duplicates. Are you sure you want to continue?",
-                )
-            },
+            text = { Text("This will add transactions from the CSV file. This may create duplicates. Continue?") },
             confirmButton = {
                 Button(onClick = {
                     showImportCsvDialog = false
                     csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values"))
                 }) { Text("Continue") }
             },
-            dismissButton = {
-                TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") }
-            },
+            dismissButton = { TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") } },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         )
     }
 
@@ -581,20 +508,43 @@ fun ProfileScreen(
         AlertDialog(
             onDismissRequest = { showImportJsonDialog = false },
             title = { Text("Import from JSON?") },
-            text = { Text("This will DELETE all current data and replace it. This cannot be undone.") },
+            text = { Text("WARNING: This will DELETE all current data and replace it. This cannot be undone.") },
             confirmButton = {
-                Button(onClick = {
-                    showImportJsonDialog = false
-                    jsonImportLauncher.launch(arrayOf("application/json"))
-                }) { Text("Wipe and Import") }
+                Button(
+                    onClick = {
+                        showImportJsonDialog = false
+                        jsonImportLauncher.launch(arrayOf("application/json"))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Wipe and Import") }
             },
-            dismissButton = {
-                TextButton(onClick = { showImportJsonDialog = false }) { Text("Cancel") }
-            },
+            dismissButton = { TextButton(onClick = { showImportJsonDialog = false }) { Text("Cancel") } },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         )
     }
+    // endregion
 }
 
 private fun hasSmsPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+        )
+        GlassPanel {
+            Column {
+                content()
+            }
+        }
+    }
 }

@@ -1,14 +1,17 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt
-// REASON: REFACTOR - Both `SettingsActionItem` and `SettingsToggleItem` have
-// been refactored to use the Material3 `ListItem` composable as their base.
-// This enforces a consistent layout structure, fixing the alignment issues
-// where toggle rows were previously indented differently from action rows.
+// REASON: REFACTOR - The ListItem components have been updated to use a
+// transparent container color. This ensures they blend seamlessly when placed
+// inside a GlassPanel, allowing the frosted glass effect to show through and
+// creating a visually consistent settings screen.
+// FIX: Removed the duplicate TimePickerDialog definition to resolve the
+// "Conflicting overloads" compilation error.
 // =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -21,21 +24,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.SimpleDateFormat
 import java.util.*
 
-@Composable
-fun SettingSectionHeader(title: String) {
-    Text(
-        text = title.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 16.dp, end = 16.dp),
-    )
-    HorizontalDivider()
-}
+// --- FIX: Removed duplicate TimePickerDialog definition ---
 
 @Composable
 fun SettingsToggleItem(
@@ -53,6 +50,7 @@ fun SettingsToggleItem(
         trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
         modifier = Modifier.clickable(enabled = enabled) { onCheckedChange(!checked) },
         colors = ListItemDefaults.colors(
+            containerColor = Color.Transparent, // Make transparent to show GlassPanel behind
             headlineColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
             supportingColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
             leadingIconColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
@@ -74,6 +72,7 @@ fun SettingsActionItem(
         leadingContent = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
         modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
         colors = ListItemDefaults.colors(
+            containerColor = Color.Transparent, // Make transparent to show GlassPanel behind
             headlineColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
             supportingColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
             leadingIconColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
@@ -141,7 +140,8 @@ fun WeeklyReportTimePicker(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
+        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
     )
 }
 
@@ -212,6 +212,7 @@ fun MonthlyReportTimePicker(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
+        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
     )
 }
