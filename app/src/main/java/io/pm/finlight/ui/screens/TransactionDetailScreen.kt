@@ -10,6 +10,14 @@
 // original functionality.
 // UPDATE: The header card is now a true edge-to-edge hero element, with only
 // the bottom corners rounded to blend seamlessly with the top of the screen.
+// FIX: The screen now correctly respects the app-wide theme. The hardcoded
+// `AuroraAnimatedBackground` has been removed, allowing the theme-dependent
+// background from MainActivity to show through. All hardcoded text and component
+// colors have been replaced with theme-aware `MaterialTheme.colorScheme` values
+// to ensure legibility and consistency across all themes (Aurora, Daybreak, etc.).
+// FIX: All popups (ModalBottomSheet, AlertDialog) now determine their background
+// based on the app's active theme rather than the system theme. This resolves
+// text contrast issues where white text could appear on a light background.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -25,7 +33,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -69,7 +76,6 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.*
-import io.pm.finlight.ui.components.AuroraAnimatedBackground
 import io.pm.finlight.ui.components.CreateAccountDialog
 import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.GlassPanel
@@ -81,6 +87,7 @@ import java.io.File
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.pow
 
 private const val TAG = "DetailScreenDebug"
 
@@ -203,6 +210,13 @@ fun TransactionDetailScreen(
             }
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
 
+            // --- THE FIX: Determine if the current app theme is dark ---
+            // We check the luminance of the background color. This is more reliable than
+            // isSystemInDarkTheme() because it respects the app's theme choice.
+            fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+            val isThemeDark = MaterialTheme.colorScheme.background.isDark()
+            val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
             LaunchedEffect(details.transaction.originalDescription, details.transaction.description) {
                 viewModel.loadVisitCount(details.transaction.originalDescription, details.transaction.description)
             }
@@ -214,7 +228,7 @@ fun TransactionDetailScreen(
             if (retroUpdateSheetState != null) {
                 ModalBottomSheet(
                     onDismissRequest = { viewModel.dismissRetroUpdateSheet() },
-                    containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+                    containerColor = popupContainerColor,
                     dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 ) {
                     RetrospectiveUpdateSheetContent(
@@ -230,7 +244,6 @@ fun TransactionDetailScreen(
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                AuroraAnimatedBackground()
                 Scaffold(
                     topBar = {
                         TopAppBar(
@@ -402,7 +415,7 @@ fun TransactionDetailScreen(
                         ModalBottomSheet(
                             onDismissRequest = { activeSheetContent = null },
                             sheetState = sheetState,
-                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+                            containerColor = popupContainerColor,
                             dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         ) {
                             TransactionEditSheetContent(
@@ -483,7 +496,7 @@ fun TransactionDetailScreen(
                     if (showDeleteDialog) {
                         AlertDialog(
                             onDismissRequest = { showDeleteDialog = false },
-                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+                            containerColor = popupContainerColor,
                             title = { Text("Delete Transaction?", color = MaterialTheme.colorScheme.onSurface) },
                             text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             confirmButton = {
@@ -515,7 +528,7 @@ fun TransactionDetailScreen(
                     if (showImageDeleteDialog != null) {
                         AlertDialog(
                             onDismissRequest = { showImageDeleteDialog = null },
-                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+                            containerColor = popupContainerColor,
                             title = { Text("Delete Attachment?", color = MaterialTheme.colorScheme.onSurface) },
                             text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             confirmButton = {
@@ -666,9 +679,9 @@ private fun TransactionSpotlightHeader(
                 label = { Text("$visitCount visits") },
                 leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 colors = AssistChipDefaults.assistChipColors(
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    labelColor = Color.White,
-                    leadingIconContentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
         }
