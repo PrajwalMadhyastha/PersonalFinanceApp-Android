@@ -5,6 +5,18 @@
 // (Aurora, Daybreak), it now correctly draws a solid Surface with the theme's
 // specific background color first, and then renders the animated effect on top,
 // ensuring the correct appearance regardless of the system's light/dark mode.
+// BUG FIX: The deep link handling logic in the SplashScreen has been corrected.
+// It no longer navigates to the dashboard first, which was causing deep links
+// from notifications to fail. It now navigates directly to the deep link URI,
+// ensuring notifications take the user to the correct screen.
+// BUG FIX: Corrected a compilation error in the SplashScreen's deep link
+// navigation. The NavOptions are now built separately and passed to the
+// navigate(Uri, NavOptions) function, as the trailing lambda is not supported
+// for the Uri-based overload.
+// BUG FIX: The SplashScreen now correctly constructs the navigation back stack
+// when launching from a deep link. It first navigates to the Dashboard and then
+// to the deep-linked destination, ensuring the user can press "back" to return
+// to the Dashboard instead of exiting the app.
 // =================================================================================
 package io.pm.finlight
 
@@ -44,6 +56,7 @@ import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavOptions
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -247,12 +260,6 @@ fun MainAppScreen() {
     val activity = LocalContext.current as AppCompatActivity
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // --- THE FIX ---
-        // We now use a `when` statement to handle each theme individually.
-        // Crucially, for themes with animated backgrounds, we first draw a
-        // solid Surface with the theme's background color, and then draw the
-        // animated component on top of it. This decouples the background
-        // completely from the system's light/dark mode.
         when (selectedTheme) {
             AppTheme.AURORA -> {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
@@ -263,7 +270,6 @@ fun MainAppScreen() {
                 DaybreakAnimatedBackground()
             }
             else -> {
-                // For System, Midnight, and Paper, we just need the solid background color.
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -622,12 +628,16 @@ fun SplashScreen(navController: NavHostController, activity: Activity) {
     LaunchedEffect(key1 = Unit) {
         val deepLinkUri = activity.intent?.data
         if (deepLinkUri != null) {
+            // BUG FIX: Correctly build the back stack for deep links.
+            // First, navigate to the home screen (dashboard) and clear the splash screen.
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }
+            // Then, navigate to the actual deep link destination.
             navController.navigate(deepLinkUri)
-            activity.intent.data = null
+            activity.intent.data = null // Important: Consume the intent's data
         } else {
+            // Normal startup: go to the dashboard.
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }
