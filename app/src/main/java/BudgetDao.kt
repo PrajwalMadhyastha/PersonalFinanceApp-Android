@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/BudgetDao.kt
-// REASON: FIX - No changes were needed here. The `isExcluded = 0` filter was
-// already correctly applied to the subqueries that calculate spending for budgets.
-// This ensures that excluded transactions do not count against a user's budget,
-// which is the correct behavior for these financial aggregations.
+// REASON: BUG FIX - All `strftime` date functions have been updated to use the
+// 'localtime' modifier. This ensures that all date-based grouping is performed
+// using the device's local timezone instead of UTC. This corrects the bug where
+// spending was being attributed to the wrong month, fixing budget calculations.
 // =================================================================================
 package io.pm.finlight
 
@@ -33,7 +33,7 @@ interface BudgetDao {
                 SUM(T.amount) as totalSpent
              FROM transactions AS T
              JOIN categories AS C ON T.categoryId = C.id
-             WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch') = :yearMonth AND T.isExcluded = 0 -- This is correct for budget spending
+             WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND T.isExcluded = 0
              GROUP BY C.name) AS TxSums
         ON B.categoryName = TxSums.categoryName
         LEFT JOIN categories AS Cat ON B.categoryName = Cat.name
@@ -53,7 +53,7 @@ interface BudgetDao {
     suspend fun insert(budget: Budget)
 
     @Query(
-        "SELECT SUM(amount) FROM transactions WHERE categoryId = (SELECT id FROM categories WHERE name = :categoryName) AND strftime('%m', date / 1000, 'unixepoch') + 0 = :month AND strftime('%Y', date / 1000, 'unixepoch') + 0 = :year AND transactionType = 'expense' AND isExcluded = 0", // This is correct for budget spending
+        "SELECT SUM(amount) FROM transactions WHERE categoryId = (SELECT id FROM categories WHERE name = :categoryName) AND strftime('%m', date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', date / 1000, 'unixepoch', 'localtime') + 0 = :year AND transactionType = 'expense' AND isExcluded = 0",
     )
     fun getActualSpendingForCategory(
         categoryName: String,

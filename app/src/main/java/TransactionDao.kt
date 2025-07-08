@@ -1,10 +1,12 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: BUG FIX - The `getTransactionCountForMerchant` query has been updated
-// to check against both the `description` and the `originalDescription` fields.
-// This ensures that the visit count is accurate even after a merchant has been
-// renamed, as it correctly groups all related transactions under their
-// original merchant identity.
+// REASON: BUG FIX - All `strftime` date functions have been updated to use the
+// 'localtime' modifier. This ensures that all date-based grouping (daily,
+// weekly, monthly) is performed using the device's local timezone instead of
+// UTC. This corrects the bug where transactions were being assigned to the
+// wrong period, fixing incorrect totals in reports and notifications.
+// REASON: BUG FIX - Restored the searchTransactions function that was
+// accidentally removed in a previous edit.
 // =================================================================================
 package io.pm.finlight
 
@@ -283,7 +285,7 @@ interface TransactionDao {
     @Query(
         """
         SELECT
-            strftime('%Y-%m', date / 1000, 'unixepoch') as monthYear,
+            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as monthYear,
             SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
         FROM transactions
@@ -293,31 +295,6 @@ interface TransactionDao {
     """
     )
     fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>>
-
-    @Query(
-        """
-        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
-        FROM transactions t
-        LEFT JOIN accounts a ON t.accountId = a.id
-        LEFT JOIN categories c ON t.categoryId = c.id
-        WHERE
-            (:keyword = '' OR t.description LIKE '%' || :keyword || '%' OR t.notes LIKE '%' || :keyword || '%') AND
-            (:accountId IS NULL OR t.accountId = :accountId) AND
-            (:categoryId IS NULL OR t.categoryId = :categoryId) AND
-            (:transactionType IS NULL OR t.transactionType = :transactionType) AND
-            (:startDate IS NULL OR t.date >= :startDate) AND
-            (:endDate IS NULL OR t.date <= :endDate)
-        ORDER BY t.date DESC
-    """
-    )
-    suspend fun searchTransactions(
-        keyword: String,
-        accountId: Int?,
-        categoryId: Int?,
-        transactionType: String?,
-        startDate: Long?,
-        endDate: Long?,
-    ): List<TransactionDetails>
 
     @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
     suspend fun countTransactionsForCategory(categoryId: Int): Int
@@ -371,7 +348,7 @@ interface TransactionDao {
 
     @Query("""
         SELECT
-            strftime('%Y-%m-%d', date / 1000, 'unixepoch') as date,
+            strftime('%Y-%m-%d', date / 1000, 'unixepoch', 'localtime') as date,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
         FROM transactions
         WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
@@ -382,7 +359,7 @@ interface TransactionDao {
 
     @Query("""
         SELECT
-            strftime('%Y-%W', date / 1000, 'unixepoch') as period,
+            strftime('%Y-%W', date / 1000, 'unixepoch', 'localtime') as period,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
         FROM transactions
         WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
@@ -393,7 +370,7 @@ interface TransactionDao {
 
     @Query("""
         SELECT
-            strftime('%Y-%m', date / 1000, 'unixepoch') as period,
+            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
         FROM transactions
         WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
@@ -442,4 +419,28 @@ interface TransactionDao {
 
     @Query("UPDATE transactions SET description = :newDescription WHERE id IN (:ids)")
     suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String)
+
+    // --- FIX: Restored the missing searchTransactions function ---
+    @Query("""
+        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
+        FROM transactions t
+        LEFT JOIN accounts a ON t.accountId = a.id
+        LEFT JOIN categories c ON t.categoryId = c.id
+        WHERE
+            (:keyword = '' OR t.description LIKE '%' || :keyword || '%' OR t.notes LIKE '%' || :keyword || '%') AND
+            (:accountId IS NULL OR t.accountId = :accountId) AND
+            (:categoryId IS NULL OR t.categoryId = :categoryId) AND
+            (:transactionType IS NULL OR t.transactionType = :transactionType) AND
+            (:startDate IS NULL OR t.date >= :startDate) AND
+            (:endDate IS NULL OR t.date <= :endDate)
+        ORDER BY t.date DESC
+    """)
+    suspend fun searchTransactions(
+        keyword: String,
+        accountId: Int?,
+        categoryId: Int?,
+        transactionType: String?,
+        startDate: Long?,
+        endDate: Long?,
+    ): List<TransactionDetails>
 }
