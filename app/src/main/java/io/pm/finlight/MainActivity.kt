@@ -4,6 +4,9 @@
 // This prevents the main Floating Action Button from appearing on the
 // Dashboard screen, as it is being replaced by a contextual "+ Add" button
 // inside the "Recent Activity" card.
+// FEATURE - A new "+" icon button has been added to the TopAppBar's actions.
+// This button is only visible on the "Transactions" screen and provides a
+// contextual way to add a new transaction, replacing the FAB on that screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -237,8 +240,6 @@ fun MainAppScreen() {
     val showProfileIcon = showBottomBar && !isCustomizationMode
 
     val fabRoutes = setOf(
-        // BottomNavItem.Dashboard.route, // Removed to place button inside card
-        BottomNavItem.Transactions.route,
         "account_list",
         "recurring_transactions"
     )
@@ -311,6 +312,10 @@ fun MainAppScreen() {
                                                 filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
                                             }
                                         }
+                                        // --- NEW: Add Transaction Icon Button ---
+                                        IconButton(onClick = { navController.navigate("add_transaction") }) {
+                                            Icon(Icons.Default.Add, contentDescription = "Add Transaction")
+                                        }
                                         BadgedBox(
                                             badge = {
                                                 if (areFiltersActive) {
@@ -362,9 +367,6 @@ fun MainAppScreen() {
                 if (showFab) {
                     FloatingActionButton(onClick = {
                         when (baseCurrentRoute) {
-                            BottomNavItem.Transactions.route -> {
-                                navController.navigate("add_transaction")
-                            }
                             "account_list" -> {
                                 navController.navigate("add_account")
                             }
