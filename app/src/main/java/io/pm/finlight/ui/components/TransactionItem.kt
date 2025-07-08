@@ -37,6 +37,7 @@ fun TransactionItem(
     onClick: () -> Unit,
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
+    val isUncategorized = transactionDetails.categoryName == null || transactionDetails.categoryName == "Uncategorized"
 
     GlassPanel(
         modifier = Modifier
@@ -52,25 +53,39 @@ fun TransactionItem(
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(
-                        CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")
+                        CategoryIconHelper.getIconBackgroundColor(
+                            if (isUncategorized) "red_light" else transactionDetails.categoryColorKey ?: "gray_light"
+                        )
                             .copy(alpha = contentAlpha)
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (transactionDetails.categoryIconKey == "letter_default") {
-                    Text(
-                        text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = Color.Black.copy(alpha = contentAlpha)
-                    )
-                } else {
-                    Icon(
-                        imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
-                        contentDescription = transactionDetails.categoryName,
-                        tint = Color.Black.copy(alpha = contentAlpha),
-                        modifier = Modifier.size(22.dp)
-                    )
+                // --- UPDATED: Logic to handle uncategorized state ---
+                when {
+                    isUncategorized -> {
+                        Icon(
+                            imageVector = CategoryIconHelper.getIcon("help_outline"),
+                            contentDescription = "Uncategorized",
+                            tint = Color.Black.copy(alpha = contentAlpha),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    transactionDetails.categoryIconKey == "letter_default" -> {
+                        Text(
+                            text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.Black.copy(alpha = contentAlpha)
+                        )
+                    }
+                    else -> {
+                        Icon(
+                            imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
+                            contentDescription = transactionDetails.categoryName,
+                            tint = Color.Black.copy(alpha = contentAlpha),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.width(16.dp))
@@ -97,7 +112,6 @@ fun TransactionItem(
             }
 
             val isIncome = transactionDetails.transaction.transactionType == "income"
-            // --- UPDATED: Use theme-aware colors for amount ---
             val amountColor = if (isSystemInDarkTheme()) {
                 if (isIncome) IncomeGreenDark else ExpenseRedDark
             } else {
@@ -148,7 +162,6 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
             )
         }
         val isIncome = transactionDetails.transaction.transactionType == "income"
-        // --- UPDATED: Use theme-aware colors for amount ---
         val amountColor = if (isSystemInDarkTheme()) {
             if (isIncome) IncomeGreenDark else ExpenseRedDark
         } else {
