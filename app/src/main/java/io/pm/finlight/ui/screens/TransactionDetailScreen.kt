@@ -537,7 +537,8 @@ fun TransactionDetailScreen(
 
 @Composable
 private fun DynamicCategoryBackground(category: Category) {
-    val letter = category.name.firstOrNull()?.uppercase() ?: "?"
+    // --- UPDATED: Show '?' for Uncategorized, otherwise the first letter ---
+    val letter = if (category.name == "Uncategorized") "?" else category.name.firstOrNull()?.uppercase() ?: "?"
     val color = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
 
     Box(
@@ -1388,7 +1389,15 @@ private fun CategoryIconDisplay(category: Category) {
             .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
         contentAlignment = Alignment.Center
     ) {
-        if (category.iconKey == "letter_default") {
+        // --- UPDATED: Prioritize showing '?' for Uncategorized ---
+        if (category.name == "Uncategorized") {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon("help_outline"),
+                contentDescription = category.name,
+                tint = Color.Black,
+                modifier = Modifier.size(24.dp)
+            )
+        } else if (category.iconKey == "letter_default") {
             Text(
                 text = category.name.firstOrNull()?.uppercase() ?: "?",
                 color = Color.Black,
@@ -1407,12 +1416,13 @@ private fun CategoryIconDisplay(category: Category) {
 }
 
 private fun TransactionDetails.toCategory(): Category {
+    // --- UPDATED: Use red color for uncategorized items ---
     return if (this.categoryName == null || this.categoryName == "Uncategorized") {
         Category(
             id = 0,
             name = "Uncategorized",
-            iconKey = "help_outline", // Use the new key for the question mark icon
-            colorKey = "gray_light"
+            iconKey = "help_outline",
+            colorKey = "red_light"
         )
     } else {
         Category(
@@ -1443,7 +1453,15 @@ private fun ChipWithIcon(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        if (category.iconKey == "letter_default") {
+        // --- UPDATED: Prioritize showing '?' for Uncategorized ---
+        if (category.name == "Uncategorized") {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon("help_outline"),
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.size(20.dp)
+            )
+        } else if (category.iconKey == "letter_default") {
             Text(
                 text = category.name.firstOrNull()?.uppercase() ?: "?",
                 color = Color.Black,
