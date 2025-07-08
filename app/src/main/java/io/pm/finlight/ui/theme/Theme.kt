@@ -36,16 +36,17 @@ private val AuroraDarkColorScheme = darkColorScheme(
 )
 
 // --- Daybreak Light Theme ---
+// --- UPDATED: The color scheme now uses the new, more professional Daybreak colors. ---
 private val DaybreakColorScheme = lightColorScheme(
     primary = DaybreakPrimary,
     onPrimary = Color.White,
     secondary = DaybreakSecondary,
-    onSecondary = Color.White,
+    onSecondary = Color(0xFF00363A), // Dark text for contrast on light blue
     background = DaybreakBackground,
     onBackground = DaybreakOnSurface,
     surface = Color.Transparent,
     onSurface = DaybreakOnSurface,
-    surfaceVariant = Color(0xFFDAE5E3),
+    surfaceVariant = Color(0xFFE7E0EC), // Adjusted for the new background
     onSurfaceVariant = DaybreakOnSurfaceVariant,
     error = Color(0xFFB00020),
     onError = Color.White

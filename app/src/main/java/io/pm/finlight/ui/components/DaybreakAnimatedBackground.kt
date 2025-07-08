@@ -31,28 +31,28 @@ fun DaybreakAnimatedBackground() {
         label = "DaybreakTime"
     )
 
-    // --- FIX: Using more vibrant and saturated colors for better visibility on a light background. ---
+    // --- UPDATED: Replaced vibrant colors with a softer, more professional palette ---
     val circles = listOf(
         AnimatedCircle(
-            color = Color(0xFFE91E63), // Vibrant Pink
+            color = Color(0xFFD0BCFF), // Soft Lavender
             baseRadiusMultiplier = 0.8f,
             baseCenter = Offset(0.2f, 0.8f),
             speedMultiplier = 0.6f
         ),
         AnimatedCircle(
-            color = Color(0xFFFF9800), // Vibrant Orange
+            color = Color(0xFFCCC2DC), // Muted Purple
             baseRadiusMultiplier = 0.9f,
             baseCenter = Offset(0.8f, 0.7f),
             speedMultiplier = 0.4f
         ),
         AnimatedCircle(
-            color = Color(0xFF2196F3), // Vibrant Blue
+            color = Color(0xFFB9A2DB), // A slightly deeper purple
             baseRadiusMultiplier = 1.0f,
             baseCenter = Offset(0.6f, 0.2f),
             speedMultiplier = 0.5f
         ),
         AnimatedCircle(
-            color = Color(0xFFFFEB3B), // Vibrant Yellow/Gold
+            color = Color(0xFF90CAF9), // Soft Blue
             baseRadiusMultiplier = 0.7f,
             baseCenter = Offset(0.9f, 0.1f),
             speedMultiplier = 0.7f
@@ -65,9 +65,9 @@ fun DaybreakAnimatedBackground() {
             val yOffset = sin(time * circle.speedMultiplier) * size.height * 0.1f
 
             // Create a radial gradient brush to simulate a blurred, glowing effect.
-            // --- FIX: Increased alpha from 0.4f to 0.6f for more presence. ---
+            // --- UPDATED: Reduced alpha for a more subtle effect ---
             val brush = Brush.radialGradient(
-                colors = listOf(circle.color.copy(alpha = 0.6f), Color.Transparent),
+                colors = listOf(circle.color.copy(alpha = 0.4f), Color.Transparent),
                 center = Offset(
                     x = circle.baseCenter.x * size.width,
                     y = (circle.baseCenter.y * size.height) + yOffset

@@ -17,11 +17,12 @@ val AuroraDarkOnSurface = Color(0xFFE6E1E5) // Off-white for text
 val AuroraDarkOnSurfaceVariant = Color(0xFFC4C7C5) // Brighter gray for secondary text
 
 // --- Daybreak Theme (Light Purple) ---
-val DaybreakPrimary = Color(0xFF6650a4) // Original Light Purple
-val DaybreakSecondary = Color(0xFF815600) // Rich Gold/Amber
-val DaybreakBackground = Color(0xFFF8F9FA) // A very light off-white
-val DaybreakOnSurface = Color(0xFF1C1B1F) // Near-black for text
-val DaybreakOnSurfaceVariant = Color(0xFF49454F) // Dark gray for secondary text
+// --- UPDATED: New, more mature and professional color palette based on user feedback ---
+val DaybreakPrimary = Color(0xFF6750A4)       // Muted, professional purple
+val DaybreakSecondary = Color(0xFF81D4FA)      // Soft, light blue for secondary accents
+val DaybreakBackground = Color(0xFFEADDFF)      // Light lavender background
+val DaybreakOnSurface = Color(0xFF1D1B20)       // Dark, readable text
+val DaybreakOnSurfaceVariant = Color(0xFF49454F) // Softer gray for secondary text
 
 
 // --- Midnight Theme (Monochrome Dark) ---
