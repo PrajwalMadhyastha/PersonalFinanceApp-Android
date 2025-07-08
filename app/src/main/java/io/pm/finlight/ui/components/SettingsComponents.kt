@@ -10,6 +10,8 @@
 // based on the app's MaterialTheme, not the system theme. This ensures they
 // correctly follow the selected app theme (e.g., Aurora, Daybreak) instead of
 // defaulting to the system's light/dark mode.
+// BUG FIX - Ensured the Switch component is always present in the
+// SettingsToggleItem's trailingContent, fixing an issue where it could disappear.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -52,6 +54,7 @@ fun SettingsToggleItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
         leadingContent = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
         modifier = Modifier.clickable(enabled = enabled) { onCheckedChange(!checked) },
         colors = ListItemDefaults.colors(
             containerColor = Color.Transparent, // Make transparent to show GlassPanel behind
@@ -100,7 +103,6 @@ fun WeeklyReportTimePicker(
         Pair(it, cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.SHORT, Locale.getDefault()))
     }
 
-    // --- FIX: Determine popup color based on the app's current MaterialTheme ---
     val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
     val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
@@ -166,7 +168,6 @@ fun MonthlyReportTimePicker(
     val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
     var isDayPickerExpanded by remember { mutableStateOf(false) }
 
-    // --- FIX: Determine popup color based on the app's current MaterialTheme ---
     val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
     val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 

@@ -6,6 +6,12 @@
 // and providing visual previews for each theme.
 // BUG FIX - Corrected the unresolved references in the ThemePickerItem by using
 // the correct property names (`lightColor`, `darkColor`) from the AppTheme enum.
+// BUG FIX - The AlertDialogs now correctly derive their background color from
+// the app's MaterialTheme, ensuring they match the selected theme (e.g.,
+// Aurora) instead of defaulting to the system's light/dark mode.
+// BUG FIX - Replaced the custom TimePickerDialog and the standard DatePickerDialog
+// calls with direct AlertDialog implementations to resolve @Composable invocation
+// compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -53,6 +59,9 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -445,10 +454,18 @@ fun ProfileScreen(
     }
 
     // region Dialogs
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
     if (showDatePickerDialog) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
-        DatePickerDialog(
+        // --- FIX: Use a standard AlertDialog to wrap the DatePicker to avoid compiler issues ---
+        AlertDialog(
             onDismissRequest = { showDatePickerDialog = false },
+            title = { Text("Select Scan Start Date") },
+            text = {
+                DatePicker(state = datePickerState)
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -456,13 +473,18 @@ fun ProfileScreen(
                             settingsViewModel.saveSmsScanStartDate(it)
                         }
                         showDatePickerDialog = false
-                    },
-                ) { Text("OK") }
+                    }
+                ) {
+                    Text("OK")
+                }
             },
-            dismissButton = { TextButton(onClick = { showDatePickerDialog = false }) { Text("Cancel") } },
-        ) {
-            DatePicker(state = datePickerState)
-        }
+            dismissButton = {
+                TextButton(onClick = { showDatePickerDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = popupContainerColor
+        )
     }
 
     if (showDailyTimePicker) {
@@ -471,15 +493,27 @@ fun ProfileScreen(
             initialMinute = dailyReportTime.second,
             is24Hour = false
         )
-        TimePickerDialog(
+        AlertDialog(
             onDismissRequest = { showDailyTimePicker = false },
-            onConfirm = {
-                settingsViewModel.saveDailyReportTime(timePickerState.hour, timePickerState.minute)
-                showDailyTimePicker = false
-            }
-        ) {
-            TimePicker(state = timePickerState)
-        }
+            title = { Text("Select Daily Report Time") },
+            text = {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TimePicker(state = timePickerState)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        settingsViewModel.saveDailyReportTime(timePickerState.hour, timePickerState.minute)
+                        showDailyTimePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDailyTimePicker = false }) { Text("Cancel") }
+            },
+            containerColor = popupContainerColor
+        )
     }
 
     if (showWeeklyTimePicker) {
@@ -535,7 +569,7 @@ fun ProfileScreen(
                 }) { Text("Continue") }
             },
             dismissButton = { TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") } },
-            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            containerColor = popupContainerColor
         )
     }
 
@@ -554,7 +588,7 @@ fun ProfileScreen(
                 ) { Text("Wipe and Import") }
             },
             dismissButton = { TextButton(onClick = { showImportJsonDialog = false }) { Text("Cancel") } },
-            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            containerColor = popupContainerColor
         )
     }
     // endregion
