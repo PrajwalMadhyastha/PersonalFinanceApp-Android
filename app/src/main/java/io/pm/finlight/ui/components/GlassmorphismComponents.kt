@@ -4,6 +4,9 @@
 // dynamically changes its background fill color (semi-transparent white for
 // dark themes, semi-transparent black for light themes) to ensure the frosted
 // glass effect is visually correct and appealing across all app themes.
+// FIX: Added the "+ Add" button to the AuroraRecentActivityCard header, which
+// is the component actually used on the dashboard. This corrects the previous
+// implementation where the button was added to an unused component.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -22,8 +25,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -541,11 +547,30 @@ fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navControll
                 modifier = Modifier.padding(horizontal = 8.dp)
             ) {
                 Text(
-                    "Recent Activity",
+                    "Recent Transactions",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                // --- FIX: Added the "+ Add" button here ---
+                Button(
+                    onClick = { navController.navigate("add_transaction") },
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add Transaction",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add")
+                }
+                Spacer(Modifier.width(8.dp))
                 TextButton(
                     onClick = {
                         navController.navigate(BottomNavItem.Transactions.route) {

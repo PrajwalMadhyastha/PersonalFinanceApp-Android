@@ -1,6 +1,12 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt
+// REASON: REFACTOR - The unused `RecentActivityCard` has been removed from this
+// file. The correct component, `AuroraRecentActivityCard`, is located in
+// `GlassmorphismComponents.kt` and has been updated there. This cleanup
+// prevents future confusion.
+// =================================================================================
 package io.pm.finlight.ui.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,14 +35,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import io.pm.finlight.AccountWithBalance
-import io.pm.finlight.BankLogoHelper
 import io.pm.finlight.BottomNavItem
 import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
@@ -60,41 +63,5 @@ fun NetWorthCard(netWorth: Double) {
     }
 }
 
-@Composable
-fun RecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
-    // --- UPDATED: Use GlassPanel for the root of this card ---
-    GlassPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Recent Activity", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                TextButton(
-                    onClick = {
-                        navController.navigate(BottomNavItem.Transactions.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                ) { Text("View All") }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            if(transactions.isEmpty()){
-                Text("No transactions yet.", modifier = Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    transactions.forEach { details ->
-                        TransactionItem(
-                            transactionDetails = details,
-                            onClick = {
-                                navController.navigate("transaction_detail/${details.transaction.id}")
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-// --- REMOVED: The old BudgetWatchCard and BudgetItem are no longer needed ---
+// --- REMOVED: The old RecentActivityCard, BudgetWatchCard, and BudgetItem are no longer needed ---
 // They have been replaced by the new components in GlassmorphismComponents.kt

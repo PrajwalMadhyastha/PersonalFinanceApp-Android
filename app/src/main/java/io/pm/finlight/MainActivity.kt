@@ -1,22 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The background rendering logic is now fully decoupled. A `when`
-// statement handles each theme individually. For themes with animated backgrounds
-// (Aurora, Daybreak), it now correctly draws a solid Surface with the theme's
-// specific background color first, and then renders the animated effect on top,
-// ensuring the correct appearance regardless of the system's light/dark mode.
-// BUG FIX: The deep link handling logic in the SplashScreen has been corrected.
-// It no longer navigates to the dashboard first, which was causing deep links
-// from notifications to fail. It now navigates directly to the deep link URI,
-// ensuring notifications take the user to the correct screen.
-// BUG FIX: Corrected a compilation error in the SplashScreen's deep link
-// navigation. The NavOptions are now built separately and passed to the
-// navigate(Uri, NavOptions) function, as the trailing lambda is not supported
-// for the Uri-based overload.
-// BUG FIX: The SplashScreen now correctly constructs the navigation back stack
-// when launching from a deep link. It first navigates to the Dashboard and then
-// to the deep-linked destination, ensuring the user can press "back" to return
-// to the Dashboard instead of exiting the app.
+// REASON: FIX - The "dashboard" route has been removed from the `fabRoutes` set.
+// This prevents the main Floating Action Button from appearing on the
+// Dashboard screen, as it is being replaced by a contextual "+ Add" button
+// inside the "Recent Activity" card.
 // =================================================================================
 package io.pm.finlight
 
@@ -250,7 +237,7 @@ fun MainAppScreen() {
     val showProfileIcon = showBottomBar && !isCustomizationMode
 
     val fabRoutes = setOf(
-        BottomNavItem.Dashboard.route,
+        // BottomNavItem.Dashboard.route, // Removed to place button inside card
         BottomNavItem.Transactions.route,
         "account_list",
         "recurring_transactions"
@@ -375,7 +362,7 @@ fun MainAppScreen() {
                 if (showFab) {
                     FloatingActionButton(onClick = {
                         when (baseCurrentRoute) {
-                            BottomNavItem.Dashboard.route, BottomNavItem.Transactions.route -> {
+                            BottomNavItem.Transactions.route -> {
                                 navController.navigate("add_transaction")
                             }
                             "account_list" -> {

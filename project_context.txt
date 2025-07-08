@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul  8 17:02:38 IST 2025
+Generated on: Tue Jul  8 20:37:28 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -192,7 +192,6 @@ dependencies {
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- NEW: Permission to run on boot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
 
@@ -208,6 +207,15 @@ dependencies {
         android:theme="@style/Theme.PersonalFinanceApp"
         tools:targetApi="33"
         android:enableOnBackInvokedCallback="true">
+
+        <!--
+        // =================================================================================
+        // BACKUP CONFIGURATION:
+        // android:allowBackup="true" -> Enables the app to participate in the backup/restore infrastructure.
+        // android:dataExtractionRules="@xml/data_extraction_rules" -> Points to our custom rules file.
+        // android:fullBackupContent="true" -> Required for apps targeting API 31+ to enable Auto Backup.
+        // =================================================================================
+        -->
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
@@ -242,7 +250,6 @@ dependencies {
             </intent-filter>
         </receiver>
 
-        <!-- NEW: Declare the BootReceiver -->
         <receiver
             android:name=".BootReceiver"
             android:exported="true">
@@ -7833,6 +7840,7 @@ import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.pow
+import io.pm.finlight.R
 
 private const val TAG = "DetailScreenDebug"
 
@@ -8024,14 +8032,17 @@ fun TransactionDetailScreen(
                         contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
                         item {
-                            TransactionSpotlightHeader(
-                                details = details,
-                                visitCount = visitCount,
-                                onDescriptionClick = { activeSheetContent = SheetContent.Description },
-                                onAmountClick = { activeSheetContent = SheetContent.Amount },
-                                onCategoryClick = { activeSheetContent = SheetContent.Category },
-                                onDateTimeClick = { showDatePicker = true }
-                            )
+                            // --- MODIFIED: Wrap header in a padded Box for a card-like appearance ---
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                TransactionSpotlightHeader(
+                                    details = details,
+                                    visitCount = visitCount,
+                                    onDescriptionClick = { activeSheetContent = SheetContent.Description },
+                                    onAmountClick = { activeSheetContent = SheetContent.Amount },
+                                    onCategoryClick = { activeSheetContent = SheetContent.Category },
+                                    onDateTimeClick = { showDatePicker = true }
+                                )
+                            }
                         }
 
                         item {
@@ -8295,6 +8306,25 @@ fun TransactionDetailScreen(
 }
 
 @Composable
+private fun DynamicCategoryBackground(category: Category) {
+    // --- UPDATED: Show '?' for Uncategorized, otherwise the first letter ---
+    val letter = if (category.name == "Uncategorized") "?" else category.name.firstOrNull()?.uppercase() ?: "?"
+    val color = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = letter,
+            fontSize = 250.sp,
+            fontWeight = FontWeight.Bold,
+            color = color.copy(alpha = 0.15f)
+        )
+    }
+}
+
+@Composable
 private fun TransactionSpotlightHeader(
     details: TransactionDetails,
     visitCount: Int,
@@ -8303,7 +8333,8 @@ private fun TransactionSpotlightHeader(
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit
 ) {
-    val categoryColor = CategoryIconHelper.getIconBackgroundColor(details.categoryColorKey ?: "gray_light")
+    val category = details.toCategory()
+    val categoryColor = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
     val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yy, h:mm a", Locale.getDefault()) }
 
     val animatedAmount by animateFloatAsState(
@@ -8312,120 +8343,131 @@ private fun TransactionSpotlightHeader(
         label = "AmountAnimation"
     )
 
-    Box(
+    GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
             .height(350.dp)
-            .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)),
-        contentAlignment = Alignment.Center
     ) {
-        Image(
-            painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize(),
-            alpha = 0.3f
-        )
-        Box(modifier = Modifier
-            .matchParentSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.6f))
-                )
-            )
-        )
-        Canvas(modifier = Modifier.matchParentSize()) {
-            drawIntoCanvas {
-                val paint = Paint().asFrameworkPaint()
-                val radius = size.width * 0.8f
-                paint.color = android.graphics.Color.TRANSPARENT
-                paint.setShadowLayer(
-                    radius,
-                    0f,
-                    0f,
-                    categoryColor
-                        .copy(alpha = 0.4f)
-                        .toArgb()
-                )
-                it.drawCircle(center, radius / 2, Paint().apply { this.color = Color.Transparent })
-            }
-        }
-
-        Column(
+        Box(
             modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            contentAlignment = Alignment.Center
         ) {
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = details.transaction.description,
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .clickable(onClick = onDescriptionClick)
-                    .padding(horizontal = 16.dp)
-            )
-            Text(
-                text = "₹${"%,.2f".format(animatedAmount)}",
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.clickable(onClick = onAmountClick)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            ChipWithIcon(
-                text = details.categoryName ?: "Uncategorized",
-                onClick = onCategoryClick,
-                category = details.toCategory()
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = dateFormatter.format(Date(details.transaction.date)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.clickable(onClick = onDateTimeClick)
+            // --- UPDATED: Conditional background logic ---
+            val isPredefined = CategoryIconHelper.getCategoryBackground(category.iconKey) != R.drawable.bg_cat_general
+            if (isPredefined) {
+                Image(
+                    painter = painterResource(id = CategoryIconHelper.getCategoryBackground(category.iconKey)),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                    alpha = 0.3f
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Transaction Source",
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.size(16.dp)
+            } else {
+                DynamicCategoryBackground(category = category)
+            }
+
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.6f))
+                        )
                     )
-                    Text(
-                        text = details.transaction.source,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.8f)
+            )
+            Canvas(modifier = Modifier.matchParentSize()) {
+                drawIntoCanvas {
+                    val paint = Paint().asFrameworkPaint()
+                    val radius = size.width * 0.8f
+                    paint.color = android.graphics.Color.TRANSPARENT
+                    paint.setShadowLayer(
+                        radius,
+                        0f,
+                        0f,
+                        categoryColor
+                            .copy(alpha = 0.4f)
+                            .toArgb()
                     )
+                    it.drawCircle(center, radius / 2, Paint().apply { this.color = Color.Transparent })
                 }
             }
-        }
 
-        if (visitCount > 1) {
-            AssistChip(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp),
-                onClick = { /* No action needed */ },
-                label = { Text("$visitCount visits") },
-                leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = details.transaction.description,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .clickable(onClick = onDescriptionClick)
+                        .padding(horizontal = 16.dp)
                 )
-            )
+                Text(
+                    text = "₹${"%,.2f".format(animatedAmount)}",
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.clickable(onClick = onAmountClick)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                ChipWithIcon(
+                    text = category.name,
+                    onClick = onCategoryClick,
+                    category = category
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = dateFormatter.format(Date(details.transaction.date)),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.clickable(onClick = onDateTimeClick)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Transaction Source",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = details.transaction.source,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+
+            if (visitCount > 1) {
+                AssistChip(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp),
+                    onClick = { /* No action needed */ },
+                    label = { Text("$visitCount visits") },
+                    leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+            }
         }
     }
 }
@@ -8941,7 +8983,7 @@ private fun EditTextFieldSheet(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("Cancel") } // Revert on cancel
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {
                 onConfirm(text)
@@ -9117,7 +9159,15 @@ private fun CategoryIconDisplay(category: Category) {
             .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
         contentAlignment = Alignment.Center
     ) {
-        if (category.iconKey == "letter_default") {
+        // --- UPDATED: Prioritize showing '?' for Uncategorized ---
+        if (category.name == "Uncategorized") {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon("help_outline"),
+                contentDescription = category.name,
+                tint = Color.Black,
+                modifier = Modifier.size(24.dp)
+            )
+        } else if (category.iconKey == "letter_default") {
             Text(
                 text = category.name.firstOrNull()?.uppercase() ?: "?",
                 color = Color.Black,
@@ -9136,12 +9186,22 @@ private fun CategoryIconDisplay(category: Category) {
 }
 
 private fun TransactionDetails.toCategory(): Category {
-    return Category(
-        id = this.transaction.categoryId ?: 0,
-        name = this.categoryName ?: "Uncategorized",
-        iconKey = this.categoryIconKey ?: "category",
-        colorKey = this.categoryColorKey ?: "gray_light"
-    )
+    // --- UPDATED: Use red color for uncategorized items ---
+    return if (this.categoryName == null || this.categoryName == "Uncategorized") {
+        Category(
+            id = 0,
+            name = "Uncategorized",
+            iconKey = "help_outline",
+            colorKey = "red_light"
+        )
+    } else {
+        Category(
+            id = this.transaction.categoryId ?: 0,
+            name = this.categoryName,
+            iconKey = this.categoryIconKey ?: "category",
+            colorKey = this.categoryColorKey ?: "gray_light"
+        )
+    }
 }
 
 @Composable
@@ -9163,7 +9223,15 @@ private fun ChipWithIcon(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        if (category.iconKey == "letter_default") {
+        // --- UPDATED: Prioritize showing '?' for Uncategorized ---
+        if (category.name == "Uncategorized") {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon("help_outline"),
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.size(20.dp)
+            )
+        } else if (category.iconKey == "letter_default") {
             Text(
                 text = category.name.firstOrNull()?.uppercase() ?: "?",
                 color = Color.Black,
@@ -9323,7 +9391,8 @@ private fun SelectableTransactionItem(
             color = MaterialTheme.colorScheme.onSurface
         )
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt ==================
@@ -9852,15 +9921,22 @@ private fun DashboardCard(
     val accountsSummary by viewModel.accountsSummary.collectAsState()
     val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
     val budgetStatus by viewModel.budgetStatus.collectAsState()
+    // --- NEW: Collect the remaining amount state ---
+    val amountRemaining by viewModel.amountRemaining.collectAsState()
+    // --- NEW: Get the month name from the ViewModel ---
+    val monthYear = viewModel.monthYear
 
     Box {
         when (cardType) {
             DashboardCardType.HERO_BUDGET -> DashboardHeroCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
+                amountRemaining = amountRemaining,
                 income = monthlyIncome.toFloat(),
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,
+                // --- NEW: Pass the month name to the hero card ---
+                monthYear = monthYear
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
@@ -12588,9 +12664,12 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -12649,18 +12728,20 @@ fun GlassPanel(
  *
  * @param totalBudget The total budget for the month.
  * @param amountSpent The amount spent so far in the month.
+ * @param amountRemaining The amount remaining in the budget.
+ * @param monthYear The name of the current month.
  * @param navController The NavController for navigation.
  */
 @Composable
 fun DashboardHeroCard(
     totalBudget: Float,
     amountSpent: Float,
+    amountRemaining: Float,
     income: Float,
     safeToSpend: Float,
-    navController: NavController
+    navController: NavController,
+    monthYear: String
 ) {
-    val remainingAmount = totalBudget - amountSpent
-
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
@@ -12683,13 +12764,19 @@ fun DashboardHeroCard(
         )
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // --- UPDATED: Use AnnotatedString for bold month name ---
             Text(
-                text = "Remaining",
+                text = buildAnnotatedString {
+                    append("Spent in ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(monthYear)
+                    }
+                },
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remainingAmount.toInt())}",
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
                 style = MaterialTheme.typography.displayLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -12706,7 +12793,7 @@ fun DashboardHeroCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
+                    text = "Remaining: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountRemaining.toInt())}",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -13533,6 +13620,7 @@ fun TransactionItem(
     onClick: () -> Unit,
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
+    val isUncategorized = transactionDetails.categoryName == null || transactionDetails.categoryName == "Uncategorized"
 
     GlassPanel(
         modifier = Modifier
@@ -13548,25 +13636,39 @@ fun TransactionItem(
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(
-                        CategoryIconHelper.getIconBackgroundColor(transactionDetails.categoryColorKey ?: "gray_light")
+                        CategoryIconHelper.getIconBackgroundColor(
+                            if (isUncategorized) "red_light" else transactionDetails.categoryColorKey ?: "gray_light"
+                        )
                             .copy(alpha = contentAlpha)
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (transactionDetails.categoryIconKey == "letter_default") {
-                    Text(
-                        text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = Color.Black.copy(alpha = contentAlpha)
-                    )
-                } else {
-                    Icon(
-                        imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
-                        contentDescription = transactionDetails.categoryName,
-                        tint = Color.Black.copy(alpha = contentAlpha),
-                        modifier = Modifier.size(22.dp)
-                    )
+                // --- UPDATED: Logic to handle uncategorized state ---
+                when {
+                    isUncategorized -> {
+                        Icon(
+                            imageVector = CategoryIconHelper.getIcon("help_outline"),
+                            contentDescription = "Uncategorized",
+                            tint = Color.Black.copy(alpha = contentAlpha),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    transactionDetails.categoryIconKey == "letter_default" -> {
+                        Text(
+                            text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.Black.copy(alpha = contentAlpha)
+                        )
+                    }
+                    else -> {
+                        Icon(
+                            imageVector = CategoryIconHelper.getIcon(transactionDetails.categoryIconKey ?: "category"),
+                            contentDescription = transactionDetails.categoryName,
+                            tint = Color.Black.copy(alpha = contentAlpha),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.width(16.dp))
@@ -13593,7 +13695,6 @@ fun TransactionItem(
             }
 
             val isIncome = transactionDetails.transaction.transactionType == "income"
-            // --- UPDATED: Use theme-aware colors for amount ---
             val amountColor = if (isSystemInDarkTheme()) {
                 if (isIncome) IncomeGreenDark else ExpenseRedDark
             } else {
@@ -13644,7 +13745,6 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
             )
         }
         val isIncome = transactionDetails.transaction.transactionType == "income"
-        // --- UPDATED: Use theme-aware colors for amount ---
         val amountColor = if (isSystemInDarkTheme()) {
             if (isIncome) IncomeGreenDark else ExpenseRedDark
         } else {
@@ -13726,28 +13826,28 @@ fun DaybreakAnimatedBackground() {
         label = "DaybreakTime"
     )
 
-    // --- FIX: Using more vibrant and saturated colors for better visibility on a light background. ---
+    // --- UPDATED: Replaced vibrant colors with a softer, more professional palette ---
     val circles = listOf(
         AnimatedCircle(
-            color = Color(0xFFE91E63), // Vibrant Pink
+            color = Color(0xFFD0BCFF), // Soft Lavender
             baseRadiusMultiplier = 0.8f,
             baseCenter = Offset(0.2f, 0.8f),
             speedMultiplier = 0.6f
         ),
         AnimatedCircle(
-            color = Color(0xFFFF9800), // Vibrant Orange
+            color = Color(0xFFCCC2DC), // Muted Purple
             baseRadiusMultiplier = 0.9f,
             baseCenter = Offset(0.8f, 0.7f),
             speedMultiplier = 0.4f
         ),
         AnimatedCircle(
-            color = Color(0xFF2196F3), // Vibrant Blue
+            color = Color(0xFFB9A2DB), // A slightly deeper purple
             baseRadiusMultiplier = 1.0f,
             baseCenter = Offset(0.6f, 0.2f),
             speedMultiplier = 0.5f
         ),
         AnimatedCircle(
-            color = Color(0xFFFFEB3B), // Vibrant Yellow/Gold
+            color = Color(0xFF90CAF9), // Soft Blue
             baseRadiusMultiplier = 0.7f,
             baseCenter = Offset(0.9f, 0.1f),
             speedMultiplier = 0.7f
@@ -13760,9 +13860,9 @@ fun DaybreakAnimatedBackground() {
             val yOffset = sin(time * circle.speedMultiplier) * size.height * 0.1f
 
             // Create a radial gradient brush to simulate a blurred, glowing effect.
-            // --- FIX: Increased alpha from 0.4f to 0.6f for more presence. ---
+            // --- UPDATED: Reduced alpha for a more subtle effect ---
             val brush = Brush.radialGradient(
-                colors = listOf(circle.color.copy(alpha = 0.6f), Color.Transparent),
+                colors = listOf(circle.color.copy(alpha = 0.4f), Color.Transparent),
                 center = Offset(
                     x = circle.baseCenter.x * size.width,
                     y = (circle.baseCenter.y * size.height) + yOffset
@@ -14569,11 +14669,12 @@ val AuroraDarkOnSurface = Color(0xFFE6E1E5) // Off-white for text
 val AuroraDarkOnSurfaceVariant = Color(0xFFC4C7C5) // Brighter gray for secondary text
 
 // --- Daybreak Theme (Light Purple) ---
-val DaybreakPrimary = Color(0xFF6650a4) // Original Light Purple
-val DaybreakSecondary = Color(0xFF815600) // Rich Gold/Amber
-val DaybreakBackground = Color(0xFFF8F9FA) // A very light off-white
-val DaybreakOnSurface = Color(0xFF1C1B1F) // Near-black for text
-val DaybreakOnSurfaceVariant = Color(0xFF49454F) // Dark gray for secondary text
+// --- UPDATED: New, more mature and professional color palette based on user feedback ---
+val DaybreakPrimary = Color(0xFF6750A4)       // Muted, professional purple
+val DaybreakSecondary = Color(0xFF81D4FA)      // Soft, light blue for secondary accents
+val DaybreakBackground = Color(0xFFEADDFF)      // Light lavender background
+val DaybreakOnSurface = Color(0xFF1D1B20)       // Dark, readable text
+val DaybreakOnSurfaceVariant = Color(0xFF49454F) // Softer gray for secondary text
 
 
 // --- Midnight Theme (Monochrome Dark) ---
@@ -14645,16 +14746,17 @@ private val AuroraDarkColorScheme = darkColorScheme(
 )
 
 // --- Daybreak Light Theme ---
+// --- UPDATED: The color scheme now uses the new, more professional Daybreak colors. ---
 private val DaybreakColorScheme = lightColorScheme(
     primary = DaybreakPrimary,
     onPrimary = Color.White,
     secondary = DaybreakSecondary,
-    onSecondary = Color.White,
+    onSecondary = Color(0xFF00363A), // Dark text for contrast on light blue
     background = DaybreakBackground,
     onBackground = DaybreakOnSurface,
     surface = Color.Transparent,
     onSurface = DaybreakOnSurface,
-    surfaceVariant = Color(0xFFDAE5E3),
+    surfaceVariant = Color(0xFFE7E0EC), // Adjusted for the new background
     onSurfaceVariant = DaybreakOnSurfaceVariant,
     error = Color(0xFFB00020),
     onError = Color.White
@@ -18288,11 +18390,13 @@ data class IgnoreRule(
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: BUG FIX - The `getTransactionCountForMerchant` query has been updated
-// to check against both the `description` and the `originalDescription` fields.
-// This ensures that the visit count is accurate even after a merchant has been
-// renamed, as it correctly groups all related transactions under their
-// original merchant identity.
+// REASON: BUG FIX - All `strftime` date functions have been updated to use the
+// 'localtime' modifier. This ensures that all date-based grouping (daily,
+// weekly, monthly) is performed using the device's local timezone instead of
+// UTC. This corrects the bug where transactions were being assigned to the
+// wrong period, fixing incorrect totals in reports and notifications.
+// REASON: BUG FIX - Restored the searchTransactions function that was
+// accidentally removed in a previous edit.
 // =================================================================================
 package io.pm.finlight
 
@@ -18571,7 +18675,7 @@ interface TransactionDao {
     @Query(
         """
         SELECT
-            strftime('%Y-%m', date / 1000, 'unixepoch') as monthYear,
+            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as monthYear,
             SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
         FROM transactions
@@ -18581,31 +18685,6 @@ interface TransactionDao {
     """
     )
     fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>>
-
-    @Query(
-        """
-        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
-        FROM transactions t
-        LEFT JOIN accounts a ON t.accountId = a.id
-        LEFT JOIN categories c ON t.categoryId = c.id
-        WHERE
-            (:keyword = '' OR t.description LIKE '%' || :keyword || '%' OR t.notes LIKE '%' || :keyword || '%') AND
-            (:accountId IS NULL OR t.accountId = :accountId) AND
-            (:categoryId IS NULL OR t.categoryId = :categoryId) AND
-            (:transactionType IS NULL OR t.transactionType = :transactionType) AND
-            (:startDate IS NULL OR t.date >= :startDate) AND
-            (:endDate IS NULL OR t.date <= :endDate)
-        ORDER BY t.date DESC
-    """
-    )
-    suspend fun searchTransactions(
-        keyword: String,
-        accountId: Int?,
-        categoryId: Int?,
-        transactionType: String?,
-        startDate: Long?,
-        endDate: Long?,
-    ): List<TransactionDetails>
 
     @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
     suspend fun countTransactionsForCategory(categoryId: Int): Int
@@ -18659,7 +18738,7 @@ interface TransactionDao {
 
     @Query("""
         SELECT
-            strftime('%Y-%m-%d', date / 1000, 'unixepoch') as date,
+            strftime('%Y-%m-%d', date / 1000, 'unixepoch', 'localtime') as date,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
         FROM transactions
         WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
@@ -18670,7 +18749,7 @@ interface TransactionDao {
 
     @Query("""
         SELECT
-            strftime('%Y-%W', date / 1000, 'unixepoch') as period,
+            strftime('%Y-%W', date / 1000, 'unixepoch', 'localtime') as period,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
         FROM transactions
         WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
@@ -18681,7 +18760,7 @@ interface TransactionDao {
 
     @Query("""
         SELECT
-            strftime('%Y-%m', date / 1000, 'unixepoch') as period,
+            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
             SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
         FROM transactions
         WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
@@ -18730,6 +18809,30 @@ interface TransactionDao {
 
     @Query("UPDATE transactions SET description = :newDescription WHERE id IN (:ids)")
     suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String)
+
+    // --- FIX: Restored the missing searchTransactions function ---
+    @Query("""
+        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
+        FROM transactions t
+        LEFT JOIN accounts a ON t.accountId = a.id
+        LEFT JOIN categories c ON t.categoryId = c.id
+        WHERE
+            (:keyword = '' OR t.description LIKE '%' || :keyword || '%' OR t.notes LIKE '%' || :keyword || '%') AND
+            (:accountId IS NULL OR t.accountId = :accountId) AND
+            (:categoryId IS NULL OR t.categoryId = :categoryId) AND
+            (:transactionType IS NULL OR t.transactionType = :transactionType) AND
+            (:startDate IS NULL OR t.date >= :startDate) AND
+            (:endDate IS NULL OR t.date <= :endDate)
+        ORDER BY t.date DESC
+    """)
+    suspend fun searchTransactions(
+        keyword: String,
+        accountId: Int?,
+        categoryId: Int?,
+        transactionType: String?,
+        startDate: Long?,
+        endDate: Long?,
+    ): List<TransactionDetails>
 }
 -e 
 
@@ -18790,10 +18893,12 @@ package io.pm.finlight
 
 import androidx.annotation.DrawableRes
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import io.pm.finlight.R
@@ -18848,6 +18953,7 @@ object CategoryIconHelper {
         "shield" to R.drawable.bg_cat_insurance,
         "school" to R.drawable.bg_cat_learning,
         "house" to R.drawable.bg_cat_rent,
+        "help_outline" to R.drawable.bg_cat_general,
         "default" to R.drawable.bg_cat_general
     )
 
@@ -18934,6 +19040,7 @@ object CategoryIconHelper {
             "home" -> Icons.Default.Home
             "shield" -> Icons.Default.Shield
             "house" -> Icons.Default.House
+            "help_outline" -> Icons.AutoMirrored.Filled.HelpOutline
             else -> Icons.Default.Category
         }
     }
@@ -18972,6 +19079,7 @@ object CategoryIconHelper {
             "home" to Icons.Default.Home,
             "shield" to Icons.Default.Shield,
             "house" to Icons.Default.House,
+            "help_outline" to Icons.AutoMirrored.Filled.HelpOutline,
         )
     }
 }
@@ -19060,10 +19168,10 @@ class MerchantCategoryMappingRepository(private val dao: MerchantCategoryMapping
 ================== FILE: ./app/src/main/java/BudgetDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/BudgetDao.kt
-// REASON: FIX - No changes were needed here. The `isExcluded = 0` filter was
-// already correctly applied to the subqueries that calculate spending for budgets.
-// This ensures that excluded transactions do not count against a user's budget,
-// which is the correct behavior for these financial aggregations.
+// REASON: BUG FIX - All `strftime` date functions have been updated to use the
+// 'localtime' modifier. This ensures that all date-based grouping is performed
+// using the device's local timezone instead of UTC. This corrects the bug where
+// spending was being attributed to the wrong month, fixing budget calculations.
 // =================================================================================
 package io.pm.finlight
 
@@ -19093,7 +19201,7 @@ interface BudgetDao {
                 SUM(T.amount) as totalSpent
              FROM transactions AS T
              JOIN categories AS C ON T.categoryId = C.id
-             WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch') = :yearMonth AND T.isExcluded = 0 -- This is correct for budget spending
+             WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND T.isExcluded = 0
              GROUP BY C.name) AS TxSums
         ON B.categoryName = TxSums.categoryName
         LEFT JOIN categories AS Cat ON B.categoryName = Cat.name
@@ -19113,7 +19221,7 @@ interface BudgetDao {
     suspend fun insert(budget: Budget)
 
     @Query(
-        "SELECT SUM(amount) FROM transactions WHERE categoryId = (SELECT id FROM categories WHERE name = :categoryName) AND strftime('%m', date / 1000, 'unixepoch') + 0 = :month AND strftime('%Y', date / 1000, 'unixepoch') + 0 = :year AND transactionType = 'expense' AND isExcluded = 0", // This is correct for budget spending
+        "SELECT SUM(amount) FROM transactions WHERE categoryId = (SELECT id FROM categories WHERE name = :categoryName) AND strftime('%m', date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', date / 1000, 'unixepoch', 'localtime') + 0 = :year AND transactionType = 'expense' AND isExcluded = 0",
     )
     fun getActualSpendingForCategory(
         categoryName: String,
@@ -20299,6 +20407,8 @@ class DashboardViewModel(
     val amountRemaining: StateFlow<Float>
     val safeToSpendPerDay: StateFlow<Float>
     val accountsSummary: StateFlow<List<AccountWithBalance>>
+    // --- NEW: Expose the current month's name ---
+    val monthYear: String
 
     val visibleCards: StateFlow<List<DashboardCardType>>
 
@@ -20358,6 +20468,9 @@ class DashboardViewModel(
 
 
         val calendar = Calendar.getInstance()
+        // --- NEW: Get the full month name ---
+        monthYear = SimpleDateFormat("MMMM", Locale.getDefault()).format(calendar.time)
+
         val monthStart =
             (calendar.clone() as Calendar).apply {
                 set(Calendar.DAY_OF_MONTH, 1)
