@@ -180,17 +180,20 @@ private fun DashboardCard(
     val budgetStatus by viewModel.budgetStatus.collectAsState()
     // --- NEW: Collect the remaining amount state ---
     val amountRemaining by viewModel.amountRemaining.collectAsState()
+    // --- NEW: Get the month name from the ViewModel ---
+    val monthYear = viewModel.monthYear
 
     Box {
         when (cardType) {
             DashboardCardType.HERO_BUDGET -> DashboardHeroCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
-                // --- NEW: Pass the remaining amount to the hero card ---
                 amountRemaining = amountRemaining,
                 income = monthlyIncome.toFloat(),
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,
+                // --- NEW: Pass the month name to the hero card ---
+                monthYear = monthYear
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)

@@ -42,6 +42,8 @@ class DashboardViewModel(
     val amountRemaining: StateFlow<Float>
     val safeToSpendPerDay: StateFlow<Float>
     val accountsSummary: StateFlow<List<AccountWithBalance>>
+    // --- NEW: Expose the current month's name ---
+    val monthYear: String
 
     val visibleCards: StateFlow<List<DashboardCardType>>
 
@@ -101,6 +103,9 @@ class DashboardViewModel(
 
 
         val calendar = Calendar.getInstance()
+        // --- NEW: Get the full month name ---
+        monthYear = SimpleDateFormat("MMMM", Locale.getDefault()).format(calendar.time)
+
         val monthStart =
             (calendar.clone() as Calendar).apply {
                 set(Calendar.DAY_OF_MONTH, 1)

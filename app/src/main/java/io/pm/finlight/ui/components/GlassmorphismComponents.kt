@@ -40,9 +40,12 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,6 +105,7 @@ fun GlassPanel(
  * @param totalBudget The total budget for the month.
  * @param amountSpent The amount spent so far in the month.
  * @param amountRemaining The amount remaining in the budget.
+ * @param monthYear The name of the current month.
  * @param navController The NavController for navigation.
  */
 @Composable
@@ -111,7 +115,8 @@ fun DashboardHeroCard(
     amountRemaining: Float,
     income: Float,
     safeToSpend: Float,
-    navController: NavController
+    navController: NavController,
+    monthYear: String
 ) {
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
@@ -135,8 +140,14 @@ fun DashboardHeroCard(
         )
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // --- UPDATED: Use AnnotatedString for bold month name ---
             Text(
-                text = "Spent this month",
+                text = buildAnnotatedString {
+                    append("Spent in ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(monthYear)
+                    }
+                },
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
