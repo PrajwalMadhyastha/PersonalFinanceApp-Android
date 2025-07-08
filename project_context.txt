@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Mon Jul  7 18:45:18 IST 2025
+Generated on: Tue Jul  8 13:46:32 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -7673,6 +7673,14 @@ fun PlaceholderTabContent(title: String) {
 // original functionality.
 // UPDATE: The header card is now a true edge-to-edge hero element, with only
 // the bottom corners rounded to blend seamlessly with the top of the screen.
+// FIX: The screen now correctly respects the app-wide theme. The hardcoded
+// `AuroraAnimatedBackground` has been removed, allowing the theme-dependent
+// background from MainActivity to show through. All hardcoded text and component
+// colors have been replaced with theme-aware `MaterialTheme.colorScheme` values
+// to ensure legibility and consistency across all themes (Aurora, Daybreak, etc.).
+// FIX: All popups (ModalBottomSheet, AlertDialog) now determine their background
+// based on the app's active theme rather than the system theme. This resolves
+// text contrast issues where white text could appear on a light background.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -7688,7 +7696,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -7732,7 +7739,6 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.*
-import io.pm.finlight.ui.components.AuroraAnimatedBackground
 import io.pm.finlight.ui.components.CreateAccountDialog
 import io.pm.finlight.ui.components.CreateCategoryDialog
 import io.pm.finlight.ui.components.GlassPanel
@@ -7744,6 +7750,7 @@ import java.io.File
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.pow
 
 private const val TAG = "DetailScreenDebug"
 
@@ -7866,6 +7873,13 @@ fun TransactionDetailScreen(
             }
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
 
+            // --- THE FIX: Determine if the current app theme is dark ---
+            // We check the luminance of the background color. This is more reliable than
+            // isSystemInDarkTheme() because it respects the app's theme choice.
+            fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+            val isThemeDark = MaterialTheme.colorScheme.background.isDark()
+            val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
             LaunchedEffect(details.transaction.originalDescription, details.transaction.description) {
                 viewModel.loadVisitCount(details.transaction.originalDescription, details.transaction.description)
             }
@@ -7877,7 +7891,7 @@ fun TransactionDetailScreen(
             if (retroUpdateSheetState != null) {
                 ModalBottomSheet(
                     onDismissRequest = { viewModel.dismissRetroUpdateSheet() },
-                    containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+                    containerColor = popupContainerColor,
                     dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 ) {
                     RetrospectiveUpdateSheetContent(
@@ -7893,7 +7907,6 @@ fun TransactionDetailScreen(
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                AuroraAnimatedBackground()
                 Scaffold(
                     topBar = {
                         TopAppBar(
@@ -8065,7 +8078,7 @@ fun TransactionDetailScreen(
                         ModalBottomSheet(
                             onDismissRequest = { activeSheetContent = null },
                             sheetState = sheetState,
-                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+                            containerColor = popupContainerColor,
                             dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         ) {
                             TransactionEditSheetContent(
@@ -8146,7 +8159,7 @@ fun TransactionDetailScreen(
                     if (showDeleteDialog) {
                         AlertDialog(
                             onDismissRequest = { showDeleteDialog = false },
-                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+                            containerColor = popupContainerColor,
                             title = { Text("Delete Transaction?", color = MaterialTheme.colorScheme.onSurface) },
                             text = { Text("Are you sure you want to permanently delete this transaction? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             confirmButton = {
@@ -8178,7 +8191,7 @@ fun TransactionDetailScreen(
                     if (showImageDeleteDialog != null) {
                         AlertDialog(
                             onDismissRequest = { showImageDeleteDialog = null },
-                            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+                            containerColor = popupContainerColor,
                             title = { Text("Delete Attachment?", color = MaterialTheme.colorScheme.onSurface) },
                             text = { Text("Are you sure you want to delete this attachment? This action cannot be undone.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             confirmButton = {
@@ -8329,9 +8342,9 @@ private fun TransactionSpotlightHeader(
                 label = { Text("$visitCount visits") },
                 leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 colors = AssistChipDefaults.assistChipColors(
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    labelColor = Color.White,
-                    leadingIconContentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
         }
@@ -12258,6 +12271,29 @@ private fun GlassReportNavigationCard(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/AnimatedCircle.kt ==================
+package io.pm.finlight.ui.components
+
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+
+/**
+ * Data class to hold the properties of each animated circle for background effects.
+ * This is marked as 'internal' to be accessible within the 'app' module.
+ *
+ * @param color The base color of the circle.
+ * @param baseRadiusMultiplier The radius of the circle as a multiplier of the canvas's max dimension.
+ * @param baseCenter The center of the circle as a fraction of the canvas's width and height.
+ * @param speedMultiplier A multiplier to vary the animation speed of each circle.
+ */
+internal data class AnimatedCircle(
+    val color: Color,
+    val baseRadiusMultiplier: Float,
+    val baseCenter: Offset,
+    val speedMultiplier: Float
+)-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/AuroraAnimatedBackground.kt ==================
 package io.pm.finlight.ui.components
 
@@ -12270,7 +12306,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import kotlin.math.sin
 
 /**
@@ -12348,21 +12383,6 @@ fun AuroraAnimatedBackground() {
         }
     }
 }
-
-/**
- * Data class to hold the properties of each animated circle.
- *
- * @param color The base color of the circle.
- * @param baseRadiusMultiplier The radius of the circle as a multiplier of the canvas's max dimension.
- * @param baseCenter The center of the circle as a fraction of the canvas's width and height.
- * @param speedMultiplier A multiplier to vary the animation speed of each circle.
- */
-private data class AnimatedCircle(
-    val color: Color,
-    val baseRadiusMultiplier: Float,
-    val baseCenter: Offset,
-    val speedMultiplier: Float
-)
 -e 
 
 
@@ -13513,6 +13533,99 @@ fun TransactionList(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DaybreakAnimatedBackground.kt ==================
+package io.pm.finlight.ui.components
+
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import kotlin.math.sin
+
+/**
+ * A composable that renders a slow, gently moving daybreak-like background effect.
+ * It uses an infinite transition to animate the properties of several large,
+ * blurred, overlapping circles with light, sunrise colors.
+ */
+@Composable
+fun DaybreakAnimatedBackground() {
+    val transition = rememberInfiniteTransition(label = "DaybreakBackgroundTransition")
+
+    // Animate the sine wave over time to create a gentle vertical bobbing motion.
+    val time by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 35000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "DaybreakTime"
+    )
+
+    // --- FIX: Using more vibrant and saturated colors for better visibility on a light background. ---
+    val circles = listOf(
+        AnimatedCircle(
+            color = Color(0xFFE91E63), // Vibrant Pink
+            baseRadiusMultiplier = 0.8f,
+            baseCenter = Offset(0.2f, 0.8f),
+            speedMultiplier = 0.6f
+        ),
+        AnimatedCircle(
+            color = Color(0xFFFF9800), // Vibrant Orange
+            baseRadiusMultiplier = 0.9f,
+            baseCenter = Offset(0.8f, 0.7f),
+            speedMultiplier = 0.4f
+        ),
+        AnimatedCircle(
+            color = Color(0xFF2196F3), // Vibrant Blue
+            baseRadiusMultiplier = 1.0f,
+            baseCenter = Offset(0.6f, 0.2f),
+            speedMultiplier = 0.5f
+        ),
+        AnimatedCircle(
+            color = Color(0xFFFFEB3B), // Vibrant Yellow/Gold
+            baseRadiusMultiplier = 0.7f,
+            baseCenter = Offset(0.9f, 0.1f),
+            speedMultiplier = 0.7f
+        )
+    )
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        circles.forEach { circle ->
+            // Calculate the vertical offset using a sine wave for a smooth bobbing effect.
+            val yOffset = sin(time * circle.speedMultiplier) * size.height * 0.1f
+
+            // Create a radial gradient brush to simulate a blurred, glowing effect.
+            // --- FIX: Increased alpha from 0.4f to 0.6f for more presence. ---
+            val brush = Brush.radialGradient(
+                colors = listOf(circle.color.copy(alpha = 0.6f), Color.Transparent),
+                center = Offset(
+                    x = circle.baseCenter.x * size.width,
+                    y = (circle.baseCenter.y * size.height) + yOffset
+                ),
+                radius = size.maxDimension * circle.baseRadiusMultiplier
+            )
+
+            // Draw the circle onto the canvas.
+            drawCircle(
+                brush = brush,
+                radius = size.maxDimension * circle.baseRadiusMultiplier,
+                center = Offset(
+                    x = circle.baseCenter.x * size.width,
+                    y = (circle.baseCenter.y * size.height) + yOffset
+                )
+            )
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/CategoryDialogs.kt ==================
 package io.pm.finlight.ui.components
 
@@ -14251,9 +14364,10 @@ class DragDropState(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt
-// REASON: BUG FIX - The Daybreak theme's text colors (`onSurface`,
-// `onSurfaceVariant`) have been corrected to use high-contrast dark colors,
-// resolving the legibility issues and making the theme fully usable.
+// REASON: REFINEMENT - The opacity of the popup surfaces has been increased
+// from 80% to 85%. This makes the popups more solid, reducing the distraction
+// from background text and improving overall legibility on both light and dark
+// themes.
 // =================================================================================
 package io.pm.finlight.ui.theme
 
@@ -14270,7 +14384,6 @@ val AuroraDarkOnSurfaceVariant = Color(0xFFC4C7C5) // Brighter gray for secondar
 val DaybreakPrimary = Color(0xFF6650a4) // Original Light Purple
 val DaybreakSecondary = Color(0xFF815600) // Rich Gold/Amber
 val DaybreakBackground = Color(0xFFF8F9FA) // A very light off-white
-// --- FIX: Use high-contrast dark text colors for the light background ---
 val DaybreakOnSurface = Color(0xFF1C1B1F) // Near-black for text
 val DaybreakOnSurfaceVariant = Color(0xFF49454F) // Dark gray for secondary text
 
@@ -14293,8 +14406,9 @@ val PaperOnSurfaceVariant = Color(0xFF555555) // Dark gray for secondary text
 // --- Shared Colors ---
 val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
 val AuroraNumpadHighlight = Color(0x29FFFFFF) // White with 16% opacity
-val PopupSurfaceDark = Color(0x99212125) // 60% opaque dark charcoal
-val PopupSurfaceLight = Color(0x99FFFFFF) // 60% opaque white
+// --- UPDATED: Increased opacity from 80% (0xCC) to 85% (0xD9) ---
+val PopupSurfaceDark = Color(0xD9212125) // 85% opaque dark charcoal
+val PopupSurfaceLight = Color(0xD9FFFFFF) // 85% opaque white
 
 // High-contrast colors for transaction amounts
 val IncomeGreenDark = Color(0xFF66BB6A)
@@ -14563,11 +14677,11 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - The background rendering logic is now fully theme-aware. It
-// now specifically shows the `AuroraAnimatedBackground` only for the "Aurora"
-// and "Daybreak" themes. For all other themes ("Midnight", "Paper", "System"),
-// it correctly renders the solid background color defined in their respective
-// color schemes, creating the intended visual experience for each theme.
+// REASON: FIX - The background rendering logic is now fully decoupled. A `when`
+// statement handles each theme individually. For themes with animated backgrounds
+// (Aurora, Daybreak), it now correctly draws a solid Surface with the theme's
+// specific background color first, and then renders the animated effect on top,
+// ensuring the correct appearance regardless of the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight
 
@@ -14575,7 +14689,6 @@ import android.Manifest
 import android.app.Activity
 import android.app.Application
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14615,6 +14728,7 @@ import androidx.navigation.navDeepLink
 import coil.compose.AsyncImage
 import com.google.gson.Gson
 import io.pm.finlight.ui.components.AuroraAnimatedBackground
+import io.pm.finlight.ui.components.DaybreakAnimatedBackground
 import io.pm.finlight.ui.screens.*
 import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
@@ -14810,11 +14924,28 @@ fun MainAppScreen() {
     val activity = LocalContext.current as AppCompatActivity
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // --- UPDATED: Conditional background logic ---
-        if (selectedTheme == AppTheme.AURORA || selectedTheme == AppTheme.DAYBREAK) {
-            AuroraAnimatedBackground()
-        } else {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
+        // --- THE FIX ---
+        // We now use a `when` statement to handle each theme individually.
+        // Crucially, for themes with animated backgrounds, we first draw a
+        // solid Surface with the theme's background color, and then draw the
+        // animated component on top of it. This decouples the background
+        // completely from the system's light/dark mode.
+        when (selectedTheme) {
+            AppTheme.AURORA -> {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
+                AuroraAnimatedBackground()
+            }
+            AppTheme.DAYBREAK -> {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
+                DaybreakAnimatedBackground()
+            }
+            else -> {
+                // For System, Midnight, and Paper, we just need the solid background color.
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {}
+            }
         }
 
         Scaffold(
@@ -15154,12 +15285,7 @@ fun AppNavHost(
                 type = NavType.EnumType(TimePeriod::class.java)
             })
         ) { backStackEntry ->
-            val timePeriod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                backStackEntry.arguments?.getSerializable("timePeriod")
-            } as TimePeriod?
+            val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
 
             if (timePeriod != null) {
                 TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)

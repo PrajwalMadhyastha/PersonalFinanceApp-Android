@@ -3,6 +3,11 @@
 // REASON: FEATURE - The ViewModel now exposes the user's selected theme as a
 // StateFlow, allowing the entire app's UI to react to changes. It also includes
 // the `saveSelectedTheme` function to persist the user's choice via the repository.
+// BUG FIX: The `saveMerchantRenameRule` function is now smarter. If the user
+// renames a merchant back to its original name, the function interprets this
+// as a desire to revert the change and now deletes the corresponding rename
+// rule from the database. This fixes the bug where a reverted name would not
+// stick in the UI.
 // =================================================================================
 package io.pm.finlight
 
@@ -117,7 +122,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = Triple(1, 9, 0)
         )
 
-    // --- NEW: Expose the selected theme as a StateFlow ---
     val selectedTheme: StateFlow<AppTheme> =
         settingsRepository.getSelectedTheme().stateIn(
             scope = viewModelScope,
@@ -146,7 +150,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             )
     }
 
-    // --- NEW: Function to save the user's theme choice ---
     fun saveSelectedTheme(theme: AppTheme) {
         settingsRepository.saveSelectedTheme(theme)
     }
@@ -215,11 +218,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun saveMerchantRenameRule(originalName: String, newName: String) {
-        if (originalName.isBlank() || newName.isBlank() || originalName.equals(newName, ignoreCase = true)) return
+        if (originalName.isBlank() || newName.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
-            val rule = MerchantRenameRule(originalName = originalName, newName = newName)
-            db.merchantRenameRuleDao().insert(rule)
-            Log.d("SettingsViewModel", "Saved rename rule: '$originalName' -> '$newName'")
+            if (originalName.equals(newName, ignoreCase = true)) {
+                // If the new name is the same as the original, the user wants to revert. Delete the rule.
+                db.merchantRenameRuleDao().deleteByOriginalName(originalName)
+                Log.d("SettingsViewModel", "Deleted rename rule for: '$originalName'")
+            } else {
+                // Otherwise, create or update the rule.
+                val rule = MerchantRenameRule(originalName = originalName, newName = newName)
+                db.merchantRenameRuleDao().insert(rule)
+                Log.d("SettingsViewModel", "Saved rename rule: '$originalName' -> '$newName'")
+            }
         }
     }
 

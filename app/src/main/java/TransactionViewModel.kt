@@ -5,6 +5,11 @@
 // `onFilterSheetDismiss` functions allow the centralized TopAppBar in MainActivity
 // to control the visibility of the filter sheet, which is now part of the
 // TransactionListScreen.
+// BUG FIX: The `findTransactionDetailsById` function now applies merchant
+// aliases. This ensures the Transaction Detail screen is consistent with list
+// views, which already had aliasing applied, fixing the bug where a reverted
+// merchant name would still show the old alias on list screens but not on the
+// detail screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -213,6 +218,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
         return transactionRepository.getTransactionDetailsById(id)
+            .combine(merchantAliases) { details, aliases ->
+                details?.let { applyAliases(listOf(it), aliases).firstOrNull() }
+            }
     }
 
     fun loadVisitCount(originalDescription: String?, fallbackDescription: String) {

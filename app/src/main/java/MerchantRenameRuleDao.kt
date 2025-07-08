@@ -13,4 +13,7 @@ interface MerchantRenameRuleDao {
 
     @Query("SELECT * FROM merchant_rename_rules")
     fun getAllRules(): Flow<List<MerchantRenameRule>>
+
+    @Query("DELETE FROM merchant_rename_rules WHERE originalName = :originalName")
+    suspend fun deleteByOriginalName(originalName: String)
 }
