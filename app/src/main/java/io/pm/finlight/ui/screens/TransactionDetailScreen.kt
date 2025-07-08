@@ -261,14 +261,17 @@ fun TransactionDetailScreen(
                         contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
                         item {
-                            TransactionSpotlightHeader(
-                                details = details,
-                                visitCount = visitCount,
-                                onDescriptionClick = { activeSheetContent = SheetContent.Description },
-                                onAmountClick = { activeSheetContent = SheetContent.Amount },
-                                onCategoryClick = { activeSheetContent = SheetContent.Category },
-                                onDateTimeClick = { showDatePicker = true }
-                            )
+                            // --- MODIFIED: Wrap header in a padded Box for a card-like appearance ---
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                TransactionSpotlightHeader(
+                                    details = details,
+                                    visitCount = visitCount,
+                                    onDescriptionClick = { activeSheetContent = SheetContent.Description },
+                                    onAmountClick = { activeSheetContent = SheetContent.Amount },
+                                    onCategoryClick = { activeSheetContent = SheetContent.Category },
+                                    onDateTimeClick = { showDatePicker = true }
+                                )
+                            }
                         }
 
                         item {
@@ -549,120 +552,126 @@ private fun TransactionSpotlightHeader(
         label = "AmountAnimation"
     )
 
-    Box(
+    // --- MODIFIED: The root is now a GlassPanel ---
+    GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
             .height(350.dp)
-            .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)),
-        contentAlignment = Alignment.Center
     ) {
-        Image(
-            painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize(),
-            alpha = 0.3f
-        )
-        Box(modifier = Modifier
-            .matchParentSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.6f))
-                )
-            )
-        )
-        Canvas(modifier = Modifier.matchParentSize()) {
-            drawIntoCanvas {
-                val paint = Paint().asFrameworkPaint()
-                val radius = size.width * 0.8f
-                paint.color = android.graphics.Color.TRANSPARENT
-                paint.setShadowLayer(
-                    radius,
-                    0f,
-                    0f,
-                    categoryColor
-                        .copy(alpha = 0.4f)
-                        .toArgb()
-                )
-                it.drawCircle(center, radius / 2, Paint().apply { this.color = Color.Transparent })
-            }
-        }
-
-        Column(
+        // This Box contains all the visual layers: Image, Gradient, Shadow, and Content
+        Box(
             modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            contentAlignment = Alignment.Center
         ) {
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = details.transaction.description,
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
-                textAlign = TextAlign.Center,
+            Image(
+                painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+                alpha = 0.3f
+            )
+            Box(
                 modifier = Modifier
-                    .clickable(onClick = onDescriptionClick)
-                    .padding(horizontal = 16.dp)
-            )
-            Text(
-                text = "₹${"%,.2f".format(animatedAmount)}",
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.clickable(onClick = onAmountClick)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            ChipWithIcon(
-                text = details.categoryName ?: "Uncategorized",
-                onClick = onCategoryClick,
-                category = details.toCategory()
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = dateFormatter.format(Date(details.transaction.date)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.clickable(onClick = onDateTimeClick)
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Transaction Source",
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.size(16.dp)
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.6f))
+                        )
                     )
-                    Text(
-                        text = details.transaction.source,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.8f)
+            )
+            Canvas(modifier = Modifier.matchParentSize()) {
+                drawIntoCanvas {
+                    val paint = Paint().asFrameworkPaint()
+                    val radius = size.width * 0.8f
+                    paint.color = android.graphics.Color.TRANSPARENT
+                    paint.setShadowLayer(
+                        radius,
+                        0f,
+                        0f,
+                        categoryColor
+                            .copy(alpha = 0.4f)
+                            .toArgb()
                     )
+                    it.drawCircle(center, radius / 2, Paint().apply { this.color = Color.Transparent })
                 }
             }
-        }
 
-        if (visitCount > 1) {
-            AssistChip(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp),
-                onClick = { /* No action needed */ },
-                label = { Text("$visitCount visits") },
-                leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = details.transaction.description,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .clickable(onClick = onDescriptionClick)
+                        .padding(horizontal = 16.dp)
                 )
-            )
+                Text(
+                    text = "₹${"%,.2f".format(animatedAmount)}",
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.clickable(onClick = onAmountClick)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                ChipWithIcon(
+                    text = details.categoryName ?: "Uncategorized",
+                    onClick = onCategoryClick,
+                    category = details.toCategory()
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = dateFormatter.format(Date(details.transaction.date)),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.clickable(onClick = onDateTimeClick)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Transaction Source",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = details.transaction.source,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+
+            if (visitCount > 1) {
+                AssistChip(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp),
+                    onClick = { /* No action needed */ },
+                    label = { Text("$visitCount visits") },
+                    leadingIcon = { Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+            }
         }
     }
 }
@@ -1178,7 +1187,7 @@ private fun EditTextFieldSheet(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("Cancel") } // Revert on cancel
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {
                 onConfirm(text)
