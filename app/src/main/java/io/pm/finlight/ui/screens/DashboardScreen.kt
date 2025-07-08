@@ -178,12 +178,16 @@ private fun DashboardCard(
     val accountsSummary by viewModel.accountsSummary.collectAsState()
     val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
     val budgetStatus by viewModel.budgetStatus.collectAsState()
+    // --- NEW: Collect the remaining amount state ---
+    val amountRemaining by viewModel.amountRemaining.collectAsState()
 
     Box {
         when (cardType) {
             DashboardCardType.HERO_BUDGET -> DashboardHeroCard(
                 totalBudget = overallBudget,
                 amountSpent = monthlyExpenses.toFloat(),
+                // --- NEW: Pass the remaining amount to the hero card ---
+                amountRemaining = amountRemaining,
                 income = monthlyIncome.toFloat(),
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,

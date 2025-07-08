@@ -101,18 +101,18 @@ fun GlassPanel(
  *
  * @param totalBudget The total budget for the month.
  * @param amountSpent The amount spent so far in the month.
+ * @param amountRemaining The amount remaining in the budget.
  * @param navController The NavController for navigation.
  */
 @Composable
 fun DashboardHeroCard(
     totalBudget: Float,
     amountSpent: Float,
+    amountRemaining: Float,
     income: Float,
     safeToSpend: Float,
     navController: NavController
 ) {
-    val remainingAmount = totalBudget - amountSpent
-
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
@@ -136,12 +136,12 @@ fun DashboardHeroCard(
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "Remaining",
+                text = "Spent this month",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(remainingAmount.toInt())}",
+                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
                 style = MaterialTheme.typography.displayLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -158,7 +158,7 @@ fun DashboardHeroCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Spent: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountSpent.toInt())}",
+                    text = "Remaining: ₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(amountRemaining.toInt())}",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
