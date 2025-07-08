@@ -8,6 +8,9 @@
 // functionality and ensuring high-contrast legibility.
 // FIX: Corrected a @Composable invocation error by reading the theme color
 // outside the Canvas draw scope.
+// BUG FIX - The AlertDialogs now correctly derive their background color from
+// the app's MaterialTheme, ensuring they match the selected theme (e.g.,
+// Aurora) instead of defaulting to the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -57,6 +60,9 @@ import java.text.NumberFormat
 import java.util.*
 import kotlin.math.min
 
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BudgetScreen(
@@ -69,6 +75,9 @@ fun BudgetScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var budgetToDelete by remember { mutableStateOf<Budget?>(null) }
     var showOverallBudgetDialog by remember { mutableStateOf(false) }
+
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -148,7 +157,7 @@ fun BudgetScreen(
                 ) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } },
-            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            containerColor = popupContainerColor
         )
     }
 
@@ -349,6 +358,9 @@ fun EditOverallBudgetDialog(
     onConfirm: (String) -> Unit
 ) {
     var budgetInput by remember { mutableStateOf(if (currentBudget > 0) "%.0f".format(currentBudget) else "") }
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Set Overall Budget") },
@@ -369,6 +381,6 @@ fun EditOverallBudgetDialog(
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        containerColor = popupContainerColor
     )
 }

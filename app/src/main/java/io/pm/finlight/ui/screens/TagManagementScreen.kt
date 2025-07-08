@@ -5,6 +5,9 @@
 // Buttons, ListItems, Dialogs) have been replaced with GlassPanel-based
 // layouts and styled to ensure a cohesive, modern, and high-contrast user
 // experience for managing tags.
+// BUG FIX - The AlertDialogs now correctly derive their background color from
+// the app's MaterialTheme, ensuring they match the selected theme (e.g.,
+// Aurora) instead of defaulting to the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -28,6 +31,9 @@ import io.pm.finlight.TagViewModel
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -179,6 +185,9 @@ private fun EditTagDialog(
     onConfirm: (Tag) -> Unit
 ) {
     var tagName by remember(tag) { mutableStateOf(tag.name) }
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Tag") },
@@ -201,7 +210,7 @@ private fun EditTagDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
-        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        containerColor = popupContainerColor
     )
 }
 
@@ -211,6 +220,9 @@ private fun DeleteTagDialog(
     onDismiss: () -> Unit,
     onConfirm: (Tag) -> Unit
 ) {
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Delete Tag?") },
@@ -226,6 +238,6 @@ private fun DeleteTagDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
-        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        containerColor = popupContainerColor
     )
 }

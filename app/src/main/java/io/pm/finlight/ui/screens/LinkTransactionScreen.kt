@@ -5,6 +5,9 @@
 // dialog. Upon confirmation, it calls the ViewModel to perform the link, passes
 // a signal back to the previous screen to remove the item from the review list,
 // and then navigates away, completing the feature's workflow.
+// BUG FIX - The AlertDialog now correctly derives its background color from
+// the app's MaterialTheme, ensuring it matches the selected theme (e.g.,
+// Aurora) instead of defaulting to the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -16,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,9 +30,14 @@ import io.pm.finlight.LinkTransactionViewModel
 import io.pm.finlight.LinkTransactionViewModelFactory
 import io.pm.finlight.PotentialTransaction
 import io.pm.finlight.Transaction
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.*
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @Composable
 fun LinkTransactionScreen(
@@ -77,6 +86,9 @@ fun LinkTransactionScreen(
     }
 
     if (showConfirmationDialog && transactionToLink != null) {
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
         AlertDialog(
             onDismissRequest = { showConfirmationDialog = false },
             title = { Text("Confirm Link") },
@@ -99,7 +111,8 @@ fun LinkTransactionScreen(
                 TextButton(onClick = { showConfirmationDialog = false }) {
                     Text("Cancel")
                 }
-            }
+            },
+            containerColor = popupContainerColor
         )
     }
 }

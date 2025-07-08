@@ -2,6 +2,9 @@
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/CreationDialogs.kt
 // REASON: NEW FILE - Centralized the creation dialogs to resolve conflicting
 // overload errors and improve code organization.
+// BUG FIX - The AlertDialogs now correctly derive their background color from
+// the app's MaterialTheme, ensuring they match the selected theme (e.g.,
+// Aurora) instead of defaulting to the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -39,6 +42,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.CategoryIconHelper
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @Composable
 fun CreateAccountDialog(
@@ -47,6 +55,9 @@ fun CreateAccountDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("") }
+
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -73,7 +84,8 @@ fun CreateAccountDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
+        containerColor = popupContainerColor
     )
 }
 
@@ -87,6 +99,9 @@ fun CreateCategoryDialog(
     var selectedColorKey by remember { mutableStateOf("gray_light") }
     val allIcons = remember { CategoryIconHelper.getAllIcons().entries.toList() }
     val allColors = remember { CategoryIconHelper.getAllIconColors().entries.toList() }
+
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -152,6 +167,7 @@ fun CreateCategoryDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
+        containerColor = popupContainerColor
     )
 }

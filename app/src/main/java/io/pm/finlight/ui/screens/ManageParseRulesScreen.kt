@@ -4,6 +4,9 @@
 // "Project Aurora" vision. The standard Card has been replaced with a GlassPanel
 // component, and all text colors have been updated to be theme-aware, ensuring
 // a consistent, high-contrast experience.
+// BUG FIX - The AlertDialog now correctly derives its background color from
+// the app's MaterialTheme, ensuring it matches the selected theme (e.g.,
+// Aurora) instead of defaulting to the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -18,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +32,9 @@ import io.pm.finlight.ManageParseRulesViewModel
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @Composable
 fun ManageParseRulesScreen(
@@ -67,6 +74,9 @@ fun ManageParseRulesScreen(
     }
 
     if (ruleToDelete != null) {
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
         AlertDialog(
             onDismissRequest = { ruleToDelete = null },
             title = { Text("Delete Rule?") },
@@ -87,7 +97,7 @@ fun ManageParseRulesScreen(
                     Text("Cancel")
                 }
             },
-            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            containerColor = popupContainerColor
         )
     }
 }

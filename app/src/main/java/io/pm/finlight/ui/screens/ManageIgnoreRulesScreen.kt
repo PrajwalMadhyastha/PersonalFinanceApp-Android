@@ -6,6 +6,9 @@
 // BUG FIX: All text and component colors have been explicitly set using
 // MaterialTheme.colorScheme to ensure high contrast and legibility in dark
 // mode, resolving the visibility issues.
+// BUG FIX - The AlertDialog now correctly derives its background color from
+// the app's MaterialTheme, ensuring it matches the selected theme (e.g.,
+// Aurora) instead of defaulting to the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -29,6 +32,9 @@ import io.pm.finlight.ManageIgnoreRulesViewModel
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @Composable
 fun ManageIgnoreRulesScreen(
@@ -158,6 +164,9 @@ fun ManageIgnoreRulesScreen(
     }
 
     if (ruleToDelete != null) {
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
         AlertDialog(
             onDismissRequest = { ruleToDelete = null },
             title = { Text("Delete Ignore Phrase?") },
@@ -174,7 +183,7 @@ fun ManageIgnoreRulesScreen(
             dismissButton = {
                 TextButton(onClick = { ruleToDelete = null }) { Text("Cancel") }
             },
-            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            containerColor = popupContainerColor
         )
     }
 }

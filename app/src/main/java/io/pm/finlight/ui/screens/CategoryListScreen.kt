@@ -1,3 +1,9 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt
+// REASON: BUG FIX - The AlertDialogs now correctly derive their background color
+// from the app's MaterialTheme, ensuring they match the selected theme (e.g.,
+// Aurora) instead of defaulting to the system's light/dark mode.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.background
@@ -26,6 +32,11 @@ import io.pm.finlight.Category
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.CategoryViewModel
 import io.pm.finlight.ui.components.DeleteCategoryDialog
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @Composable
 fun CategoryListScreen(
@@ -136,6 +147,9 @@ fun CategoryListScreen(
     }
 
     if (showDeleteDialog && selectedCategory != null) {
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
         DeleteCategoryDialog(
             category = selectedCategory!!,
             onDismiss = { showDeleteDialog = false },
@@ -143,6 +157,7 @@ fun CategoryListScreen(
                 viewModel.deleteCategory(selectedCategory!!)
                 showDeleteDialog = false
             },
+            containerColor = popupContainerColor
         )
     }
 }
@@ -159,6 +174,9 @@ fun EditCategoryDialog(
     var selectedColorKey by remember { mutableStateOf(category?.colorKey ?: "gray_light") }
     val allIcons = remember { CategoryIconHelper.getAllIcons().entries.toList() }
     val allColors = remember { CategoryIconHelper.getAllIconColors().entries.toList() }
+
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -233,5 +251,34 @@ fun EditCategoryDialog(
                 Text("Cancel")
             }
         },
+        containerColor = popupContainerColor
+    )
+}
+
+@Composable
+fun DeleteCategoryDialog(
+    category: Category,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    containerColor: Color
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete Category") },
+        text = { Text("Are you sure you want to delete the category '${category.name}'? This cannot be undone.") },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        containerColor = containerColor
     )
 }

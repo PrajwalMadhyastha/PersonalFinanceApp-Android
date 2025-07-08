@@ -4,6 +4,9 @@
 // an account into a single, unified screen. It has been completely redesigned
 // to align with the "Project Aurora" vision, using GlassPanel components for
 // all form elements and ensuring high-contrast, theme-aware text and colors.
+// BUG FIX - The AlertDialog now correctly derives its background color from
+// the app's MaterialTheme, ensuring it matches the selected theme (e.g.,
+// Aurora) instead of defaulting to the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -19,6 +22,9 @@ import io.pm.finlight.AccountViewModel
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @Composable
 fun AddEditAccountScreen(
@@ -138,6 +144,9 @@ fun AddEditAccountScreen(
     }
 
     if (showDeleteDialog && accountToEdit != null) {
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Confirm Deletion") },
@@ -155,7 +164,7 @@ fun AddEditAccountScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             },
-            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            containerColor = popupContainerColor
         )
     }
 }
