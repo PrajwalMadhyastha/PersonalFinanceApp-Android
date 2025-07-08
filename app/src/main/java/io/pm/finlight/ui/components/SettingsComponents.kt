@@ -6,6 +6,10 @@
 // creating a visually consistent settings screen.
 // FIX: Removed the duplicate TimePickerDialog definition to resolve the
 // "Conflicting overloads" compilation error.
+// BUG FIX - The AlertDialogs for the time pickers now determine their color
+// based on the app's MaterialTheme, not the system theme. This ensures they
+// correctly follow the selected app theme (e.g., Aurora, Daybreak) instead of
+// defaulting to the system's light/dark mode.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -32,7 +36,8 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.SimpleDateFormat
 import java.util.*
 
-// --- FIX: Removed duplicate TimePickerDialog definition ---
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @Composable
 fun SettingsToggleItem(
@@ -47,7 +52,6 @@ fun SettingsToggleItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
         leadingContent = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
-        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
         modifier = Modifier.clickable(enabled = enabled) { onCheckedChange(!checked) },
         colors = ListItemDefaults.colors(
             containerColor = Color.Transparent, // Make transparent to show GlassPanel behind
@@ -96,6 +100,10 @@ fun WeeklyReportTimePicker(
         Pair(it, cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.SHORT, Locale.getDefault()))
     }
 
+    // --- FIX: Determine popup color based on the app's current MaterialTheme ---
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Set Weekly Report Time") },
@@ -141,7 +149,7 @@ fun WeeklyReportTimePicker(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
-        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        containerColor = popupContainerColor
     )
 }
 
@@ -157,6 +165,10 @@ fun MonthlyReportTimePicker(
     var selectedDay by remember { mutableStateOf(initialDay) }
     val timePickerState = rememberTimePickerState(initialHour, initialMinute, false)
     var isDayPickerExpanded by remember { mutableStateOf(false) }
+
+    // --- FIX: Determine popup color based on the app's current MaterialTheme ---
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -213,6 +225,6 @@ fun MonthlyReportTimePicker(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
-        containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        containerColor = popupContainerColor
     )
 }
