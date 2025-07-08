@@ -9,10 +9,12 @@ package io.pm.finlight
 
 import androidx.annotation.DrawableRes
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import io.pm.finlight.R
@@ -67,6 +69,7 @@ object CategoryIconHelper {
         "shield" to R.drawable.bg_cat_insurance,
         "school" to R.drawable.bg_cat_learning,
         "house" to R.drawable.bg_cat_rent,
+        "help_outline" to R.drawable.bg_cat_general,
         "default" to R.drawable.bg_cat_general
     )
 
@@ -153,6 +156,7 @@ object CategoryIconHelper {
             "home" -> Icons.Default.Home
             "shield" -> Icons.Default.Shield
             "house" -> Icons.Default.House
+            "help_outline" -> Icons.AutoMirrored.Filled.HelpOutline
             else -> Icons.Default.Category
         }
     }
@@ -191,6 +195,7 @@ object CategoryIconHelper {
             "home" to Icons.Default.Home,
             "shield" to Icons.Default.Shield,
             "house" to Icons.Default.House,
+            "help_outline" to Icons.AutoMirrored.Filled.HelpOutline,
         )
     }
 }

@@ -70,6 +70,7 @@ import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.pow
+import io.pm.finlight.R
 
 private const val TAG = "DetailScreenDebug"
 
@@ -535,6 +536,24 @@ fun TransactionDetailScreen(
 }
 
 @Composable
+private fun DynamicCategoryBackground(category: Category) {
+    val letter = category.name.firstOrNull()?.uppercase() ?: "?"
+    val color = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = letter,
+            fontSize = 250.sp,
+            fontWeight = FontWeight.Bold,
+            color = color.copy(alpha = 0.15f)
+        )
+    }
+}
+
+@Composable
 private fun TransactionSpotlightHeader(
     details: TransactionDetails,
     visitCount: Int,
@@ -543,7 +562,8 @@ private fun TransactionSpotlightHeader(
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit
 ) {
-    val categoryColor = CategoryIconHelper.getIconBackgroundColor(details.categoryColorKey ?: "gray_light")
+    val category = details.toCategory()
+    val categoryColor = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
     val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yy, h:mm a", Locale.getDefault()) }
 
     val animatedAmount by animateFloatAsState(
@@ -552,24 +572,29 @@ private fun TransactionSpotlightHeader(
         label = "AmountAnimation"
     )
 
-    // --- MODIFIED: The root is now a GlassPanel ---
     GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
             .height(350.dp)
     ) {
-        // This Box contains all the visual layers: Image, Gradient, Shadow, and Content
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            Image(
-                painter = painterResource(id = CategoryIconHelper.getCategoryBackground(details.categoryIconKey)),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize(),
-                alpha = 0.3f
-            )
+            // --- UPDATED: Conditional background logic ---
+            val isPredefined = CategoryIconHelper.getCategoryBackground(category.iconKey) != R.drawable.bg_cat_general
+            if (isPredefined) {
+                Image(
+                    painter = painterResource(id = CategoryIconHelper.getCategoryBackground(category.iconKey)),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                    alpha = 0.3f
+                )
+            } else {
+                DynamicCategoryBackground(category = category)
+            }
+
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -620,9 +645,9 @@ private fun TransactionSpotlightHeader(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 ChipWithIcon(
-                    text = details.categoryName ?: "Uncategorized",
+                    text = category.name,
                     onClick = onCategoryClick,
-                    category = details.toCategory()
+                    category = category
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Row(
@@ -1382,12 +1407,21 @@ private fun CategoryIconDisplay(category: Category) {
 }
 
 private fun TransactionDetails.toCategory(): Category {
-    return Category(
-        id = this.transaction.categoryId ?: 0,
-        name = this.categoryName ?: "Uncategorized",
-        iconKey = this.categoryIconKey ?: "category",
-        colorKey = this.categoryColorKey ?: "gray_light"
-    )
+    return if (this.categoryName == null || this.categoryName == "Uncategorized") {
+        Category(
+            id = 0,
+            name = "Uncategorized",
+            iconKey = "help_outline", // Use the new key for the question mark icon
+            colorKey = "gray_light"
+        )
+    } else {
+        Category(
+            id = this.transaction.categoryId ?: 0,
+            name = this.categoryName,
+            iconKey = this.categoryIconKey ?: "category",
+            colorKey = this.categoryColorKey ?: "gray_light"
+        )
+    }
 }
 
 @Composable
