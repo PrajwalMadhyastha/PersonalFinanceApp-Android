@@ -1,24 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: MAJOR REFACTOR - This screen has been completely redesigned to match
-// the "Project Aurora" aesthetic. The static header card has been replaced
-// with a dynamic, multi-layered "Spotlight" header. It now uses the
-// transaction's category color to generate a soft, glowing background and
-// renders the category icon as a large, semi-transparent glass emblem, creating
-// a sense of depth. All body content is now housed in individual, floating
-// `GlassPanel` components for a consistent, modern look, while preserving all
-// original functionality.
-// UPDATE: The header card is now a true edge-to-edge hero element, with only
-// the bottom corners rounded to blend seamlessly with the top of the screen.
-// FIX: The screen now correctly respects the app-wide theme. The hardcoded
-// `AuroraAnimatedBackground` has been removed, allowing the theme-dependent
-// background from MainActivity to show through. All hardcoded text and component
-// colors have been replaced with theme-aware `MaterialTheme.colorScheme` values
-// to ensure legibility and consistency across all themes (Aurora, Daybreak, etc.).
-// FIX: All popups (ModalBottomSheet, AlertDialog) now determine their background
-// based on the app's active theme rather than the system theme. This resolves
-// text contrast issues where white text could appear on a light background.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.net.Uri
@@ -53,6 +32,8 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -82,6 +63,7 @@ import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TimePickerDialog
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLEncoder
@@ -210,9 +192,6 @@ fun TransactionDetailScreen(
             }
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
 
-            // --- THE FIX: Determine if the current app theme is dark ---
-            // We check the luminance of the background color. This is more reliable than
-            // isSystemInDarkTheme() because it respects the app's theme choice.
             fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
             val isThemeDark = MaterialTheme.colorScheme.background.isDark()
             val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
@@ -1084,52 +1063,68 @@ private fun AccountPickerItem(
     onSelectClick: () -> Unit,
     isCurrent: Boolean = false
 ) {
-    val colors = if (isCurrent && !isEditing) {
-        ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            headlineColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            supportingColor = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-    } else {
-        ListItemDefaults.colors(
-            headlineColor = MaterialTheme.colorScheme.onSurface,
-            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    val focusRequester = remember { FocusRequester() }
 
-    ListItem(
-        colors = colors,
-        headlineContent = {
-            if (isEditing) {
-                OutlinedTextField(
-                    value = editingName,
-                    onValueChange = onEditingNameChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            } else {
-                Text(account.name, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal)
+    // When isEditing becomes true, this block replaces the standard ListItem
+    if (isEditing) {
+        // Use a simple Row for the editing UI to avoid focus conflicts
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = editingName,
+                onValueChange = onEditingNameChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                singleLine = true,
+                label = { Text("Account Name") }
+            )
+            IconButton(onClick = onSaveClick, enabled = editingName.isNotBlank()) {
+                Icon(Icons.Default.Check, contentDescription = "Save Name", tint = MaterialTheme.colorScheme.primary)
             }
-        },
-        supportingContent = { if (isCurrent && !isEditing) Text("Currently Selected") },
-        modifier = Modifier.clickable(enabled = !isEditing, onClick = onSelectClick),
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isEditing) {
-                    IconButton(onClick = onSaveClick, enabled = editingName.isNotBlank()) {
-                        Icon(Icons.Default.Check, contentDescription = "Save Name", tint = MaterialTheme.colorScheme.primary)
-                    }
-                    IconButton(onClick = onCancelClick) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                } else {
-                    IconButton(onClick = onEditClick) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Account Name", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+            IconButton(onClick = onCancelClick) {
+                Icon(Icons.Default.Close, contentDescription = "Cancel Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-    )
+        // The LaunchedEffect is now keyed to Unit, so it runs exactly once when this
+        // composable enters the composition tree (i.e., when isEditing becomes true).
+        LaunchedEffect(Unit) {
+            focusRequester.requestFocus()
+        }
+    } else {
+        // This is the original display-only ListItem
+        val colors = if (isCurrent) {
+            ListItemDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                headlineColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                supportingColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        } else {
+            ListItemDefaults.colors(
+                headlineColor = MaterialTheme.colorScheme.onSurface,
+                supportingColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        ListItem(
+            colors = colors,
+            headlineContent = {
+                Text(account.name, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal)
+            },
+            supportingContent = { if (isCurrent) Text("Currently Selected") },
+            modifier = Modifier.clickable(onClick = onSelectClick),
+            trailingContent = {
+                IconButton(onClick = onEditClick) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Account Name", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1142,6 +1137,7 @@ private fun EditTextFieldSheet(
     additionalContent: @Composable (() -> Unit)? = null
 ) {
     var text by remember { mutableStateOf(initialValue) }
+    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
@@ -1161,7 +1157,8 @@ private fun EditTextFieldSheet(
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("value_input"),
+                .testTag("value_input")
+                .focusRequester(focusRequester),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -1187,6 +1184,12 @@ private fun EditTextFieldSheet(
                 onConfirm(text)
             }) { Text("Save") }
         }
+    }
+
+    // --- BUG FIX: Request focus inside a LaunchedEffect ---
+    LaunchedEffect(Unit) {
+        delay(100) // Give UI time to draw
+        focusRequester.requestFocus()
     }
 }
 

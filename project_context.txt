@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul  8 13:46:32 IST 2025
+Generated on: Tue Jul  8 14:50:14 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -497,6 +497,9 @@ interface MerchantRenameRuleDao {
 
     @Query("SELECT * FROM merchant_rename_rules")
     fun getAllRules(): Flow<List<MerchantRenameRule>>
+
+    @Query("DELETE FROM merchant_rename_rules WHERE originalName = :originalName")
+    suspend fun deleteByOriginalName(originalName: String)
 }
 -e 
 
@@ -1114,6 +1117,11 @@ interface CustomSmsRuleDao {
 // `onFilterSheetDismiss` functions allow the centralized TopAppBar in MainActivity
 // to control the visibility of the filter sheet, which is now part of the
 // TransactionListScreen.
+// BUG FIX: The `findTransactionDetailsById` function now applies merchant
+// aliases. This ensures the Transaction Detail screen is consistent with list
+// views, which already had aliasing applied, fixing the bug where a reverted
+// merchant name would still show the old alias on list screens but not on the
+// detail screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -1322,6 +1330,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun findTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
         return transactionRepository.getTransactionDetailsById(id)
+            .combine(merchantAliases) { details, aliases ->
+                details?.let { applyAliases(listOf(it), aliases).firstOrNull() }
+            }
     }
 
     fun loadVisitCount(originalDescription: String?, fallbackDescription: String) {
@@ -7681,6 +7692,13 @@ fun PlaceholderTabContent(title: String) {
 // FIX: All popups (ModalBottomSheet, AlertDialog) now determine their background
 // based on the app's active theme rather than the system theme. This resolves
 // text contrast issues where white text could appear on a light background.
+// BUG FIX: Added a FocusRequester to the text fields in the edit sheets
+// (`EditTextFieldSheet`, `AccountPickerItem`). This ensures that when a user
+// taps to edit a field, the keyboard automatically appears, fixing the bug
+// where the input field would show but not be focused.
+// BUG FIX: Added a small `delay(100)` before `requestFocus()` in the edit
+// sheets. This resolves a timing issue where the keyboard would not appear
+// because focus was requested before the text field was fully composed and ready.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -7716,6 +7734,8 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -7745,6 +7765,7 @@ import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TimePickerDialog
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLEncoder
@@ -7873,9 +7894,6 @@ fun TransactionDetailScreen(
             }
             val calendar = remember { Calendar.getInstance().apply { timeInMillis = details.transaction.date } }
 
-            // --- THE FIX: Determine if the current app theme is dark ---
-            // We check the luminance of the background color. This is more reliable than
-            // isSystemInDarkTheme() because it respects the app's theme choice.
             fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
             val isThemeDark = MaterialTheme.colorScheme.background.isDark()
             val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
@@ -8760,6 +8778,8 @@ private fun AccountPickerItem(
         )
     }
 
+    val focusRequester = remember { FocusRequester() }
+
     ListItem(
         colors = colors,
         headlineContent = {
@@ -8767,9 +8787,17 @@ private fun AccountPickerItem(
                 OutlinedTextField(
                     value = editingName,
                     onValueChange = onEditingNameChange,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
                     singleLine = true
                 )
+                LaunchedEffect(isEditing) {
+                    if (isEditing) {
+                        delay(100) // Give UI time to draw
+                        focusRequester.requestFocus()
+                    }
+                }
             } else {
                 Text(account.name, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal)
             }
@@ -8805,6 +8833,7 @@ private fun EditTextFieldSheet(
     additionalContent: @Composable (() -> Unit)? = null
 ) {
     var text by remember { mutableStateOf(initialValue) }
+    val focusRequester = remember { FocusRequester() }
 
     Column(
         modifier = Modifier
@@ -8824,7 +8853,8 @@ private fun EditTextFieldSheet(
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("value_input"),
+                .testTag("value_input")
+                .focusRequester(focusRequester),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -8850,6 +8880,11 @@ private fun EditTextFieldSheet(
                 onConfirm(text)
             }) { Text("Save") }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        delay(100) // Give UI time to draw
+        focusRequester.requestFocus()
     }
 }
 
@@ -14682,6 +14717,18 @@ val Typography = Typography(
 // (Aurora, Daybreak), it now correctly draws a solid Surface with the theme's
 // specific background color first, and then renders the animated effect on top,
 // ensuring the correct appearance regardless of the system's light/dark mode.
+// BUG FIX: The deep link handling logic in the SplashScreen has been corrected.
+// It no longer navigates to the dashboard first, which was causing deep links
+// from notifications to fail. It now navigates directly to the deep link URI,
+// ensuring notifications take the user to the correct screen.
+// BUG FIX: Corrected a compilation error in the SplashScreen's deep link
+// navigation. The NavOptions are now built separately and passed to the
+// navigate(Uri, NavOptions) function, as the trailing lambda is not supported
+// for the Uri-based overload.
+// BUG FIX: The SplashScreen now correctly constructs the navigation back stack
+// when launching from a deep link. It first navigates to the Dashboard and then
+// to the deep-linked destination, ensuring the user can press "back" to return
+// to the Dashboard instead of exiting the app.
 // =================================================================================
 package io.pm.finlight
 
@@ -14721,6 +14768,7 @@ import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavOptions
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -14924,12 +14972,6 @@ fun MainAppScreen() {
     val activity = LocalContext.current as AppCompatActivity
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // --- THE FIX ---
-        // We now use a `when` statement to handle each theme individually.
-        // Crucially, for themes with animated backgrounds, we first draw a
-        // solid Surface with the theme's background color, and then draw the
-        // animated component on top of it. This decouples the background
-        // completely from the system's light/dark mode.
         when (selectedTheme) {
             AppTheme.AURORA -> {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
@@ -14940,7 +14982,6 @@ fun MainAppScreen() {
                 DaybreakAnimatedBackground()
             }
             else -> {
-                // For System, Midnight, and Paper, we just need the solid background color.
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -15299,12 +15340,16 @@ fun SplashScreen(navController: NavHostController, activity: Activity) {
     LaunchedEffect(key1 = Unit) {
         val deepLinkUri = activity.intent?.data
         if (deepLinkUri != null) {
+            // BUG FIX: Correctly build the back stack for deep links.
+            // First, navigate to the home screen (dashboard) and clear the splash screen.
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }
+            // Then, navigate to the actual deep link destination.
             navController.navigate(deepLinkUri)
-            activity.intent.data = null
+            activity.intent.data = null // Important: Consume the intent's data
         } else {
+            // Normal startup: go to the dashboard.
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }
@@ -17392,6 +17437,11 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
 // REASON: FEATURE - The ViewModel now exposes the user's selected theme as a
 // StateFlow, allowing the entire app's UI to react to changes. It also includes
 // the `saveSelectedTheme` function to persist the user's choice via the repository.
+// BUG FIX: The `saveMerchantRenameRule` function is now smarter. If the user
+// renames a merchant back to its original name, the function interprets this
+// as a desire to revert the change and now deletes the corresponding rename
+// rule from the database. This fixes the bug where a reverted name would not
+// stick in the UI.
 // =================================================================================
 package io.pm.finlight
 
@@ -17506,7 +17556,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = Triple(1, 9, 0)
         )
 
-    // --- NEW: Expose the selected theme as a StateFlow ---
     val selectedTheme: StateFlow<AppTheme> =
         settingsRepository.getSelectedTheme().stateIn(
             scope = viewModelScope,
@@ -17535,7 +17584,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             )
     }
 
-    // --- NEW: Function to save the user's theme choice ---
     fun saveSelectedTheme(theme: AppTheme) {
         settingsRepository.saveSelectedTheme(theme)
     }
@@ -17604,11 +17652,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun saveMerchantRenameRule(originalName: String, newName: String) {
-        if (originalName.isBlank() || newName.isBlank() || originalName.equals(newName, ignoreCase = true)) return
+        if (originalName.isBlank() || newName.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
-            val rule = MerchantRenameRule(originalName = originalName, newName = newName)
-            db.merchantRenameRuleDao().insert(rule)
-            Log.d("SettingsViewModel", "Saved rename rule: '$originalName' -> '$newName'")
+            if (originalName.equals(newName, ignoreCase = true)) {
+                // If the new name is the same as the original, the user wants to revert. Delete the rule.
+                db.merchantRenameRuleDao().deleteByOriginalName(originalName)
+                Log.d("SettingsViewModel", "Deleted rename rule for: '$originalName'")
+            } else {
+                // Otherwise, create or update the rule.
+                val rule = MerchantRenameRule(originalName = originalName, newName = newName)
+                db.merchantRenameRuleDao().insert(rule)
+                Log.d("SettingsViewModel", "Saved rename rule: '$originalName' -> '$newName'")
+            }
         }
     }
 
