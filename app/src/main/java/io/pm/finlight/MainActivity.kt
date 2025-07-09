@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: BUG FIX - The deep link for the time period report screen was
-// missing. It has been restored to the composable definition in the NavHost,
-// which resolves the IllegalArgumentException crash when tapping on a report
-// notification.
+// REASON: FEATURE - The NavHost entry for "add_recurring_transaction" has been
+// updated to accept an optional ruleId parameter. This enables the screen to
+// function in both "add" and "edit" modes, completing the navigation flow for
+// the new feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -557,7 +557,22 @@ fun AppNavHost(
         composable("category_list") { CategoryListScreen(navController, categoryViewModel) }
         composable("tag_management") { TagManagementScreen() }
         composable("recurring_transactions") { RecurringTransactionScreen(navController) }
-        composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
+
+        composable(
+            "add_recurring_transaction?ruleId={ruleId}",
+            arguments = listOf(
+                navArgument("ruleId") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                }
+            )
+        ) { backStackEntry ->
+            val ruleId = backStackEntry.arguments?.getInt("ruleId")
+            AddRecurringTransactionScreen(
+                navController = navController,
+                ruleId = if (ruleId == -1) null else ruleId
+            )
+        }
 
         composable(
             "rule_creation_screen?potentialTransactionJson={potentialTransactionJson}&ruleId={ruleId}",

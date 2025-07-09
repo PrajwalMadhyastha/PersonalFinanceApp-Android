@@ -1,12 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddRecurringTransactionScreen.kt
-// REASON: MAJOR REFACTOR - The screen has been completely redesigned to align
-// with the "Project Aurora" vision. It now mirrors the modern "Transaction
-// Composer" layout, using GlassPanel components for all form elements and
-// ensuring a cohesive, high-contrast, and visually appealing experience.
-// BUG FIX - Replaced direct use of `GlassPanelFill` with the `GlassPanel`
-// composable to ensure the component is theme-aware and to resolve the
-// "Unresolved reference" build error.
+// REASON: FEATURE - The screen now supports both "add" and "edit" modes. It
+// accepts an optional ruleId, loads the existing rule's data if provided,
+// and calls the appropriate ViewModel function (insert or update) upon saving.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -41,9 +37,15 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddRecurringTransactionScreen(navController: NavController) {
+fun AddRecurringTransactionScreen(
+    navController: NavController,
+    ruleId: Int?
+) {
     val recurringViewModel: RecurringTransactionViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
+
+    val isEditMode = ruleId != null
+    val titleText = if (isEditMode) "Edit Recurring Rule" else "Add Recurring Rule"
 
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
@@ -61,10 +63,29 @@ fun AddRecurringTransactionScreen(navController: NavController) {
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
 
+    val ruleToEdit by if (isEditMode) {
+        recurringViewModel.getRuleById(ruleId!!).collectAsState(initial = null)
+    } else {
+        remember { mutableStateOf(null) }
+    }
+
+    LaunchedEffect(ruleToEdit, accounts, categories) {
+        if (isEditMode) {
+            ruleToEdit?.let { rule ->
+                description = rule.description
+                amount = rule.amount.toString()
+                transactionType = rule.transactionType
+                selectedInterval = rule.recurrenceInterval
+                selectedAccount = accounts.find { it.id == rule.accountId }
+                selectedCategory = categories.find { it.id == rule.categoryId }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add Recurring Rule") },
+                title = { Text(titleText) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -210,14 +231,16 @@ fun AddRecurringTransactionScreen(navController: NavController) {
                         onClick = {
                             val amountDouble = amount.toDoubleOrNull()
                             if (amountDouble != null && selectedAccount != null) {
-                                recurringViewModel.addRecurringTransaction(
-                                    description,
-                                    amountDouble,
-                                    transactionType,
-                                    selectedInterval,
-                                    System.currentTimeMillis(),
-                                    selectedAccount!!.id,
-                                    selectedCategory?.id,
+                                recurringViewModel.saveRule(
+                                    ruleId = ruleId,
+                                    description = description,
+                                    amount = amountDouble,
+                                    transactionType = transactionType,
+                                    recurrenceInterval = selectedInterval,
+                                    startDate = ruleToEdit?.startDate ?: System.currentTimeMillis(),
+                                    accountId = selectedAccount!!.id,
+                                    categoryId = selectedCategory?.id,
+                                    lastRunDate = ruleToEdit?.lastRunDate
                                 )
                                 navController.popBackStack()
                             }
@@ -225,7 +248,7 @@ fun AddRecurringTransactionScreen(navController: NavController) {
                         modifier = Modifier.weight(1f),
                         enabled = description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && selectedCategory != null,
                     ) {
-                        Text("Save Rule")
+                        Text(if (isEditMode) "Update Rule" else "Save Rule")
                     }
                 }
             }

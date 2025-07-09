@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionViewModel.kt
-// REASON: FEATURE - The ViewModel now calls the new
-// `ReminderManager.scheduleRecurringTransactionWorker` function after a new rule
-// is added. This ensures that the automation process is kicked off as soon as the
-// user creates their first recurring transaction rule.
+// REASON: FEATURE - The ViewModel is updated to support full CRUD operations.
+// It now includes `getRuleById`, `deleteRule`, and a comprehensive `saveRule`
+// function that handles both creating new rules and updating existing ones.
 // =================================================================================
 package io.pm.finlight
 
@@ -23,7 +22,10 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
         allRecurringTransactions = repository.getAll()
     }
 
-    fun addRecurringTransaction(
+    fun getRuleById(id: Int): Flow<RecurringTransaction?> = repository.getById(id)
+
+    fun saveRule(
+        ruleId: Int?, // Null for new rules
         description: String,
         amount: Double,
         transactionType: String,
@@ -31,19 +33,30 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
         startDate: Long,
         accountId: Int,
         categoryId: Int?,
+        lastRunDate: Long? // Preserve last run date on edit
     ) = viewModelScope.launch {
-        val newRule =
-            RecurringTransaction(
-                description = description,
-                amount = amount,
-                transactionType = transactionType,
-                recurrenceInterval = recurrenceInterval,
-                startDate = startDate,
-                accountId = accountId,
-                categoryId = categoryId,
-            )
-        repository.insert(newRule)
-        // --- NEW: Schedule the worker after adding a rule ---
-        ReminderManager.scheduleRecurringTransactionWorker(getApplication())
+        val rule = RecurringTransaction(
+            id = ruleId ?: 0,
+            description = description,
+            amount = amount,
+            transactionType = transactionType,
+            recurrenceInterval = recurrenceInterval,
+            startDate = startDate,
+            accountId = accountId,
+            categoryId = categoryId,
+            lastRunDate = lastRunDate
+        )
+
+        if (ruleId != null) {
+            repository.update(rule)
+        } else {
+            repository.insert(rule)
+            // Only schedule the worker when a new rule is added for the first time
+            ReminderManager.scheduleRecurringTransactionWorker(getApplication())
+        }
+    }
+
+    fun deleteRule(rule: RecurringTransaction) = viewModelScope.launch {
+        repository.delete(rule)
     }
 }

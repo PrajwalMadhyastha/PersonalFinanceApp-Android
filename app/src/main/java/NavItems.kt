@@ -36,7 +36,7 @@ val screenTitles = mapOf(
     "edit_budget/{budgetId}" to "Edit Budget",
     "category_list" to "Manage Categories",
     "recurring_transactions" to "Recurring Transactions",
-    "add_recurring_transaction" to "Add Recurring Rule",
+    "add_recurring_transaction?ruleId={ruleId}" to "Add/Edit Recurring Rule",
     "search_screen" to "Search",
     "review_sms_screen" to "Review SMS Transactions",
     "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
