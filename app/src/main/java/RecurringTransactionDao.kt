@@ -31,14 +31,12 @@ interface RecurringTransactionDao {
     @Query("SELECT * FROM recurring_transactions ORDER BY startDate DESC")
     fun getAllRulesFlow(): Flow<List<RecurringTransaction>>
 
-    // --- NEW: Suspend function to get a one-time list for the worker ---
     @Query("SELECT * FROM recurring_transactions")
     suspend fun getAllRulesList(): List<RecurringTransaction>
 
     @Query("SELECT * FROM recurring_transactions WHERE id = :id")
     fun getById(id: Int): Flow<RecurringTransaction?>
 
-    // --- NEW: Function to update the last run date of a rule ---
     @Query("UPDATE recurring_transactions SET lastRunDate = :lastRunDate WHERE id = :id")
     suspend fun updateLastRunDate(id: Int, lastRunDate: Long)
 }

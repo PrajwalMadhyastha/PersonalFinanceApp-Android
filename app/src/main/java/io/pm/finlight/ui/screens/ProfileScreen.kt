@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
+// REASON: FEATURE - A new "Debug" section has been added with a button to
+// manually trigger the RecurringTransactionWorker. This provides a reliable way
+// to test the worker's functionality without waiting for its scheduled time or
+// relying on the App Inspector UI.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -33,6 +40,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import coil.compose.AsyncImage
 import io.pm.finlight.*
 import io.pm.finlight.R
@@ -264,7 +273,6 @@ fun ProfileScreen(
                     onClick = { navController.navigate("budget_screen") },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-                // --- NEW: Entry point for Recurring Rules ---
                 SettingsActionItem(
                     text = "Manage Recurring Rules",
                     subtitle = "Automate your regular bills and income",
@@ -444,6 +452,22 @@ fun ProfileScreen(
                 )
             }
         }
+
+        // --- NEW: Debug section for manually triggering workers ---
+        item {
+            SettingsSection("Debug") {
+                SettingsActionItem(
+                    text = "Run Recurring Worker Now",
+                    subtitle = "Manually trigger the recurring transaction check",
+                    icon = Icons.Default.BugReport,
+                    onClick = {
+                        val workRequest = OneTimeWorkRequestBuilder<RecurringTransactionWorker>().build()
+                        WorkManager.getInstance(context).enqueue(workRequest)
+                        Toast.makeText(context, "Recurring worker triggered!", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        }
     }
 
     // region Dialogs
@@ -452,7 +476,6 @@ fun ProfileScreen(
 
     if (showDatePickerDialog) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
-        // --- FIX: Use a standard AlertDialog to wrap the DatePicker to avoid compiler issues ---
         AlertDialog(
             onDismissRequest = { showDatePickerDialog = false },
             title = { Text("Select Scan Start Date") },

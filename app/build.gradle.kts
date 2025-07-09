@@ -73,6 +73,12 @@ android {
             )
             signingConfig = signingConfigs.getByName("release")
         }
+        // --- NEW: Explicitly define the debug build type ---
+        // This ensures that the App Inspector can connect to your app to view
+        // databases, background workers, and other debug information.
+        debug {
+            isDebuggable = true
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

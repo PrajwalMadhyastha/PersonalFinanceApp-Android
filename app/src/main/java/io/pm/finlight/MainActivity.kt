@@ -1,16 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The "dashboard" route has been removed from the `fabRoutes` set.
-// This prevents the main Floating Action Button from appearing on the
-// Dashboard screen, as it is being replaced by a contextual "+ Add" button
-// inside the "Recent Activity" card.
-// FEATURE - A new "+" icon button has been added to the TopAppBar's actions.
-// This button is only visible on the "Transactions" screen and provides a
-// contextual way to add a new transaction, replacing the FAB on that screen.
-// BUG FIX: Added a `deepLinks` parameter to the `time_period_report_screen`
-// navigation destination. This maps the URI pattern from the report
-// notifications (e.g., "app://finlight.pm.io/report/DAILY") to the correct
-// screen, resolving the crash when tapping on a report notification.
+// REASON: BUG FIX - The deep link for the time period report screen was
+// missing. It has been restored to the composable definition in the NavHost,
+// which resolves the IllegalArgumentException crash when tapping on a report
+// notification.
 // =================================================================================
 package io.pm.finlight
 
@@ -233,7 +226,8 @@ fun MainAppScreen() {
         "income_screen",
         "splash_screen",
         "add_transaction",
-        "time_period_report_screen"
+        "time_period_report_screen",
+        "link_recurring_transaction"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -316,7 +310,6 @@ fun MainAppScreen() {
                                                 filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
                                             }
                                         }
-                                        // --- NEW: Add Transaction Icon Button ---
                                         IconButton(onClick = { navController.navigate("add_transaction") }) {
                                             Icon(Icons.Default.Add, contentDescription = "Add Transaction")
                                         }
@@ -602,17 +595,33 @@ fun AppNavHost(
         }
 
         composable(
-            "time_period_report_screen/{timePeriod}",
-            arguments = listOf(navArgument("timePeriod") {
-                type = NavType.EnumType(TimePeriod::class.java)
-            }),
-            // --- BUG FIX: Added the deep link mapping ---
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}" })
+            route = "link_recurring_transaction/{potentialTransactionJson}",
+            arguments = listOf(navArgument("potentialTransactionJson") { type = NavType.StringType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/link_recurring/{potentialTransactionJson}" })
+        ) { backStackEntry ->
+            val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
+            LinkRecurringTransactionScreen(
+                navController = navController,
+                potentialTransactionJson = json
+            )
+        }
+
+        composable(
+            "time_period_report_screen/{timePeriod}?date={date}",
+            arguments = listOf(
+                navArgument("timePeriod") { type = NavType.EnumType(TimePeriod::class.java) },
+                navArgument("date") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}?date={date}" })
         ) { backStackEntry ->
             val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
+            val date = backStackEntry.arguments?.getLong("date")
 
             if (timePeriod != null) {
-                TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
+                TimePeriodReportScreen(navController = navController, timePeriod = timePeriod, initialDateMillis = date)
             }
         }
     }
@@ -623,16 +632,12 @@ fun SplashScreen(navController: NavHostController, activity: Activity) {
     LaunchedEffect(key1 = Unit) {
         val deepLinkUri = activity.intent?.data
         if (deepLinkUri != null) {
-            // BUG FIX: Correctly build the back stack for deep links.
-            // First, navigate to the home screen (dashboard) and clear the splash screen.
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }
-            // Then, navigate to the actual deep link destination.
             navController.navigate(deepLinkUri)
-            activity.intent.data = null // Important: Consume the intent's data
+            activity.intent.data = null
         } else {
-            // Normal startup: go to the dashboard.
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }

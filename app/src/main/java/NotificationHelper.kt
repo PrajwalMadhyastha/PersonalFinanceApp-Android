@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: BUG FIX - The `showTransactionNotification` function has been updated
-// to accept a full `Transaction` object instead of a `PotentialTransaction`.
-// It now correctly builds a deep link to the `TransactionDetailScreen` using
-// the transaction's ID. This resolves the bug where tapping a "review"
-// notification would navigate to the wrong screen.
+// REASON: FEATURE - Added showRecurringTransactionDueNotification. This new
+// function creates a specific notification for due recurring payments, with a
+// deep link to the new LinkTransactionScreen. This is a core component of the
+// new user-driven recurring transaction workflow.
 // =================================================================================
 package io.pm.finlight
 
@@ -18,6 +17,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.TaskStackBuilder
 import androidx.core.net.toUri
+import com.google.gson.Gson
+import java.net.URLEncoder
 import java.text.NumberFormat
 import java.util.Calendar
 import java.util.Locale
@@ -27,6 +28,49 @@ object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
     private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
+    // --- NEW: Deep link for the new recurring transaction flow ---
+    private const val DEEP_LINK_URI_LINK_RECURRING = "app://finlight.pm.io/link_recurring"
+
+
+    // --- NEW: Notification for when a recurring transaction is due ---
+    fun showRecurringTransactionDueNotification(
+        context: Context,
+        potentialTxn: PotentialTransaction
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val json = Gson().toJson(potentialTxn)
+        val encodedJson = URLEncoder.encode(json, "UTF-8")
+        val deepLinkUri = "$DEEP_LINK_URI_LINK_RECURRING/$encodedJson".toUri()
+
+        val intent = Intent(Intent.ACTION_VIEW, deepLinkUri).apply {
+            `package` = context.packageName
+        }
+
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(intent)
+            getPendingIntent(potentialTxn.sourceSmsId.toInt(), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+        val contentText = "Your payment of ${currencyFormat.format(potentialTxn.amount)} for ${potentialTxn.merchantName} is due. Tap to confirm."
+
+        val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Recurring Payment Due")
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .addAction(0, "Confirm Payment", pendingIntent)
+
+        with(NotificationManagerCompat.from(context)) {
+            notify(potentialTxn.sourceSmsId.toInt(), builder.build())
+        }
+    }
 
 
     private fun createEnhancedSummaryNotification(

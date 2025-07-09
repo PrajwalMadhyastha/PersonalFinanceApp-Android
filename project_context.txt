@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul  9 13:05:10 IST 2025
+Generated on: Wed Jul  9 15:11:43 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -2591,6 +2591,15 @@ enum class AppTheme(
 
 
 ================== FILE: ./app/src/main/java/RecurringTransactionDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionDao.kt
+// REASON: FEATURE - Added the `updateLastRunDate` function, which the worker will
+// call after successfully creating a transaction from a rule. Also renamed `getAll`
+// to `getAllRules` for clarity and consistency with the worker's implementation.
+// REASON: FIX - Added a new suspend function `getAllRulesList()` for the worker to
+// fetch a one-time list, resolving compilation errors. The original Flow-based
+// function was renamed to `getAllRulesFlow()` for clarity.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -2613,12 +2622,19 @@ interface RecurringTransactionDao {
     suspend fun delete(recurringTransaction: RecurringTransaction)
 
     @Query("SELECT * FROM recurring_transactions ORDER BY startDate DESC")
-    fun getAll(): Flow<List<RecurringTransaction>>
+    fun getAllRulesFlow(): Flow<List<RecurringTransaction>>
+
+    // --- NEW: Suspend function to get a one-time list for the worker ---
+    @Query("SELECT * FROM recurring_transactions")
+    suspend fun getAllRulesList(): List<RecurringTransaction>
 
     @Query("SELECT * FROM recurring_transactions WHERE id = :id")
     fun getById(id: Int): Flow<RecurringTransaction?>
-}
--e 
+
+    // --- NEW: Function to update the last run date of a rule ---
+    @Query("UPDATE recurring_transactions SET lastRunDate = :lastRunDate WHERE id = :id")
+    suspend fun updateLastRunDate(id: Int, lastRunDate: Long)
+}-e 
 
 
 ================== FILE: ./app/src/main/java/MerchantMapping.kt ==================
@@ -2702,6 +2718,13 @@ data class MonthlyTrend(
 
 
 ================== FILE: ./app/src/main/java/RecurringTransaction.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RecurringTransaction.kt
+// REASON: FEATURE - Added a new nullable `lastRunDate` field. This will store
+// the timestamp of the last time a transaction was created from this rule,
+// which is essential for the RecurringTransactionWorker to determine the next
+// due date.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.Entity
@@ -2738,12 +2761,13 @@ data class RecurringTransaction(
     val description: String,
     val amount: Double,
     val transactionType: String, // "income" or "expense"
-    val recurrenceInterval: String, // e.g., "Monthly", "Weekly", "Yearly"
+    val recurrenceInterval: String, // e.g., "Daily", "Weekly", "Monthly", "Yearly"
     val startDate: Long, // Timestamp for the first occurrence
     val accountId: Int,
     val categoryId: Int?,
-)
--e 
+    // --- NEW: Track the last execution date of this rule ---
+    val lastRunDate: Long? = null
+)-e 
 
 
 ================== FILE: ./app/src/main/java/LinkTransactionViewModel.kt ==================
@@ -2935,6 +2959,9 @@ data class Category(
 // FILE: ./app/src/main/java/io/pm/finlight/ReminderManager.kt
 // REASON: Added the cancelMonthlySummary function to allow disabling of the
 // monthly report worker, completing the scheduling lifecycle.
+// REASON: FEATURE - Added `scheduleRecurringTransactionWorker` to schedule the new
+// worker to run daily. This is the core scheduling component for the automated
+// recurring transactions feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -2948,6 +2975,33 @@ object ReminderManager {
     private const val DAILY_EXPENSE_REPORT_WORK_TAG = "daily_expense_report_work"
     private const val WEEKLY_SUMMARY_WORK_TAG = "weekly_summary_work"
     private const val MONTHLY_SUMMARY_WORK_TAG = "monthly_summary_work"
+    private const val RECURRING_TRANSACTION_WORK_TAG = "recurring_transaction_work" // --- NEW
+
+    // --- NEW: Function to schedule the recurring transaction worker ---
+    fun scheduleRecurringTransactionWorker(context: Context) {
+        val now = Calendar.getInstance()
+        val nextRun = Calendar.getInstance().apply {
+            // Schedule to run early in the morning, e.g., 2 AM
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 2)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }
+
+        val initialDelay = nextRun.timeInMillis - now.timeInMillis
+
+        val recurringRequest = OneTimeWorkRequestBuilder<RecurringTransactionWorker>()
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            RECURRING_TRANSACTION_WORK_TAG,
+            ExistingWorkPolicy.REPLACE,
+            recurringRequest
+        )
+        Log.d("ReminderManager", "Recurring transaction worker scheduled for ${nextRun.time}")
+    }
+
 
     fun scheduleDailyReport(context: Context) {
         val prefs = context.getSharedPreferences("finance_app_settings", Context.MODE_PRIVATE)
@@ -3053,8 +3107,7 @@ object ReminderManager {
     fun cancelMonthlySummary(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(MONTHLY_SUMMARY_WORK_TAG)
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/Tag.kt ==================
@@ -11785,21 +11838,6 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: FEATURE - Added a new "Appearance" section with a theme picker UI.
-// This allows the user to select their preferred theme from the available
-// options. The UI is designed with the Project Aurora aesthetic, using GlassPanel
-// and providing visual previews for each theme.
-// BUG FIX - Corrected the unresolved references in the ThemePickerItem by using
-// the correct property names (`lightColor`, `darkColor`) from the AppTheme enum.
-// BUG FIX - The AlertDialogs now correctly derive their background color from
-// the app's MaterialTheme, ensuring they match the selected theme (e.g.,
-// Aurora) instead of defaulting to the system's light/dark mode.
-// BUG FIX - Replaced the custom TimePickerDialog and the standard DatePickerDialog
-// calls with direct AlertDialog implementations to resolve @Composable invocation
-// compilation errors.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -12064,6 +12102,14 @@ fun ProfileScreen(
                     subtitle = "Set and edit your monthly budgets",
                     icon = Icons.Default.Savings,
                     onClick = { navController.navigate("budget_screen") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                // --- NEW: Entry point for Recurring Rules ---
+                SettingsActionItem(
+                    text = "Manage Recurring Rules",
+                    subtitle = "Automate your regular bills and income",
+                    icon = Icons.Default.Autorenew,
+                    onClick = { navController.navigate("recurring_transactions") },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                 SettingsActionItem(
@@ -12454,8 +12500,7 @@ private fun ThemePickerItem(
             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
@@ -15781,7 +15826,7 @@ import kotlinx.coroutines.flow.Flow
 
 class RecurringTransactionRepository(private val recurringTransactionDao: RecurringTransactionDao) {
     fun getAll(): Flow<List<RecurringTransaction>> {
-        return recurringTransactionDao.getAll()
+        return recurringTransactionDao.getAllRulesFlow()
     }
 
     suspend fun insert(recurringTransaction: RecurringTransaction) {
@@ -16655,10 +16700,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 22. A new
-// migration, MIGRATION_21_22, has been added to insert the new default
-// categories (Bike, Car, Debt, etc.) for existing users, ensuring they receive
-// the updated category list without a fresh install.
+// REASON: FEATURE - The database version has been incremented to 23. A new
+// migration, MIGRATION_22_23, has been added to introduce the `lastRunDate`
+// column to the `recurring_transactions` table. This is a critical step for the
+// new recurring transaction automation feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -16690,10 +16735,10 @@ import java.util.Calendar
         MerchantCategoryMapping::class,
         IgnoreRule::class
     ],
-    version = 22, // --- UPDATED: Incremented version number ---
+    version = 23, // --- UPDATED: Incremented version number ---
     exportSchema = true,
 )
-abstract open class AppDatabase : RoomDatabase() {
+abstract class AppDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun accountDao(): AccountDao
     abstract fun categoryDao(): CategoryDao
@@ -16868,7 +16913,6 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the new default categories ---
         val MIGRATION_21_22 = object : Migration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (16, 'Bike', 'two_wheeler', 'red_light')")
@@ -16885,12 +16929,19 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to add the lastRunDate column ---
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `recurring_transactions` ADD COLUMN `lastRunDate` INTEGER")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -16982,8 +17033,7 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
@@ -18991,6 +19041,13 @@ interface TransactionDao {
 
 
 ================== FILE: ./app/src/main/java/RecurringTransactionViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionViewModel.kt
+// REASON: FEATURE - The ViewModel now calls the new
+// `ReminderManager.scheduleRecurringTransactionWorker` function after a new rule
+// is added. This ensures that the automation process is kicked off as soon as the
+// user creates their first recurring transaction rule.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -19029,9 +19086,10 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
                 categoryId = categoryId,
             )
         repository.insert(newRule)
+        // --- NEW: Schedule the worker after adding a rule ---
+        ReminderManager.scheduleRecurringTransactionWorker(getApplication())
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/CategoryIconHelper.kt ==================
@@ -19906,8 +19964,7 @@ data class Transaction(
     val source: String = "Manual Entry",
     val originalDescription: String? = null,
     val isExcluded: Boolean = false
-)
--e 
+)-e 
 
 
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
@@ -20273,6 +20330,118 @@ object NotificationHelper {
     }
 }
 -e 
+
+
+================== FILE: ./app/src/main/java/RecurringTransactionWorker.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionWorker.kt
+// REASON: NEW FILE - This worker contains the core logic for automating recurring
+// transactions. It runs daily, fetches all active recurring rules, and determines
+// which ones are due for creation based on their interval and last execution date.
+// It then inserts the new transactions into the database.
+// REASON: FIX - The worker now calls the new `getAllRulesList()` suspend function
+// from the DAO to fetch a one-time list of rules. This resolves all previous
+// compilation errors related to Flow handling and suspend function calls.
+// =================================================================================
+package io.pm.finlight
+
+import android.content.Context
+import android.util.Log
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.Calendar
+import java.util.Date
+
+class RecurringTransactionWorker(
+    private val context: Context,
+    workerParams: WorkerParameters
+) : CoroutineWorker(context, workerParams) {
+
+    override suspend fun doWork(): Result {
+        Log.d("RecurringTxnWorker", "Worker starting...")
+        return withContext(Dispatchers.IO) {
+            try {
+                val db = AppDatabase.getInstance(context)
+                val recurringDao = db.recurringTransactionDao()
+                val transactionDao = db.transactionDao()
+
+                // --- FIX: Call the new suspend function to get a simple list ---
+                val allRules = recurringDao.getAllRulesList()
+
+                allRules.forEach { rule ->
+                    if (isDue(rule, transactionDao)) {
+                        val newTransaction = Transaction(
+                            description = rule.description,
+                            amount = rule.amount,
+                            transactionType = rule.transactionType,
+                            date = System.currentTimeMillis(), // Use today's date for the new transaction
+                            accountId = rule.accountId,
+                            categoryId = rule.categoryId,
+                            notes = "Recurring",
+                            source = "Recurring Rule"
+                        )
+                        transactionDao.insert(newTransaction)
+                        // Update the last run date for the rule
+                        recurringDao.updateLastRunDate(rule.id, System.currentTimeMillis())
+                        Log.d("RecurringTxnWorker", "Created transaction for rule: ${rule.description}")
+                    }
+                }
+
+                // Reschedule for the next day
+                ReminderManager.scheduleRecurringTransactionWorker(context)
+                Log.d("RecurringTxnWorker", "Worker finished and rescheduled for tomorrow.")
+                Result.success()
+            } catch (e: Exception) {
+                Log.e("RecurringTxnWorker", "Worker failed", e)
+                Result.retry()
+            }
+        }
+    }
+
+    /**
+     * Determines if a recurring transaction rule is due to be executed today.
+     */
+    private suspend fun isDue(
+        rule: RecurringTransaction,
+        transactionDao: TransactionDao
+    ): Boolean {
+        val today = Calendar.getInstance()
+
+        // If the rule has never run, and the start date is today or in the past, it's due.
+        if (rule.lastRunDate == null) {
+            val startDateCal = Calendar.getInstance().apply { timeInMillis = rule.startDate }
+            return !today.before(startDateCal)
+        }
+
+        val lastRunCal = Calendar.getInstance().apply { timeInMillis = rule.lastRunDate }
+        val nextDueDate = (lastRunCal.clone() as Calendar).apply {
+            when (rule.recurrenceInterval) {
+                "Daily" -> add(Calendar.DAY_OF_YEAR, 1)
+                "Weekly" -> add(Calendar.WEEK_OF_YEAR, 1)
+                "Monthly" -> add(Calendar.MONTH, 1)
+                "Yearly" -> add(Calendar.YEAR, 1)
+            }
+            // Set to beginning of the day for consistent comparison
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        val todayStartOfDay = (today.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        // Check if today is on or after the calculated next due date.
+        // We use 'on or after' to catch up on any missed runs (e.g., if the device was off).
+        return !todayStartOfDay.before(nextDueDate)
+    }
+}-e 
 
 
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================

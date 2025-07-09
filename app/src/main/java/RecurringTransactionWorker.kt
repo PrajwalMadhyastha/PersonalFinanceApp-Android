@@ -1,12 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionWorker.kt
-// REASON: NEW FILE - This worker contains the core logic for automating recurring
-// transactions. It runs daily, fetches all active recurring rules, and determines
-// which ones are due for creation based on their interval and last execution date.
-// It then inserts the new transactions into the database.
-// REASON: FIX - The worker now calls the new `getAllRulesList()` suspend function
-// from the DAO to fetch a one-time list of rules. This resolves all previous
-// compilation errors related to Flow handling and suspend function calls.
+// REASON: REFACTOR - The worker's core logic has been completely overhauled.
+// Instead of creating a new transaction, it now calls a new function in
+// NotificationHelper to show a notification for each due rule. This aligns
+// with the new user-driven workflow. The isDue function is updated to be more
+// robust, checking for missed runs.
 // =================================================================================
 package io.pm.finlight
 
@@ -14,10 +12,10 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
-import java.util.Date
 
 class RecurringTransactionWorker(
     private val context: Context,
@@ -25,32 +23,29 @@ class RecurringTransactionWorker(
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
-        Log.d("RecurringTxnWorker", "Worker starting...")
+        Log.d("RecurringTxnWorker", "Worker starting to check for due recurring rules...")
         return withContext(Dispatchers.IO) {
             try {
                 val db = AppDatabase.getInstance(context)
                 val recurringDao = db.recurringTransactionDao()
-                val transactionDao = db.transactionDao()
 
-                // --- FIX: Call the new suspend function to get a simple list ---
                 val allRules = recurringDao.getAllRulesList()
+                Log.d("RecurringTxnWorker", "Found ${allRules.size} rules to check.")
 
                 allRules.forEach { rule ->
-                    if (isDue(rule, transactionDao)) {
-                        val newTransaction = Transaction(
-                            description = rule.description,
+                    if (isDue(rule)) {
+                        Log.d("RecurringTxnWorker", "Rule '${rule.description}' is due. Sending notification.")
+                        // --- NEW: Instead of creating a transaction, show a notification ---
+                        val potentialTxn = PotentialTransaction(
+                            sourceSmsId = rule.id.toLong(), // Re-using this field for the rule ID
+                            smsSender = "Recurring Rule",
                             amount = rule.amount,
                             transactionType = rule.transactionType,
-                            date = System.currentTimeMillis(), // Use today's date for the new transaction
-                            accountId = rule.accountId,
-                            categoryId = rule.categoryId,
-                            notes = "Recurring",
-                            source = "Recurring Rule"
+                            merchantName = rule.description,
+                            originalMessage = "Recurring payment for ${rule.description}",
+                            sourceSmsHash = "recurring_${rule.id}"
                         )
-                        transactionDao.insert(newTransaction)
-                        // Update the last run date for the rule
-                        recurringDao.updateLastRunDate(rule.id, System.currentTimeMillis())
-                        Log.d("RecurringTxnWorker", "Created transaction for rule: ${rule.description}")
+                        NotificationHelper.showRecurringTransactionDueNotification(context, potentialTxn)
                     }
                 }
 
@@ -68,16 +63,18 @@ class RecurringTransactionWorker(
     /**
      * Determines if a recurring transaction rule is due to be executed today.
      */
-    private suspend fun isDue(
-        rule: RecurringTransaction,
-        transactionDao: TransactionDao
-    ): Boolean {
+    private fun isDue(rule: RecurringTransaction): Boolean {
         val today = Calendar.getInstance()
+        val ruleStartCal = Calendar.getInstance().apply { timeInMillis = rule.startDate }
 
-        // If the rule has never run, and the start date is today or in the past, it's due.
+        // If the rule's start date is in the future, it's not due yet.
+        if (today.before(ruleStartCal)) {
+            return false
+        }
+
+        // If the rule has never run, it's due.
         if (rule.lastRunDate == null) {
-            val startDateCal = Calendar.getInstance().apply { timeInMillis = rule.startDate }
-            return !today.before(startDateCal)
+            return true
         }
 
         val lastRunCal = Calendar.getInstance().apply { timeInMillis = rule.lastRunDate }
