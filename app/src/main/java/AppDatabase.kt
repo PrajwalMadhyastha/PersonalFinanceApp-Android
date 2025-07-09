@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 22. A new
-// migration, MIGRATION_21_22, has been added to insert the new default
-// categories (Bike, Car, Debt, etc.) for existing users, ensuring they receive
-// the updated category list without a fresh install.
+// REASON: FEATURE - The database version has been incremented to 23. A new
+// migration, MIGRATION_22_23, has been added to introduce the `lastRunDate`
+// column to the `recurring_transactions` table. This is a critical step for the
+// new recurring transaction automation feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -35,10 +35,10 @@ import java.util.Calendar
         MerchantCategoryMapping::class,
         IgnoreRule::class
     ],
-    version = 22, // --- UPDATED: Incremented version number ---
+    version = 23, // --- UPDATED: Incremented version number ---
     exportSchema = true,
 )
-abstract open class AppDatabase : RoomDatabase() {
+abstract class AppDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun accountDao(): AccountDao
     abstract fun categoryDao(): CategoryDao
@@ -213,7 +213,6 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the new default categories ---
         val MIGRATION_21_22 = object : Migration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (16, 'Bike', 'two_wheeler', 'red_light')")
@@ -230,12 +229,19 @@ abstract open class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to add the lastRunDate column ---
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `recurring_transactions` ADD COLUMN `lastRunDate` INTEGER")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance

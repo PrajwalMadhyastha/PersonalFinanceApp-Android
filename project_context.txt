@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul  9 09:44:19 IST 2025
+Generated on: Wed Jul  9 13:05:10 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -841,6 +841,18 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
 // REASON: BUG FIX - The ViewModel and its Factory have been moved to their own
 // dedicated file to resolve the "Redeclaration" compilation errors.
+// REASON: REFACTOR - The `getPeriodDateRange` function has been updated to
+// calculate a rolling time window (last 24 hours, 7 days, or 30 days)
+// ending at the currently selected date. This ensures the report accurately
+// reflects the user's request for a floating time period rather than a fixed
+// calendar day/week.
+// REASON: FEATURE - Added a new `insights` StateFlow. This flow calculates the
+// percentage change in spending compared to the previous period and identifies
+// the top spending category, providing richer data for the new "Insights" card
+// on the report screen.
+// FEATURE: The ViewModel now exposes a `totalIncome` StateFlow, calculated
+// from the transactions in the current period. This provides the necessary data
+// for the redesigned, more comprehensive report header.
 // =================================================================================
 package io.pm.finlight
 
@@ -855,6 +867,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToInt
 
 class TimePeriodReportViewModelFactory(
     private val application: Application,
@@ -869,6 +882,11 @@ class TimePeriodReportViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
+data class ReportInsights(
+    val percentageChange: Int?,
+    val topCategory: CategorySpending?
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimePeriodReportViewModel(
@@ -892,6 +910,43 @@ class TimePeriodReportViewModel(
         val (start, end) = getPeriodDateRange(calendar)
         transactionDao.getTransactionsForDateRange(start, end)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- NEW: Expose total income for the report header ---
+    val totalIncome: StateFlow<Double> = transactionsForPeriod.map { transactions ->
+        transactions
+            .filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }
+            .sumOf { it.transaction.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+
+    val insights: StateFlow<ReportInsights?> = _selectedDate.flatMapLatest { calendar ->
+        flow {
+            val (currentStart, currentEnd) = getPeriodDateRange(calendar)
+
+            val previousPeriodEndCal = (calendar.clone() as Calendar).apply {
+                when (timePeriod) {
+                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
+                    TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
+                    TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
+                }
+            }
+            val (previousStart, previousEnd) = getPeriodDateRange(previousPeriodEndCal)
+
+            val currentSummary = transactionDao.getFinancialSummaryForRange(currentStart, currentEnd)
+            val previousSummary = transactionDao.getFinancialSummaryForRange(previousStart, previousEnd)
+            val topCategories = transactionDao.getTopSpendingCategoriesForRange(currentStart, currentEnd)
+
+            val percentageChange = if (previousSummary?.totalExpenses != null && previousSummary.totalExpenses > 0) {
+                val currentExpenses = currentSummary?.totalExpenses ?: 0.0
+                ((currentExpenses - previousSummary.totalExpenses) / previousSummary.totalExpenses * 100).roundToInt()
+            } else {
+                null
+            }
+
+            emit(ReportInsights(percentageChange, topCategories.firstOrNull()))
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
 
     val chartData: StateFlow<Pair<BarData, List<String>>?> = _selectedDate.flatMapLatest { calendar ->
         when (timePeriod) {
@@ -1036,17 +1091,17 @@ class TimePeriodReportViewModel(
     }
 
     private fun getPeriodDateRange(calendar: Calendar): Pair<Long, Long> {
-        val now = Calendar.getInstance()
-        val endCal = now.timeInMillis
-        val startCal = (now.clone() as Calendar).apply {
+        val endCal = (calendar.clone() as Calendar)
+
+        val startCal = (endCal.clone() as Calendar).apply {
             when (timePeriod) {
                 TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
                 TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
                 TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
             }
-        }.timeInMillis
+        }
 
-        return Pair(startCal, endCal)
+        return Pair(startCal.timeInMillis, endCal.timeInMillis)
     }
 }
 -e 
@@ -5166,6 +5221,20 @@ private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
 // REASON: BUG FIX - The duplicated ViewModel and Factory code has been removed
 // from this file to resolve the "Redeclaration" compilation errors. This screen
 // now correctly uses the ViewModel from its dedicated file.
+// REASON: REFACTOR - The `ReportHeader` subtitle is now dynamic and reflects
+// the rolling time period (e.g., "Since Jul 8, 10:00 PM"). This provides a
+// clearer and more accurate description of the data being displayed, matching
+// the user's requirement.
+// REASON: FEATURE - The UI has been enhanced by splitting the header into a
+// "Hero" card and a new "Insights" card. The Hero card now has a more prominent
+// design with a background icon, and the Insights card displays the percentage
+// change and top spending category for the period.
+// REASON: FEATURE - The "Total Spent" amount in the hero card now uses a
+// subtle gradient text effect for added visual flair, completing the
+// implementation of "Idea 3".
+// FEATURE: The hero card has been redesigned to show both "Total Income" and
+// "Total Spent" side-by-side, providing a more comprehensive financial overview
+// for the selected period.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -5176,17 +5245,22 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -5198,9 +5272,7 @@ import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
-import io.pm.finlight.TimePeriod
-import io.pm.finlight.TimePeriodReportViewModel
-import io.pm.finlight.TimePeriodReportViewModelFactory
+import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionItem
 import java.text.NumberFormat
@@ -5213,7 +5285,7 @@ import kotlin.math.abs
 fun TimePeriodReportScreen(
     navController: NavController,
     timePeriod: TimePeriod,
-    initialDateMillis: Long?
+    initialDateMillis: Long? = null // Allow null for default
 ) {
     val application = LocalContext.current.applicationContext as Application
     val factory = TimePeriodReportViewModelFactory(application, timePeriod, initialDateMillis)
@@ -5222,8 +5294,10 @@ fun TimePeriodReportScreen(
     val selectedDate by viewModel.selectedDate.collectAsState()
     val transactions by viewModel.transactionsForPeriod.collectAsState()
     val chartDataPair by viewModel.chartData.collectAsState()
+    val insights by viewModel.insights.collectAsState()
 
     val totalSpent = transactions.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
+    val totalIncome by viewModel.totalIncome.collectAsState()
 
     val context = LocalContext.current
     LaunchedEffect(Unit) {
@@ -5272,8 +5346,8 @@ fun TimePeriodReportScreen(
                             dragAmount = 0f
                         },
                         onDragCancel = { dragAmount = 0f }
-                    ) { change, drag ->
-                        dragAmount += drag
+                    ) { change, horizontalDragAmount ->
+                        dragAmount += horizontalDragAmount
                         change.consume()
                     }
                 }
@@ -5286,9 +5360,14 @@ fun TimePeriodReportScreen(
                 item {
                     ReportHeader(
                         totalSpent = totalSpent,
+                        totalIncome = totalIncome,
                         timePeriod = timePeriod,
                         selectedDate = selectedDate.time
                     )
+                }
+
+                item {
+                    ReportInsightsCard(insights = insights)
                 }
 
                 item {
@@ -5367,46 +5446,146 @@ fun TimePeriodReportScreen(
 }
 
 @Composable
-private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDate: Date) {
+private fun ReportHeader(totalSpent: Double, totalIncome: Double, timePeriod: TimePeriod, selectedDate: Date) {
     val subtitle = when (timePeriod) {
         TimePeriod.DAILY -> {
-            "Last 24 Hours"
+            val format = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
+            val startCal = Calendar.getInstance().apply {
+                time = selectedDate
+                add(Calendar.HOUR_OF_DAY, -24)
+            }
+            "Since ${format.format(startCal.time)}"
         }
         TimePeriod.WEEKLY -> {
-            "Last 7 Days"
+            val format = SimpleDateFormat("MMM d", Locale.getDefault())
+            val startCal = Calendar.getInstance().apply {
+                time = selectedDate
+                add(Calendar.DAY_OF_YEAR, -7)
+            }
+            "Since ${format.format(startCal.time)}"
         }
         TimePeriod.MONTHLY -> {
-            "Last 30 Days"
+            val format = SimpleDateFormat("MMM d", Locale.getDefault())
+            val startCal = Calendar.getInstance().apply {
+                time = selectedDate
+                add(Calendar.DAY_OF_YEAR, -30)
+            }
+            "Since ${format.format(startCal.time)}"
         }
     }
 
+    val backgroundIcon = when (timePeriod) {
+        TimePeriod.DAILY -> Icons.Default.CalendarViewDay
+        TimePeriod.WEEKLY -> Icons.Default.CalendarViewWeek
+        TimePeriod.MONTHLY -> Icons.Default.CalendarViewMonth
+    }
+
     GlassPanel {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .height(240.dp), // Increased height
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "Total Spent",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            Icon(
+                imageVector = backgroundIcon,
+                contentDescription = null,
+                modifier = Modifier.size(180.dp), // Slightly larger icon
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
             )
-            Text(
-                text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalSpent).drop(1)}",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Total Income",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalIncome).drop(1)}",
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Total Spent",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalSpent).drop(1)}",
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
+
+@Composable
+private fun ReportInsightsCard(insights: ReportInsights?) {
+    if (insights == null) return
+
+    GlassPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Change", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val (text, color) = when {
+                    insights.percentageChange == null -> "--" to MaterialTheme.colorScheme.onSurface
+                    insights.percentageChange > 0 -> "↑ ${insights.percentageChange}%" to MaterialTheme.colorScheme.error
+                    insights.percentageChange < 0 -> "↓ ${abs(insights.percentageChange)}%" to MaterialTheme.colorScheme.primary
+                    else -> "No Change" to MaterialTheme.colorScheme.onSurface
+                }
+                Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = color)
+                Text("vs. previous period", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Top Spend", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (insights.topCategory != null) {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(insights.topCategory.iconKey ?: "category"),
+                        contentDescription = insights.topCategory.categoryName,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(CategoryIconHelper.getIconBackgroundColor(insights.topCategory.colorKey ?: "gray_light"))
+                            .padding(8.dp),
+                        tint = Color.Black
+                    )
+                    Text(insights.topCategory.categoryName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text("--", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
@@ -5451,7 +5630,6 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
             }
         },
         update = { chart ->
-            // --- FIX: Assign data to the chart *before* modifying its properties ---
             chart.data = barData
             (chart.data.dataSets.first() as BarDataSet).valueTextColor = valueTextColor
             chart.invalidate()
@@ -19735,12 +19913,11 @@ data class Transaction(
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: BUG FIX - The receiver now checks if a category was successfully
-// learned for an auto-imported transaction. If a category was not found
-// (`mappedCategoryId == null`), it now correctly shows the "Review"
-// notification, prompting the user to categorize it. Otherwise, it shows the
-// standard "Auto-Saved" confirmation. This ensures transactions that require
-// attention are not silently saved without a category.
+// REASON: BUG FIX - The receiver now calls the updated
+// `showTransactionNotification` function, passing the newly saved `Transaction`
+// object (with its ID) instead of the old `PotentialTransaction`. This ensures
+// the notification's deep link correctly points to the `TransactionDetailScreen`,
+// resolving the navigation bug.
 // =================================================================================
 package io.pm.finlight
 
@@ -19831,11 +20008,11 @@ class SmsReceiver : BroadcastReceiver() {
                                 Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
 
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                                    // --- FIX: Show the correct notification based on learning status ---
+                                    val savedTransaction = newTransaction.copy(id = newTransactionId.toInt())
                                     if (mappedCategoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
-                                        NotificationHelper.showTransactionNotification(context, potentialTxn)
+                                        NotificationHelper.showTransactionNotification(context, savedTransaction)
                                     } else {
-                                        NotificationHelper.showAutoSaveConfirmationNotification(context, newTransaction.copy(id = newTransactionId.toInt()))
+                                        NotificationHelper.showAutoSaveConfirmationNotification(context, savedTransaction)
                                     }
                                 }
 
@@ -19859,22 +20036,11 @@ class SmsReceiver : BroadcastReceiver() {
 ================== FILE: ./app/src/main/java/NotificationHelper.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: BUG FIX - Replaced references to non-existent drawable resources
-// (`ic_shopping_cart_24`, `ic_review_24`) with standard, available ones. The
-// small icon is now the app's launcher icon for consistency, and the action
-// icon is now a standard system icon (`ic_menu_view`). This resolves the
-// "Unresolved reference" compiler errors.
-// BUG FIX - The `createEnhancedSummaryNotification` function now accepts a `deepLinkUri`
-// parameter, making it flexible. `showDailyReportNotification` now passes the correct
-// URI for the new daily report screen, fixing the navigation bug.
-// REFACTOR - Updated to use the new generic report deep link structure.
-// BUG FIX: The `showDailyReportNotification` function now accepts a timestamp
-// and constructs a deep link with the date. It also uses clearer title text
-// to specify the report is for "Yesterday". This ensures the user is taken
-// to the correct day's report from the notification.
-// BUG FIX: The Intent creation for deep links now correctly uses TaskStackBuilder
-// with an ACTION_VIEW intent and a URI. This resolves the various unresolved
-// reference and argument type mismatch compilation errors.
+// REASON: BUG FIX - The `showTransactionNotification` function has been updated
+// to accept a full `Transaction` object instead of a `PotentialTransaction`.
+// It now correctly builds a deep link to the `TransactionDetailScreen` using
+// the transaction's ID. This resolves the bug where tapping a "review"
+// notification would navigate to the wrong screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -19888,8 +20054,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.TaskStackBuilder
 import androidx.core.net.toUri
-import com.google.gson.Gson
-import java.net.URLEncoder
 import java.text.NumberFormat
 import java.util.Calendar
 import java.util.Locale
@@ -19915,7 +20079,6 @@ object NotificationHelper {
             return
         }
 
-        // --- FIX: Correctly create the deep link intent and pending intent ---
         val intent = Intent(Intent.ACTION_VIEW, deepLinkUri.toUri())
         intent.`package` = context.packageName
 
@@ -20073,35 +20236,31 @@ object NotificationHelper {
 
     fun showTransactionNotification(
         context: Context,
-        potentialTransaction: PotentialTransaction,
+        transaction: Transaction,
     ) {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return
         }
 
-        val potentialTxnJson = Gson().toJson(potentialTransaction)
-        val encodedJson = URLEncoder.encode(potentialTxnJson, "UTF-8")
-        val approveUri = "$DEEP_LINK_URI_APPROVE?potentialTxnJson=$encodedJson".toUri()
+        val detailUri = "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri()
 
-        val intent = Intent(Intent.ACTION_VIEW, approveUri).apply {
+        val intent = Intent(Intent.ACTION_VIEW, detailUri).apply {
             `package` = context.packageName
         }
 
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            potentialTransaction.sourceSmsId.toInt(),
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(intent)
+            getPendingIntent(transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
 
         val notificationIcon = android.R.drawable.ic_dialog_info
-        val typeText = potentialTransaction.transactionType.replaceFirstChar { it.uppercase() }
-        val bigText = "$typeText of ₹${"%.2f".format(potentialTransaction.amount)} from ${potentialTransaction.merchantName ?: "Unknown Sender"} detected. Tap to add."
+        val typeText = transaction.transactionType.replaceFirstChar { it.uppercase() }
+        val bigText = "$typeText of ₹${"%.2f".format(transaction.amount)} from ${transaction.description} detected. Tap to review and categorize."
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
             .setSmallIcon(notificationIcon)
             .setContentTitle("New Transaction Found")
-            .setContentText("Tap to review a transaction from ${potentialTransaction.merchantName ?: "Unknown Sender"}.")
+            .setContentText("Tap to review a transaction from ${transaction.description}.")
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
@@ -20109,7 +20268,7 @@ object NotificationHelper {
             .addAction(notificationIcon, "Review & Categorize", pendingIntent)
 
         with(NotificationManagerCompat.from(context)) {
-            notify(potentialTransaction.sourceSmsId.toInt(), builder.build())
+            notify(transaction.id, builder.build())
         }
     }
 }

@@ -2,6 +2,9 @@
 // FILE: ./app/src/main/java/io/pm/finlight/ReminderManager.kt
 // REASON: Added the cancelMonthlySummary function to allow disabling of the
 // monthly report worker, completing the scheduling lifecycle.
+// REASON: FEATURE - Added `scheduleRecurringTransactionWorker` to schedule the new
+// worker to run daily. This is the core scheduling component for the automated
+// recurring transactions feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -15,6 +18,33 @@ object ReminderManager {
     private const val DAILY_EXPENSE_REPORT_WORK_TAG = "daily_expense_report_work"
     private const val WEEKLY_SUMMARY_WORK_TAG = "weekly_summary_work"
     private const val MONTHLY_SUMMARY_WORK_TAG = "monthly_summary_work"
+    private const val RECURRING_TRANSACTION_WORK_TAG = "recurring_transaction_work" // --- NEW
+
+    // --- NEW: Function to schedule the recurring transaction worker ---
+    fun scheduleRecurringTransactionWorker(context: Context) {
+        val now = Calendar.getInstance()
+        val nextRun = Calendar.getInstance().apply {
+            // Schedule to run early in the morning, e.g., 2 AM
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 2)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }
+
+        val initialDelay = nextRun.timeInMillis - now.timeInMillis
+
+        val recurringRequest = OneTimeWorkRequestBuilder<RecurringTransactionWorker>()
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            RECURRING_TRANSACTION_WORK_TAG,
+            ExistingWorkPolicy.REPLACE,
+            recurringRequest
+        )
+        Log.d("ReminderManager", "Recurring transaction worker scheduled for ${nextRun.time}")
+    }
+
 
     fun scheduleDailyReport(context: Context) {
         val prefs = context.getSharedPreferences("finance_app_settings", Context.MODE_PRIVATE)

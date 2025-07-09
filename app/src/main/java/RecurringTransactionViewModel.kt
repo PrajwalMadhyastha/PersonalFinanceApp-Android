@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionViewModel.kt
+// REASON: FEATURE - The ViewModel now calls the new
+// `ReminderManager.scheduleRecurringTransactionWorker` function after a new rule
+// is added. This ensures that the automation process is kicked off as soon as the
+// user creates their first recurring transaction rule.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -36,5 +43,7 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
                 categoryId = categoryId,
             )
         repository.insert(newRule)
+        // --- NEW: Schedule the worker after adding a rule ---
+        ReminderManager.scheduleRecurringTransactionWorker(getApplication())
     }
 }
