@@ -7,26 +7,39 @@
 // the rolling time period (e.g., "Since Jul 8, 10:00 PM"). This provides a
 // clearer and more accurate description of the data being displayed, matching
 // the user's requirement.
+// REASON: FEATURE - The UI has been enhanced by splitting the header into a
+// "Hero" card and a new "Insights" card. The Hero card now has a more prominent
+// design with a background icon, and the Insights card displays the percentage
+// change and top spending category for the period.
+// REASON: FEATURE - The "Total Spent" amount in the hero card now uses a
+// subtle gradient text effect for added visual flair, completing the
+// implementation of "Idea 3".
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
 import android.graphics.Typeface
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -38,14 +51,13 @@ import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
-import io.pm.finlight.TimePeriod
-import io.pm.finlight.TimePeriodReportViewModel
-import io.pm.finlight.TimePeriodReportViewModelFactory
+import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionItem
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +73,7 @@ fun TimePeriodReportScreen(
     val selectedDate by viewModel.selectedDate.collectAsState()
     val transactions by viewModel.transactionsForPeriod.collectAsState()
     val chartDataPair by viewModel.chartData.collectAsState()
+    val insights by viewModel.insights.collectAsState()
 
     val totalSpent = transactions.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
 
@@ -128,6 +141,10 @@ fun TimePeriodReportScreen(
                         timePeriod = timePeriod,
                         selectedDate = selectedDate.time
                     )
+                }
+
+                item {
+                    ReportInsightsCard(insights = insights)
                 }
 
                 item {
@@ -207,7 +224,6 @@ fun TimePeriodReportScreen(
 
 @Composable
 private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDate: Date) {
-    // --- REFACTORED: Create dynamic subtitles for all rolling time periods ---
     val subtitle = when (timePeriod) {
         TimePeriod.DAILY -> {
             val format = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
@@ -235,33 +251,104 @@ private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDat
         }
     }
 
+    val backgroundIcon = when (timePeriod) {
+        TimePeriod.DAILY -> Icons.Default.CalendarViewDay
+        TimePeriod.WEEKLY -> Icons.Default.CalendarViewWeek
+        TimePeriod.MONTHLY -> Icons.Default.CalendarViewMonth
+    }
+
     GlassPanel {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .height(240.dp), // Increased height
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "Total Spent",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            Icon(
+                imageVector = backgroundIcon,
+                contentDescription = null,
+                modifier = Modifier.size(180.dp), // Slightly larger icon
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
             )
-            Text(
-                text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalSpent).drop(1)}",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Total Spent",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                // --- FEATURE: Apply gradient to the amount text ---
+                val gradientBrush = Brush.linearGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary,
+                        MaterialTheme.colorScheme.secondary
+                    )
+                )
+                Text(
+                    text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalSpent).drop(1)}",
+                    style = MaterialTheme.typography.displayLarge.merge(
+                        TextStyle(brush = gradientBrush)
+                    ),
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }
+
+@Composable
+private fun ReportInsightsCard(insights: ReportInsights?) {
+    if (insights == null) return
+
+    GlassPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Change", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val (text, color) = when {
+                    insights.percentageChange == null -> "--" to MaterialTheme.colorScheme.onSurface
+                    insights.percentageChange > 0 -> "↑ ${insights.percentageChange}%" to MaterialTheme.colorScheme.error
+                    insights.percentageChange < 0 -> "↓ ${abs(insights.percentageChange)}%" to MaterialTheme.colorScheme.primary
+                    else -> "No Change" to MaterialTheme.colorScheme.onSurface
+                }
+                Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = color)
+                Text("vs. previous period", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Top Spend", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (insights.topCategory != null) {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(insights.topCategory.iconKey ?: "category"),
+                        contentDescription = insights.topCategory.categoryName,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(CategoryIconHelper.getIconBackgroundColor(insights.topCategory.colorKey ?: "gray_light"))
+                            .padding(8.dp),
+                        tint = Color.Black
+                    )
+                    Text(insights.topCategory.categoryName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text("--", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {

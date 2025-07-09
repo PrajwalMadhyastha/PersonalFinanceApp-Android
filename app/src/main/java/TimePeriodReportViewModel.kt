@@ -7,6 +7,10 @@
 // ending at the currently selected date. This ensures the report accurately
 // reflects the user's request for a floating time period rather than a fixed
 // calendar day/week.
+// FEATURE: Added a new `insights` StateFlow. This flow calculates the
+// percentage change in spending compared to the previous period and identifies
+// the top spending category, providing richer data for the new "Insights" card
+// on the report screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -21,6 +25,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToInt
 
 class TimePeriodReportViewModelFactory(
     private val application: Application,
@@ -35,6 +40,11 @@ class TimePeriodReportViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
+data class ReportInsights(
+    val percentageChange: Int?,
+    val topCategory: CategorySpending?
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimePeriodReportViewModel(
@@ -58,6 +68,35 @@ class TimePeriodReportViewModel(
         val (start, end) = getPeriodDateRange(calendar)
         transactionDao.getTransactionsForDateRange(start, end)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val insights: StateFlow<ReportInsights?> = _selectedDate.flatMapLatest { calendar ->
+        flow {
+            val (currentStart, currentEnd) = getPeriodDateRange(calendar)
+
+            val previousPeriodEndCal = (calendar.clone() as Calendar).apply {
+                when (timePeriod) {
+                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
+                    TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
+                    TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
+                }
+            }
+            val (previousStart, previousEnd) = getPeriodDateRange(previousPeriodEndCal)
+
+            val currentSummary = transactionDao.getFinancialSummaryForRange(currentStart, currentEnd)
+            val previousSummary = transactionDao.getFinancialSummaryForRange(previousStart, previousEnd)
+            val topCategories = transactionDao.getTopSpendingCategoriesForRange(currentStart, currentEnd)
+
+            val percentageChange = if (previousSummary?.totalExpenses != null && previousSummary.totalExpenses > 0) {
+                val currentExpenses = currentSummary?.totalExpenses ?: 0.0
+                ((currentExpenses - previousSummary.totalExpenses) / previousSummary.totalExpenses * 100).roundToInt()
+            } else {
+                null
+            }
+
+            emit(ReportInsights(percentageChange, topCategories.firstOrNull()))
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
 
     val chartData: StateFlow<Pair<BarData, List<String>>?> = _selectedDate.flatMapLatest { calendar ->
         when (timePeriod) {
@@ -201,9 +240,8 @@ class TimePeriodReportViewModel(
         }
     }
 
-    // --- REFACTORED: This function now calculates a rolling time window ---
     private fun getPeriodDateRange(calendar: Calendar): Pair<Long, Long> {
-        val endCal = (calendar.clone() as Calendar) // The end of the period is the selected date/time
+        val endCal = (calendar.clone() as Calendar)
 
         val startCal = (endCal.clone() as Calendar).apply {
             when (timePeriod) {
