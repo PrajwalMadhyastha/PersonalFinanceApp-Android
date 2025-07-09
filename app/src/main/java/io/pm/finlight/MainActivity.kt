@@ -7,6 +7,10 @@
 // FEATURE - A new "+" icon button has been added to the TopAppBar's actions.
 // This button is only visible on the "Transactions" screen and provides a
 // contextual way to add a new transaction, replacing the FAB on that screen.
+// BUG FIX: Added a `deepLinks` parameter to the `time_period_report_screen`
+// navigation destination. This maps the URI pattern from the report
+// notifications (e.g., "app://finlight.pm.io/report/DAILY") to the correct
+// screen, resolving the crash when tapping on a report notification.
 // =================================================================================
 package io.pm.finlight
 
@@ -601,7 +605,9 @@ fun AppNavHost(
             "time_period_report_screen/{timePeriod}",
             arguments = listOf(navArgument("timePeriod") {
                 type = NavType.EnumType(TimePeriod::class.java)
-            })
+            }),
+            // --- BUG FIX: Added the deep link mapping ---
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}" })
         ) { backStackEntry ->
             val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
 
