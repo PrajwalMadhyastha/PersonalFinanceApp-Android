@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul  9 15:11:43 IST 2025
+Generated on: Wed Jul  9 21:27:59 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -77,6 +77,12 @@ android {
                 "proguard-rules.pro",
             )
             signingConfig = signingConfigs.getByName("release")
+        }
+        // --- NEW: Explicitly define the debug build type ---
+        // This ensures that the App Inspector can connect to your app to view
+        // databases, background workers, and other debug information.
+        debug {
+            isDebuggable = true
         }
     }
     compileOptions {
@@ -2106,7 +2112,7 @@ val screenTitles = mapOf(
     "edit_budget/{budgetId}" to "Edit Budget",
     "category_list" to "Manage Categories",
     "recurring_transactions" to "Recurring Transactions",
-    "add_recurring_transaction" to "Add Recurring Rule",
+    "add_recurring_transaction?ruleId={ruleId}" to "Add/Edit Recurring Rule",
     "search_screen" to "Search",
     "review_sms_screen" to "Review SMS Transactions",
     "approve_transaction_screen/{amount}/{type}/{merchant}/{smsId}/{smsSender}" to "Approve Transaction",
@@ -2624,17 +2630,16 @@ interface RecurringTransactionDao {
     @Query("SELECT * FROM recurring_transactions ORDER BY startDate DESC")
     fun getAllRulesFlow(): Flow<List<RecurringTransaction>>
 
-    // --- NEW: Suspend function to get a one-time list for the worker ---
     @Query("SELECT * FROM recurring_transactions")
     suspend fun getAllRulesList(): List<RecurringTransaction>
 
     @Query("SELECT * FROM recurring_transactions WHERE id = :id")
     fun getById(id: Int): Flow<RecurringTransaction?>
 
-    // --- NEW: Function to update the last run date of a rule ---
     @Query("UPDATE recurring_transactions SET lastRunDate = :lastRunDate WHERE id = :id")
     suspend fun updateLastRunDate(id: Int, lastRunDate: Long)
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/MerchantMapping.kt ==================
@@ -2773,11 +2778,10 @@ data class RecurringTransaction(
 ================== FILE: ./app/src/main/java/LinkTransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/LinkTransactionViewModel.kt
-// REASON: NEW FILE - This ViewModel provides the logic for the new "Link
-// Transaction" screen. It takes a PotentialTransaction, finds linkable
-// existing transactions using the repository's smart query, and exposes them
-// to the UI. It also contains the logic to perform the link by updating the
-// chosen transaction with the SMS hash.
+// REASON: REFACTOR - The transaction matching logic has been updated. Instead
+// of searching for specific matches, the ViewModel now fetches all transactions
+// from the last two days (today and yesterday), providing the user with a
+// broader, more useful list of candidates to link their recurring payment to.
 // =================================================================================
 package io.pm.finlight
 
@@ -2788,7 +2792,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 class LinkTransactionViewModelFactory(
     private val application: Application,
@@ -2805,34 +2811,66 @@ class LinkTransactionViewModelFactory(
 
 class LinkTransactionViewModel(
     application: Application,
-    private val potentialTransaction: PotentialTransaction
+    val potentialTransaction: PotentialTransaction
 ) : AndroidViewModel(application) {
 
-    private val transactionRepository: TransactionRepository = TransactionRepository(AppDatabase.getInstance(application).transactionDao())
+    private val transactionRepository: TransactionRepository
+    private val recurringTransactionDao: RecurringTransactionDao
 
     private val _linkableTransactions = MutableStateFlow<List<Transaction>>(emptyList())
     val linkableTransactions = _linkableTransactions.asStateFlow()
 
     init {
+        val db = AppDatabase.getInstance(application)
+        transactionRepository = TransactionRepository(db.transactionDao())
+        recurringTransactionDao = db.recurringTransactionDao()
         findMatches()
     }
 
     private fun findMatches() {
         viewModelScope.launch {
-            val results = transactionRepository.findLinkableTransactions(
-                smsDate = potentialTransaction.sourceSmsId,
-                smsAmount = potentialTransaction.amount,
-                transactionType = potentialTransaction.transactionType
-            )
-            _linkableTransactions.value = results
+            val todayEnd = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 23)
+                set(Calendar.MINUTE, 59)
+                set(Calendar.SECOND, 59)
+            }.timeInMillis
+
+            val yesterdayStart = Calendar.getInstance().apply {
+                add(Calendar.DAY_OF_YEAR, -1)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+            }.timeInMillis
+
+            // Use the existing DAO method to get all transactions in the date range.
+            // This returns a Flow, so we collect it to update our state.
+            transactionRepository.getAllTransactionsForRange(yesterdayStart, todayEnd)
+                .collect { transactions ->
+                    _linkableTransactions.value = transactions
+                }
         }
     }
 
     fun linkTransaction(selectedTransactionId: Int, onComplete: () -> Unit) {
         viewModelScope.launch {
+            // Link the transaction by setting its hash
             potentialTransaction.sourceSmsHash?.let { hash ->
                 transactionRepository.setSmsHash(selectedTransactionId, hash)
             }
+            // Update the last run date of the rule to today
+            val ruleId = potentialTransaction.sourceSmsId.toInt()
+            recurringTransactionDao.updateLastRunDate(ruleId, System.currentTimeMillis())
+            onComplete()
+        }
+    }
+
+    fun remindTomorrow(onComplete: () -> Unit) {
+        viewModelScope.launch {
+            // To "remind tomorrow", we simply update the last run date to yesterday.
+            // This makes the rule due again starting today.
+            val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }.timeInMillis
+            val ruleId = potentialTransaction.sourceSmsId.toInt()
+            recurringTransactionDao.updateLastRunDate(ruleId, yesterday)
             onComplete()
         }
     }
@@ -3134,6 +3172,264 @@ data class Tag(
 )-e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt
+// REASON: BUG FIX - Resolved a race condition where the confirmation dialog was
+// dismissed before the navigation could complete. The line to hide the dialog
+// is now correctly placed inside the onComplete lambda, ensuring it only
+// happens after the background task and navigation call are finished.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import android.app.Application
+import android.app.NotificationManager
+import android.content.Context
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.google.gson.Gson
+import io.pm.finlight.LinkTransactionViewModel
+import io.pm.finlight.LinkTransactionViewModelFactory
+import io.pm.finlight.PotentialTransaction
+import io.pm.finlight.Transaction
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
+import java.net.URLDecoder
+import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.*
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LinkRecurringTransactionScreen(
+    navController: NavController,
+    potentialTransactionJson: String
+) {
+    val potentialTxn = remember(potentialTransactionJson) {
+        Gson().fromJson(URLDecoder.decode(potentialTransactionJson, "UTF-8"), PotentialTransaction::class.java)
+    }
+
+    val application = LocalContext.current.applicationContext as Application
+    val factory = LinkTransactionViewModelFactory(application, potentialTxn)
+    val viewModel: LinkTransactionViewModel = viewModel(factory = factory)
+
+    val candidates by viewModel.linkableTransactions.collectAsState()
+    var showConfirmationDialog by remember { mutableStateOf<Transaction?>(null) }
+    val context = LocalContext.current
+
+    val onLinkConfirmed: (Transaction) -> Unit = { transactionToLink ->
+        viewModel.linkTransaction(transactionToLink.id) {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
+            // --- FIX: Only dismiss the dialog and navigate AFTER the ViewModel work is complete ---
+            showConfirmationDialog = null
+            navController.popBackStack()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Confirm Recurring Payment") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                DuePaymentDetailsCard(viewModel.potentialTransaction)
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.remindTomorrow {
+                                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
+                                navController.popBackStack()
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Remind Tomorrow")
+                    }
+                    Button(
+                        onClick = { navController.navigate("recurring_transactions") },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Manage Rules")
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    "Or, link to a recent transaction:",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (candidates.isEmpty()) {
+                item {
+                    GlassPanel {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "No recent matching transactions found.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(candidates, key = { it.id }) { transaction ->
+                    LinkCandidateItem(
+                        transaction = transaction,
+                        onClick = { showConfirmationDialog = transaction }
+                    )
+                }
+            }
+        }
+    }
+
+    showConfirmationDialog?.let { transactionToLink ->
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+        AlertDialog(
+            onDismissRequest = { showConfirmationDialog = null },
+            title = { Text("Confirm Link") },
+            text = { Text("Link this payment to the transaction for '${transactionToLink.description}'?") },
+            confirmButton = {
+                Button(onClick = { onLinkConfirmed(transactionToLink) }) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmationDialog = null }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = popupContainerColor
+        )
+    }
+}
+
+@Composable
+private fun DuePaymentDetailsCard(pt: PotentialTransaction) {
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
+    val amountColor = if (pt.transactionType == "expense") {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    GlassPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "Payment Due Today",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    pt.merchantName ?: "Unknown",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    currencyFormat.format(pt.amount),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = amountColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
+    val dateFormatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
+
+    GlassPanel(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    transaction.description,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    dateFormatter.format(Date(transaction.date)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                currencyFormat.format(transaction.amount),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TagManagementScreen.kt ==================
 // =================================================================================
 // FILE: app/src/main/java/io/pm/finlight/ui/screens/TagManagementScreen.kt
@@ -3384,13 +3680,9 @@ private fun DeleteTagDialog(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddRecurringTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddRecurringTransactionScreen.kt
-// REASON: MAJOR REFACTOR - The screen has been completely redesigned to align
-// with the "Project Aurora" vision. It now mirrors the modern "Transaction
-// Composer" layout, using GlassPanel components for all form elements and
-// ensuring a cohesive, high-contrast, and visually appealing experience.
-// BUG FIX - Replaced direct use of `GlassPanelFill` with the `GlassPanel`
-// composable to ensure the component is theme-aware and to resolve the
-// "Unresolved reference" build error.
+// REASON: FEATURE - The screen now supports both "add" and "edit" modes. It
+// accepts an optional ruleId, loads the existing rule's data if provided,
+// and calls the appropriate ViewModel function (insert or update) upon saving.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -3425,9 +3717,15 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddRecurringTransactionScreen(navController: NavController) {
+fun AddRecurringTransactionScreen(
+    navController: NavController,
+    ruleId: Int?
+) {
     val recurringViewModel: RecurringTransactionViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
+
+    val isEditMode = ruleId != null
+    val titleText = if (isEditMode) "Edit Recurring Rule" else "Add Recurring Rule"
 
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
@@ -3445,10 +3743,29 @@ fun AddRecurringTransactionScreen(navController: NavController) {
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
 
+    val ruleToEdit by if (isEditMode) {
+        recurringViewModel.getRuleById(ruleId!!).collectAsState(initial = null)
+    } else {
+        remember { mutableStateOf(null) }
+    }
+
+    LaunchedEffect(ruleToEdit, accounts, categories) {
+        if (isEditMode) {
+            ruleToEdit?.let { rule ->
+                description = rule.description
+                amount = rule.amount.toString()
+                transactionType = rule.transactionType
+                selectedInterval = rule.recurrenceInterval
+                selectedAccount = accounts.find { it.id == rule.accountId }
+                selectedCategory = categories.find { it.id == rule.categoryId }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add Recurring Rule") },
+                title = { Text(titleText) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -3594,14 +3911,16 @@ fun AddRecurringTransactionScreen(navController: NavController) {
                         onClick = {
                             val amountDouble = amount.toDoubleOrNull()
                             if (amountDouble != null && selectedAccount != null) {
-                                recurringViewModel.addRecurringTransaction(
-                                    description,
-                                    amountDouble,
-                                    transactionType,
-                                    selectedInterval,
-                                    System.currentTimeMillis(),
-                                    selectedAccount!!.id,
-                                    selectedCategory?.id,
+                                recurringViewModel.saveRule(
+                                    ruleId = ruleId,
+                                    description = description,
+                                    amount = amountDouble,
+                                    transactionType = transactionType,
+                                    recurrenceInterval = selectedInterval,
+                                    startDate = ruleToEdit?.startDate ?: System.currentTimeMillis(),
+                                    accountId = selectedAccount!!.id,
+                                    categoryId = selectedCategory?.id,
+                                    lastRunDate = ruleToEdit?.lastRunDate
                                 )
                                 navController.popBackStack()
                             }
@@ -3609,7 +3928,7 @@ fun AddRecurringTransactionScreen(navController: NavController) {
                         modifier = Modifier.weight(1f),
                         enabled = description.isNotBlank() && amount.isNotBlank() && selectedAccount != null && selectedCategory != null,
                     ) {
-                        Text("Save Rule")
+                        Text(if (isEditMode) "Update Rule" else "Save Rule")
                     }
                 }
             }
@@ -10457,33 +10776,43 @@ private fun createTempImageFile(context: Context): File {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RecurringTransactionScreens.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RecurringTransactionScreens.kt
-// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with
-// the "Project Aurora" vision. The standard ListItem has been replaced with a
-// custom GlassPanel component, and all text colors have been updated to be
-// theme-aware, ensuring a consistent, high-contrast user experience.
+// REASON: FEATURE - The UI has been updated to support rule management. Each
+// item now has "Edit" and "Delete" icon buttons. Tapping "Edit" navigates to
+// the Add/Edit screen with the rule's ID, and tapping "Delete" shows a
+// confirmation dialog before removing the rule.
+// BUG FIX - Added the missing isDark() helper function to resolve compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.NumberFormat
 import java.util.*
+
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @Composable
 fun RecurringTransactionScreen(navController: NavController) {
     val viewModel: RecurringTransactionViewModel = viewModel()
     val recurringTransactions by viewModel.allRecurringTransactions.collectAsState(initial = emptyList())
+    var ruleToDelete by remember { mutableStateOf<RecurringTransaction?>(null) }
 
     if (recurringTransactions.isEmpty()) {
         Box(
@@ -10503,14 +10832,49 @@ fun RecurringTransactionScreen(navController: NavController) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(recurringTransactions, key = { it.id }) { rule ->
-                RecurringTransactionItem(rule = rule)
+                RecurringTransactionItem(
+                    rule = rule,
+                    onEditClick = {
+                        navController.navigate("add_recurring_transaction?ruleId=${rule.id}")
+                    },
+                    onDeleteClick = {
+                        ruleToDelete = rule
+                    }
+                )
             }
         }
+    }
+
+    ruleToDelete?.let { rule ->
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+        AlertDialog(
+            onDismissRequest = { ruleToDelete = null },
+            title = { Text("Delete Rule?") },
+            text = { Text("Are you sure you want to delete the rule for '${rule.description}'? This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteRule(rule)
+                        ruleToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { ruleToDelete = null }) { Text("Cancel") }
+            },
+            containerColor = popupContainerColor
+        )
     }
 }
 
 @Composable
-private fun RecurringTransactionItem(rule: RecurringTransaction) {
+private fun RecurringTransactionItem(
+    rule: RecurringTransaction,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
     val amountColor = if (rule.transactionType == "expense") {
         MaterialTheme.colorScheme.error
@@ -10520,7 +10884,7 @@ private fun RecurringTransactionItem(rule: RecurringTransaction) {
 
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -10536,13 +10900,19 @@ private fun RecurringTransactionItem(rule: RecurringTransaction) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
                 text = currencyFormat.format(rule.amount),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = amountColor
             )
+            IconButton(onClick = onEditClick) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit Rule", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onDeleteClick) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete Rule", tint = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
@@ -11838,6 +12208,13 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
+// REASON: FEATURE - A new "Debug" section has been added with a button to
+// manually trigger the RecurringTransactionWorker. This provides a reliable way
+// to test the worker's functionality without waiting for its scheduled time or
+// relying on the App Inspector UI.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -11873,6 +12250,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import coil.compose.AsyncImage
 import io.pm.finlight.*
 import io.pm.finlight.R
@@ -12104,7 +12483,6 @@ fun ProfileScreen(
                     onClick = { navController.navigate("budget_screen") },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-                // --- NEW: Entry point for Recurring Rules ---
                 SettingsActionItem(
                     text = "Manage Recurring Rules",
                     subtitle = "Automate your regular bills and income",
@@ -12284,6 +12662,22 @@ fun ProfileScreen(
                 )
             }
         }
+
+        // --- NEW: Debug section for manually triggering workers ---
+        item {
+            SettingsSection("Debug") {
+                SettingsActionItem(
+                    text = "Run Recurring Worker Now",
+                    subtitle = "Manually trigger the recurring transaction check",
+                    icon = Icons.Default.BugReport,
+                    onClick = {
+                        val workRequest = OneTimeWorkRequestBuilder<RecurringTransactionWorker>().build()
+                        WorkManager.getInstance(context).enqueue(workRequest)
+                        Toast.makeText(context, "Recurring worker triggered!", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        }
     }
 
     // region Dialogs
@@ -12292,7 +12686,6 @@ fun ProfileScreen(
 
     if (showDatePickerDialog) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
-        // --- FIX: Use a standard AlertDialog to wrap the DatePicker to avoid compiler issues ---
         AlertDialog(
             onDismissRequest = { showDatePickerDialog = false },
             title = { Text("Select Scan Start Date") },
@@ -12500,7 +12893,8 @@ private fun ThemePickerItem(
             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
@@ -15171,17 +15565,10 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The "dashboard" route has been removed from the `fabRoutes` set.
-// This prevents the main Floating Action Button from appearing on the
-// Dashboard screen, as it is being replaced by a contextual "+ Add" button
-// inside the "Recent Activity" card.
-// FEATURE - A new "+" icon button has been added to the TopAppBar's actions.
-// This button is only visible on the "Transactions" screen and provides a
-// contextual way to add a new transaction, replacing the FAB on that screen.
-// BUG FIX: Added a `deepLinks` parameter to the `time_period_report_screen`
-// navigation destination. This maps the URI pattern from the report
-// notifications (e.g., "app://finlight.pm.io/report/DAILY") to the correct
-// screen, resolving the crash when tapping on a report notification.
+// REASON: FEATURE - The NavHost entry for "add_recurring_transaction" has been
+// updated to accept an optional ruleId parameter. This enables the screen to
+// function in both "add" and "edit" modes, completing the navigation flow for
+// the new feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -15404,7 +15791,8 @@ fun MainAppScreen() {
         "income_screen",
         "splash_screen",
         "add_transaction",
-        "time_period_report_screen"
+        "time_period_report_screen",
+        "link_recurring_transaction"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -15487,7 +15875,6 @@ fun MainAppScreen() {
                                                 filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
                                             }
                                         }
-                                        // --- NEW: Add Transaction Icon Button ---
                                         IconButton(onClick = { navController.navigate("add_transaction") }) {
                                             Icon(Icons.Default.Add, contentDescription = "Add Transaction")
                                         }
@@ -15735,7 +16122,22 @@ fun AppNavHost(
         composable("category_list") { CategoryListScreen(navController, categoryViewModel) }
         composable("tag_management") { TagManagementScreen() }
         composable("recurring_transactions") { RecurringTransactionScreen(navController) }
-        composable("add_recurring_transaction") { AddRecurringTransactionScreen(navController) }
+
+        composable(
+            "add_recurring_transaction?ruleId={ruleId}",
+            arguments = listOf(
+                navArgument("ruleId") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                }
+            )
+        ) { backStackEntry ->
+            val ruleId = backStackEntry.arguments?.getInt("ruleId")
+            AddRecurringTransactionScreen(
+                navController = navController,
+                ruleId = if (ruleId == -1) null else ruleId
+            )
+        }
 
         composable(
             "rule_creation_screen?potentialTransactionJson={potentialTransactionJson}&ruleId={ruleId}",
@@ -15773,17 +16175,33 @@ fun AppNavHost(
         }
 
         composable(
-            "time_period_report_screen/{timePeriod}",
-            arguments = listOf(navArgument("timePeriod") {
-                type = NavType.EnumType(TimePeriod::class.java)
-            }),
-            // --- BUG FIX: Added the deep link mapping ---
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}" })
+            route = "link_recurring_transaction/{potentialTransactionJson}",
+            arguments = listOf(navArgument("potentialTransactionJson") { type = NavType.StringType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/link_recurring/{potentialTransactionJson}" })
+        ) { backStackEntry ->
+            val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
+            LinkRecurringTransactionScreen(
+                navController = navController,
+                potentialTransactionJson = json
+            )
+        }
+
+        composable(
+            "time_period_report_screen/{timePeriod}?date={date}",
+            arguments = listOf(
+                navArgument("timePeriod") { type = NavType.EnumType(TimePeriod::class.java) },
+                navArgument("date") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}?date={date}" })
         ) { backStackEntry ->
             val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
+            val date = backStackEntry.arguments?.getLong("date")
 
             if (timePeriod != null) {
-                TimePeriodReportScreen(navController = navController, timePeriod = timePeriod)
+                TimePeriodReportScreen(navController = navController, timePeriod = timePeriod, initialDateMillis = date)
             }
         }
     }
@@ -15794,16 +16212,12 @@ fun SplashScreen(navController: NavHostController, activity: Activity) {
     LaunchedEffect(key1 = Unit) {
         val deepLinkUri = activity.intent?.data
         if (deepLinkUri != null) {
-            // BUG FIX: Correctly build the back stack for deep links.
-            // First, navigate to the home screen (dashboard) and clear the splash screen.
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }
-            // Then, navigate to the actual deep link destination.
             navController.navigate(deepLinkUri)
-            activity.intent.data = null // Important: Consume the intent's data
+            activity.intent.data = null
         } else {
-            // Normal startup: go to the dashboard.
             navController.navigate(BottomNavItem.Dashboard.route) {
                 popUpTo("splash_screen") { inclusive = true }
             }
@@ -15816,10 +16230,18 @@ fun SplashScreen(navController: NavHostController, activity: Activity) {
     ) {
         CircularProgressIndicator()
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/RecurringTransactionRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionRepository.kt
+// REASON: FEATURE - The repository has been updated to expose `getById`,
+// `update`, and `delete` functions, providing a complete data access layer
+// for managing recurring rules. This resolves the "Unresolved reference" errors
+// in the ViewModel.
+// =================================================================================
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
@@ -15829,8 +16251,20 @@ class RecurringTransactionRepository(private val recurringTransactionDao: Recurr
         return recurringTransactionDao.getAllRulesFlow()
     }
 
+    fun getById(id: Int): Flow<RecurringTransaction?> {
+        return recurringTransactionDao.getById(id)
+    }
+
     suspend fun insert(recurringTransaction: RecurringTransaction) {
         recurringTransactionDao.insert(recurringTransaction)
+    }
+
+    suspend fun update(recurringTransaction: RecurringTransaction) {
+        recurringTransactionDao.update(recurringTransaction)
+    }
+
+    suspend fun delete(recurringTransaction: RecurringTransaction) {
+        recurringTransactionDao.delete(recurringTransaction)
     }
 }
 -e 
@@ -19043,10 +19477,9 @@ interface TransactionDao {
 ================== FILE: ./app/src/main/java/RecurringTransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionViewModel.kt
-// REASON: FEATURE - The ViewModel now calls the new
-// `ReminderManager.scheduleRecurringTransactionWorker` function after a new rule
-// is added. This ensures that the automation process is kicked off as soon as the
-// user creates their first recurring transaction rule.
+// REASON: FEATURE - The ViewModel is updated to support full CRUD operations.
+// It now includes `getRuleById`, `deleteRule`, and a comprehensive `saveRule`
+// function that handles both creating new rules and updating existing ones.
 // =================================================================================
 package io.pm.finlight
 
@@ -19066,7 +19499,10 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
         allRecurringTransactions = repository.getAll()
     }
 
-    fun addRecurringTransaction(
+    fun getRuleById(id: Int): Flow<RecurringTransaction?> = repository.getById(id)
+
+    fun saveRule(
+        ruleId: Int?, // Null for new rules
         description: String,
         amount: Double,
         transactionType: String,
@@ -19074,22 +19510,34 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
         startDate: Long,
         accountId: Int,
         categoryId: Int?,
+        lastRunDate: Long? // Preserve last run date on edit
     ) = viewModelScope.launch {
-        val newRule =
-            RecurringTransaction(
-                description = description,
-                amount = amount,
-                transactionType = transactionType,
-                recurrenceInterval = recurrenceInterval,
-                startDate = startDate,
-                accountId = accountId,
-                categoryId = categoryId,
-            )
-        repository.insert(newRule)
-        // --- NEW: Schedule the worker after adding a rule ---
-        ReminderManager.scheduleRecurringTransactionWorker(getApplication())
+        val rule = RecurringTransaction(
+            id = ruleId ?: 0,
+            description = description,
+            amount = amount,
+            transactionType = transactionType,
+            recurrenceInterval = recurrenceInterval,
+            startDate = startDate,
+            accountId = accountId,
+            categoryId = categoryId,
+            lastRunDate = lastRunDate
+        )
+
+        if (ruleId != null) {
+            repository.update(rule)
+        } else {
+            repository.insert(rule)
+            // Only schedule the worker when a new rule is added for the first time
+            ReminderManager.scheduleRecurringTransactionWorker(getApplication())
+        }
     }
-}-e 
+
+    fun deleteRule(rule: RecurringTransaction) = viewModelScope.launch {
+        repository.delete(rule)
+    }
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/CategoryIconHelper.kt ==================
@@ -20093,11 +20541,10 @@ class SmsReceiver : BroadcastReceiver() {
 ================== FILE: ./app/src/main/java/NotificationHelper.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: BUG FIX - The `showTransactionNotification` function has been updated
-// to accept a full `Transaction` object instead of a `PotentialTransaction`.
-// It now correctly builds a deep link to the `TransactionDetailScreen` using
-// the transaction's ID. This resolves the bug where tapping a "review"
-// notification would navigate to the wrong screen.
+// REASON: FEATURE - Added showRecurringTransactionDueNotification. This new
+// function creates a specific notification for due recurring payments, with a
+// deep link to the new LinkTransactionScreen. This is a core component of the
+// new user-driven recurring transaction workflow.
 // =================================================================================
 package io.pm.finlight
 
@@ -20111,6 +20558,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.TaskStackBuilder
 import androidx.core.net.toUri
+import com.google.gson.Gson
+import java.net.URLEncoder
 import java.text.NumberFormat
 import java.util.Calendar
 import java.util.Locale
@@ -20120,6 +20569,49 @@ object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
     private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
+    // --- NEW: Deep link for the new recurring transaction flow ---
+    private const val DEEP_LINK_URI_LINK_RECURRING = "app://finlight.pm.io/link_recurring"
+
+
+    // --- NEW: Notification for when a recurring transaction is due ---
+    fun showRecurringTransactionDueNotification(
+        context: Context,
+        potentialTxn: PotentialTransaction
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val json = Gson().toJson(potentialTxn)
+        val encodedJson = URLEncoder.encode(json, "UTF-8")
+        val deepLinkUri = "$DEEP_LINK_URI_LINK_RECURRING/$encodedJson".toUri()
+
+        val intent = Intent(Intent.ACTION_VIEW, deepLinkUri).apply {
+            `package` = context.packageName
+        }
+
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(intent)
+            getPendingIntent(potentialTxn.sourceSmsId.toInt(), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+        val contentText = "Your payment of ${currencyFormat.format(potentialTxn.amount)} for ${potentialTxn.merchantName} is due. Tap to confirm."
+
+        val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Recurring Payment Due")
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .addAction(0, "Confirm Payment", pendingIntent)
+
+        with(NotificationManagerCompat.from(context)) {
+            notify(potentialTxn.sourceSmsId.toInt(), builder.build())
+        }
+    }
 
 
     private fun createEnhancedSummaryNotification(
@@ -20335,13 +20827,11 @@ object NotificationHelper {
 ================== FILE: ./app/src/main/java/RecurringTransactionWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionWorker.kt
-// REASON: NEW FILE - This worker contains the core logic for automating recurring
-// transactions. It runs daily, fetches all active recurring rules, and determines
-// which ones are due for creation based on their interval and last execution date.
-// It then inserts the new transactions into the database.
-// REASON: FIX - The worker now calls the new `getAllRulesList()` suspend function
-// from the DAO to fetch a one-time list of rules. This resolves all previous
-// compilation errors related to Flow handling and suspend function calls.
+// REASON: REFACTOR - The worker's core logic has been completely overhauled.
+// Instead of creating a new transaction, it now calls a new function in
+// NotificationHelper to show a notification for each due rule. This aligns
+// with the new user-driven workflow. The isDue function is updated to be more
+// robust, checking for missed runs.
 // =================================================================================
 package io.pm.finlight
 
@@ -20349,10 +20839,10 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
-import java.util.Date
 
 class RecurringTransactionWorker(
     private val context: Context,
@@ -20360,32 +20850,29 @@ class RecurringTransactionWorker(
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
-        Log.d("RecurringTxnWorker", "Worker starting...")
+        Log.d("RecurringTxnWorker", "Worker starting to check for due recurring rules...")
         return withContext(Dispatchers.IO) {
             try {
                 val db = AppDatabase.getInstance(context)
                 val recurringDao = db.recurringTransactionDao()
-                val transactionDao = db.transactionDao()
 
-                // --- FIX: Call the new suspend function to get a simple list ---
                 val allRules = recurringDao.getAllRulesList()
+                Log.d("RecurringTxnWorker", "Found ${allRules.size} rules to check.")
 
                 allRules.forEach { rule ->
-                    if (isDue(rule, transactionDao)) {
-                        val newTransaction = Transaction(
-                            description = rule.description,
+                    if (isDue(rule)) {
+                        Log.d("RecurringTxnWorker", "Rule '${rule.description}' is due. Sending notification.")
+                        // --- NEW: Instead of creating a transaction, show a notification ---
+                        val potentialTxn = PotentialTransaction(
+                            sourceSmsId = rule.id.toLong(), // Re-using this field for the rule ID
+                            smsSender = "Recurring Rule",
                             amount = rule.amount,
                             transactionType = rule.transactionType,
-                            date = System.currentTimeMillis(), // Use today's date for the new transaction
-                            accountId = rule.accountId,
-                            categoryId = rule.categoryId,
-                            notes = "Recurring",
-                            source = "Recurring Rule"
+                            merchantName = rule.description,
+                            originalMessage = "Recurring payment for ${rule.description}",
+                            sourceSmsHash = "recurring_${rule.id}"
                         )
-                        transactionDao.insert(newTransaction)
-                        // Update the last run date for the rule
-                        recurringDao.updateLastRunDate(rule.id, System.currentTimeMillis())
-                        Log.d("RecurringTxnWorker", "Created transaction for rule: ${rule.description}")
+                        NotificationHelper.showRecurringTransactionDueNotification(context, potentialTxn)
                     }
                 }
 
@@ -20403,16 +20890,18 @@ class RecurringTransactionWorker(
     /**
      * Determines if a recurring transaction rule is due to be executed today.
      */
-    private suspend fun isDue(
-        rule: RecurringTransaction,
-        transactionDao: TransactionDao
-    ): Boolean {
+    private fun isDue(rule: RecurringTransaction): Boolean {
         val today = Calendar.getInstance()
+        val ruleStartCal = Calendar.getInstance().apply { timeInMillis = rule.startDate }
 
-        // If the rule has never run, and the start date is today or in the past, it's due.
+        // If the rule's start date is in the future, it's not due yet.
+        if (today.before(ruleStartCal)) {
+            return false
+        }
+
+        // If the rule has never run, it's due.
         if (rule.lastRunDate == null) {
-            val startDateCal = Calendar.getInstance().apply { timeInMillis = rule.startDate }
-            return !today.before(startDateCal)
+            return true
         }
 
         val lastRunCal = Calendar.getInstance().apply { timeInMillis = rule.lastRunDate }
@@ -20441,7 +20930,8 @@ class RecurringTransactionWorker(
         // We use 'on or after' to catch up on any missed runs (e.g., if the device was off).
         return !todayStartOfDay.before(nextDueDate)
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================

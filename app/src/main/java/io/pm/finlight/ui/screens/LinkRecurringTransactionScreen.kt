@@ -1,9 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt
-// REASON: BUG FIX - Resolved a race condition where the confirmation dialog was
-// dismissed before the navigation could complete. The line to hide the dialog
-// is now correctly placed inside the onComplete lambda, ensuring it only
-// happens after the background task and navigation call are finished.
+// REASON: BUG FIX - The navigation logic has been corrected to definitively fix
+// the back stack issue. Instead of using the `popUpTo` builder, the code now
+// first calls `navController.popBackStack()` to explicitly remove the linking
+// screen, and *then* calls `navController.navigate(...)` to go to the detail
+// screen. This ensures the user correctly returns to their previous screen (e.g.,
+// the dashboard) when pressing back from the transaction details.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -60,16 +62,6 @@ fun LinkRecurringTransactionScreen(
     var showConfirmationDialog by remember { mutableStateOf<Transaction?>(null) }
     val context = LocalContext.current
 
-    val onLinkConfirmed: (Transaction) -> Unit = { transactionToLink ->
-        viewModel.linkTransaction(transactionToLink.id) {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
-            // --- FIX: Only dismiss the dialog and navigate AFTER the ViewModel work is complete ---
-            showConfirmationDialog = null
-            navController.popBackStack()
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -105,8 +97,8 @@ fun LinkRecurringTransactionScreen(
                             viewModel.remindTomorrow {
                                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                                 notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
-                                navController.popBackStack()
                             }
+                            navController.popBackStack()
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -163,7 +155,16 @@ fun LinkRecurringTransactionScreen(
             title = { Text("Confirm Link") },
             text = { Text("Link this payment to the transaction for '${transactionToLink.description}'?") },
             confirmButton = {
-                Button(onClick = { onLinkConfirmed(transactionToLink) }) {
+                Button(onClick = {
+                    showConfirmationDialog = null
+                    viewModel.linkTransaction(transactionToLink.id) {
+                        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
+                        // --- FIX: Pop the current screen first, then navigate. ---
+                        navController.popBackStack()
+                        navController.navigate("transaction_detail/${transactionToLink.id}")
+                    }
+                }) {
                     Text("Confirm")
                 }
             },
@@ -221,7 +222,7 @@ private fun DuePaymentDetailsCard(pt: PotentialTransaction) {
 
 @Composable
 private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
-    val dateFormatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()) }
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
 
     GlassPanel(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {

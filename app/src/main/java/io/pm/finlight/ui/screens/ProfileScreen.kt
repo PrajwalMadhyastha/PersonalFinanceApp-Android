@@ -454,7 +454,7 @@ fun ProfileScreen(
         }
 
         // --- NEW: Debug section for manually triggering workers ---
-        item {
+        /*item {
             SettingsSection("Debug") {
                 SettingsActionItem(
                     text = "Run Recurring Worker Now",
@@ -467,7 +467,7 @@ fun ProfileScreen(
                     }
                 )
             }
-        }
+        }*/
     }
 
     // region Dialogs
