@@ -1,18 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: FEATURE - Added a new "Appearance" section with a theme picker UI.
-// This allows the user to select their preferred theme from the available
-// options. The UI is designed with the Project Aurora aesthetic, using GlassPanel
-// and providing visual previews for each theme.
-// BUG FIX - Corrected the unresolved references in the ThemePickerItem by using
-// the correct property names (`lightColor`, `darkColor`) from the AppTheme enum.
-// BUG FIX - The AlertDialogs now correctly derive their background color from
-// the app's MaterialTheme, ensuring they match the selected theme (e.g.,
-// Aurora) instead of defaulting to the system's light/dark mode.
-// BUG FIX - Replaced the custom TimePickerDialog and the standard DatePickerDialog
-// calls with direct AlertDialog implementations to resolve @Composable invocation
-// compilation errors.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.Manifest
@@ -277,6 +262,14 @@ fun ProfileScreen(
                     subtitle = "Set and edit your monthly budgets",
                     icon = Icons.Default.Savings,
                     onClick = { navController.navigate("budget_screen") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                // --- NEW: Entry point for Recurring Rules ---
+                SettingsActionItem(
+                    text = "Manage Recurring Rules",
+                    subtitle = "Automate your regular bills and income",
+                    icon = Icons.Default.Autorenew,
+                    onClick = { navController.navigate("recurring_transactions") },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                 SettingsActionItem(
