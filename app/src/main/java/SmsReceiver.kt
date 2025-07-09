@@ -1,11 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: BUG FIX - The receiver now checks if a category was successfully
-// learned for an auto-imported transaction. If a category was not found
-// (`mappedCategoryId == null`), it now correctly shows the "Review"
-// notification, prompting the user to categorize it. Otherwise, it shows the
-// standard "Auto-Saved" confirmation. This ensures transactions that require
-// attention are not silently saved without a category.
+// REASON: BUG FIX - The receiver now calls the updated
+// `showTransactionNotification` function, passing the newly saved `Transaction`
+// object (with its ID) instead of the old `PotentialTransaction`. This ensures
+// the notification's deep link correctly points to the `TransactionDetailScreen`,
+// resolving the navigation bug.
 // =================================================================================
 package io.pm.finlight
 
@@ -96,11 +95,11 @@ class SmsReceiver : BroadcastReceiver() {
                                 Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
 
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                                    // --- FIX: Show the correct notification based on learning status ---
+                                    val savedTransaction = newTransaction.copy(id = newTransactionId.toInt())
                                     if (mappedCategoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
-                                        NotificationHelper.showTransactionNotification(context, potentialTxn)
+                                        NotificationHelper.showTransactionNotification(context, savedTransaction)
                                     } else {
-                                        NotificationHelper.showAutoSaveConfirmationNotification(context, newTransaction.copy(id = newTransactionId.toInt()))
+                                        NotificationHelper.showAutoSaveConfirmationNotification(context, savedTransaction)
                                     }
                                 }
 

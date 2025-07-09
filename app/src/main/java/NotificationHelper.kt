@@ -1,21 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: BUG FIX - Replaced references to non-existent drawable resources
-// (`ic_shopping_cart_24`, `ic_review_24`) with standard, available ones. The
-// small icon is now the app's launcher icon for consistency, and the action
-// icon is now a standard system icon (`ic_menu_view`). This resolves the
-// "Unresolved reference" compiler errors.
-// BUG FIX - The `createEnhancedSummaryNotification` function now accepts a `deepLinkUri`
-// parameter, making it flexible. `showDailyReportNotification` now passes the correct
-// URI for the new daily report screen, fixing the navigation bug.
-// REFACTOR - Updated to use the new generic report deep link structure.
-// BUG FIX: The `showDailyReportNotification` function now accepts a timestamp
-// and constructs a deep link with the date. It also uses clearer title text
-// to specify the report is for "Yesterday". This ensures the user is taken
-// to the correct day's report from the notification.
-// BUG FIX: The Intent creation for deep links now correctly uses TaskStackBuilder
-// with an ACTION_VIEW intent and a URI. This resolves the various unresolved
-// reference and argument type mismatch compilation errors.
+// REASON: BUG FIX - The `showTransactionNotification` function has been updated
+// to accept a full `Transaction` object instead of a `PotentialTransaction`.
+// It now correctly builds a deep link to the `TransactionDetailScreen` using
+// the transaction's ID. This resolves the bug where tapping a "review"
+// notification would navigate to the wrong screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -29,8 +18,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.TaskStackBuilder
 import androidx.core.net.toUri
-import com.google.gson.Gson
-import java.net.URLEncoder
 import java.text.NumberFormat
 import java.util.Calendar
 import java.util.Locale
@@ -56,7 +43,6 @@ object NotificationHelper {
             return
         }
 
-        // --- FIX: Correctly create the deep link intent and pending intent ---
         val intent = Intent(Intent.ACTION_VIEW, deepLinkUri.toUri())
         intent.`package` = context.packageName
 
@@ -214,35 +200,31 @@ object NotificationHelper {
 
     fun showTransactionNotification(
         context: Context,
-        potentialTransaction: PotentialTransaction,
+        transaction: Transaction,
     ) {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return
         }
 
-        val potentialTxnJson = Gson().toJson(potentialTransaction)
-        val encodedJson = URLEncoder.encode(potentialTxnJson, "UTF-8")
-        val approveUri = "$DEEP_LINK_URI_APPROVE?potentialTxnJson=$encodedJson".toUri()
+        val detailUri = "$DEEP_LINK_URI_EDIT/${transaction.id}".toUri()
 
-        val intent = Intent(Intent.ACTION_VIEW, approveUri).apply {
+        val intent = Intent(Intent.ACTION_VIEW, detailUri).apply {
             `package` = context.packageName
         }
 
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            potentialTransaction.sourceSmsId.toInt(),
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(intent)
+            getPendingIntent(transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
 
         val notificationIcon = android.R.drawable.ic_dialog_info
-        val typeText = potentialTransaction.transactionType.replaceFirstChar { it.uppercase() }
-        val bigText = "$typeText of ₹${"%.2f".format(potentialTransaction.amount)} from ${potentialTransaction.merchantName ?: "Unknown Sender"} detected. Tap to add."
+        val typeText = transaction.transactionType.replaceFirstChar { it.uppercase() }
+        val bigText = "$typeText of ₹${"%.2f".format(transaction.amount)} from ${transaction.description} detected. Tap to review and categorize."
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
             .setSmallIcon(notificationIcon)
             .setContentTitle("New Transaction Found")
-            .setContentText("Tap to review a transaction from ${potentialTransaction.merchantName ?: "Unknown Sender"}.")
+            .setContentText("Tap to review a transaction from ${transaction.description}.")
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
@@ -250,7 +232,7 @@ object NotificationHelper {
             .addAction(notificationIcon, "Review & Categorize", pendingIntent)
 
         with(NotificationManagerCompat.from(context)) {
-            notify(potentialTransaction.sourceSmsId.toInt(), builder.build())
+            notify(transaction.id, builder.build())
         }
     }
 }
