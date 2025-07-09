@@ -14,6 +14,9 @@
 // REASON: FEATURE - The "Total Spent" amount in the hero card now uses a
 // subtle gradient text effect for added visual flair, completing the
 // implementation of "Idea 3".
+// FEATURE: The hero card has been redesigned to show both "Total Income" and
+// "Total Spent" side-by-side, providing a more comprehensive financial overview
+// for the selected period.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -76,6 +79,7 @@ fun TimePeriodReportScreen(
     val insights by viewModel.insights.collectAsState()
 
     val totalSpent = transactions.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
+    val totalIncome by viewModel.totalIncome.collectAsState()
 
     val context = LocalContext.current
     LaunchedEffect(Unit) {
@@ -138,6 +142,7 @@ fun TimePeriodReportScreen(
                 item {
                     ReportHeader(
                         totalSpent = totalSpent,
+                        totalIncome = totalIncome,
                         timePeriod = timePeriod,
                         selectedDate = selectedDate.time
                     )
@@ -223,7 +228,7 @@ fun TimePeriodReportScreen(
 }
 
 @Composable
-private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDate: Date) {
+private fun ReportHeader(totalSpent: Double, totalIncome: Double, timePeriod: TimePeriod, selectedDate: Date) {
     val subtitle = when (timePeriod) {
         TimePeriod.DAILY -> {
             val format = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
@@ -271,32 +276,46 @@ private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDat
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
             )
             Column(
+                modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.SpaceEvenly
             ) {
-                Text(
-                    text = "Total Spent",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                // --- FEATURE: Apply gradient to the amount text ---
-                val gradientBrush = Brush.linearGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primary,
-                        MaterialTheme.colorScheme.secondary
-                    )
-                )
-                Text(
-                    text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalSpent).drop(1)}",
-                    style = MaterialTheme.typography.displayLarge.merge(
-                        TextStyle(brush = gradientBrush)
-                    ),
-                    fontWeight = FontWeight.Bold,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Total Income",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalIncome).drop(1)}",
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Total Spent",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "₹${NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(totalSpent).drop(1)}",
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

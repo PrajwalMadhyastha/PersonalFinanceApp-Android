@@ -7,10 +7,13 @@
 // ending at the currently selected date. This ensures the report accurately
 // reflects the user's request for a floating time period rather than a fixed
 // calendar day/week.
-// FEATURE: Added a new `insights` StateFlow. This flow calculates the
+// REASON: FEATURE - Added a new `insights` StateFlow. This flow calculates the
 // percentage change in spending compared to the previous period and identifies
 // the top spending category, providing richer data for the new "Insights" card
 // on the report screen.
+// FEATURE: The ViewModel now exposes a `totalIncome` StateFlow, calculated
+// from the transactions in the current period. This provides the necessary data
+// for the redesigned, more comprehensive report header.
 // =================================================================================
 package io.pm.finlight
 
@@ -68,6 +71,14 @@ class TimePeriodReportViewModel(
         val (start, end) = getPeriodDateRange(calendar)
         transactionDao.getTransactionsForDateRange(start, end)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- NEW: Expose total income for the report header ---
+    val totalIncome: StateFlow<Double> = transactionsForPeriod.map { transactions ->
+        transactions
+            .filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }
+            .sumOf { it.transaction.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
 
     val insights: StateFlow<ReportInsights?> = _selectedDate.flatMapLatest { calendar ->
         flow {
