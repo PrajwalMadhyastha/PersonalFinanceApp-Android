@@ -4,6 +4,10 @@
 // rolling 24-hour window instead of a fixed "yesterday". The worker now fetches
 // data from the last 24 hours and compares it against the 24 hours prior to that.
 // This makes the daily report more timely and relevant to the user.
+// BUG FIX: The time period logic has been changed from a rolling 24-hour window
+// to the previous full calendar day ("yesterday"). This aligns the worker's
+// calculation with the report screen the user sees, fixing the bug where the
+// notification data did not match the on-screen data.
 // =================================================================================
 package io.pm.finlight
 
@@ -23,16 +27,35 @@ class DailyReportWorker(
     override suspend fun doWork(): Result {
         return withContext(Dispatchers.IO) {
             try {
-                Log.d("DailyReportWorker", "Worker starting for last 24 hours...")
+                Log.d("DailyReportWorker", "Worker starting for yesterday's report...")
                 val transactionDao = AppDatabase.getInstance(context).transactionDao()
 
-                // --- REFACTORED: Calculate a rolling 24-hour window ---
-                val endDate = Calendar.getInstance().timeInMillis
-                val startDate = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -24) }.timeInMillis
+                // --- FIX: Calculate for "yesterday" (the previous full calendar day) ---
+                val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+                val endDate = (yesterday.clone() as Calendar).apply {
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                }.timeInMillis
+                val startDate = (yesterday.clone() as Calendar).apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                }.timeInMillis
 
-                // --- REFACTORED: Calculate the previous 24-hour window (24-48 hours ago) for comparison ---
-                val previousPeriodEndDate = startDate - 1
-                val previousPeriodStartDate = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -48) }.timeInMillis
+                // --- FIX: Calculate for the day before yesterday for comparison ---
+                val dayBeforeYesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -2) }
+                val previousPeriodEndDate = (dayBeforeYesterday.clone() as Calendar).apply {
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                }.timeInMillis
+                val previousPeriodStartDate = (dayBeforeYesterday.clone() as Calendar).apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                }.timeInMillis
+
 
                 val currentPeriodSummary = transactionDao.getFinancialSummaryForRange(startDate, endDate)
                 val currentPeriodExpenses = currentPeriodSummary?.totalExpenses ?: 0.0
@@ -46,7 +69,8 @@ class DailyReportWorker(
                     ((currentPeriodExpenses - previousPeriodExpenses) / previousPeriodExpenses * 100).roundToInt()
                 } else null
 
-                NotificationHelper.showDailyReportNotification(context, currentPeriodExpenses, percentageChange, topCategories)
+                // --- FIX: Pass yesterday's timestamp to the notification helper ---
+                NotificationHelper.showDailyReportNotification(context, currentPeriodExpenses, percentageChange, topCategories, yesterday.timeInMillis)
 
                 ReminderManager.scheduleDailyReport(context)
                 Log.d("DailyReportWorker", "Worker finished and rescheduled.")

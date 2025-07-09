@@ -1,20 +1,17 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
-// REASON: MAJOR REFACTOR - This screen has been completely redesigned to align
-// with the "Project Aurora" vision. It now features a dynamic header, a restyled
-// bar chart, and a fully glassmorphic layout, creating a modern and cohesive
-// user experience for all time-period-based reports. All text and chart colors
-// have been carefully selected for high contrast and legibility.
-// FIX: Corrected an unresolved reference error by changing the icon from
-// InfoOutline to the standard Info icon.
-// FIX: Resolved a NullPointerException by ensuring the chart's data is set
-// before its properties are accessed in the AndroidView's update block.
+// REASON: BUG FIX - The duplicated ViewModel and Factory code has been removed
+// from this file to resolve the "Redeclaration" compilation errors. This screen
+// now correctly uses the ViewModel from its dedicated file.
+// REASON: REFACTOR - The `ReportHeader` subtitle is now dynamic and reflects
+// the rolling time period (e.g., "Since Jul 8, 10:00 PM"). This provides a
+// clearer and more accurate description of the data being displayed, matching
+// the user's requirement.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
 import android.graphics.Typeface
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,16 +46,16 @@ import io.pm.finlight.ui.components.TransactionItem
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimePeriodReportScreen(
     navController: NavController,
-    timePeriod: TimePeriod
+    timePeriod: TimePeriod,
+    initialDateMillis: Long? = null // Allow null for default
 ) {
     val application = LocalContext.current.applicationContext as Application
-    val factory = TimePeriodReportViewModelFactory(application, timePeriod)
+    val factory = TimePeriodReportViewModelFactory(application, timePeriod, initialDateMillis)
     val viewModel: TimePeriodReportViewModel = viewModel(factory = factory)
 
     val selectedDate by viewModel.selectedDate.collectAsState()
@@ -114,8 +111,8 @@ fun TimePeriodReportScreen(
                             dragAmount = 0f
                         },
                         onDragCancel = { dragAmount = 0f }
-                    ) { change, drag ->
-                        dragAmount += drag
+                    ) { change, horizontalDragAmount ->
+                        dragAmount += horizontalDragAmount
                         change.consume()
                     }
                 }
@@ -210,19 +207,31 @@ fun TimePeriodReportScreen(
 
 @Composable
 private fun ReportHeader(totalSpent: Double, timePeriod: TimePeriod, selectedDate: Date) {
+    // --- REFACTORED: Create dynamic subtitles for all rolling time periods ---
     val subtitle = when (timePeriod) {
         TimePeriod.DAILY -> {
-            SimpleDateFormat("EEEE, dd MMMM yyyy", Locale.getDefault()).format(selectedDate)
+            val format = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
+            val startCal = Calendar.getInstance().apply {
+                time = selectedDate
+                add(Calendar.HOUR_OF_DAY, -24)
+            }
+            "Since ${format.format(startCal.time)}"
         }
         TimePeriod.WEEKLY -> {
-            val calendar = Calendar.getInstance().apply { time = selectedDate }
-            val startOfWeek = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_WEEK, firstDayOfWeek) }.time
-            val endOfWeek = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 6) }.time
-            val formatter = SimpleDateFormat("dd MMM", Locale.getDefault())
-            "For the week of ${formatter.format(startOfWeek)} - ${formatter.format(endOfWeek)}"
+            val format = SimpleDateFormat("MMM d", Locale.getDefault())
+            val startCal = Calendar.getInstance().apply {
+                time = selectedDate
+                add(Calendar.DAY_OF_YEAR, -7)
+            }
+            "Since ${format.format(startCal.time)}"
         }
         TimePeriod.MONTHLY -> {
-            "For ${SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(selectedDate)}"
+            val format = SimpleDateFormat("MMM d", Locale.getDefault())
+            val startCal = Calendar.getInstance().apply {
+                time = selectedDate
+                add(Calendar.DAY_OF_YEAR, -30)
+            }
+            "Since ${format.format(startCal.time)}"
         }
     }
 
@@ -297,7 +306,6 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
             }
         },
         update = { chart ->
-            // --- FIX: Assign data to the chart *before* modifying its properties ---
             chart.data = barData
             (chart.data.dataSets.first() as BarDataSet).valueTextColor = valueTextColor
             chart.invalidate()

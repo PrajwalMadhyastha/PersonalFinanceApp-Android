@@ -9,6 +9,13 @@
 // parameter, making it flexible. `showDailyReportNotification` now passes the correct
 // URI for the new daily report screen, fixing the navigation bug.
 // REFACTOR - Updated to use the new generic report deep link structure.
+// BUG FIX: The `showDailyReportNotification` function now accepts a timestamp
+// and constructs a deep link with the date. It also uses clearer title text
+// to specify the report is for "Yesterday". This ensures the user is taken
+// to the correct day's report from the notification.
+// BUG FIX: The Intent creation for deep links now correctly uses TaskStackBuilder
+// with an ACTION_VIEW intent and a URI. This resolves the various unresolved
+// reference and argument type mismatch compilation errors.
 // =================================================================================
 package io.pm.finlight
 
@@ -32,17 +39,16 @@ import kotlin.math.abs
 object NotificationHelper {
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
-    // --- REFACTOR: Use a generic base URI for reports ---
-    private const val DEEP_LINK_URI_REPORT = "app://finlight.pm.io/report"
+    private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
 
 
     private fun createEnhancedSummaryNotification(
         context: Context,
         channelId: String,
         notificationId: Int,
-        periodText: String,
+        title: String, // Changed from periodText to full title for more flexibility
         totalExpenses: Double,
-        percentageChange: Int?,
+        percentageChange: Int?, // Kept for logic, but title is now pre-formatted
         topCategories: List<CategorySpending>,
         deepLinkUri: String
     ) {
@@ -50,23 +56,13 @@ object NotificationHelper {
             return
         }
 
-        val intent = Intent(
-            Intent.ACTION_VIEW,
-            deepLinkUri.toUri(),
-            context,
-            MainActivity::class.java
-        )
+        // --- FIX: Correctly create the deep link intent and pending intent ---
+        val intent = Intent(Intent.ACTION_VIEW, deepLinkUri.toUri())
+        intent.`package` = context.packageName
 
         val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
             addNextIntentWithParentStack(intent)
             getPendingIntent(notificationId, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        }
-
-        val title = when {
-            percentageChange == null -> "Your $periodText Summary"
-            percentageChange == 0 -> "Spends same as last period"
-            percentageChange > 0 -> "Spends up by $percentageChange% this $periodText"
-            else -> "Spends down by ${abs(percentageChange)}% this $periodText"
         }
 
         val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
@@ -105,18 +101,26 @@ object NotificationHelper {
         context: Context,
         totalExpenses: Double,
         percentageChange: Int?,
-        topCategories: List<CategorySpending>
+        topCategories: List<CategorySpending>,
+        dateMillis: Long
     ) {
+        val title = when {
+            percentageChange == null -> "Yesterday's Summary"
+            percentageChange == 0 -> "Spending same as day before"
+            percentageChange > 0 -> "Spending up by $percentageChange% yesterday"
+            else -> "Spending down by ${abs(percentageChange)}% yesterday"
+        }
+        val deepLinkUri = "$DEEP_LINK_URI_REPORT_BASE/${TimePeriod.DAILY}?date=$dateMillis"
+
         createEnhancedSummaryNotification(
             context,
             MainApplication.DAILY_REPORT_CHANNEL_ID,
             2,
-            "Day",
+            title,
             totalExpenses,
-            percentageChange,
+            null,
             topCategories,
-            // --- FIX: Pass the correct URI for the daily report ---
-            "$DEEP_LINK_URI_REPORT/${TimePeriod.DAILY}"
+            deepLinkUri
         )
     }
 
@@ -126,37 +130,47 @@ object NotificationHelper {
         percentageChange: Int?,
         topCategories: List<CategorySpending>
     ) {
+        val title = when {
+            percentageChange == null -> "Your Weekly Summary"
+            percentageChange == 0 -> "Spends same as last week"
+            percentageChange > 0 -> "Spends up by $percentageChange% this week"
+            else -> "Spends down by ${abs(percentageChange)}% this week"
+        }
         createEnhancedSummaryNotification(
             context,
             MainApplication.SUMMARY_CHANNEL_ID,
             3,
-            "Week",
+            title,
             totalExpenses,
-            percentageChange,
+            null,
             topCategories,
-            // --- REFACTOR: Use the new generic URI ---
-            "$DEEP_LINK_URI_REPORT/${TimePeriod.WEEKLY}"
+            "$DEEP_LINK_URI_REPORT_BASE/${TimePeriod.WEEKLY}"
         )
     }
 
     fun showMonthlySummaryNotification(
         context: Context,
-        calendar: Calendar, // To get the month name
+        calendar: Calendar,
         totalExpenses: Double,
         percentageChange: Int?,
         topCategories: List<CategorySpending>
     ) {
         val monthName = calendar.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault()) ?: "Month"
+        val title = when {
+            percentageChange == null -> "Your $monthName Summary"
+            percentageChange == 0 -> "Spends same as last month"
+            percentageChange > 0 -> "Spends up by $percentageChange% in $monthName"
+            else -> "Spends down by ${abs(percentageChange)}% in $monthName"
+        }
         createEnhancedSummaryNotification(
             context,
             MainApplication.MONTHLY_SUMMARY_CHANNEL_ID,
             4,
-            monthName,
+            title,
             totalExpenses,
-            percentageChange,
+            null,
             topCategories,
-            // --- REFACTOR: Use the new generic URI ---
-            "$DEEP_LINK_URI_REPORT/${TimePeriod.MONTHLY}"
+            "$DEEP_LINK_URI_REPORT_BASE/${TimePeriod.MONTHLY}"
         )
     }
 

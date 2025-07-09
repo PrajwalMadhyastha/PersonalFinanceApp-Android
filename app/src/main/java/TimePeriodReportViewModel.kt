@@ -1,5 +1,13 @@
+// =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
-
+// REASON: BUG FIX - The ViewModel and its Factory have been moved to their own
+// dedicated file to resolve the "Redeclaration" compilation errors.
+// REASON: REFACTOR - The `getPeriodDateRange` function has been updated to
+// calculate a rolling time window (last 24 hours, 7 days, or 30 days)
+// ending at the currently selected date. This ensures the report accurately
+// reflects the user's request for a floating time period rather than a fixed
+// calendar day/week.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -16,12 +24,13 @@ import java.util.*
 
 class TimePeriodReportViewModelFactory(
     private val application: Application,
-    private val timePeriod: TimePeriod
+    private val timePeriod: TimePeriod,
+    private val initialDateMillis: Long?
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TimePeriodReportViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return TimePeriodReportViewModel(application, timePeriod) as T
+            return TimePeriodReportViewModel(application, timePeriod, initialDateMillis) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
@@ -30,12 +39,19 @@ class TimePeriodReportViewModelFactory(
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimePeriodReportViewModel(
     application: Application,
-    private val timePeriod: TimePeriod
+    private val timePeriod: TimePeriod,
+    initialDateMillis: Long?
 ) : androidx.lifecycle.AndroidViewModel(application) {
 
     private val transactionDao = AppDatabase.getInstance(application).transactionDao()
 
-    private val _selectedDate = MutableStateFlow(Calendar.getInstance())
+    private val _selectedDate = MutableStateFlow(
+        Calendar.getInstance().apply {
+            if (initialDateMillis != null && initialDateMillis != -1L) {
+                timeInMillis = initialDateMillis
+            }
+        }
+    )
     val selectedDate: StateFlow<Calendar> = _selectedDate.asStateFlow()
 
     val transactionsForPeriod: StateFlow<List<TransactionDetails>> = _selectedDate.flatMapLatest { calendar ->
@@ -83,7 +99,6 @@ class TimePeriodReportViewModel(
                     Pair(BarData(dataSet), labels)
                 }
             }
-            // --- NEW: Implementation for Weekly Chart Data ---
             TimePeriod.WEEKLY -> {
                 val endCal = (calendar.clone() as Calendar).apply {
                     set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
@@ -119,7 +134,6 @@ class TimePeriodReportViewModel(
                     Pair(BarData(dataSet), labels)
                 }
             }
-            // --- NEW: Implementation for Monthly Chart Data ---
             TimePeriod.MONTHLY -> {
                 val endCal = (calendar.clone() as Calendar).apply {
                     set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
@@ -187,28 +201,18 @@ class TimePeriodReportViewModel(
         }
     }
 
+    // --- REFACTORED: This function now calculates a rolling time window ---
     private fun getPeriodDateRange(calendar: Calendar): Pair<Long, Long> {
-        val startCal = calendar.clone() as Calendar
-        val endCal = calendar.clone() as Calendar
+        val endCal = (calendar.clone() as Calendar) // The end of the period is the selected date/time
 
-        when (timePeriod) {
-            TimePeriod.DAILY -> {
-                startCal.set(Calendar.HOUR_OF_DAY, 0)
-                startCal.set(Calendar.MINUTE, 0)
-                endCal.set(Calendar.HOUR_OF_DAY, 23)
-                endCal.set(Calendar.MINUTE, 59)
-            }
-            TimePeriod.WEEKLY -> {
-                startCal.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
-                endCal.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
-                endCal.add(Calendar.WEEK_OF_YEAR, 1)
-                endCal.add(Calendar.DAY_OF_YEAR, -1)
-            }
-            TimePeriod.MONTHLY -> {
-                startCal.set(Calendar.DAY_OF_MONTH, 1)
-                endCal.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+        val startCal = (endCal.clone() as Calendar).apply {
+            when (timePeriod) {
+                TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
+                TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
+                TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
             }
         }
+
         return Pair(startCal.timeInMillis, endCal.timeInMillis)
     }
 }
