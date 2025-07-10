@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt
-// REASON: BUG FIX - The AlertDialogs now correctly derive their background color
-// from the app's MaterialTheme, ensuring they match the selected theme (e.g.,
-// Aurora) instead of defaulting to the system's light/dark mode.
+// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with
+// the "Project Aurora" vision. The standard `ListItem` has been replaced with
+// a custom `GlassPanel` component, and the `AlertDialog` is now theme-aware,
+// ensuring a cohesive, modern, and high-contrast user experience.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -31,7 +32,7 @@ import androidx.navigation.NavController
 import io.pm.finlight.Category
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.CategoryViewModel
-import io.pm.finlight.ui.components.DeleteCategoryDialog
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 
@@ -59,6 +60,7 @@ fun CategoryListScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Button(
             onClick = {
@@ -72,15 +74,13 @@ fun CategoryListScreen(
             Text("Add New Category")
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider()
-
-        LazyColumn {
-            items(categories) { category ->
-                ListItem(
-                    headlineContent = { Text(category.name) },
-                    leadingContent = {
-                        // --- UPDATED: To handle letter-based icons ---
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(categories, key = { it.id }) { category ->
+                GlassPanel {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
@@ -104,14 +104,22 @@ fun CategoryListScreen(
                                 )
                             }
                         }
-                    },
-                    trailingContent = {
+                        Spacer(Modifier.width(16.dp))
+                        Text(
+                            text = category.name,
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         Row {
                             IconButton(onClick = {
                                 selectedCategory = category
                                 showEditDialog = true
                             }) {
-                                Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Category")
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Category",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                             IconButton(onClick = {
                                 selectedCategory = category
@@ -125,8 +133,7 @@ fun CategoryListScreen(
                             }
                         }
                     }
-                )
-                HorizontalDivider()
+                }
             }
         }
     }
