@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul  9 21:27:59 IST 2025
+Generated on: Thu Jul 10 15:50:01 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -3175,10 +3175,12 @@ data class Tag(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt
-// REASON: BUG FIX - Resolved a race condition where the confirmation dialog was
-// dismissed before the navigation could complete. The line to hide the dialog
-// is now correctly placed inside the onComplete lambda, ensuring it only
-// happens after the background task and navigation call are finished.
+// REASON: BUG FIX - The navigation logic has been corrected to definitively fix
+// the back stack issue. Instead of using the `popUpTo` builder, the code now
+// first calls `navController.popBackStack()` to explicitly remove the linking
+// screen, and *then* calls `navController.navigate(...)` to go to the detail
+// screen. This ensures the user correctly returns to their previous screen (e.g.,
+// the dashboard) when pressing back from the transaction details.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -3235,16 +3237,6 @@ fun LinkRecurringTransactionScreen(
     var showConfirmationDialog by remember { mutableStateOf<Transaction?>(null) }
     val context = LocalContext.current
 
-    val onLinkConfirmed: (Transaction) -> Unit = { transactionToLink ->
-        viewModel.linkTransaction(transactionToLink.id) {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
-            // --- FIX: Only dismiss the dialog and navigate AFTER the ViewModel work is complete ---
-            showConfirmationDialog = null
-            navController.popBackStack()
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -3280,8 +3272,8 @@ fun LinkRecurringTransactionScreen(
                             viewModel.remindTomorrow {
                                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                                 notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
-                                navController.popBackStack()
                             }
+                            navController.popBackStack()
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -3338,7 +3330,16 @@ fun LinkRecurringTransactionScreen(
             title = { Text("Confirm Link") },
             text = { Text("Link this payment to the transaction for '${transactionToLink.description}'?") },
             confirmButton = {
-                Button(onClick = { onLinkConfirmed(transactionToLink) }) {
+                Button(onClick = {
+                    showConfirmationDialog = null
+                    viewModel.linkTransaction(transactionToLink.id) {
+                        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
+                        // --- FIX: Pop the current screen first, then navigate. ---
+                        navController.popBackStack()
+                        navController.navigate("transaction_detail/${transactionToLink.id}")
+                    }
+                }) {
                     Text("Confirm")
                 }
             },
@@ -3396,7 +3397,7 @@ private fun DuePaymentDetailsCard(pt: PotentialTransaction) {
 
 @Composable
 private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
-    val dateFormatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()) }
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
 
     GlassPanel(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
@@ -4014,11 +4015,11 @@ private fun auroraTextFieldColors() = OutlinedTextFieldDefaults.colors(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
-// REASON: BUG FIX - The automatic focus request logic has been completely removed
-// from `UserNamePage` and `BudgetSetupPage`. This was causing unpredictable
-// layout behavior when the keyboard appeared. Removing it prioritizes a stable,
-// centered layout and definitively resolves the issue where the content would
-// shift to the side.
+// REASON: MAJOR REFACTOR - The entire onboarding flow has been redesigned to
+// align with the "Project Aurora" vision. All form elements and action buttons
+// are now contained within `GlassPanel` components, and all text colors are
+// theme-aware, ensuring a cohesive, high-contrast, and modern user experience
+// from the moment the app is first launched.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -4051,6 +4052,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.OnboardingViewModel
+import io.pm.finlight.ui.components.GlassPanel
 
 @Composable
 fun WelcomePage() {
@@ -4071,28 +4073,31 @@ fun WelcomePage() {
         Text(
             text = "Welcome to Finlight",
             style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             buildAnnotatedString {
-                append("Your ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
-                    append("PRIVACY")
+                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                    append("Your ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                        append("PRIVACY")
+                    }
+                    append(" is our ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                        append("PRIORITY")
+                    }
+                    append(". All your data is ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("STORED SECURELY")
+                    }
+                    append(" and ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("ONLY ON YOUR DEVICE")
+                    }
+                    append(". Let's get you set up.")
                 }
-                append(" is our ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
-                    append("PRIORITY")
-                }
-                append(". All your data is ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("STORED SECURELY")
-                }
-                append(" and ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("ONLY ON YOUR DEVICE")
-                }
-                append(". Let's get you set up.")
             },
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center
@@ -4120,25 +4125,39 @@ fun UserNamePage(viewModel: OnboardingViewModel, pagerState: PagerState) {
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(24.dp))
-        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Text(
             "This will be used to personalize your experience.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
-        OutlinedTextField(
-            value = name,
-            onValueChange = { viewModel.onNameChanged(it) },
-            label = { Text("Your Name") },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Text,
-                capitalization = KeyboardCapitalization.Words
-            ),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
+        GlassPanel {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { viewModel.onNameChanged(it) },
+                label = { Text("Your Name") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    capitalization = KeyboardCapitalization.Words
+                ),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                )
+            )
+        }
     }
 }
 
@@ -4162,12 +4181,13 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel, pagerState: PagerState) {
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(24.dp))
-        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Text(
             "Give yourself a spending target for the month.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             "This can be changed any time in Settings.",
@@ -4175,14 +4195,27 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel, pagerState: PagerState) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
-        OutlinedTextField(
-            value = budget,
-            onValueChange = { viewModel.onBudgetChanged(it) },
-            label = { Text("Total Monthly Budget") },
-            leadingIcon = { Text("₹") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
-        )
+        GlassPanel {
+            OutlinedTextField(
+                value = budget,
+                onValueChange = { viewModel.onBudgetChanged(it) },
+                label = { Text("Total Monthly Budget") },
+                leadingIcon = { Text("₹", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                )
+            )
+        }
     }
 }
 
@@ -4209,12 +4242,13 @@ fun SmsPermissionPage(onPermissionResult: () -> Unit) {
     ) {
         Icon(Icons.AutoMirrored.Filled.Message, contentDescription = "SMS Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(24.dp))
-        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(16.dp))
         Text(
             "Consider allowing Finlight to read your SMS inbox to automatically detect and import new transactions. This is a huge time-saver!",
             style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
         Button(onClick = {
@@ -4241,23 +4275,25 @@ fun SmsScanningInfoPage() {
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(24.dp))
-        Text("Supercharge Your Setup", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+        Text("Supercharge Your Setup", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(16.dp))
         Text(
             buildAnnotatedString {
-                append("After setup, you can visit the ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("Settings")
+                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                    append("After setup, you can visit the ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("Settings")
+                    }
+                    append(" screen at any time to import existing transactions from your SMS inbox.\n\nYou'll have two options:\n\n")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("• Quick Scan:")
+                    }
+                    append(" A fast scan of recent messages. This defaults to the last 30 days, but you can pick any start date you like!\n\n")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("• Full Scan:")
+                    }
+                    append(" A complete scan of your entire inbox.")
                 }
-                append(" screen at any time to import existing transactions from your SMS inbox.\n\nYou'll have two options:\n\n")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("• Quick Scan:")
-                }
-                append(" A fast scan of recent messages. This defaults to the last 30 days, but you can pick any start date you like!\n\n")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("• Full Scan:")
-                }
-                append(" A complete scan of your entire inbox.")
             },
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center
@@ -4289,12 +4325,13 @@ fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
     ) {
         Icon(Icons.Default.NotificationsActive, contentDescription = "Notification Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(24.dp))
-        Text("Stay Updated", style = MaterialTheme.typography.headlineMedium)
+        Text("Stay Updated", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(16.dp))
         Text(
             "Get notified about new transactions and receive daily, weekly and monthly summaries by enabling notifications.",
             style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
 
@@ -4332,13 +4369,15 @@ fun CompletionPage() {
         Text(
             text = "You're All Set!",
             style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "Your accounts and preferences have been saved. You can now start tracking your finances.",
             style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -4348,9 +4387,10 @@ fun CompletionPage() {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt
-// REASON: BUG FIX - The AlertDialogs now correctly derive their background color
-// from the app's MaterialTheme, ensuring they match the selected theme (e.g.,
-// Aurora) instead of defaulting to the system's light/dark mode.
+// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with
+// the "Project Aurora" vision. The standard `ListItem` has been replaced with
+// a custom `GlassPanel` component, and the `AlertDialog` is now theme-aware,
+// ensuring a cohesive, modern, and high-contrast user experience.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -4379,7 +4419,7 @@ import androidx.navigation.NavController
 import io.pm.finlight.Category
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.CategoryViewModel
-import io.pm.finlight.ui.components.DeleteCategoryDialog
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 
@@ -4407,6 +4447,7 @@ fun CategoryListScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Button(
             onClick = {
@@ -4420,15 +4461,13 @@ fun CategoryListScreen(
             Text("Add New Category")
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider()
-
-        LazyColumn {
-            items(categories) { category ->
-                ListItem(
-                    headlineContent = { Text(category.name) },
-                    leadingContent = {
-                        // --- UPDATED: To handle letter-based icons ---
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(categories, key = { it.id }) { category ->
+                GlassPanel {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
@@ -4452,14 +4491,22 @@ fun CategoryListScreen(
                                 )
                             }
                         }
-                    },
-                    trailingContent = {
+                        Spacer(Modifier.width(16.dp))
+                        Text(
+                            text = category.name,
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         Row {
                             IconButton(onClick = {
                                 selectedCategory = category
                                 showEditDialog = true
                             }) {
-                                Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Category")
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Category",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                             IconButton(onClick = {
                                 selectedCategory = category
@@ -4473,8 +4520,7 @@ fun CategoryListScreen(
                             }
                         }
                     }
-                )
-                HorizontalDivider()
+                }
             }
         }
     }
@@ -11636,11 +11682,10 @@ private fun RuleDetailRow(label: String, value: String) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
-// REASON: Integrated a TopAppBar with a filter icon that triggers a modal bottom
-// sheet, allowing users to apply filters to the income list.
-// BUG FIX: Corrected the invalid SimpleDateFormat pattern.
-// BUG FIX: Removed the incorrect dependency on TransactionViewModel and now
-// correctly sources all data from the IncomeViewModel.
+// REASON: MAJOR REFACTOR - The `IncomeHeader` has been updated to align with the
+// "Project Aurora" vision. The standard `Card` has been replaced with a `GlassPanel`
+// component, and all text colors are now theme-aware, ensuring a cohesive,
+// modern, and high-contrast user experience for the income screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -11671,6 +11716,7 @@ import androidx.navigation.NavController
 import io.pm.finlight.IncomeViewModel
 import io.pm.finlight.MonthlySummaryItem
 import io.pm.finlight.ui.components.FilterBottomSheet
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionList
 import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import kotlinx.coroutines.launch
@@ -11694,7 +11740,6 @@ fun IncomeScreen(
     val monthlySummaries by viewModel.monthlySummaries.collectAsState()
 
     val filterState by viewModel.filterState.collectAsState()
-    // --- FIX: Get data from the correct ViewModel ---
     val allAccounts by viewModel.allAccounts.collectAsState()
     val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -11828,10 +11873,12 @@ fun IncomeHeader(
                     text = monthYearFormat.format(selectedMonth.time),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Icon(
                     imageVector = if (showMonthScroller) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector"
+                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector",
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
@@ -11861,7 +11908,8 @@ fun IncomeHeader(
                                 Text(
                                     text = monthFormat.format(summaryItem.calendar.time),
                                     style = if (isSelected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
                                     text = "₹${"%,.0f".format(summaryItem.totalSpent)}",
@@ -11877,17 +11925,16 @@ fun IncomeHeader(
 
         Spacer(Modifier.height(16.dp))
 
-        Card(
+        GlassPanel(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            elevation = CardDefaults.cardElevation(2.dp)
+                .padding(horizontal = 16.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.Start
             ) {
-                Text("Total Income", style = MaterialTheme.typography.labelMedium)
+                Text("Total Income", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalIncome)}",
                     style = MaterialTheme.typography.titleLarge,
@@ -12664,7 +12711,7 @@ fun ProfileScreen(
         }
 
         // --- NEW: Debug section for manually triggering workers ---
-        item {
+        /*item {
             SettingsSection("Debug") {
                 SettingsActionItem(
                     text = "Run Recurring Worker Now",
@@ -12677,7 +12724,7 @@ fun ProfileScreen(
                     }
                 )
             }
-        }
+        }*/
     }
 
     // region Dialogs
@@ -13230,13 +13277,11 @@ fun AuroraAnimatedBackground() {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FEATURE - The GlassPanel composable is now fully theme-aware. It
-// dynamically changes its background fill color (semi-transparent white for
-// dark themes, semi-transparent black for light themes) to ensure the frosted
-// glass effect is visually correct and appealing across all app themes.
-// FIX: Added the "+ Add" button to the AuroraRecentActivityCard header, which
-// is the component actually used on the dashboard. This corrects the previous
-// implementation where the button was added to an unused component.
+// REASON: FIX - Corrected a @Composable invocation error inside the `Canvas`
+// of the `CategoryBudgetGauge`. The primary color is now read from the
+// `MaterialTheme` and stored in a variable *before* the Canvas is drawn,
+// resolving the issue where a composable function was being called from a
+// non-composable context.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -13318,17 +13363,16 @@ fun GlassPanel(
         Modifier.border(1.dp, GlassPanelBorder, RoundedCornerShape(24.dp))
     }
 
-    // --- NEW: Dynamically set fill color based on theme brightness ---
     val glassFillColor = if (isSystemInDarkTheme()) {
-        Color.White.copy(alpha = 0.08f) // Slightly less opaque for better dark contrast
+        Color.White.copy(alpha = 0.08f)
     } else {
-        Color.Black.copy(alpha = 0.04f) // Very subtle black for light themes
+        Color.Black.copy(alpha = 0.04f)
     }
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(24.dp))
-            .background(glassFillColor) // Use the dynamic color
+            .background(glassFillColor)
             .then(borderModifier),
         content = content
     )
@@ -13376,7 +13420,6 @@ fun DashboardHeroCard(
         )
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // --- UPDATED: Use AnnotatedString for bold month name ---
             Text(
                 text = buildAnnotatedString {
                     append("Spent in ")
@@ -13681,12 +13724,8 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
     )
     val remaining = budget.budget.amount - budget.spent
 
-    val progressBrush = Brush.sweepGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-            MaterialTheme.colorScheme.primary
-        )
-    )
+    // --- FIX: Read the color from the theme outside the Canvas scope ---
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -13707,7 +13746,7 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
                     style = Stroke(width = strokeWidth)
                 )
                 drawArc(
-                    brush = progressBrush,
+                    color = primaryColor, // Use the variable here
                     startAngle = -90f,
                     sweepAngle = 360 * animatedProgress,
                     useCenter = false,
@@ -13782,7 +13821,6 @@ fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navControll
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                // --- FIX: Added the "+ Add" button here ---
                 Button(
                     onClick = { navController.navigate("add_transaction") },
                     shape = CircleShape,

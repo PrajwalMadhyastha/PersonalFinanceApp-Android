@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
-// REASON: Integrated a TopAppBar with a filter icon that triggers a modal bottom
-// sheet, allowing users to apply filters to the income list.
-// BUG FIX: Corrected the invalid SimpleDateFormat pattern.
-// BUG FIX: Removed the incorrect dependency on TransactionViewModel and now
-// correctly sources all data from the IncomeViewModel.
+// REASON: MAJOR REFACTOR - The `IncomeHeader` has been updated to align with the
+// "Project Aurora" vision. The standard `Card` has been replaced with a `GlassPanel`
+// component, and all text colors are now theme-aware, ensuring a cohesive,
+// modern, and high-contrast user experience for the income screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -35,6 +34,7 @@ import androidx.navigation.NavController
 import io.pm.finlight.IncomeViewModel
 import io.pm.finlight.MonthlySummaryItem
 import io.pm.finlight.ui.components.FilterBottomSheet
+import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionList
 import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import kotlinx.coroutines.launch
@@ -58,7 +58,6 @@ fun IncomeScreen(
     val monthlySummaries by viewModel.monthlySummaries.collectAsState()
 
     val filterState by viewModel.filterState.collectAsState()
-    // --- FIX: Get data from the correct ViewModel ---
     val allAccounts by viewModel.allAccounts.collectAsState()
     val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -192,10 +191,12 @@ fun IncomeHeader(
                     text = monthYearFormat.format(selectedMonth.time),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Icon(
                     imageVector = if (showMonthScroller) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector"
+                    contentDescription = if (showMonthScroller) "Hide month selector" else "Show month selector",
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
@@ -225,7 +226,8 @@ fun IncomeHeader(
                                 Text(
                                     text = monthFormat.format(summaryItem.calendar.time),
                                     style = if (isSelected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
                                     text = "₹${"%,.0f".format(summaryItem.totalSpent)}",
@@ -241,17 +243,16 @@ fun IncomeHeader(
 
         Spacer(Modifier.height(16.dp))
 
-        Card(
+        GlassPanel(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            elevation = CardDefaults.cardElevation(2.dp)
+                .padding(horizontal = 16.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.Start
             ) {
-                Text("Total Income", style = MaterialTheme.typography.labelMedium)
+                Text("Total Income", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalIncome)}",
                     style = MaterialTheme.typography.titleLarge,
