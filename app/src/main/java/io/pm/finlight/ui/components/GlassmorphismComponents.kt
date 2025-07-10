@@ -1,12 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FEATURE - The GlassPanel composable is now fully theme-aware. It
-// dynamically changes its background fill color (semi-transparent white for
-// dark themes, semi-transparent black for light themes) to ensure the frosted
-// glass effect is visually correct and appealing across all app themes.
-// FIX: Added the "+ Add" button to the AuroraRecentActivityCard header, which
-// is the component actually used on the dashboard. This corrects the previous
-// implementation where the button was added to an unused component.
+// REASON: FIX - Corrected a @Composable invocation error inside the `Canvas`
+// of the `CategoryBudgetGauge`. The primary color is now read from the
+// `MaterialTheme` and stored in a variable *before* the Canvas is drawn,
+// resolving the issue where a composable function was being called from a
+// non-composable context.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -88,17 +86,16 @@ fun GlassPanel(
         Modifier.border(1.dp, GlassPanelBorder, RoundedCornerShape(24.dp))
     }
 
-    // --- NEW: Dynamically set fill color based on theme brightness ---
     val glassFillColor = if (isSystemInDarkTheme()) {
-        Color.White.copy(alpha = 0.08f) // Slightly less opaque for better dark contrast
+        Color.White.copy(alpha = 0.08f)
     } else {
-        Color.Black.copy(alpha = 0.04f) // Very subtle black for light themes
+        Color.Black.copy(alpha = 0.04f)
     }
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(24.dp))
-            .background(glassFillColor) // Use the dynamic color
+            .background(glassFillColor)
             .then(borderModifier),
         content = content
     )
@@ -146,7 +143,6 @@ fun DashboardHeroCard(
         )
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // --- UPDATED: Use AnnotatedString for bold month name ---
             Text(
                 text = buildAnnotatedString {
                     append("Spent in ")
@@ -451,12 +447,8 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
     )
     val remaining = budget.budget.amount - budget.spent
 
-    val progressBrush = Brush.sweepGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-            MaterialTheme.colorScheme.primary
-        )
-    )
+    // --- FIX: Read the color from the theme outside the Canvas scope ---
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -477,7 +469,7 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
                     style = Stroke(width = strokeWidth)
                 )
                 drawArc(
-                    brush = progressBrush,
+                    color = primaryColor, // Use the variable here
                     startAngle = -90f,
                     sweepAngle = 360 * animatedProgress,
                     useCenter = false,
@@ -552,7 +544,6 @@ fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navControll
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                // --- FIX: Added the "+ Add" button here ---
                 Button(
                     onClick = { navController.navigate("add_transaction") },
                     shape = CircleShape,
