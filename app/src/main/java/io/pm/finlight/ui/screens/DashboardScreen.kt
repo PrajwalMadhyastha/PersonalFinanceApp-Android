@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -84,29 +85,33 @@ fun DashboardScreen(
         state = dragDropState.lazyListState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.pointerInput(Unit) {
-            detectDragGesturesAfterLongPress(
-                onDrag = { change, offset ->
-                    change.consume()
-                    dragDropState.onDrag(offset)
+        modifier = Modifier
+            // --- FIX: Add a testTag to make the LazyColumn findable in tests ---
+            .testTag("dashboard_lazy_column")
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDrag = { change, offset ->
+                        change.consume()
+                        dragDropState.onDrag(offset)
 
-                    if (overscrollJob?.isActive == true) return@detectDragGesturesAfterLongPress
+                        if (overscrollJob?.isActive == true) return@detectDragGesturesAfterLongPress
 
-                    dragDropState
-                        .checkForOverScroll()
-                        .takeIf { it != 0f }
-                        ?.let {
-                            overscrollJob = coroutineScope.launch { dragDropState.lazyListState.scrollBy(it) }
-                        } ?: run { overscrollJob?.cancel() }
-                },
-                onDragStart = { offset ->
-                    viewModel.enterCustomizationMode()
-                    dragDropState.onDragStart(offset)
-                },
-                onDragEnd = { dragDropState.onDragEnd() },
-                onDragCancel = { dragDropState.onDragEnd() }
-            )
-        }
+                        dragDropState
+                            .checkForOverScroll()
+                            .takeIf { it != 0f }
+                            ?.let {
+                                overscrollJob =
+                                    coroutineScope.launch { dragDropState.lazyListState.scrollBy(it) }
+                            } ?: run { overscrollJob?.cancel() }
+                    },
+                    onDragStart = { offset ->
+                        viewModel.enterCustomizationMode()
+                        dragDropState.onDragStart(offset)
+                    },
+                    onDragEnd = { dragDropState.onDragEnd() },
+                    onDragCancel = { dragDropState.onDragEnd() }
+                )
+            }
     ) {
         itemsIndexed(visibleCards, key = { _, item -> item.name }) { index, cardType ->
             val isBeingDragged = index == dragDropState.draggingItemIndex
