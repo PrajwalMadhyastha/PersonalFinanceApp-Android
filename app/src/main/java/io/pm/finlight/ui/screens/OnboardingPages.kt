@@ -1,10 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
-// REASON: BUG FIX - The automatic focus request logic has been completely removed
-// from `UserNamePage` and `BudgetSetupPage`. This was causing unpredictable
-// layout behavior when the keyboard appeared. Removing it prioritizes a stable,
-// centered layout and definitively resolves the issue where the content would
-// shift to the side.
+// REASON: MAJOR REFACTOR - The entire onboarding flow has been redesigned to
+// align with the "Project Aurora" vision. All form elements and action buttons
+// are now contained within `GlassPanel` components, and all text colors are
+// theme-aware, ensuring a cohesive, high-contrast, and modern user experience
+// from the moment the app is first launched.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.OnboardingViewModel
+import io.pm.finlight.ui.components.GlassPanel
 
 @Composable
 fun WelcomePage() {
@@ -57,28 +58,31 @@ fun WelcomePage() {
         Text(
             text = "Welcome to Finlight",
             style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             buildAnnotatedString {
-                append("Your ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
-                    append("PRIVACY")
+                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                    append("Your ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                        append("PRIVACY")
+                    }
+                    append(" is our ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                        append("PRIORITY")
+                    }
+                    append(". All your data is ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("STORED SECURELY")
+                    }
+                    append(" and ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("ONLY ON YOUR DEVICE")
+                    }
+                    append(". Let's get you set up.")
                 }
-                append(" is our ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF00C853))) {
-                    append("PRIORITY")
-                }
-                append(". All your data is ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("STORED SECURELY")
-                }
-                append(" and ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("ONLY ON YOUR DEVICE")
-                }
-                append(". Let's get you set up.")
             },
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center
@@ -106,25 +110,39 @@ fun UserNamePage(viewModel: OnboardingViewModel, pagerState: PagerState) {
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(24.dp))
-        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Text(
             "This will be used to personalize your experience.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
-        OutlinedTextField(
-            value = name,
-            onValueChange = { viewModel.onNameChanged(it) },
-            label = { Text("Your Name") },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Text,
-                capitalization = KeyboardCapitalization.Words
-            ),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
+        GlassPanel {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { viewModel.onNameChanged(it) },
+                label = { Text("Your Name") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    capitalization = KeyboardCapitalization.Words
+                ),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                )
+            )
+        }
     }
 }
 
@@ -148,12 +166,13 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel, pagerState: PagerState) {
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(24.dp))
-        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Text(
             "Give yourself a spending target for the month.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             "This can be changed any time in Settings.",
@@ -161,14 +180,27 @@ fun BudgetSetupPage(viewModel: OnboardingViewModel, pagerState: PagerState) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
-        OutlinedTextField(
-            value = budget,
-            onValueChange = { viewModel.onBudgetChanged(it) },
-            label = { Text("Total Monthly Budget") },
-            leadingIcon = { Text("₹") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
-        )
+        GlassPanel {
+            OutlinedTextField(
+                value = budget,
+                onValueChange = { viewModel.onBudgetChanged(it) },
+                label = { Text("Total Monthly Budget") },
+                leadingIcon = { Text("₹", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                )
+            )
+        }
     }
 }
 
@@ -195,12 +227,13 @@ fun SmsPermissionPage(onPermissionResult: () -> Unit) {
     ) {
         Icon(Icons.AutoMirrored.Filled.Message, contentDescription = "SMS Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(24.dp))
-        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(16.dp))
         Text(
             "Consider allowing Finlight to read your SMS inbox to automatically detect and import new transactions. This is a huge time-saver!",
             style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
         Button(onClick = {
@@ -227,23 +260,25 @@ fun SmsScanningInfoPage() {
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(24.dp))
-        Text("Supercharge Your Setup", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+        Text("Supercharge Your Setup", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(16.dp))
         Text(
             buildAnnotatedString {
-                append("After setup, you can visit the ")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("Settings")
+                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                    append("After setup, you can visit the ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("Settings")
+                    }
+                    append(" screen at any time to import existing transactions from your SMS inbox.\n\nYou'll have two options:\n\n")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("• Quick Scan:")
+                    }
+                    append(" A fast scan of recent messages. This defaults to the last 30 days, but you can pick any start date you like!\n\n")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("• Full Scan:")
+                    }
+                    append(" A complete scan of your entire inbox.")
                 }
-                append(" screen at any time to import existing transactions from your SMS inbox.\n\nYou'll have two options:\n\n")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("• Quick Scan:")
-                }
-                append(" A fast scan of recent messages. This defaults to the last 30 days, but you can pick any start date you like!\n\n")
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("• Full Scan:")
-                }
-                append(" A complete scan of your entire inbox.")
             },
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center
@@ -275,12 +310,13 @@ fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
     ) {
         Icon(Icons.Default.NotificationsActive, contentDescription = "Notification Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(24.dp))
-        Text("Stay Updated", style = MaterialTheme.typography.headlineMedium)
+        Text("Stay Updated", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(16.dp))
         Text(
             "Get notified about new transactions and receive daily, weekly and monthly summaries by enabling notifications.",
             style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(24.dp))
 
@@ -318,13 +354,15 @@ fun CompletionPage() {
         Text(
             text = "You're All Set!",
             style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "Your accounts and preferences have been saved. You can now start tracking your finances.",
             style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
