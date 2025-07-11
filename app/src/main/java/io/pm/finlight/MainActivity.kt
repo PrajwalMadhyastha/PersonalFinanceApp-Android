@@ -1,9 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - The NavHost entry for "add_recurring_transaction" has been
-// updated to accept an optional ruleId parameter. This enables the screen to
-// function in both "add" and "edit" modes, completing the navigation flow for
-// the new feature.
+// REASON: FEATURE - Added a new "goals_screen" route to the NavHost to
+// integrate the Savings Goals feature into the application's navigation graph.
 // =================================================================================
 package io.pm.finlight
 
@@ -11,12 +9,14 @@ import android.Manifest
 import android.app.Activity
 import android.app.Application
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
@@ -200,6 +200,7 @@ fun MainAppScreen() {
     val budgetViewModel: BudgetViewModel = viewModel()
     val profileViewModel: ProfileViewModel = viewModel()
     val incomeViewModel: IncomeViewModel = viewModel()
+    val goalViewModel: GoalViewModel = viewModel()
 
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
@@ -389,13 +390,15 @@ fun MainAppScreen() {
                 categoryViewModel = categoryViewModel,
                 budgetViewModel = budgetViewModel,
                 profileViewModel = profileViewModel,
-                incomeViewModel = incomeViewModel
+                incomeViewModel = incomeViewModel,
+                goalViewModel = goalViewModel
             )
         }
     }
 }
 
 
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
 fun AppNavHost(
     navController: NavHostController,
@@ -408,7 +411,8 @@ fun AppNavHost(
     categoryViewModel: CategoryViewModel,
     budgetViewModel: BudgetViewModel,
     profileViewModel: ProfileViewModel,
-    incomeViewModel: IncomeViewModel
+    incomeViewModel: IncomeViewModel,
+    goalViewModel: GoalViewModel
 ) {
     NavHost(
         navController = navController,
@@ -638,6 +642,11 @@ fun AppNavHost(
             if (timePeriod != null) {
                 TimePeriodReportScreen(navController = navController, timePeriod = timePeriod, initialDateMillis = date)
             }
+        }
+
+        // --- NEW: Add route for the GoalScreen ---
+        composable("goals_screen") {
+            GoalScreen(navController = navController, goalViewModel = goalViewModel)
         }
     }
 }
