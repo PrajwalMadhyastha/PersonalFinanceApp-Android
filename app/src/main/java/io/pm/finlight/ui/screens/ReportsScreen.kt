@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: REFACTOR - The screen has been updated to fully align with the Project
-// Aurora aesthetic. All cards now use the GlassPanel component, and chart
-// text colors have been explicitly set from the MaterialTheme to ensure
-// high-contrast legibility in dark mode, creating a cohesive and polished look.
+// REASON: REFACTOR - The "Daily Report" navigation card has been removed from
+// this screen. This report is now only accessible via its daily notification,
+// as per the user's request to declutter the main reports interface.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -11,7 +10,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarViewDay
 import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
 import androidx.compose.material3.*
@@ -27,8 +25,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.PieChart
-import io.pm.finlight.ReportsViewModel
-import io.pm.finlight.TimePeriod
+import io.pm.finlight.*
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
@@ -53,14 +50,7 @@ fun ReportsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        item {
-            GlassReportNavigationCard(
-                title = "Daily Report",
-                subtitle = "View a breakdown of any day's spending.",
-                icon = Icons.Default.CalendarViewDay,
-                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.DAILY}") }
-            )
-        }
+        // --- REMOVED: The Daily Report card is no longer shown here. ---
         item {
             GlassReportNavigationCard(
                 title = "Weekly Report",
