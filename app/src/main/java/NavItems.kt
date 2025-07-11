@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - The title for the `rule_creation_screen` has been updated
-// to "Create/Edit Rule" to accurately reflect its new dual purpose, supporting
-// both creation and editing workflows.
+// REASON: FEATURE - Added a new entry for "goals_screen" to the screenTitles
+// map, ensuring the new Savings Goals screen will have the correct title in
+// the app's top bar.
 // =================================================================================
 package io.pm.finlight
 
@@ -47,5 +47,6 @@ val screenTitles = mapOf(
     "manage_parse_rules" to "Manage Parsing Rules",
     "manage_ignore_rules" to "Manage Ignore List",
     "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction",
-    "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar"
+    "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar",
+    "goals_screen" to "Savings Goals" // --- NEW ---
 )
