@@ -1,7 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
 // REASON: REFACTOR - Changed the default time for the daily report notification
-// from 9 AM to 11 PM (23:00) to better suit user preferences.
+// from 9 AM to 11 PM (23:00) and enabled the daily report by default to
+// improve the out-of-the-box user experience.
 // =================================================================================
 package io.pm.finlight
 
@@ -232,11 +233,12 @@ class SettingsRepository(context: Context) {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                 if (key == KEY_DAILY_REPORT_ENABLED) {
-                    trySend(prefs.getBoolean(key, false))
+                    trySend(prefs.getBoolean(key, true))
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            trySend(prefs.getBoolean(KEY_DAILY_REPORT_ENABLED, false))
+            // --- FIX: Changed default value to true ---
+            trySend(prefs.getBoolean(KEY_DAILY_REPORT_ENABLED, true))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
