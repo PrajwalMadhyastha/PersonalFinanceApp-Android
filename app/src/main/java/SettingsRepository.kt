@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
 // REASON: REFACTOR - Changed the default time for the daily report notification
-// from 9 AM to 11 PM (23:00) and enabled the daily report by default to
-// improve the out-of-the-box user experience.
+// from 9 AM to 11 PM (23:00), enabled the daily report by default, and set the
+// weekly report default day to Sunday to improve the out-of-the-box user experience.
 // =================================================================================
 package io.pm.finlight
 
@@ -237,7 +237,6 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // --- FIX: Changed default value to true ---
             trySend(prefs.getBoolean(KEY_DAILY_REPORT_ENABLED, true))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
@@ -386,15 +385,16 @@ class SettingsRepository(context: Context) {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
                 if (key == KEY_WEEKLY_REPORT_DAY || key == KEY_WEEKLY_REPORT_HOUR || key == KEY_WEEKLY_REPORT_MINUTE) {
                     trySend(Triple(
-                        sp.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.MONDAY),
+                        sp.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.SUNDAY),
                         sp.getInt(KEY_WEEKLY_REPORT_HOUR, 9),
                         sp.getInt(KEY_WEEKLY_REPORT_MINUTE, 0)
                     ))
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
+            // --- FIX: Changed default day to Sunday ---
             trySend(Triple(
-                prefs.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.MONDAY),
+                prefs.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.SUNDAY),
                 prefs.getInt(KEY_WEEKLY_REPORT_HOUR, 9),
                 prefs.getInt(KEY_WEEKLY_REPORT_MINUTE, 0)
             ))
