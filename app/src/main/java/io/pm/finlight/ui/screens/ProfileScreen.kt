@@ -1,9 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: FEATURE - A new "Debug" section has been added with a button to
-// manually trigger the RecurringTransactionWorker. This provides a reliable way
-// to test the worker's functionality without waiting for its scheduled time or
-// relying on the App Inspector UI.
+// REASON: FEATURE - Added a new "Savings Goals" item to the "General" settings
+// section, providing a navigation entry point to the new GoalScreen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -273,6 +271,14 @@ fun ProfileScreen(
                     onClick = { navController.navigate("budget_screen") },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                // --- NEW: Savings Goals navigation item ---
+                SettingsActionItem(
+                    text = "Savings Goals",
+                    subtitle = "Set and track your savings goals",
+                    icon = Icons.Default.TrackChanges,
+                    onClick = { navController.navigate("goals_screen") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                 SettingsActionItem(
                     text = "Manage Recurring Rules",
                     subtitle = "Automate your regular bills and income",
@@ -452,22 +458,6 @@ fun ProfileScreen(
                 )
             }
         }
-
-        // --- NEW: Debug section for manually triggering workers ---
-        /*item {
-            SettingsSection("Debug") {
-                SettingsActionItem(
-                    text = "Run Recurring Worker Now",
-                    subtitle = "Manually trigger the recurring transaction check",
-                    icon = Icons.Default.BugReport,
-                    onClick = {
-                        val workRequest = OneTimeWorkRequestBuilder<RecurringTransactionWorker>().build()
-                        WorkManager.getInstance(context).enqueue(workRequest)
-                        Toast.makeText(context, "Recurring worker triggered!", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-        }*/
     }
 
     // region Dialogs
