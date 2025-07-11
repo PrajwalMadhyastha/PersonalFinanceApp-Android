@@ -4,6 +4,8 @@
 // the "Project Aurora" design system, using GlassPanel components to display
 // each goal with a progress bar and summary details. It includes dialogs for
 // adding, editing, and deleting goals.
+// FIX: Added the missing isDark() helper function and the correct import for
+// the DateRange icon to resolve compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -19,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
@@ -42,6 +45,9 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.roundToInt
+
+// --- FIX: Add the helper function to resolve the scope issue ---
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
