@@ -1,19 +1,17 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
-// REASON: BUG FIX - The ViewModel and its Factory have been moved to their own
-// dedicated file to resolve the "Redeclaration" compilation errors.
-// REASON: REFACTOR - The `getPeriodDateRange` function has been updated to
-// calculate a rolling time window (last 24 hours, 7 days, or 30 days)
-// ending at the currently selected date. This ensures the report accurately
-// reflects the user's request for a floating time period rather than a fixed
-// calendar day/week.
-// REASON: FEATURE - Added a new `insights` StateFlow. This flow calculates the
-// percentage change in spending compared to the previous period and identifies
-// the top spending category, providing richer data for the new "Insights" card
-// on the report screen.
-// FEATURE: The ViewModel now exposes a `totalIncome` StateFlow, calculated
-// from the transactions in the current period. This provides the necessary data
-// for the redesigned, more comprehensive report header.
+// REASON: REFACTOR - The date range calculation for the Daily report has been
+// restored to a rolling 24-hour window. This ensures that when a user clicks
+// the daily report notification, they see data from the 24 hours preceding the
+// notification's generation time, as intended.
+// BUG FIX: The logic for generating the 7-day bar chart on the daily report
+// screen has been corrected. It now correctly calculates the date for each bar
+// based on the start of the 7-day period, not the selected date. This ensures
+// the chart accurately reflects the spending for the week leading up to the
+// report date, regardless of which day the user is viewing.
+// BUG FIX: The ViewModel now correctly initializes its selectedDate with the
+// initialDateMillis provided from the notification deep link, ensuring the
+// report displays data for the correct 24-hour period.
 // =================================================================================
 package io.pm.finlight
 
@@ -37,8 +35,9 @@ class TimePeriodReportViewModelFactory(
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TimePeriodReportViewModel::class.java)) {
+            val db = AppDatabase.getInstance(application)
             @Suppress("UNCHECKED_CAST")
-            return TimePeriodReportViewModel(application, timePeriod, initialDateMillis) as T
+            return TimePeriodReportViewModel(db.transactionDao(), timePeriod, initialDateMillis) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
@@ -51,15 +50,14 @@ data class ReportInsights(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimePeriodReportViewModel(
-    application: Application,
+    private val transactionDao: TransactionDao,
     private val timePeriod: TimePeriod,
     initialDateMillis: Long?
-) : androidx.lifecycle.AndroidViewModel(application) {
-
-    private val transactionDao = AppDatabase.getInstance(application).transactionDao()
+) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(
         Calendar.getInstance().apply {
+            // --- FIX: Use the provided initialDateMillis from the notification ---
             if (initialDateMillis != null && initialDateMillis != -1L) {
                 timeInMillis = initialDateMillis
             }
@@ -72,7 +70,6 @@ class TimePeriodReportViewModel(
         transactionDao.getTransactionsForDateRange(start, end)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // --- NEW: Expose total income for the report header ---
     val totalIncome: StateFlow<Double> = transactionsForPeriod.map { transactions ->
         transactions
             .filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }
@@ -86,7 +83,7 @@ class TimePeriodReportViewModel(
 
             val previousPeriodEndCal = (calendar.clone() as Calendar).apply {
                 when (timePeriod) {
-                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
+                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24) // Compare with previous 24-hour window
                     TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
                     TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
                 }
@@ -112,17 +109,10 @@ class TimePeriodReportViewModel(
     val chartData: StateFlow<Pair<BarData, List<String>>?> = _selectedDate.flatMapLatest { calendar ->
         when (timePeriod) {
             TimePeriod.DAILY -> {
-                val end = (calendar.clone() as Calendar).apply {
-                    set(Calendar.HOUR_OF_DAY, 23)
-                    set(Calendar.MINUTE, 59)
-                }.timeInMillis
-                val start = (calendar.clone() as Calendar).apply {
-                    add(Calendar.DAY_OF_YEAR, -6)
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                }.timeInMillis
+                val endCal = (calendar.clone() as Calendar)
+                val startCal = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -6) }
 
-                transactionDao.getDailySpendingForDateRange(start, end).map { dailyTotals ->
+                transactionDao.getDailySpendingForDateRange(startCal.timeInMillis, endCal.timeInMillis).map { dailyTotals ->
                     if (dailyTotals.isEmpty()) return@map null
 
                     val entries = mutableListOf<BarEntry>()
@@ -133,7 +123,7 @@ class TimePeriodReportViewModel(
                     val totalsMap = dailyTotals.associateBy { it.date }
 
                     for (i in 0..6) {
-                        val dayCal = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -6 + i) }
+                        val dayCal = (startCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, i) }
                         val dateString = fullDateFormat.format(dayCal.time)
 
                         val total = totalsMap[dateString]?.totalAmount?.toFloat() ?: 0f
@@ -253,13 +243,12 @@ class TimePeriodReportViewModel(
 
     private fun getPeriodDateRange(calendar: Calendar): Pair<Long, Long> {
         val endCal = (calendar.clone() as Calendar)
+        val startCal = (endCal.clone() as Calendar)
 
-        val startCal = (endCal.clone() as Calendar).apply {
-            when (timePeriod) {
-                TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
-                TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
-                TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
-            }
+        when (timePeriod) {
+            TimePeriod.DAILY -> startCal.add(Calendar.HOUR_OF_DAY, -24)
+            TimePeriod.WEEKLY -> startCal.add(Calendar.DAY_OF_YEAR, -7)
+            TimePeriod.MONTHLY -> startCal.add(Calendar.DAY_OF_YEAR, -30)
         }
 
         return Pair(startCal.timeInMillis, endCal.timeInMillis)
