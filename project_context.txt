@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Thu Jul 10 15:50:01 IST 2025
+Generated on: Fri Jul 11 21:24:58 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -845,20 +845,18 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 ================== FILE: ./app/src/main/java/TimePeriodReportViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
-// REASON: BUG FIX - The ViewModel and its Factory have been moved to their own
-// dedicated file to resolve the "Redeclaration" compilation errors.
-// REASON: REFACTOR - The `getPeriodDateRange` function has been updated to
-// calculate a rolling time window (last 24 hours, 7 days, or 30 days)
-// ending at the currently selected date. This ensures the report accurately
-// reflects the user's request for a floating time period rather than a fixed
-// calendar day/week.
-// REASON: FEATURE - Added a new `insights` StateFlow. This flow calculates the
-// percentage change in spending compared to the previous period and identifies
-// the top spending category, providing richer data for the new "Insights" card
-// on the report screen.
-// FEATURE: The ViewModel now exposes a `totalIncome` StateFlow, calculated
-// from the transactions in the current period. This provides the necessary data
-// for the redesigned, more comprehensive report header.
+// REASON: REFACTOR - The date range calculation for the Daily report has been
+// restored to a rolling 24-hour window. This ensures that when a user clicks
+// the daily report notification, they see data from the 24 hours preceding the
+// notification's generation time, as intended.
+// BUG FIX: The logic for generating the 7-day bar chart on the daily report
+// screen has been corrected. It now correctly calculates the date for each bar
+// based on the start of the 7-day period, not the selected date. This ensures
+// the chart accurately reflects the spending for the week leading up to the
+// report date, regardless of which day the user is viewing.
+// BUG FIX: The ViewModel now correctly initializes its selectedDate with the
+// initialDateMillis provided from the notification deep link, ensuring the
+// report displays data for the correct 24-hour period.
 // =================================================================================
 package io.pm.finlight
 
@@ -882,8 +880,9 @@ class TimePeriodReportViewModelFactory(
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TimePeriodReportViewModel::class.java)) {
+            val db = AppDatabase.getInstance(application)
             @Suppress("UNCHECKED_CAST")
-            return TimePeriodReportViewModel(application, timePeriod, initialDateMillis) as T
+            return TimePeriodReportViewModel(db.transactionDao(), timePeriod, initialDateMillis) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
@@ -896,15 +895,14 @@ data class ReportInsights(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimePeriodReportViewModel(
-    application: Application,
+    private val transactionDao: TransactionDao,
     private val timePeriod: TimePeriod,
     initialDateMillis: Long?
-) : androidx.lifecycle.AndroidViewModel(application) {
-
-    private val transactionDao = AppDatabase.getInstance(application).transactionDao()
+) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(
         Calendar.getInstance().apply {
+            // --- FIX: Use the provided initialDateMillis from the notification ---
             if (initialDateMillis != null && initialDateMillis != -1L) {
                 timeInMillis = initialDateMillis
             }
@@ -917,7 +915,6 @@ class TimePeriodReportViewModel(
         transactionDao.getTransactionsForDateRange(start, end)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // --- NEW: Expose total income for the report header ---
     val totalIncome: StateFlow<Double> = transactionsForPeriod.map { transactions ->
         transactions
             .filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }
@@ -931,7 +928,7 @@ class TimePeriodReportViewModel(
 
             val previousPeriodEndCal = (calendar.clone() as Calendar).apply {
                 when (timePeriod) {
-                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
+                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24) // Compare with previous 24-hour window
                     TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
                     TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
                 }
@@ -957,17 +954,10 @@ class TimePeriodReportViewModel(
     val chartData: StateFlow<Pair<BarData, List<String>>?> = _selectedDate.flatMapLatest { calendar ->
         when (timePeriod) {
             TimePeriod.DAILY -> {
-                val end = (calendar.clone() as Calendar).apply {
-                    set(Calendar.HOUR_OF_DAY, 23)
-                    set(Calendar.MINUTE, 59)
-                }.timeInMillis
-                val start = (calendar.clone() as Calendar).apply {
-                    add(Calendar.DAY_OF_YEAR, -6)
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                }.timeInMillis
+                val endCal = (calendar.clone() as Calendar)
+                val startCal = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -6) }
 
-                transactionDao.getDailySpendingForDateRange(start, end).map { dailyTotals ->
+                transactionDao.getDailySpendingForDateRange(startCal.timeInMillis, endCal.timeInMillis).map { dailyTotals ->
                     if (dailyTotals.isEmpty()) return@map null
 
                     val entries = mutableListOf<BarEntry>()
@@ -978,7 +968,7 @@ class TimePeriodReportViewModel(
                     val totalsMap = dailyTotals.associateBy { it.date }
 
                     for (i in 0..6) {
-                        val dayCal = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -6 + i) }
+                        val dayCal = (startCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, i) }
                         val dateString = fullDateFormat.format(dayCal.time)
 
                         val total = totalsMap[dateString]?.totalAmount?.toFloat() ?: 0f
@@ -1098,13 +1088,12 @@ class TimePeriodReportViewModel(
 
     private fun getPeriodDateRange(calendar: Calendar): Pair<Long, Long> {
         val endCal = (calendar.clone() as Calendar)
+        val startCal = (endCal.clone() as Calendar)
 
-        val startCal = (endCal.clone() as Calendar).apply {
-            when (timePeriod) {
-                TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
-                TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
-                TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
-            }
+        when (timePeriod) {
+            TimePeriod.DAILY -> startCal.add(Calendar.HOUR_OF_DAY, -24)
+            TimePeriod.WEEKLY -> startCal.add(Calendar.DAY_OF_YEAR, -7)
+            TimePeriod.MONTHLY -> startCal.add(Calendar.DAY_OF_YEAR, -30)
         }
 
         return Pair(startCal.timeInMillis, endCal.timeInMillis)
@@ -3176,11 +3165,11 @@ data class Tag(
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt
 // REASON: BUG FIX - The navigation logic has been corrected to definitively fix
-// the back stack issue. Instead of using the `popUpTo` builder, the code now
-// first calls `navController.popBackStack()` to explicitly remove the linking
-// screen, and *then* calls `navController.navigate(...)` to go to the detail
-// screen. This ensures the user correctly returns to their previous screen (e.g.,
-// the dashboard) when pressing back from the transaction details.
+// the back stack issue. Instead of calling popBackStack() separately, the code
+// now uses the popUpTo builder within the navigate call. This atomically
+// navigates to the detail screen while simultaneously removing the linking
+// screen from the back stack, ensuring a correct and intuitive back navigation
+// experience for the user.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -3335,9 +3324,13 @@ fun LinkRecurringTransactionScreen(
                     viewModel.linkTransaction(transactionToLink.id) {
                         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
-                        // --- FIX: Pop the current screen first, then navigate. ---
-                        navController.popBackStack()
-                        navController.navigate("transaction_detail/${transactionToLink.id}")
+                        // --- FIX: Use popUpTo for a more robust navigation ---
+                        navController.navigate("transaction_detail/${transactionToLink.id}") {
+                            // Pop the linking screen off the back stack
+                            popUpTo("link_recurring_transaction/{potentialTransactionJson}") {
+                                inclusive = true
+                            }
+                        }
                     }
                 }) {
                     Text("Confirm")
@@ -10360,6 +10353,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -10412,29 +10406,33 @@ fun DashboardScreen(
         state = dragDropState.lazyListState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.pointerInput(Unit) {
-            detectDragGesturesAfterLongPress(
-                onDrag = { change, offset ->
-                    change.consume()
-                    dragDropState.onDrag(offset)
+        modifier = Modifier
+            // --- FIX: Add a testTag to make the LazyColumn findable in tests ---
+            .testTag("dashboard_lazy_column")
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDrag = { change, offset ->
+                        change.consume()
+                        dragDropState.onDrag(offset)
 
-                    if (overscrollJob?.isActive == true) return@detectDragGesturesAfterLongPress
+                        if (overscrollJob?.isActive == true) return@detectDragGesturesAfterLongPress
 
-                    dragDropState
-                        .checkForOverScroll()
-                        .takeIf { it != 0f }
-                        ?.let {
-                            overscrollJob = coroutineScope.launch { dragDropState.lazyListState.scrollBy(it) }
-                        } ?: run { overscrollJob?.cancel() }
-                },
-                onDragStart = { offset ->
-                    viewModel.enterCustomizationMode()
-                    dragDropState.onDragStart(offset)
-                },
-                onDragEnd = { dragDropState.onDragEnd() },
-                onDragCancel = { dragDropState.onDragEnd() }
-            )
-        }
+                        dragDropState
+                            .checkForOverScroll()
+                            .takeIf { it != 0f }
+                            ?.let {
+                                overscrollJob =
+                                    coroutineScope.launch { dragDropState.lazyListState.scrollBy(it) }
+                            } ?: run { overscrollJob?.cancel() }
+                    },
+                    onDragStart = { offset ->
+                        viewModel.enterCustomizationMode()
+                        dragDropState.onDragStart(offset)
+                    },
+                    onDragEnd = { dragDropState.onDragEnd() },
+                    onDragCancel = { dragDropState.onDragEnd() }
+                )
+            }
     ) {
         itemsIndexed(visibleCards, key = { _, item -> item.name }) { index, cardType ->
             val isBeingDragged = index == dragDropState.draggingItemIndex
@@ -12947,10 +12945,9 @@ private fun ThemePickerItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: REFACTOR - The screen has been updated to fully align with the Project
-// Aurora aesthetic. All cards now use the GlassPanel component, and chart
-// text colors have been explicitly set from the MaterialTheme to ensure
-// high-contrast legibility in dark mode, creating a cohesive and polished look.
+// REASON: REFACTOR - The "Daily Report" navigation card has been removed from
+// this screen. This report is now only accessible via its daily notification,
+// as per the user's request to declutter the main reports interface.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12958,7 +12955,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarViewDay
 import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
 import androidx.compose.material3.*
@@ -12974,8 +12970,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.PieChart
-import io.pm.finlight.ReportsViewModel
-import io.pm.finlight.TimePeriod
+import io.pm.finlight.*
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
@@ -13000,14 +12995,7 @@ fun ReportsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        item {
-            GlassReportNavigationCard(
-                title = "Daily Report",
-                subtitle = "View a breakdown of any day's spending.",
-                icon = Icons.Default.CalendarViewDay,
-                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.DAILY}") }
-            )
-        }
+        // --- REMOVED: The Daily Report card is no longer shown here. ---
         item {
             GlassReportNavigationCard(
                 title = "Weekly Report",
@@ -17749,10 +17737,9 @@ data class AppDataBackup(
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: FEATURE - Added functions to save and retrieve the user's selected
-// theme preference. `saveSelectedTheme` persists the theme's key to
-// SharedPreferences, and `getSelectedTheme` provides a Flow to observe
-// the current choice, enabling the app-wide theme-switching functionality.
+// REASON: REFACTOR - Changed the default time for the daily report notification
+// from 9 AM to 11 PM (23:00), enabled the daily report by default, and set the
+// weekly report default day to Sunday to improve the out-of-the-box user experience.
 // =================================================================================
 package io.pm.finlight
 
@@ -17795,16 +17782,13 @@ class SettingsRepository(context: Context) {
         private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
         private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
         private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
-        // --- NEW: Key for storing the selected theme ---
         private const val KEY_SELECTED_THEME = "selected_app_theme"
     }
 
-    // --- NEW: Function to save the chosen theme ---
     fun saveSelectedTheme(theme: AppTheme) {
         prefs.edit().putString(KEY_SELECTED_THEME, theme.key).apply()
     }
 
-    // --- NEW: Function to get the chosen theme as a Flow ---
     fun getSelectedTheme(): Flow<AppTheme> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
@@ -17814,10 +17798,8 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Send the initial value
             val initialThemeKey = prefs.getString(KEY_SELECTED_THEME, AppTheme.SYSTEM_DEFAULT.key)
             trySend(AppTheme.fromKey(initialThemeKey))
-            // Unregister the listener when the flow is closed
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
@@ -17988,11 +17970,11 @@ class SettingsRepository(context: Context) {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                 if (key == KEY_DAILY_REPORT_ENABLED) {
-                    trySend(prefs.getBoolean(key, false))
+                    trySend(prefs.getBoolean(key, true))
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            trySend(prefs.getBoolean(KEY_DAILY_REPORT_ENABLED, false))
+            trySend(prefs.getBoolean(KEY_DAILY_REPORT_ENABLED, true))
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
@@ -18110,7 +18092,7 @@ class SettingsRepository(context: Context) {
                 if (changedKey == KEY_DAILY_REPORT_HOUR || changedKey == KEY_DAILY_REPORT_MINUTE) {
                     trySend(
                         Pair(
-                            sharedPreferences.getInt(KEY_DAILY_REPORT_HOUR, 9),
+                            sharedPreferences.getInt(KEY_DAILY_REPORT_HOUR, 23),
                             sharedPreferences.getInt(KEY_DAILY_REPORT_MINUTE, 0)
                         )
                     )
@@ -18119,7 +18101,7 @@ class SettingsRepository(context: Context) {
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(
                 Pair(
-                    prefs.getInt(KEY_DAILY_REPORT_HOUR, 9),
+                    prefs.getInt(KEY_DAILY_REPORT_HOUR, 23),
                     prefs.getInt(KEY_DAILY_REPORT_MINUTE, 0)
                 )
             )
@@ -18140,15 +18122,16 @@ class SettingsRepository(context: Context) {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
                 if (key == KEY_WEEKLY_REPORT_DAY || key == KEY_WEEKLY_REPORT_HOUR || key == KEY_WEEKLY_REPORT_MINUTE) {
                     trySend(Triple(
-                        sp.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.MONDAY),
+                        sp.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.SUNDAY),
                         sp.getInt(KEY_WEEKLY_REPORT_HOUR, 9),
                         sp.getInt(KEY_WEEKLY_REPORT_MINUTE, 0)
                     ))
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
+            // --- FIX: Changed default day to Sunday ---
             trySend(Triple(
-                prefs.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.MONDAY),
+                prefs.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.SUNDAY),
                 prefs.getInt(KEY_WEEKLY_REPORT_HOUR, 9),
                 prefs.getInt(KEY_WEEKLY_REPORT_MINUTE, 0)
             ))
@@ -19959,14 +19942,11 @@ enum class TimePeriod {
 ================== FILE: ./app/src/main/java/DailyReportWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
-// REASON: REFACTOR - The date calculation logic has been updated to use a
-// rolling 24-hour window instead of a fixed "yesterday". The worker now fetches
-// data from the last 24 hours and compares it against the 24 hours prior to that.
-// This makes the daily report more timely and relevant to the user.
-// BUG FIX: The time period logic has been changed from a rolling 24-hour window
-// to the previous full calendar day ("yesterday"). This aligns the worker's
-// calculation with the report screen the user sees, fixing the bug where the
-// notification data did not match the on-screen data.
+// REASON: BUG FIX - The worker's date calculation logic has been completely
+// corrected. It now calculates a true rolling 24-hour window from the moment
+// it executes. This ensures that the data gathered for the notification
+// perfectly matches the data the user sees when they click the deep link,
+// resolving the "no transactions" bug.
 // =================================================================================
 package io.pm.finlight
 
@@ -19986,34 +19966,16 @@ class DailyReportWorker(
     override suspend fun doWork(): Result {
         return withContext(Dispatchers.IO) {
             try {
-                Log.d("DailyReportWorker", "Worker starting for yesterday's report...")
+                Log.d("DailyReportWorker", "Worker starting for daily report...")
                 val transactionDao = AppDatabase.getInstance(context).transactionDao()
 
-                // --- FIX: Calculate for "yesterday" (the previous full calendar day) ---
-                val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-                val endDate = (yesterday.clone() as Calendar).apply {
-                    set(Calendar.HOUR_OF_DAY, 23)
-                    set(Calendar.MINUTE, 59)
-                    set(Calendar.SECOND, 59)
-                }.timeInMillis
-                val startDate = (yesterday.clone() as Calendar).apply {
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                }.timeInMillis
+                // --- FIX: Calculate a true rolling 24-hour window from now ---
+                val endDate = Calendar.getInstance().timeInMillis
+                val startDate = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -24) }.timeInMillis
 
-                // --- FIX: Calculate for the day before yesterday for comparison ---
-                val dayBeforeYesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -2) }
-                val previousPeriodEndDate = (dayBeforeYesterday.clone() as Calendar).apply {
-                    set(Calendar.HOUR_OF_DAY, 23)
-                    set(Calendar.MINUTE, 59)
-                    set(Calendar.SECOND, 59)
-                }.timeInMillis
-                val previousPeriodStartDate = (dayBeforeYesterday.clone() as Calendar).apply {
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                }.timeInMillis
+                // --- FIX: Calculate the comparison period as the 24 hours prior to the current period ---
+                val previousPeriodEndDate = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -24) }.timeInMillis
+                val previousPeriodStartDate = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -48) }.timeInMillis
 
 
                 val currentPeriodSummary = transactionDao.getFinancialSummaryForRange(startDate, endDate)
@@ -20028,8 +19990,8 @@ class DailyReportWorker(
                     ((currentPeriodExpenses - previousPeriodExpenses) / previousPeriodExpenses * 100).roundToInt()
                 } else null
 
-                // --- FIX: Pass yesterday's timestamp to the notification helper ---
-                NotificationHelper.showDailyReportNotification(context, currentPeriodExpenses, percentageChange, topCategories, yesterday.timeInMillis)
+                // --- FIX: Pass the correct end date (now) to the notification helper ---
+                NotificationHelper.showDailyReportNotification(context, currentPeriodExpenses, percentageChange, topCategories, endDate)
 
                 ReminderManager.scheduleDailyReport(context)
                 Log.d("DailyReportWorker", "Worker finished and rescheduled.")
@@ -21693,6 +21655,134 @@ class DisableAppLockRule : TestRule {
                 }
             }
         }
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/androidTest/java/io/pm/finlight/DashboardAndReportsWorkflowTests.kt ==================
+package io.pm.finlight
+
+import android.Manifest
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.rule.GrantPermissionRule
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.runner.RunWith
+import java.text.SimpleDateFormat
+import java.util.*
+
+/**
+ * Instrumented UI tests for the "Project Aurora" dashboard and the new
+ * time-period based reporting screens.
+ */
+@RunWith(AndroidJUnit4::class)
+class DashboardAndReportsWorkflowTests {
+    private val composeTestRule = createAndroidComposeRule<MainActivity>()
+
+    @get:Rule
+    val ruleChain: RuleChain =
+        RuleChain
+            .outerRule(DisableOnboardingRule())
+            .around(DisableAppLockRule())
+            .around(
+                GrantPermissionRule.grant(
+                    Manifest.permission.READ_SMS,
+                    Manifest.permission.RECEIVE_SMS,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ),
+            )
+            .around(composeTestRule)
+
+    /**
+     * Verifies that the main "Project Aurora" dashboard cards are displayed on launch.
+     */
+    @Test
+    fun test_auroraDashboard_displaysAllDefaultCards() {
+        // Wait for the dashboard to load by checking for the hero card's title.
+        composeTestRule.waitUntil(timeoutMillis = 10000) {
+            composeTestRule.onAllNodesWithText("Monthly Budget").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        // --- FIX: Create a list of expected content and scroll to each one individually ---
+        // This is more robust than a single swipe, as it ensures each item is found
+        // before the test proceeds.
+        val expectedCardContent = listOf(
+            "Monthly Budget",
+            "View Trends", // Content from Quick Actions card
+            "Net Worth",
+            "Recent Transactions",
+            "Accounts",
+            "Budget Watch"
+        )
+
+        // Find the scrollable container using its test tag.
+        val lazyColumn = composeTestRule.onNodeWithTag("dashboard_lazy_column")
+
+        // Iterate through the expected content, scrolling to and verifying each one.
+        expectedCardContent.forEach { contentText ->
+            lazyColumn.performScrollToNode(hasText(contentText))
+            composeTestRule.onNodeWithText(contentText).assertIsDisplayed()
+        }
+    }
+
+    /**
+     * Tests navigation from the main reports screen to the Daily Report screen
+     * and verifies the header content.
+     */
+    @Test
+    fun test_navigationToDailyReport_showsCorrectHeader() {
+        // 1. Navigate from the dashboard to the Reports screen via the bottom nav.
+        composeTestRule.onNodeWithText("Reports").performClick()
+
+        // 2. On the reports screen, click the "Daily Report" card.
+        composeTestRule.onNodeWithText("Daily Report").performClick()
+
+        // 3. Verify we are on the "Daily Report" screen.
+        composeTestRule.onNodeWithText("Daily Report").assertIsDisplayed()
+
+        // 4. Verify the "Hero" card and "Insights" card are displayed.
+        // We check for "Total Spent" which is in the hero card.
+        composeTestRule.onNodeWithText("Total Spent").assertIsDisplayed()
+        // We check for "Change" which is in the insights card.
+        composeTestRule.onNodeWithText("Change").assertIsDisplayed()
+    }
+
+    /**
+     * Tests the swipe gestures on the TimePeriodReportScreen to navigate
+     * between different days.
+     */
+    @Test
+    fun test_swipeGestures_onReportScreen_changeDate() {
+        // 1. Navigate to the Daily Report screen.
+        composeTestRule.onNodeWithText("Reports").performClick()
+        composeTestRule.onNodeWithText("Daily Report").performClick()
+        composeTestRule.onNodeWithText("Daily Report").assertIsDisplayed()
+
+        // 2. Get the initial date text from the subtitle.
+        val initialSubtitleNode = composeTestRule.onNodeWithText("Since", substring = true)
+        val initialSubtitleText = initialSubtitleNode.fetchSemanticsNode().config[SemanticsProperties.Text].first().text
+
+        // 3. Perform a swipe left gesture to move to the next day.
+        composeTestRule.onRoot().performTouchInput { swipeLeft() }
+
+        // 4. Verify the date in the subtitle has changed.
+        val nextSubtitleNode = composeTestRule.onNodeWithText("Since", substring = true)
+        val nextSubtitleText = nextSubtitleNode.fetchSemanticsNode().config[SemanticsProperties.Text].first().text
+        assert(initialSubtitleText != nextSubtitleText) { "Date should have changed after swiping left." }
+
+
+        // 5. Perform a swipe right gesture to move back to the previous day.
+        composeTestRule.onRoot().performTouchInput { swipeRight() }
+
+        // 6. Verify the date has returned to the initial date.
+        val finalSubtitleNode = composeTestRule.onNodeWithText("Since", substring = true)
+        val finalSubtitleText = finalSubtitleNode.fetchSemanticsNode().config[SemanticsProperties.Text].first().text
+        assert(initialSubtitleText == finalSubtitleText) { "Date should have returned to the original after swiping right." }
     }
 }
 -e 
