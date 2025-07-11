@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 23. A new
-// migration, MIGRATION_22_23, has been added to introduce the `lastRunDate`
-// column to the `recurring_transactions` table. This is a critical step for the
-// new recurring transaction automation feature.
+// REASON: FEATURE - The database version has been incremented to 24. The new
+// `Goal` entity has been added to the database, and a new migration,
+// MIGRATION_23_24, has been created to add the `goals` table.
 // =================================================================================
 package io.pm.finlight
 
@@ -33,9 +32,10 @@ import java.util.Calendar
         CustomSmsRule::class,
         MerchantRenameRule::class,
         MerchantCategoryMapping::class,
-        IgnoreRule::class
+        IgnoreRule::class,
+        Goal::class // --- NEW: Add Goal entity ---
     ],
-    version = 23, // --- UPDATED: Incremented version number ---
+    version = 24, // --- UPDATED: Incremented version number ---
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -50,6 +50,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
     abstract fun ignoreRuleDao(): IgnoreRuleDao
+    abstract fun goalDao(): GoalDao // --- NEW: Add Goal DAO abstract function ---
 
     companion object {
         @Volatile
@@ -229,10 +230,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the lastRunDate column ---
         val MIGRATION_22_23 = object : Migration(22, 23) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `recurring_transactions` ADD COLUMN `lastRunDate` INTEGER")
+            }
+        }
+
+        // --- NEW: Migration to add the goals table ---
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `goals` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `name` TEXT NOT NULL, 
+                        `targetAmount` REAL NOT NULL, 
+                        `savedAmount` REAL NOT NULL, 
+                        `targetDate` INTEGER, 
+                        `accountId` INTEGER NOT NULL, 
+                        FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_goals_accountId` ON `goals` (`accountId`)")
             }
         }
 
@@ -241,7 +259,7 @@ abstract class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
