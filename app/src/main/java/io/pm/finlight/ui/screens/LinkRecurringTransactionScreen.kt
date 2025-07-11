@@ -1,11 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt
 // REASON: BUG FIX - The navigation logic has been corrected to definitively fix
-// the back stack issue. Instead of using the `popUpTo` builder, the code now
-// first calls `navController.popBackStack()` to explicitly remove the linking
-// screen, and *then* calls `navController.navigate(...)` to go to the detail
-// screen. This ensures the user correctly returns to their previous screen (e.g.,
-// the dashboard) when pressing back from the transaction details.
+// the back stack issue. Instead of calling popBackStack() separately, the code
+// now uses the popUpTo builder within the navigate call. This atomically
+// navigates to the detail screen while simultaneously removing the linking
+// screen from the back stack, ensuring a correct and intuitive back navigation
+// experience for the user.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -160,9 +160,13 @@ fun LinkRecurringTransactionScreen(
                     viewModel.linkTransaction(transactionToLink.id) {
                         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
-                        // --- FIX: Pop the current screen first, then navigate. ---
-                        navController.popBackStack()
-                        navController.navigate("transaction_detail/${transactionToLink.id}")
+                        // --- FIX: Use popUpTo for a more robust navigation ---
+                        navController.navigate("transaction_detail/${transactionToLink.id}") {
+                            // Pop the linking screen off the back stack
+                            popUpTo("link_recurring_transaction/{potentialTransactionJson}") {
+                                inclusive = true
+                            }
+                        }
                     }
                 }) {
                     Text("Confirm")
