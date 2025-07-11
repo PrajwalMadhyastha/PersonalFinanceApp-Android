@@ -1,9 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: FEATURE - Added functions to save and retrieve the user's selected
-// theme preference. `saveSelectedTheme` persists the theme's key to
-// SharedPreferences, and `getSelectedTheme` provides a Flow to observe
-// the current choice, enabling the app-wide theme-switching functionality.
+// REASON: REFACTOR - Changed the default time for the daily report notification
+// from 9 AM to 11 PM (23:00) to better suit user preferences.
 // =================================================================================
 package io.pm.finlight
 
@@ -46,16 +44,13 @@ class SettingsRepository(context: Context) {
         private const val KEY_MONTHLY_SUMMARY_ENABLED = "monthly_summary_enabled"
         private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
         private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
-        // --- NEW: Key for storing the selected theme ---
         private const val KEY_SELECTED_THEME = "selected_app_theme"
     }
 
-    // --- NEW: Function to save the chosen theme ---
     fun saveSelectedTheme(theme: AppTheme) {
         prefs.edit().putString(KEY_SELECTED_THEME, theme.key).apply()
     }
 
-    // --- NEW: Function to get the chosen theme as a Flow ---
     fun getSelectedTheme(): Flow<AppTheme> {
         return callbackFlow {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
@@ -65,10 +60,8 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Send the initial value
             val initialThemeKey = prefs.getString(KEY_SELECTED_THEME, AppTheme.SYSTEM_DEFAULT.key)
             trySend(AppTheme.fromKey(initialThemeKey))
-            // Unregister the listener when the flow is closed
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
@@ -361,7 +354,7 @@ class SettingsRepository(context: Context) {
                 if (changedKey == KEY_DAILY_REPORT_HOUR || changedKey == KEY_DAILY_REPORT_MINUTE) {
                     trySend(
                         Pair(
-                            sharedPreferences.getInt(KEY_DAILY_REPORT_HOUR, 9),
+                            sharedPreferences.getInt(KEY_DAILY_REPORT_HOUR, 23),
                             sharedPreferences.getInt(KEY_DAILY_REPORT_MINUTE, 0)
                         )
                     )
@@ -370,7 +363,7 @@ class SettingsRepository(context: Context) {
             prefs.registerOnSharedPreferenceChangeListener(listener)
             trySend(
                 Pair(
-                    prefs.getInt(KEY_DAILY_REPORT_HOUR, 9),
+                    prefs.getInt(KEY_DAILY_REPORT_HOUR, 23),
                     prefs.getInt(KEY_DAILY_REPORT_MINUTE, 0)
                 )
             )
