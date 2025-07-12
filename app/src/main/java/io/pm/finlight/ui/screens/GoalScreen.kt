@@ -4,8 +4,9 @@
 // the "Project Aurora" design system, using GlassPanel components to display
 // each goal with a progress bar and summary details. It includes dialogs for
 // adding, editing, and deleting goals.
-// FIX: Replaced AlertDialog with a custom Dialog to resolve an issue where the
-// DatePickerDialog would not appear when triggered from within another dialog.
+// FIX: Refactored the dialog management to be sequential. The main screen now
+// controls the visibility of the Add/Edit dialog and the Date Picker dialog
+// separately to prevent window conflicts, ensuring the Date Picker appears correctly.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -63,6 +64,11 @@ fun GoalScreen(
     var selectedGoal by remember { mutableStateOf<GoalWithAccountName?>(null) }
     val accounts by transactionViewModel.allAccounts.collectAsState()
 
+    // --- FIX: State for the date picker is now managed at the screen level ---
+    var showDatePicker by remember { mutableStateOf(false) }
+    var dateForPicker by remember { mutableStateOf<Long?>(null) }
+    var onDateSelectedCallback by remember { mutableStateOf<(Long?) -> Unit>({})}
+
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = {
@@ -116,6 +122,28 @@ fun GoalScreen(
             onConfirm = { id, name, target, saved, date, accountId ->
                 goalViewModel.saveGoal(id, name, target, saved, date, accountId)
                 showAddEditDialog = false
+            },
+            // --- FIX: Pass a lambda to launch the date picker sequentially ---
+            onLaunchDatePicker = { initialDate, onDateChange ->
+                dateForPicker = initialDate
+                onDateSelectedCallback = onDateChange
+                showAddEditDialog = false // Hide the goal dialog first
+                showDatePicker = true // Then show the date picker
+            }
+        )
+    }
+
+    if (showDatePicker) {
+        GoalDatePickerDialog(
+            initialDate = dateForPicker,
+            onDismiss = {
+                showDatePicker = false
+                showAddEditDialog = true // Re-show the goal dialog
+            },
+            onDateSelected = { newDate ->
+                onDateSelectedCallback(newDate)
+                showDatePicker = false
+                showAddEditDialog = true // Re-show the goal dialog
             }
         )
     }
@@ -221,7 +249,8 @@ private fun AddEditGoalDialog(
     goal: GoalWithAccountName?,
     accounts: List<Account>,
     onDismiss: () -> Unit,
-    onConfirm: (Int?, String, Double, Double, Long?, Int) -> Unit
+    onConfirm: (Int?, String, Double, Double, Long?, Int) -> Unit,
+    onLaunchDatePicker: (Long?, (Long?) -> Unit) -> Unit
 ) {
     var name by remember { mutableStateOf(goal?.name ?: "") }
     var targetAmount by remember { mutableStateOf(goal?.targetAmount?.toString() ?: "") }
@@ -229,7 +258,6 @@ private fun AddEditGoalDialog(
     var selectedAccount by remember { mutableStateOf(accounts.find { it.id == goal?.accountId }) }
     var accountExpanded by remember { mutableStateOf(false) }
 
-    var showDatePicker by remember { mutableStateOf(false) }
     var targetDate by remember { mutableStateOf(goal?.targetDate) }
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
 
@@ -252,70 +280,78 @@ private fun AddEditGoalDialog(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
-                LazyColumn {
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            OutlinedTextField(
-                                value = name,
-                                onValueChange = { name = it },
-                                label = { Text("Goal Name (e.g., New Phone)") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = targetAmount,
-                                onValueChange = { targetAmount = it.filter { c -> c.isDigit() || c == '.' } },
-                                label = { Text("Target Amount") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                leadingIcon = { Text("₹") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = savedAmount,
-                                onValueChange = { savedAmount = it.filter { c -> c.isDigit() || c == '.' } },
-                                label = { Text("Already Saved (Optional)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                leadingIcon = { Text("₹") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            ExposedDropdownMenuBox(expanded = accountExpanded, onExpandedChange = { accountExpanded = !accountExpanded }) {
+                // Using a Box with a fixed height to prevent the dialog from resizing
+                // when the dropdown menu opens. A LazyColumn is good for performance
+                // if the content might become very long.
+                Box(modifier = Modifier.heightIn(max = 400.dp)) {
+                    LazyColumn {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 OutlinedTextField(
-                                    value = selectedAccount?.name ?: "Select Account",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Link to Account") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountExpanded) },
-                                    modifier = Modifier.fillMaxWidth().menuAnchor()
+                                    value = name,
+                                    onValueChange = { name = it },
+                                    label = { Text("Goal Name (e.g., New Phone)") },
+                                    modifier = Modifier.fillMaxWidth()
                                 )
-                                ExposedDropdownMenu(
-                                    expanded = accountExpanded,
-                                    onDismissRequest = { accountExpanded = false },
-                                    modifier = Modifier.background(if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight)
-                                ) {
-                                    accounts.forEach { account ->
-                                        DropdownMenuItem(
-                                            text = { Text(account.name) },
-                                            onClick = {
-                                                selectedAccount = account
-                                                accountExpanded = false
-                                            }
-                                        )
+                                OutlinedTextField(
+                                    value = targetAmount,
+                                    onValueChange = { targetAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                                    label = { Text("Target Amount") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    leadingIcon = { Text("₹") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = savedAmount,
+                                    onValueChange = { savedAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                                    label = { Text("Already Saved (Optional)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    leadingIcon = { Text("₹") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                ExposedDropdownMenuBox(expanded = accountExpanded, onExpandedChange = { accountExpanded = !accountExpanded }) {
+                                    OutlinedTextField(
+                                        value = selectedAccount?.name ?: "Select Account",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        label = { Text("Link to Account") },
+                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountExpanded) },
+                                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = accountExpanded,
+                                        onDismissRequest = { accountExpanded = false },
+                                        modifier = Modifier.background(if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight)
+                                    ) {
+                                        accounts.forEach { account ->
+                                            DropdownMenuItem(
+                                                text = { Text(account.name) },
+                                                onClick = {
+                                                    selectedAccount = account
+                                                    accountExpanded = false
+                                                }
+                                            )
+                                        }
                                     }
                                 }
-                            }
 
-                            OutlinedTextField(
-                                value = targetDate?.let { dateFormat.format(Date(it)) } ?: "",
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Target Date (Optional)") },
-                                modifier = Modifier.fillMaxWidth().clickable { showDatePicker = true },
-                                trailingIcon = { Icon(Icons.Default.DateRange, "Select Date") }
-                            )
+                                OutlinedTextField(
+                                    value = targetDate?.let { dateFormat.format(Date(it)) } ?: "",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Target Date (Optional)") },
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        onLaunchDatePicker(targetDate) { newDate ->
+                                            targetDate = newDate
+                                        }
+                                    },
+                                    trailingIcon = { Icon(Icons.Default.DateRange, "Select Date") }
+                                )
+                            }
                         }
                     }
                 }
-
 
                 Spacer(Modifier.height(24.dp))
                 Row(
@@ -338,41 +374,28 @@ private fun AddEditGoalDialog(
             }
         }
     }
-
-    GoalDatePickerDialog(
-        show = showDatePicker,
-        initialDate = targetDate,
-        onDismiss = { showDatePicker = false },
-        onDateSelected = { newDate ->
-            targetDate = newDate
-            showDatePicker = false
-        }
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GoalDatePickerDialog(
-    show: Boolean,
     initialDate: Long?,
     onDismiss: () -> Unit,
     onDateSelected: (Long?) -> Unit
 ) {
-    if (show) {
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialDate ?: System.currentTimeMillis())
-        DatePickerDialog(
-            onDismissRequest = onDismiss,
-            confirmButton = {
-                TextButton(onClick = {
-                    onDateSelected(datePickerState.selectedDateMillis)
-                }) { Text("OK") }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
-        ) {
-            DatePicker(state = datePickerState)
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialDate ?: System.currentTimeMillis())
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                onDateSelected(datePickerState.selectedDateMillis)
+            }) { Text("OK") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
+    ) {
+        DatePicker(state = datePickerState)
     }
 }
 
