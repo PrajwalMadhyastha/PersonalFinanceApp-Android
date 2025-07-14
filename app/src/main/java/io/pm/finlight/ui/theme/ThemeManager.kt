@@ -3,6 +3,8 @@
 // REASON: FEATURE - The AppTheme enum has been updated to include "Daybreak"
 // as a distinct option, separating the light and dark purple themes and giving
 // the user more explicit control over the app's appearance.
+// UPDATE: Swapped the icon background colors for the Midnight and Paper themes
+// to better reflect their nature (dark vs. light).
 // =================================================================================
 package io.pm.finlight.ui.theme
 
@@ -47,15 +49,17 @@ enum class AppTheme(
         key = "midnight",
         displayName = "Midnight",
         icon = Icons.Default.DarkMode,
-        lightColor = MidnightPrimary, // Fallback, dark-only theme
-        darkColor = MidnightPrimary
+        // --- FIX: Use the dark color for the dark theme's icon ---
+        lightColor = PaperPrimary,
+        darkColor = PaperPrimary
     ),
     PAPER(
         key = "paper",
         displayName = "Paper",
         icon = Icons.Default.LightMode,
-        lightColor = PaperPrimary,
-        darkColor = PaperPrimary // Fallback, light-only theme
+        // --- FIX: Use the light color for the light theme's icon ---
+        lightColor = MidnightPrimary,
+        darkColor = MidnightPrimary
     );
 
     companion object {
