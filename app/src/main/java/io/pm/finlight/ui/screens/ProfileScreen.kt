@@ -466,12 +466,8 @@ fun ProfileScreen(
 
     if (showDatePickerDialog) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = smsScanStartDate)
-        AlertDialog(
+        DatePickerDialog(
             onDismissRequest = { showDatePickerDialog = false },
-            title = { Text("Select Scan Start Date") },
-            text = {
-                DatePicker(state = datePickerState)
-            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -480,17 +476,15 @@ fun ProfileScreen(
                         }
                         showDatePickerDialog = false
                     }
-                ) {
-                    Text("OK")
-                }
+                ) { Text("OK") }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePickerDialog = false }) {
-                    Text("Cancel")
-                }
+                TextButton(onClick = { showDatePickerDialog = false }) { Text("Cancel") }
             },
-            containerColor = popupContainerColor
-        )
+            colors = DatePickerDefaults.colors(containerColor = popupContainerColor)
+        ) {
+            DatePicker(state = datePickerState)
+        }
     }
 
     if (showDailyTimePicker) {
