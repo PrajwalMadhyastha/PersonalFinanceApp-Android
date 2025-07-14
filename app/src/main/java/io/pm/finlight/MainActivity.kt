@@ -2,6 +2,7 @@
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
 // REASON: FEATURE - Added a new "goals_screen" route to the NavHost to
 // integrate the Savings Goals feature into the application's navigation graph.
+// UPDATE: Added new routes for the reorganized settings screens.
 // =================================================================================
 package io.pm.finlight
 
@@ -228,7 +229,11 @@ fun MainAppScreen() {
         "splash_screen",
         "add_transaction",
         "time_period_report_screen",
-        "link_recurring_transaction"
+        "link_recurring_transaction",
+        "appearance_settings",
+        "automation_settings",
+        "notification_settings",
+        "data_settings"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -644,9 +649,22 @@ fun AppNavHost(
             }
         }
 
-        // --- NEW: Add route for the GoalScreen ---
         composable("goals_screen") {
             GoalScreen(navController = navController, goalViewModel = goalViewModel)
+        }
+
+        // --- NEW: Routes for reorganized settings screens ---
+        composable("appearance_settings") {
+            AppearanceSettingsScreen(navController, settingsViewModel)
+        }
+        composable("automation_settings") {
+            AutomationSettingsScreen(navController, settingsViewModel)
+        }
+        composable("notification_settings") {
+            NotificationSettingsScreen(navController, settingsViewModel)
+        }
+        composable("data_settings") {
+            DataSettingsScreen(navController, settingsViewModel)
         }
     }
 }
