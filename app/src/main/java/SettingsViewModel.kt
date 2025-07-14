@@ -8,6 +8,7 @@
 // as a desire to revert the change and now deletes the corresponding rename
 // rule from the database. This fixes the bug where a reverted name would not
 // stick in the UI.
+// UPDATE: Standardized the transaction source to "Imported" for clarity.
 // =================================================================================
 package io.pm.finlight
 
@@ -476,6 +477,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             transactionType = type,
                             accountId = account.id,
                             categoryId = category.id,
+                            source = "Imported" // --- UPDATED ---
                         )
                     transactionRepository.insert(transaction)
                     Log.d("CsvImportDebug", "ViewModel: Inserted transaction for row ${row.lineNumber}: '${transaction.description}'")

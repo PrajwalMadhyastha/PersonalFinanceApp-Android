@@ -5,6 +5,7 @@
 // object (with its ID) instead of the old `PotentialTransaction`. This ensures
 // the notification's deep link correctly points to the `TransactionDetailScreen`,
 // resolving the navigation bug.
+// UPDATE: Standardized the transaction source to "Auto-Captured" for clarity.
 // =================================================================================
 package io.pm.finlight
 
@@ -89,7 +90,7 @@ class SmsReceiver : BroadcastReceiver() {
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                                    source = if (mappedCategoryId != null) "Auto-Imported" else "Needs Review"
+                                    source = "Auto-Captured" // --- UPDATED ---
                                 )
                                 val newTransactionId = transactionDao.insert(newTransaction)
                                 Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")

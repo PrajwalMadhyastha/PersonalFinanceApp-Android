@@ -10,6 +10,7 @@
 // views, which already had aliasing applied, fixing the bug where a reverted
 // merchant name would still show the old alias on list screens but not on the
 // detail screen.
+// UPDATE: Standardized the transaction source labels for clarity.
 // =================================================================================
 package io.pm.finlight
 
@@ -277,7 +278,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         isExcluded = false,
                         sourceSmsId = null,
                         sourceSmsHash = null,
-                        source = "Manual Entry"
+                        source = "Added Manually" // --- UPDATED ---
                     )
 
                 transactionRepository.insertTransactionWithTagsAndImages(
@@ -642,7 +643,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     transactionType = potentialTxn.transactionType,
                     sourceSmsId = potentialTxn.sourceSmsId,
                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                    source = "Reviewed Import"
+                    source = "Imported" // --- UPDATED ---
                 )
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
 
