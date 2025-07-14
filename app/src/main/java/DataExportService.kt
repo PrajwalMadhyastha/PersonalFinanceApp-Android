@@ -6,6 +6,7 @@
 // "Unresolved reference" errors.
 // FEATURE - The CSV export has been enhanced to include the new `isExcluded`
 // field, providing a more complete data export.
+// FEATURE - Added a function to get the CSV template string for the new import dialog.
 // =================================================================================
 package io.pm.finlight
 
@@ -27,6 +28,11 @@ object DataExportService {
             isLenient = true
             ignoreUnknownKeys = true
         }
+
+    // --- NEW: Function to provide the CSV template header ---
+    fun getCsvTemplateString(): String {
+        return "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded\n"
+    }
 
     suspend fun exportToJsonString(context: Context): String? {
         return withContext(Dispatchers.IO) {
@@ -95,8 +101,8 @@ object DataExportService {
                 val transactions = db.transactionDao().getAllTransactions().first()
                 val csvBuilder = StringBuilder()
 
-                // Add the new isExcluded column to the header
-                csvBuilder.append("Date,Description,Amount,Type,Category,Account,Notes,IsExcluded\n")
+                // Use the template function for the header
+                csvBuilder.append(getCsvTemplateString())
 
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
