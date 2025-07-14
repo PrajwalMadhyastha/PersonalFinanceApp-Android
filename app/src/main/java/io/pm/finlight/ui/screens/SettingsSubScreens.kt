@@ -2,6 +2,8 @@
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsSubScreens.kt
 // REASON: NEW FILE - This file contains the composables for the reorganized
 // settings screens, keeping the ProfileScreen clean and focused on navigation.
+// FIX: Added the previously private helper functions `isDark` and
+// `hasSmsPermission` to this file to resolve compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12,6 +14,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -46,6 +49,14 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.ui.unit.dp
+
+// --- FIX: Added helper function to this file to resolve visibility issues. ---
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+
+// --- FIX: Added helper function to this file to resolve visibility issues. ---
+private fun hasSmsPermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
