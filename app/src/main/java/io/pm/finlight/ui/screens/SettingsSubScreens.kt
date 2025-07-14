@@ -4,6 +4,8 @@
 // settings screens, keeping the ProfileScreen clean and focused on navigation.
 // FIX: Added the previously private helper functions `isDark` and
 // `hasSmsPermission` to this file to resolve compilation errors.
+// FEATURE: Added a new dialog for CSV import to show the template and allow
+// exporting a template file.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -32,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import io.pm.finlight.DataExportService
@@ -408,6 +412,7 @@ fun DataSettingsScreen(navController: NavController, settingsViewModel: Settings
     val isAppLockEnabled by settingsViewModel.appLockEnabled.collectAsState()
     var showImportJsonDialog by remember { mutableStateOf(false) }
     var showImportCsvDialog by remember { mutableStateOf(false) }
+    var showCsvInfoDialog by remember { mutableStateOf(false) } // --- NEW ---
     val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
     val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
@@ -451,6 +456,25 @@ fun DataSettingsScreen(navController: NavController, settingsViewModel: Settings
                         }
                     } else {
                         Toast.makeText(context, "Error exporting CSV data.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    )
+
+    // --- NEW: Launcher for saving the CSV template ---
+    val csvTemplateSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    try {
+                        context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                            outputStream.write(DataExportService.getCsvTemplateString().toByteArray())
+                        }
+                        Toast.makeText(context, "Template saved!", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Error saving template.", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -544,7 +568,7 @@ fun DataSettingsScreen(navController: NavController, settingsViewModel: Settings
                             text = "Import from CSV",
                             subtitle = "Add new transactions from a CSV file",
                             icon = Icons.Default.PostAdd,
-                            onClick = { showImportCsvDialog = true },
+                            onClick = { showCsvInfoDialog = true }, // --- UPDATED ---
                         )
                     }
                 }
@@ -552,19 +576,18 @@ fun DataSettingsScreen(navController: NavController, settingsViewModel: Settings
         }
     }
 
-    if (showImportCsvDialog) {
-        AlertDialog(
-            onDismissRequest = { showImportCsvDialog = false },
-            title = { Text("Import from CSV?") },
-            text = { Text("This will add transactions from the CSV file. This may create duplicates. Continue?") },
-            confirmButton = {
-                Button(onClick = {
-                    showImportCsvDialog = false
-                    csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values"))
-                }) { Text("Continue") }
+    if (showCsvInfoDialog) {
+        CsvInfoDialog(
+            onDismiss = { showCsvInfoDialog = false },
+            onExportTemplate = {
+                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val fileName = "Finlight_Import_Template_${sdf.format(Date())}.csv"
+                csvTemplateSaverLauncher.launch(fileName)
             },
-            dismissButton = { TextButton(onClick = { showImportCsvDialog = false }) { Text("Cancel") } },
-            containerColor = popupContainerColor
+            onProceed = {
+                showCsvInfoDialog = false
+                csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values"))
+            }
         )
     }
 
@@ -637,4 +660,50 @@ private fun ThemePickerItem(
             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+// --- NEW: Dialog for CSV import information and template export ---
+@Composable
+private fun CsvInfoDialog(
+    onDismiss: () -> Unit,
+    onExportTemplate: () -> Unit,
+    onProceed: () -> Unit
+) {
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = popupContainerColor,
+        title = { Text("CSV Import Format") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Please ensure your CSV file has the following columns in this exact order:")
+                Text(
+                    text = "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text("• Date format must be: yyyy-MM-dd HH:mm:ss")
+                Text("• Type must be 'income' or 'expense'.")
+                Text("• isExcluded must be 'true' or 'false'.")
+            }
+        },
+        confirmButton = {
+            Button(onClick = onProceed) {
+                Text("Proceed to Import")
+            }
+        },
+        dismissButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = onExportTemplate) {
+                    Text("Export Template")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        }
+    )
 }
