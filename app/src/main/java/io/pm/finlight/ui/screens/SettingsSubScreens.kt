@@ -6,6 +6,7 @@
 // `hasSmsPermission` to this file to resolve compilation errors.
 // FEATURE: Added a new dialog for CSV import to show the template and allow
 // exporting a template file.
+// FIX: Reorganized the CsvInfoDialog to fix button padding issues and improve clarity.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -411,8 +412,7 @@ fun DataSettingsScreen(navController: NavController, settingsViewModel: Settings
     val scope = rememberCoroutineScope()
     val isAppLockEnabled by settingsViewModel.appLockEnabled.collectAsState()
     var showImportJsonDialog by remember { mutableStateOf(false) }
-    var showImportCsvDialog by remember { mutableStateOf(false) }
-    var showCsvInfoDialog by remember { mutableStateOf(false) } // --- NEW ---
+    var showCsvInfoDialog by remember { mutableStateOf(false) } // --- UPDATED ---
     val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
     val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
@@ -462,7 +462,6 @@ fun DataSettingsScreen(navController: NavController, settingsViewModel: Settings
         }
     )
 
-    // --- NEW: Launcher for saving the CSV template ---
     val csvTemplateSaverLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv"),
         onResult = { uri ->
@@ -568,7 +567,7 @@ fun DataSettingsScreen(navController: NavController, settingsViewModel: Settings
                             text = "Import from CSV",
                             subtitle = "Add new transactions from a CSV file",
                             icon = Icons.Default.PostAdd,
-                            onClick = { showCsvInfoDialog = true }, // --- UPDATED ---
+                            onClick = { showCsvInfoDialog = true },
                         )
                     }
                 }
@@ -662,7 +661,6 @@ private fun ThemePickerItem(
     }
 }
 
-// --- NEW: Dialog for CSV import information and template export ---
 @Composable
 private fun CsvInfoDialog(
     onDismiss: () -> Unit,
@@ -688,6 +686,10 @@ private fun CsvInfoDialog(
                 Text("• Date format must be: yyyy-MM-dd HH:mm:ss")
                 Text("• Type must be 'income' or 'expense'.")
                 Text("• isExcluded must be 'true' or 'false'.")
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onExportTemplate, modifier = Modifier.fillMaxWidth()) {
+                    Text("Export Template File")
+                }
             }
         },
         confirmButton = {
@@ -696,13 +698,8 @@ private fun CsvInfoDialog(
             }
         },
         dismissButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(onClick = onExportTemplate) {
-                    Text("Export Template")
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
             }
         }
     )
