@@ -59,22 +59,44 @@ fun GoalScreen(
     transactionViewModel: TransactionViewModel = viewModel()
 ) {
     val goals by goalViewModel.allGoals.collectAsState()
-    var showAddEditDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var selectedGoal by remember { mutableStateOf<GoalWithAccountName?>(null) }
     val accounts by transactionViewModel.allAccounts.collectAsState()
 
-    // --- FIX: State for the date picker is now managed at the screen level ---
+    var showAddEditDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
-    var dateForPicker by remember { mutableStateOf<Long?>(null) }
-    var onDateSelectedCallback by remember { mutableStateOf<(Long?) -> Unit>({})}
+
+    // --- STATE HOISTING: All state for the dialog is now managed here ---
+    var goalToEdit by remember { mutableStateOf<GoalWithAccountName?>(null) }
+    var goalName by remember { mutableStateOf("") }
+    var targetAmount by remember { mutableStateOf("") }
+    var savedAmount by remember { mutableStateOf("") }
+    var selectedAccount by remember { mutableStateOf<Account?>(null) }
+    var targetDate by remember { mutableStateOf<Long?>(null) }
+    // --- END STATE HOISTING ---
+
+    fun openDialogForNew() {
+        goalToEdit = null
+        goalName = ""
+        targetAmount = ""
+        savedAmount = ""
+        selectedAccount = accounts.firstOrNull()
+        targetDate = null
+        showAddEditDialog = true
+    }
+
+    fun openDialogForEdit(goal: GoalWithAccountName) {
+        goalToEdit = goal
+        goalName = goal.name
+        targetAmount = goal.targetAmount.toString()
+        savedAmount = goal.savedAmount.toString()
+        selectedAccount = accounts.find { it.id == goal.accountId }
+        targetDate = goal.targetDate
+        showAddEditDialog = true
+    }
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                selectedGoal = null
-                showAddEditDialog = true
-            }) {
+            FloatingActionButton(onClick = { openDialogForNew() }) {
                 Icon(Icons.Default.Add, contentDescription = "Add Goal")
             }
         },
@@ -100,12 +122,9 @@ fun GoalScreen(
                 items(goals, key = { it.id }) { goal ->
                     GoalItem(
                         goal = goal,
-                        onEdit = {
-                            selectedGoal = goal
-                            showAddEditDialog = true
-                        },
+                        onEdit = { openDialogForEdit(goal) },
                         onDelete = {
-                            selectedGoal = goal
+                            goalToEdit = goal
                             showDeleteDialog = true
                         }
                     )
@@ -116,51 +135,60 @@ fun GoalScreen(
 
     if (showAddEditDialog) {
         AddEditGoalDialog(
-            goal = selectedGoal,
+            goalName = goalName,
+            onGoalNameChange = { goalName = it },
+            targetAmount = targetAmount,
+            onTargetAmountChange = { targetAmount = it },
+            savedAmount = savedAmount,
+            onSavedAmountChange = { savedAmount = it },
+            selectedAccount = selectedAccount,
+            onAccountSelected = { selectedAccount = it },
             accounts = accounts,
+            targetDate = targetDate,
             onDismiss = { showAddEditDialog = false },
-            onConfirm = { id, name, target, saved, date, accountId ->
-                goalViewModel.saveGoal(id, name, target, saved, date, accountId)
-                showAddEditDialog = false
+            onConfirm = {
+                val target = targetAmount.toDoubleOrNull()
+                val saved = savedAmount.toDoubleOrNull() ?: 0.0
+                if (goalName.isNotBlank() && target != null && selectedAccount != null) {
+                    goalViewModel.saveGoal(goalToEdit?.id, goalName, target, saved, targetDate, selectedAccount!!.id)
+                    showAddEditDialog = false
+                }
             },
-            // --- FIX: Pass a lambda to launch the date picker sequentially ---
-            onLaunchDatePicker = { initialDate, onDateChange ->
-                dateForPicker = initialDate
-                onDateSelectedCallback = onDateChange
-                showAddEditDialog = false // Hide the goal dialog first
-                showDatePicker = true // Then show the date picker
+            onLaunchDatePicker = {
+                showAddEditDialog = false
+                showDatePicker = true
             }
         )
     }
 
     if (showDatePicker) {
         GoalDatePickerDialog(
-            initialDate = dateForPicker,
+            initialDate = targetDate,
             onDismiss = {
                 showDatePicker = false
                 showAddEditDialog = true // Re-show the goal dialog
             },
             onDateSelected = { newDate ->
-                onDateSelectedCallback(newDate)
+                targetDate = newDate
                 showDatePicker = false
                 showAddEditDialog = true // Re-show the goal dialog
             }
         )
     }
 
-    if (showDeleteDialog && selectedGoal != null) {
+    if (showDeleteDialog && goalToEdit != null) {
         DeleteGoalDialog(
-            goalName = selectedGoal!!.name,
+            goalName = goalToEdit!!.name,
             onDismiss = { showDeleteDialog = false },
             onConfirm = {
                 goalViewModel.deleteGoal(
                     Goal(
-                        id = selectedGoal!!.id,
-                        name = selectedGoal!!.name,
-                        targetAmount = selectedGoal!!.targetAmount,
-                        savedAmount = selectedGoal!!.savedAmount,
-                        targetDate = selectedGoal!!.targetDate,
-                        accountId = selectedGoal!!.accountId
+                        id = goalToEdit!!.id,
+                        name = goalToEdit!!.name,
+                        targetAmount = goalToEdit!!.targetAmount,
+                        savedAmount = goalToEdit!!.savedAmount,
+                        targetDate = goalToEdit!!.targetDate,
+                        accountId = goalToEdit!!.accountId
                     )
                 )
                 showDeleteDialog = false
@@ -246,21 +274,22 @@ private fun GoalItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddEditGoalDialog(
-    goal: GoalWithAccountName?,
+    goalName: String,
+    onGoalNameChange: (String) -> Unit,
+    targetAmount: String,
+    onTargetAmountChange: (String) -> Unit,
+    savedAmount: String,
+    onSavedAmountChange: (String) -> Unit,
+    selectedAccount: Account?,
+    onAccountSelected: (Account) -> Unit,
     accounts: List<Account>,
+    targetDate: Long?,
     onDismiss: () -> Unit,
-    onConfirm: (Int?, String, Double, Double, Long?, Int) -> Unit,
-    onLaunchDatePicker: (Long?, (Long?) -> Unit) -> Unit
+    onConfirm: () -> Unit,
+    onLaunchDatePicker: () -> Unit
 ) {
-    var name by remember { mutableStateOf(goal?.name ?: "") }
-    var targetAmount by remember { mutableStateOf(goal?.targetAmount?.toString() ?: "") }
-    var savedAmount by remember { mutableStateOf(goal?.savedAmount?.toString() ?: "") }
-    var selectedAccount by remember { mutableStateOf(accounts.find { it.id == goal?.accountId }) }
     var accountExpanded by remember { mutableStateOf(false) }
-
-    var targetDate by remember { mutableStateOf(goal?.targetDate) }
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
-
     val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
     val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
@@ -274,28 +303,25 @@ private fun AddEditGoalDialog(
                 modifier = Modifier.padding(24.dp),
             ) {
                 Text(
-                    text = if (goal == null) "New Savings Goal" else "Edit Savings Goal",
+                    text = if (goalName.isBlank()) "New Savings Goal" else "Edit Savings Goal",
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
-                // Using a Box with a fixed height to prevent the dialog from resizing
-                // when the dropdown menu opens. A LazyColumn is good for performance
-                // if the content might become very long.
                 Box(modifier = Modifier.heightIn(max = 400.dp)) {
                     LazyColumn {
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 OutlinedTextField(
-                                    value = name,
-                                    onValueChange = { name = it },
+                                    value = goalName,
+                                    onValueChange = onGoalNameChange,
                                     label = { Text("Goal Name (e.g., New Phone)") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 OutlinedTextField(
                                     value = targetAmount,
-                                    onValueChange = { targetAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                                    onValueChange = { onTargetAmountChange(it.filter { c -> c.isDigit() || c == '.' }) },
                                     label = { Text("Target Amount") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     leadingIcon = { Text("₹") },
@@ -303,7 +329,7 @@ private fun AddEditGoalDialog(
                                 )
                                 OutlinedTextField(
                                     value = savedAmount,
-                                    onValueChange = { savedAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                                    onValueChange = { onSavedAmountChange(it.filter { c -> c.isDigit() || c == '.' }) },
                                     label = { Text("Already Saved (Optional)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     leadingIcon = { Text("₹") },
@@ -328,7 +354,7 @@ private fun AddEditGoalDialog(
                                             DropdownMenuItem(
                                                 text = { Text(account.name) },
                                                 onClick = {
-                                                    selectedAccount = account
+                                                    onAccountSelected(account)
                                                     accountExpanded = false
                                                 }
                                             )
@@ -341,11 +367,7 @@ private fun AddEditGoalDialog(
                                     onValueChange = {},
                                     readOnly = true,
                                     label = { Text("Target Date (Optional)") },
-                                    modifier = Modifier.fillMaxWidth().clickable {
-                                        onLaunchDatePicker(targetDate) { newDate ->
-                                            targetDate = newDate
-                                        }
-                                    },
+                                    modifier = Modifier.fillMaxWidth().clickable { onLaunchDatePicker() },
                                     trailingIcon = { Icon(Icons.Default.DateRange, "Select Date") }
                                 )
                             }
@@ -361,15 +383,9 @@ private fun AddEditGoalDialog(
                     TextButton(onClick = onDismiss) { Text("Cancel") }
                     Spacer(Modifier.width(8.dp))
                     Button(
-                        onClick = {
-                            val target = targetAmount.toDoubleOrNull()
-                            val saved = savedAmount.toDoubleOrNull() ?: 0.0
-                            if (name.isNotBlank() && target != null && selectedAccount != null) {
-                                onConfirm(goal?.id, name, target, saved, targetDate, selectedAccount!!.id)
-                            }
-                        },
-                        enabled = name.isNotBlank() && targetAmount.isNotBlank() && selectedAccount != null
-                    ) { Text(if (goal == null) "Create" else "Save") }
+                        onClick = onConfirm,
+                        enabled = goalName.isNotBlank() && targetAmount.isNotBlank() && selectedAccount != null
+                    ) { Text(if (goalName.isBlank()) "Create" else "Save") }
                 }
             }
         }

@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Fri Jul 11 21:24:58 IST 2025
+Generated on: Mon Jul 14 12:56:30 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -2065,9 +2065,9 @@ class MonthlySummaryWorker(
 ================== FILE: ./app/src/main/java/NavItems.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - The title for the `rule_creation_screen` has been updated
-// to "Create/Edit Rule" to accurately reflect its new dual purpose, supporting
-// both creation and editing workflows.
+// REASON: FEATURE - Added a new entry for "goals_screen" to the screenTitles
+// map, ensuring the new Savings Goals screen will have the correct title in
+// the app's top bar.
 // =================================================================================
 package io.pm.finlight
 
@@ -2112,7 +2112,8 @@ val screenTitles = mapOf(
     "manage_parse_rules" to "Manage Parsing Rules",
     "manage_ignore_rules" to "Manage Ignore List",
     "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction",
-    "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar"
+    "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar",
+    "goals_screen" to "Savings Goals" // --- NEW ---
 )
 -e 
 
@@ -2442,6 +2443,65 @@ class SearchViewModel(
 -e 
 
 
+================== FILE: ./app/src/main/java/GoalDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/GoalDao.kt
+// REASON: NEW FILE - Defines the DAO for the Goal entity, providing all
+// necessary CRUD operations and a query to fetch goals with their associated
+// account names for display in the UI.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * A data class to hold a Goal and its associated account's name.
+ */
+data class GoalWithAccountName(
+    val id: Int,
+    val name: String,
+    val targetAmount: Double,
+    val savedAmount: Double,
+    val targetDate: Long?,
+    val accountId: Int,
+    val accountName: String
+)
+
+@Dao
+interface GoalDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(goal: Goal)
+
+    @Update
+    suspend fun update(goal: Goal)
+
+    @Delete
+    suspend fun delete(goal: Goal)
+
+    @Query("SELECT * FROM goals WHERE id = :id")
+    fun getGoalById(id: Int): Flow<Goal?>
+
+    @Query("""
+        SELECT
+            g.id, g.name, g.targetAmount, g.savedAmount, g.targetDate, g.accountId, a.name as accountName
+        FROM goals as g
+        INNER JOIN accounts as a ON g.accountId = a.id
+        ORDER BY g.targetDate ASC
+    """)
+    fun getAllGoalsWithAccountName(): Flow<List<GoalWithAccountName>>
+
+    @Query("SELECT * FROM goals WHERE accountId = :accountId")
+    fun getGoalsForAccount(accountId: Int): Flow<List<Goal>>
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/ManageIgnoreRulesViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ManageIgnoreRulesViewModel.kt
@@ -2697,6 +2757,77 @@ data class SmsMessage(
     val body: String,
     val date: Long,
 )
+-e 
+
+
+================== FILE: ./app/src/main/java/GoalViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/GoalViewModel.kt
+// REASON: NEW FILE - Manages the business logic for the Savings Goals feature.
+// It exposes goals, handles saving/deleting, and provides data for the UI.
+// =================================================================================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class GoalViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val goalRepository: GoalRepository
+    val allGoals: StateFlow<List<GoalWithAccountName>>
+
+    init {
+        val db = AppDatabase.getInstance(application)
+        goalRepository = GoalRepository(db.goalDao())
+        allGoals = goalRepository.getAllGoalsWithAccountName()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+    }
+
+    fun getGoalById(id: Int): Flow<Goal?> {
+        return goalRepository.getGoalById(id)
+    }
+
+    fun saveGoal(
+        id: Int?,
+        name: String,
+        targetAmount: Double,
+        savedAmount: Double,
+        targetDate: Long?,
+        accountId: Int
+    ) {
+        viewModelScope.launch {
+            val goal = Goal(
+                id = id ?: 0,
+                name = name,
+                targetAmount = targetAmount,
+                savedAmount = savedAmount,
+                targetDate = targetDate,
+                accountId = accountId
+            )
+            if (id == null) {
+                goalRepository.insert(goal)
+            } else {
+                goalRepository.update(goal)
+            }
+        }
+    }
+
+    fun deleteGoal(goal: Goal) {
+        viewModelScope.launch {
+            goalRepository.delete(goal)
+        }
+    }
+}
 -e 
 
 
@@ -4667,6 +4798,435 @@ fun DeleteCategoryDialog(
             }
         },
         containerColor = containerColor
+    )
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/GoalScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/GoalScreen.kt
+// REASON: NEW FILE - Implements the UI for the Savings Goals feature. It follows
+// the "Project Aurora" design system, using GlassPanel components to display
+// each goal with a progress bar and summary details. It includes dialogs for
+// adding, editing, and deleting goals.
+// FIX: Refactored the dialog management to be sequential. The main screen now
+// controls the visibility of the Add/Edit dialog and the Date Picker dialog
+// separately to prevent window conflicts, ensuring the Date Picker appears correctly.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import io.pm.finlight.*
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
+import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.*
+import kotlin.math.roundToInt
+
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GoalScreen(
+    navController: NavController,
+    goalViewModel: GoalViewModel = viewModel(),
+    transactionViewModel: TransactionViewModel = viewModel()
+) {
+    val goals by goalViewModel.allGoals.collectAsState()
+    var showAddEditDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var selectedGoal by remember { mutableStateOf<GoalWithAccountName?>(null) }
+    val accounts by transactionViewModel.allAccounts.collectAsState()
+
+    // --- FIX: State for the date picker is now managed at the screen level ---
+    var showDatePicker by remember { mutableStateOf(false) }
+    var dateForPicker by remember { mutableStateOf<Long?>(null) }
+    var onDateSelectedCallback by remember { mutableStateOf<(Long?) -> Unit>({})}
+
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(onClick = {
+                selectedGoal = null
+                showAddEditDialog = true
+            }) {
+                Icon(Icons.Default.Add, contentDescription = "Add Goal")
+            }
+        },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        if (goals.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "No savings goals yet. Tap '+' to add one!",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(goals, key = { it.id }) { goal ->
+                    GoalItem(
+                        goal = goal,
+                        onEdit = {
+                            selectedGoal = goal
+                            showAddEditDialog = true
+                        },
+                        onDelete = {
+                            selectedGoal = goal
+                            showDeleteDialog = true
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showAddEditDialog) {
+        AddEditGoalDialog(
+            goal = selectedGoal,
+            accounts = accounts,
+            onDismiss = { showAddEditDialog = false },
+            onConfirm = { id, name, target, saved, date, accountId ->
+                goalViewModel.saveGoal(id, name, target, saved, date, accountId)
+                showAddEditDialog = false
+            },
+            // --- FIX: Pass a lambda to launch the date picker sequentially ---
+            onLaunchDatePicker = { initialDate, onDateChange ->
+                dateForPicker = initialDate
+                onDateSelectedCallback = onDateChange
+                showAddEditDialog = false // Hide the goal dialog first
+                showDatePicker = true // Then show the date picker
+            }
+        )
+    }
+
+    if (showDatePicker) {
+        GoalDatePickerDialog(
+            initialDate = dateForPicker,
+            onDismiss = {
+                showDatePicker = false
+                showAddEditDialog = true // Re-show the goal dialog
+            },
+            onDateSelected = { newDate ->
+                onDateSelectedCallback(newDate)
+                showDatePicker = false
+                showAddEditDialog = true // Re-show the goal dialog
+            }
+        )
+    }
+
+    if (showDeleteDialog && selectedGoal != null) {
+        DeleteGoalDialog(
+            goalName = selectedGoal!!.name,
+            onDismiss = { showDeleteDialog = false },
+            onConfirm = {
+                goalViewModel.deleteGoal(
+                    Goal(
+                        id = selectedGoal!!.id,
+                        name = selectedGoal!!.name,
+                        targetAmount = selectedGoal!!.targetAmount,
+                        savedAmount = selectedGoal!!.savedAmount,
+                        targetDate = selectedGoal!!.targetDate,
+                        accountId = selectedGoal!!.accountId
+                    )
+                )
+                showDeleteDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun GoalItem(
+    goal: GoalWithAccountName,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val progress = (goal.savedAmount / goal.targetAmount).toFloat().coerceIn(0f, 1f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(1000),
+        label = "GoalProgress"
+    )
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
+    val dateFormat = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+
+    GlassPanel {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = goal.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Linked to: ${goal.accountName}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Goal", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Goal", tint = MaterialTheme.colorScheme.error)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                strokeCap = StrokeCap.Round
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "${(progress * 100).roundToInt()}% Complete",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${currencyFormat.format(goal.savedAmount)} / ${currencyFormat.format(goal.targetAmount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            goal.targetDate?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Target Date: ${dateFormat.format(Date(it))}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddEditGoalDialog(
+    goal: GoalWithAccountName?,
+    accounts: List<Account>,
+    onDismiss: () -> Unit,
+    onConfirm: (Int?, String, Double, Double, Long?, Int) -> Unit,
+    onLaunchDatePicker: (Long?, (Long?) -> Unit) -> Unit
+) {
+    var name by remember { mutableStateOf(goal?.name ?: "") }
+    var targetAmount by remember { mutableStateOf(goal?.targetAmount?.toString() ?: "") }
+    var savedAmount by remember { mutableStateOf(goal?.savedAmount?.toString() ?: "") }
+    var selectedAccount by remember { mutableStateOf(accounts.find { it.id == goal?.accountId }) }
+    var accountExpanded by remember { mutableStateOf(false) }
+
+    var targetDate by remember { mutableStateOf(goal?.targetDate) }
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
+
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = popupContainerColor,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+            ) {
+                Text(
+                    text = if (goal == null) "New Savings Goal" else "Edit Savings Goal",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                // Using a Box with a fixed height to prevent the dialog from resizing
+                // when the dropdown menu opens. A LazyColumn is good for performance
+                // if the content might become very long.
+                Box(modifier = Modifier.heightIn(max = 400.dp)) {
+                    LazyColumn {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                OutlinedTextField(
+                                    value = name,
+                                    onValueChange = { name = it },
+                                    label = { Text("Goal Name (e.g., New Phone)") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = targetAmount,
+                                    onValueChange = { targetAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                                    label = { Text("Target Amount") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    leadingIcon = { Text("₹") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = savedAmount,
+                                    onValueChange = { savedAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                                    label = { Text("Already Saved (Optional)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    leadingIcon = { Text("₹") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                ExposedDropdownMenuBox(expanded = accountExpanded, onExpandedChange = { accountExpanded = !accountExpanded }) {
+                                    OutlinedTextField(
+                                        value = selectedAccount?.name ?: "Select Account",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        label = { Text("Link to Account") },
+                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountExpanded) },
+                                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = accountExpanded,
+                                        onDismissRequest = { accountExpanded = false },
+                                        modifier = Modifier.background(if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight)
+                                    ) {
+                                        accounts.forEach { account ->
+                                            DropdownMenuItem(
+                                                text = { Text(account.name) },
+                                                onClick = {
+                                                    selectedAccount = account
+                                                    accountExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = targetDate?.let { dateFormat.format(Date(it)) } ?: "",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Target Date (Optional)") },
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        onLaunchDatePicker(targetDate) { newDate ->
+                                            targetDate = newDate
+                                        }
+                                    },
+                                    trailingIcon = { Icon(Icons.Default.DateRange, "Select Date") }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val target = targetAmount.toDoubleOrNull()
+                            val saved = savedAmount.toDoubleOrNull() ?: 0.0
+                            if (name.isNotBlank() && target != null && selectedAccount != null) {
+                                onConfirm(goal?.id, name, target, saved, targetDate, selectedAccount!!.id)
+                            }
+                        },
+                        enabled = name.isNotBlank() && targetAmount.isNotBlank() && selectedAccount != null
+                    ) { Text(if (goal == null) "Create" else "Save") }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GoalDatePickerDialog(
+    initialDate: Long?,
+    onDismiss: () -> Unit,
+    onDateSelected: (Long?) -> Unit
+) {
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialDate ?: System.currentTimeMillis())
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                onDateSelected(datePickerState.selectedDateMillis)
+            }) { Text("OK") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    ) {
+        DatePicker(state = datePickerState)
+    }
+}
+
+
+@Composable
+private fun DeleteGoalDialog(
+    goalName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = popupContainerColor,
+        title = { Text("Delete Goal?") },
+        text = { Text("Are you sure you want to delete the goal '$goalName'?") },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) { Text("Delete") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 -e 
@@ -12255,10 +12815,8 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: FEATURE - A new "Debug" section has been added with a button to
-// manually trigger the RecurringTransactionWorker. This provides a reliable way
-// to test the worker's functionality without waiting for its scheduled time or
-// relying on the App Inspector UI.
+// REASON: FEATURE - Added a new "Savings Goals" item to the "General" settings
+// section, providing a navigation entry point to the new GoalScreen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12528,6 +13086,14 @@ fun ProfileScreen(
                     onClick = { navController.navigate("budget_screen") },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                // --- NEW: Savings Goals navigation item ---
+                SettingsActionItem(
+                    text = "Savings Goals",
+                    subtitle = "Set and track your savings goals",
+                    icon = Icons.Default.TrackChanges,
+                    onClick = { navController.navigate("goals_screen") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                 SettingsActionItem(
                     text = "Manage Recurring Rules",
                     subtitle = "Automate your regular bills and income",
@@ -12707,22 +13273,6 @@ fun ProfileScreen(
                 )
             }
         }
-
-        // --- NEW: Debug section for manually triggering workers ---
-        /*item {
-            SettingsSection("Debug") {
-                SettingsActionItem(
-                    text = "Run Recurring Worker Now",
-                    subtitle = "Manually trigger the recurring transaction check",
-                    icon = Icons.Default.BugReport,
-                    onClick = {
-                        val workRequest = OneTimeWorkRequestBuilder<RecurringTransactionWorker>().build()
-                        WorkManager.getInstance(context).enqueue(workRequest)
-                        Toast.makeText(context, "Recurring worker triggered!", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-        }*/
     }
 
     // region Dialogs
@@ -15591,10 +16141,8 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - The NavHost entry for "add_recurring_transaction" has been
-// updated to accept an optional ruleId parameter. This enables the screen to
-// function in both "add" and "edit" modes, completing the navigation flow for
-// the new feature.
+// REASON: FEATURE - Added a new "goals_screen" route to the NavHost to
+// integrate the Savings Goals feature into the application's navigation graph.
 // =================================================================================
 package io.pm.finlight
 
@@ -15602,12 +16150,14 @@ import android.Manifest
 import android.app.Activity
 import android.app.Application
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
@@ -15791,6 +16341,7 @@ fun MainAppScreen() {
     val budgetViewModel: BudgetViewModel = viewModel()
     val profileViewModel: ProfileViewModel = viewModel()
     val incomeViewModel: IncomeViewModel = viewModel()
+    val goalViewModel: GoalViewModel = viewModel()
 
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
@@ -15980,13 +16531,15 @@ fun MainAppScreen() {
                 categoryViewModel = categoryViewModel,
                 budgetViewModel = budgetViewModel,
                 profileViewModel = profileViewModel,
-                incomeViewModel = incomeViewModel
+                incomeViewModel = incomeViewModel,
+                goalViewModel = goalViewModel
             )
         }
     }
 }
 
 
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
 fun AppNavHost(
     navController: NavHostController,
@@ -15999,7 +16552,8 @@ fun AppNavHost(
     categoryViewModel: CategoryViewModel,
     budgetViewModel: BudgetViewModel,
     profileViewModel: ProfileViewModel,
-    incomeViewModel: IncomeViewModel
+    incomeViewModel: IncomeViewModel,
+    goalViewModel: GoalViewModel
 ) {
     NavHost(
         navController = navController,
@@ -16230,6 +16784,11 @@ fun AppNavHost(
                 TimePeriodReportScreen(navController = navController, timePeriod = timePeriod, initialDateMillis = date)
             }
         }
+
+        // --- NEW: Add route for the GoalScreen ---
+        composable("goals_screen") {
+            GoalScreen(navController = navController, goalViewModel = goalViewModel)
+        }
     }
 }
 
@@ -16377,6 +16936,43 @@ object BankLogoHelper {
         }
     }
 }
+-e 
+
+
+================== FILE: ./app/src/main/java/Goal.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/Goal.kt
+// REASON: NEW FILE - Defines the Room entity for a savings goal, including its
+// name, target and saved amounts, target date, and the associated account.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+@Entity(
+    tableName = "goals",
+    foreignKeys = [
+        ForeignKey(
+            entity = Account::class,
+            parentColumns = ["id"],
+            childColumns = ["accountId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["accountId"])]
+)
+data class Goal(
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+    val name: String,
+    val targetAmount: Double,
+    var savedAmount: Double,
+    val targetDate: Long?,
+    val accountId: Int
+)
 -e 
 
 
@@ -16807,6 +17403,37 @@ class OnboardingViewModel(
 -e 
 
 
+================== FILE: ./app/src/main/java/GoalRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/GoalRepository.kt
+// REASON: NEW FILE - Creates a repository to abstract the Goal data source,
+// providing a clean API for the ViewModel to interact with the DAO.
+// =================================================================================
+package io.pm.finlight
+
+import kotlinx.coroutines.flow.Flow
+
+class GoalRepository(private val goalDao: GoalDao) {
+
+    fun getAllGoalsWithAccountName(): Flow<List<GoalWithAccountName>> = goalDao.getAllGoalsWithAccountName()
+
+    fun getGoalById(id: Int): Flow<Goal?> = goalDao.getGoalById(id)
+
+    suspend fun insert(goal: Goal) {
+        goalDao.insert(goal)
+    }
+
+    suspend fun update(goal: Goal) {
+        goalDao.update(goal)
+    }
+
+    suspend fun delete(goal: Goal) {
+        goalDao.delete(goal)
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/SmsRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsRepository.kt
@@ -17160,10 +17787,9 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 23. A new
-// migration, MIGRATION_22_23, has been added to introduce the `lastRunDate`
-// column to the `recurring_transactions` table. This is a critical step for the
-// new recurring transaction automation feature.
+// REASON: FEATURE - The database version has been incremented to 24. The new
+// `Goal` entity has been added to the database, and a new migration,
+// MIGRATION_23_24, has been created to add the `goals` table.
 // =================================================================================
 package io.pm.finlight
 
@@ -17193,9 +17819,10 @@ import java.util.Calendar
         CustomSmsRule::class,
         MerchantRenameRule::class,
         MerchantCategoryMapping::class,
-        IgnoreRule::class
+        IgnoreRule::class,
+        Goal::class // --- NEW: Add Goal entity ---
     ],
-    version = 23, // --- UPDATED: Incremented version number ---
+    version = 24, // --- UPDATED: Incremented version number ---
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -17210,6 +17837,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
     abstract fun ignoreRuleDao(): IgnoreRuleDao
+    abstract fun goalDao(): GoalDao // --- NEW: Add Goal DAO abstract function ---
 
     companion object {
         @Volatile
@@ -17389,10 +18017,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the lastRunDate column ---
         val MIGRATION_22_23 = object : Migration(22, 23) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `recurring_transactions` ADD COLUMN `lastRunDate` INTEGER")
+            }
+        }
+
+        // --- NEW: Migration to add the goals table ---
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `goals` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `name` TEXT NOT NULL, 
+                        `targetAmount` REAL NOT NULL, 
+                        `savedAmount` REAL NOT NULL, 
+                        `targetDate` INTEGER, 
+                        `accountId` INTEGER NOT NULL, 
+                        FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_goals_accountId` ON `goals` (`accountId`)")
             }
         }
 
@@ -17401,7 +18046,7 @@ abstract class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -17493,7 +18138,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
