@@ -3,6 +3,7 @@
 // REASON: FEATURE - Added a new entry for "goals_screen" to the screenTitles
 // map, ensuring the new Savings Goals screen will have the correct title in
 // the app's top bar.
+// UPDATE: Added new entries for the reorganized settings screens.
 // =================================================================================
 package io.pm.finlight
 
@@ -48,5 +49,10 @@ val screenTitles = mapOf(
     "manage_ignore_rules" to "Manage Ignore List",
     "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction",
     "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar",
-    "goals_screen" to "Savings Goals" // --- NEW ---
+    "goals_screen" to "Savings Goals",
+    // --- NEW: Titles for reorganized settings screens ---
+    "appearance_settings" to "Theme & Appearance",
+    "automation_settings" to "Automation & AI",
+    "notification_settings" to "Notifications",
+    "data_settings" to "Security & Data"
 )
