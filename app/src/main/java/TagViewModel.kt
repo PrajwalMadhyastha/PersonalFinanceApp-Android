@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TagViewModel.kt
-// REASON: Corrected the addTag function. This ViewModel is for the "Manage Tags"
-// screen, so it only needs to insert the tag. The UI will be updated
-// automatically by the Flow from the database.
+// REASON: UX REFINEMENT - The `addTag` function now checks if a tag with the
+// same name already exists (case-insensitively). If a duplicate is found, it
+// sends a feedback message to the UI via the `uiEvent` channel, improving the
+// user experience by preventing silent failures.
 // =================================================================================
 package io.pm.finlight
 
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 
 class TagViewModel(application: Application) : AndroidViewModel(application) {
     private val tagRepository: TagRepository
+    private val tagDao: TagDao // Expose DAO for direct checks
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
 
@@ -25,7 +27,7 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         val database = AppDatabase.getInstance(application)
-        val tagDao = database.tagDao()
+        tagDao = database.tagDao() // Initialize DAO
         val transactionDao = database.transactionDao()
         tagRepository = TagRepository(tagDao, transactionDao)
 
@@ -42,7 +44,14 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
     fun addTag(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
-                tagRepository.insert(Tag(name = tagName))
+                // Check if a tag with this name already exists
+                val existingTag = tagDao.findByName(tagName)
+                if (existingTag != null) {
+                    _uiEvent.send("A tag named '$tagName' already exists.")
+                } else {
+                    tagRepository.insert(Tag(name = tagName))
+                    _uiEvent.send("Tag '$tagName' created.")
+                }
             }
         }
     }
