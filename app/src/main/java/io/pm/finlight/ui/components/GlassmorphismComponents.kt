@@ -8,6 +8,10 @@
 // ANIMATION - The duration of the `tween` animations for the hero card stats
 // and budget gauges has been reduced from 1500ms to a much snappier 400ms.
 // This makes the dashboard data visualizations feel more responsive.
+// FIX (Navigation) - Updated the onClick handlers in the AuroraQuickActionsCard
+// to use the proper NavOptions (popUpTo, launchSingleTop, restoreState). This
+// prevents the back stack from growing when navigating from the dashboard to
+// other top-level destinations, fixing a major navigation bug.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -618,7 +622,13 @@ fun AuroraQuickActionsCard(navController: NavController) {
                 icon = Icons.Default.Timeline,
                 text = "View Trends",
                 onClick = {
-                    navController.navigate(BottomNavItem.Reports.route)
+                    navController.navigate(BottomNavItem.Reports.route) {
+                        popUpTo(BottomNavItem.Dashboard.route) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
             )
             VerticalDivider(
@@ -632,7 +642,13 @@ fun AuroraQuickActionsCard(navController: NavController) {
                 icon = Icons.Default.PieChart,
                 text = "View Categories",
                 onClick = {
-                    navController.navigate(BottomNavItem.Reports.route)
+                    navController.navigate(BottomNavItem.Reports.route) {
+                        popUpTo(BottomNavItem.Dashboard.route) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
             )
         }

@@ -8,6 +8,9 @@
 // FIX - Corrected all transition-related type mismatch errors by defining the
 // animations inline for each composable route, satisfying the NavHost function
 // signature.
+// FIX (Navigation) - Updated the onClick handler in the NavigationBarItem to
+// explicitly popUpTo the Dashboard's route. This fixes the back stack issue
+// where screens would pile up instead of being replaced.
 // =================================================================================
 package io.pm.finlight
 
@@ -368,7 +371,9 @@ fun MainAppScreen() {
                                 selected = isSelected,
                                 onClick = {
                                     navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        popUpTo(BottomNavItem.Dashboard.route) {
+                                            saveState = true
+                                        }
                                         launchSingleTop = true
                                         restoreState = true
                                     }
