@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CategoryViewModel.kt
+// REASON: UX REFINEMENT - The `addCategory` function now performs a
+// case-insensitive check to see if a category with the same name already exists
+// before insertion. If it does, it sends a feedback message to the UI via the
+// `uiEvent` channel, preventing silent failures.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -12,13 +19,16 @@ import kotlinx.coroutines.launch
 class CategoryViewModel(application: Application) : AndroidViewModel(application) {
     private val categoryRepository: CategoryRepository
     private val transactionRepository: TransactionRepository
+    private val categoryDao: CategoryDao // Expose DAO for direct checks
+
     val allCategories: Flow<List<Category>>
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
 
     init {
         val db = AppDatabase.getInstance(application)
-        categoryRepository = CategoryRepository(db.categoryDao())
+        categoryDao = db.categoryDao() // Initialize DAO
+        categoryRepository = CategoryRepository(categoryDao)
         transactionRepository = TransactionRepository(db.transactionDao())
         allCategories = categoryRepository.allCategories
     }
@@ -27,16 +37,18 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
         return allCategories.firstOrNull()?.find { it.id == id }
     }
 
+    // --- UPDATED: Add pre-check and user feedback for duplicates ---
     fun addCategory(name: String, iconKey: String, colorKey: String) =
         viewModelScope.launch {
-            // --- NEW: Logic to assign a better default icon and color ---
+            // Check if a category with this name already exists
+            val existingCategory = categoryDao.findByName(name)
+            if (existingCategory != null) {
+                _uiEvent.send("A category named '$name' already exists.")
+                return@launch
+            }
+
             val usedColorKeys = allCategories.firstOrNull()?.map { it.colorKey } ?: emptyList()
-
-            // If the default icon was passed, use our special "letter" key.
-            // The UI will know how to render this.
             val finalIconKey = if (iconKey == "category") "letter_default" else iconKey
-
-            // If the default color was passed, find the next available color.
             val finalColorKey = if (colorKey == "gray_light") {
                 CategoryIconHelper.getNextAvailableColor(usedColorKeys)
             } else {
@@ -44,6 +56,7 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
             }
 
             categoryRepository.insert(Category(name = name, iconKey = finalIconKey, colorKey = finalColorKey))
+            _uiEvent.send("Category '$name' created.")
         }
 
     fun updateCategory(category: Category) =
