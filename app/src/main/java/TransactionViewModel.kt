@@ -1,16 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: REFACTOR - State management for the filter bottom sheet has been added
-// here. A new `showFilterSheet` StateFlow and corresponding `onFilterClick` and
-// `onFilterSheetDismiss` functions allow the centralized TopAppBar in MainActivity
-// to control the visibility of the filter sheet, which is now part of the
-// TransactionListScreen.
-// BUG FIX: The `findTransactionDetailsById` function now applies merchant
-// aliases. This ensures the Transaction Detail screen is consistent with list
-// views, which already had aliasing applied, fixing the bug where a reverted
-// merchant name would still show the old alias on list screens but not on the
-// detail screen.
-// UPDATE: Standardized the transaction source labels for clarity.
+// REASON: REFACTOR - The logic for applying merchant aliases and finding similar
+// transactions has been made case-insensitive. This ensures that rename rules
+// and retrospective updates work correctly regardless of the casing in the
+// original transaction description.
 // =================================================================================
 package io.pm.finlight
 
@@ -78,6 +71,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             Pair(month, filters)
         }
 
+    // --- UPDATED: Create a lowercase version of the aliases map for insensitive lookups ---
     private val merchantAliases: StateFlow<Map<String, String>>
 
     val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>>
@@ -122,7 +116,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
 
+        // --- UPDATED: Transform keys to lowercase for case-insensitive matching ---
         merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
+            .map { it.mapKeys { (key, _) -> key.lowercase(Locale.getDefault()) } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
         transactionsForSelectedMonth = combinedState.flatMapLatest { (calendar, filters) ->
@@ -209,9 +205,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // --- UPDATED: Use lowercase keys for case-insensitive alias application ---
     private fun applyAliases(transactions: List<TransactionDetails>, aliases: Map<String, String>): List<TransactionDetails> {
         return transactions.map { details ->
-            val key = details.transaction.originalDescription ?: details.transaction.description
+            val key = (details.transaction.originalDescription ?: details.transaction.description).lowercase(Locale.getDefault())
             val newDescription = aliases[key] ?: details.transaction.description
             details.copy(transaction = details.transaction.copy(description = newDescription))
         }
@@ -278,7 +275,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         isExcluded = false,
                         sourceSmsId = null,
                         sourceSmsHash = null,
-                        source = "Added Manually" // --- UPDATED ---
+                        source = "Added Manually"
                     )
 
                 transactionRepository.insertTransactionWithTagsAndImages(
@@ -643,7 +640,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     transactionType = potentialTxn.transactionType,
                     sourceSmsId = potentialTxn.sourceSmsId,
                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                    source = "Imported" // --- UPDATED ---
+                    source = "Imported"
                 )
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
 
