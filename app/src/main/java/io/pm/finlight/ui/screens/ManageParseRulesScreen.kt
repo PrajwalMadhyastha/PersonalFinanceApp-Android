@@ -7,9 +7,13 @@
 // BUG FIX - The AlertDialog now correctly derives its background color from
 // the app's MaterialTheme, ensuring it matches the selected theme (e.g.,
 // Aurora) instead of defaulting to the system's light/dark mode.
+// ANIMATION - Added `animateItemPlacement()` to the RuleItemCard in the
+// LazyColumn. This makes the list fluidly animate changes when rules are
+// added or removed.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,6 +40,7 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 // Helper function to determine if a color is 'dark' based on luminance.
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ManageParseRulesScreen(
     navController: NavController,
@@ -63,6 +68,7 @@ fun ManageParseRulesScreen(
         ) {
             items(rules, key = { it.id }) { rule ->
                 RuleItemCard(
+                    modifier = Modifier.animateItemPlacement(),
                     rule = rule,
                     onEditClick = {
                         navController.navigate("rule_creation_screen?ruleId=${rule.id}")
@@ -104,12 +110,13 @@ fun ManageParseRulesScreen(
 
 @Composable
 private fun RuleItemCard(
+    modifier: Modifier = Modifier,
     rule: CustomSmsRule,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
     GlassPanel(
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),

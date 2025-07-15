@@ -5,9 +5,13 @@
 // custom GlassPanel component. The layout inside the panel is enhanced to
 // better feature the bank logo and balance, and all text colors are now
 // theme-aware to ensure high contrast and legibility in dark mode.
+// ANIMATION - Added `animateItemPlacement()` to the AccountListItem in the
+// LazyColumn. This makes the list fluidly animate changes when accounts are
+// added or removed.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -36,6 +40,7 @@ import io.pm.finlight.ui.components.GlassPanel
 import java.text.NumberFormat
 import java.util.*
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AccountListScreen(
     navController: NavController,
@@ -49,6 +54,7 @@ fun AccountListScreen(
     ) {
         items(accounts, key = { it.account.id }) { accountWithBalance ->
             AccountListItem(
+                modifier = Modifier.animateItemPlacement(),
                 accountWithBalance = accountWithBalance,
                 onClick = { navController.navigate("account_detail/${accountWithBalance.account.id}") },
                 onEditClick = { navController.navigate("edit_account/${accountWithBalance.account.id}") }
@@ -59,6 +65,7 @@ fun AccountListScreen(
 
 @Composable
 private fun AccountListItem(
+    modifier: Modifier = Modifier,
     accountWithBalance: AccountWithBalance,
     onClick: () -> Unit,
     onEditClick: () -> Unit
@@ -66,7 +73,7 @@ private fun AccountListItem(
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
 
     GlassPanel(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
     ) {

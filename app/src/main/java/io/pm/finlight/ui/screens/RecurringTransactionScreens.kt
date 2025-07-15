@@ -5,9 +5,13 @@
 // the Add/Edit screen with the rule's ID, and tapping "Delete" shows a
 // confirmation dialog before removing the rule.
 // BUG FIX - Added the missing isDark() helper function to resolve compilation errors.
+// ANIMATION - Added `animateItemPlacement()` to the RecurringTransactionItem
+// in the LazyColumn. This makes the list fluidly animate changes when rules
+// are added or removed.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,6 +36,7 @@ import java.util.*
 
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RecurringTransactionScreen(navController: NavController) {
     val viewModel: RecurringTransactionViewModel = viewModel()
@@ -57,6 +62,7 @@ fun RecurringTransactionScreen(navController: NavController) {
         ) {
             items(recurringTransactions, key = { it.id }) { rule ->
                 RecurringTransactionItem(
+                    modifier = Modifier.animateItemPlacement(),
                     rule = rule,
                     onEditClick = {
                         navController.navigate("add_recurring_transaction?ruleId=${rule.id}")
@@ -95,6 +101,7 @@ fun RecurringTransactionScreen(navController: NavController) {
 
 @Composable
 private fun RecurringTransactionItem(
+    modifier: Modifier = Modifier,
     rule: RecurringTransaction,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
@@ -106,7 +113,7 @@ private fun RecurringTransactionItem(
         MaterialTheme.colorScheme.primary
     }
 
-    GlassPanel(modifier = Modifier.fillMaxWidth()) {
+    GlassPanel(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically

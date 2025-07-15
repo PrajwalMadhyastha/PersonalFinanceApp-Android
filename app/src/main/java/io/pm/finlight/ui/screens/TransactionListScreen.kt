@@ -11,6 +11,11 @@
 // UPDATE: Applied the semi-opaque popup surface color to the filter bottom
 // sheet to match the style used in the Transaction Detail screen, ensuring
 // a consistent UI for all popups.
+// ANIMATION - Added `animateItemPlacement()` to the TransactionItem in the
+// LazyColumn. This makes the list fluidly animate changes when items are
+// added, removed, or reordered due to filtering, enhancing the app's snappy feel.
+// ANIMATION - Optimized the AnimatedVisibility for the month scroller by removing
+// the fade and using a faster tween spec, making it feel more responsive.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -191,8 +196,8 @@ fun MonthlySummaryHeader(
 
         AnimatedVisibility(
             visible = showMonthScroller,
-            enter = expandVertically(),
-            exit = shrinkVertically()
+            enter = expandVertically(animationSpec = tween(200)),
+            exit = shrinkVertically(animationSpec = tween(200))
         ) {
             ScrollableTabRow(
                 selectedTabIndex = selectedTabIndex,

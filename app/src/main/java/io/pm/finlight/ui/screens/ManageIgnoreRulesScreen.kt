@@ -9,9 +9,13 @@
 // BUG FIX - The AlertDialog now correctly derives its background color from
 // the app's MaterialTheme, ensuring it matches the selected theme (e.g.,
 // Aurora) instead of defaulting to the system's light/dark mode.
+// ANIMATION - Added `animateItemPlacement()` to the ListItems in the
+// LazyColumn. This makes the lists fluidly animate changes when ignore rules
+// are added, deleted, or toggled.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,6 +40,7 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 // Helper function to determine if a color is 'dark' based on luminance.
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ManageIgnoreRulesScreen(
     viewModel: ManageIgnoreRulesViewModel = viewModel()
@@ -117,7 +122,7 @@ fun ManageIgnoreRulesScreen(
                 )
             }
             items(customRules, key = { "custom-${it.id}" }) { rule ->
-                GlassPanel {
+                GlassPanel(modifier = Modifier.animateItemPlacement()) {
                     ListItem(
                         headlineContent = { Text(rule.phrase, color = MaterialTheme.colorScheme.onSurface) },
                         trailingContent = {
@@ -145,7 +150,7 @@ fun ManageIgnoreRulesScreen(
                 )
             }
             items(defaultRules, key = { "default-${it.id}" }) { rule ->
-                GlassPanel {
+                GlassPanel(modifier = Modifier.animateItemPlacement()) {
                     ListItem(
                         headlineContent = { Text(rule.phrase, color = MaterialTheme.colorScheme.onSurface) },
                         trailingContent = {

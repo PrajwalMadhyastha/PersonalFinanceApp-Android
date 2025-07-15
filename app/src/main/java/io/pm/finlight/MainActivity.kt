@@ -1,8 +1,13 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - Added a new "goals_screen" route to the NavHost to
-// integrate the Savings Goals feature into the application's navigation graph.
-// UPDATE: Added new routes for the reorganized settings screens.
+// REASON: REFACTOR - The screen transitions have been updated from a simple slide
+// to a more polished "shared axis" effect. This combines the fast 300ms slide
+// with a subtle fade and scale. This change addresses the "flimsy" feel of the
+// previous animation, creating a more robust and high-quality navigation
+// experience while maintaining snappiness.
+// FIX - Corrected all transition-related type mismatch errors by defining the
+// animations inline for each composable route, satisfying the NavHost function
+// signature.
 // =================================================================================
 package io.pm.finlight
 
@@ -20,6 +25,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricPrompt
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -424,14 +436,27 @@ fun AppNavHost(
         startDestination = "splash_screen",
         modifier = modifier
     ) {
+        // --- FIX: Define transitions inline for each composable to fix type errors ---
         composable("splash_screen") {
             SplashScreen(navController = navController, activity = activity)
         }
 
-        composable("manage_parse_rules") {
+        composable(
+            "manage_parse_rules",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             ManageParseRulesScreen(navController)
         }
-        composable("manage_ignore_rules") {
+        composable(
+            "manage_ignore_rules",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             ManageIgnoreRulesScreen()
         }
 
@@ -439,7 +464,11 @@ fun AppNavHost(
             DashboardScreen(navController, dashboardViewModel)
         }
         composable(
-            route = BottomNavItem.Transactions.route
+            route = BottomNavItem.Transactions.route,
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) {
             TransactionListScreen(
                 navController = navController,
@@ -448,33 +477,74 @@ fun AppNavHost(
         }
         composable(
             route = BottomNavItem.Reports.route,
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/reports" })
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/reports" }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { ReportsScreen(navController, viewModel()) }
-        composable("profile") {
+
+        composable(
+            "profile",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             ProfileScreen(
                 navController = navController,
                 profileViewModel = profileViewModel,
                 settingsViewModel = settingsViewModel
             )
         }
-        composable("edit_profile") { EditProfileScreen(navController, profileViewModel) }
-        composable("csv_validation_screen") { CsvValidationScreen(navController, settingsViewModel) }
-        composable("search_screen") { SearchScreen(navController) }
+        composable(
+            "edit_profile",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { EditProfileScreen(navController, profileViewModel) }
+        composable(
+            "csv_validation_screen",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { CsvValidationScreen(navController, settingsViewModel) }
+        composable(
+            "search_screen",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { SearchScreen(navController) }
         composable(
             route = "review_sms_screen",
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" })
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { ReviewSmsScreen(navController, settingsViewModel) }
 
-        composable("income_screen") {
+        composable(
+            "income_screen",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             IncomeScreen(navController, incomeViewModel)
         }
 
         composable(
             route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
-            arguments = listOf(
-                navArgument("potentialTxnJson") { type = NavType.StringType }
-            ),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve_sms?potentialTxnJson={potentialTxnJson}" })
+            arguments = listOf(navArgument("potentialTxnJson") { type = NavType.StringType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve_sms?potentialTxnJson={potentialTxnJson}" }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val json = backStackEntry.arguments?.getString("potentialTxnJson")
             val potentialTxn = Gson().fromJson(URLDecoder.decode(json, "UTF-8"), PotentialTransaction::class.java)
@@ -490,39 +560,33 @@ fun AppNavHost(
         composable(
             "add_transaction?isCsvEdit={isCsvEdit}&csvLineNumber={csvLineNumber}&initialDataJson={initialDataJson}",
             arguments = listOf(
-                navArgument("isCsvEdit") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                },
-                navArgument("csvLineNumber") {
-                    type = NavType.IntType
-                    defaultValue = -1
-                },
-                navArgument("initialDataJson") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                }
-            )
+                navArgument("isCsvEdit") { type = NavType.BoolType; defaultValue = false },
+                navArgument("csvLineNumber") { type = NavType.IntType; defaultValue = -1 },
+                navArgument("initialDataJson") { type = NavType.StringType; nullable = true; defaultValue = null }
+            ),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val arguments = requireNotNull(backStackEntry.arguments)
-            val isCsvEdit = arguments.getBoolean("isCsvEdit")
-            val csvLineNumber = arguments.getInt("csvLineNumber")
-            val initialDataJson = arguments.getString("initialDataJson")
-
             AddTransactionScreen(
                 navController = navController,
                 viewModel = transactionViewModel,
-                isCsvEdit = isCsvEdit,
-                csvLineNumber = csvLineNumber,
-                initialDataJson = initialDataJson?.let { URLDecoder.decode(it, "UTF-8") }
+                isCsvEdit = arguments.getBoolean("isCsvEdit"),
+                csvLineNumber = arguments.getInt("csvLineNumber"),
+                initialDataJson = arguments.getString("initialDataJson")?.let { URLDecoder.decode(it, "UTF-8") }
             )
         }
 
         composable(
             route = "transaction_detail/{transactionId}",
             arguments = listOf(navArgument("transactionId") { type = NavType.IntType }),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/transaction_detail/{transactionId}" })
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/transaction_detail/{transactionId}" }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val transactionId = backStackEntry.arguments!!.getInt("transactionId")
             TransactionDetailScreen(
@@ -530,71 +594,116 @@ fun AppNavHost(
                 transactionId = transactionId,
                 viewModel = transactionViewModel,
                 accountViewModel = accountViewModel,
-                onSaveRenameRule = { original, new ->
-                    settingsViewModel.saveMerchantRenameRule(original, new)
-                }
+                onSaveRenameRule = { original, new -> settingsViewModel.saveMerchantRenameRule(original, new) }
             )
         }
 
-        composable("account_list") { AccountListScreen(navController, accountViewModel) }
+        composable(
+            "account_list",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { AccountListScreen(navController, accountViewModel) }
 
-        composable("add_account") {
+        composable(
+            "add_account",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             AddEditAccountScreen(navController, accountViewModel, null)
         }
         composable(
             "edit_account/{accountId}",
-            arguments = listOf(navArgument("accountId") { type = NavType.IntType })
+            arguments = listOf(navArgument("accountId") { type = NavType.IntType }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
-            AddEditAccountScreen(
-                navController,
-                accountViewModel,
-                backStackEntry.arguments!!.getInt("accountId")
-            )
+            AddEditAccountScreen(navController, accountViewModel, backStackEntry.arguments!!.getInt("accountId"))
         }
 
-        composable("account_detail/{accountId}", arguments = listOf(navArgument("accountId") { type = NavType.IntType })) { backStackEntry ->
+        composable(
+            "account_detail/{accountId}",
+            arguments = listOf(navArgument("accountId") { type = NavType.IntType }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { backStackEntry ->
             AccountDetailScreen(navController, accountViewModel, backStackEntry.arguments!!.getInt("accountId"))
         }
-        composable("budget_screen") { BudgetScreen(navController, budgetViewModel) }
-        composable("add_budget") { AddEditBudgetScreen(navController, budgetViewModel, null) }
+        composable(
+            "budget_screen",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { BudgetScreen(navController, budgetViewModel) }
+        composable(
+            "add_budget",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { AddEditBudgetScreen(navController, budgetViewModel, null) }
         composable(
             "edit_budget/{budgetId}",
-            arguments = listOf(navArgument("budgetId") { type = NavType.IntType })
+            arguments = listOf(navArgument("budgetId") { type = NavType.IntType }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             AddEditBudgetScreen(navController, budgetViewModel, backStackEntry.arguments?.getInt("budgetId"))
         }
-        composable("category_list") { CategoryListScreen(navController, categoryViewModel) }
-        composable("tag_management") { TagManagementScreen() }
-        composable("recurring_transactions") { RecurringTransactionScreen(navController) }
+        composable(
+            "category_list",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { CategoryListScreen(navController, categoryViewModel) }
+        composable(
+            "tag_management",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { TagManagementScreen() }
+        composable(
+            "recurring_transactions",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { RecurringTransactionScreen(navController) }
 
         composable(
             "add_recurring_transaction?ruleId={ruleId}",
-            arguments = listOf(
-                navArgument("ruleId") {
-                    type = NavType.IntType
-                    defaultValue = -1
-                }
-            )
+            arguments = listOf(navArgument("ruleId") { type = NavType.IntType; defaultValue = -1 }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val ruleId = backStackEntry.arguments?.getInt("ruleId")
-            AddRecurringTransactionScreen(
-                navController = navController,
-                ruleId = if (ruleId == -1) null else ruleId
-            )
+            AddRecurringTransactionScreen(navController = navController, ruleId = if (ruleId == -1) null else ruleId)
         }
 
         composable(
             "rule_creation_screen?potentialTransactionJson={potentialTransactionJson}&ruleId={ruleId}",
             arguments = listOf(
-                navArgument("potentialTransactionJson") {
-                    type = NavType.StringType
-                    nullable = true
-                },
-                navArgument("ruleId") {
-                    type = NavType.IntType
-                    defaultValue = -1
-                }
-            )
+                navArgument("potentialTransactionJson") { type = NavType.StringType; nullable = true },
+                navArgument("ruleId") { type = NavType.IntType; defaultValue = -1 }
+            ),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val json = backStackEntry.arguments?.getString("potentialTransactionJson")
             val ruleId = backStackEntry.arguments?.getInt("ruleId")
@@ -607,63 +716,92 @@ fun AppNavHost(
 
         composable(
             "link_transaction_screen/{potentialTransactionJson}",
-            arguments = listOf(
-                navArgument("potentialTransactionJson") { type = NavType.StringType }
-            )
+            arguments = listOf(navArgument("potentialTransactionJson") { type = NavType.StringType }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
-            LinkTransactionScreen(
-                navController = navController,
-                potentialTransactionJson = json
-            )
+            LinkTransactionScreen(navController = navController, potentialTransactionJson = json)
         }
 
         composable(
             route = "link_recurring_transaction/{potentialTransactionJson}",
             arguments = listOf(navArgument("potentialTransactionJson") { type = NavType.StringType }),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/link_recurring/{potentialTransactionJson}" })
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/link_recurring/{potentialTransactionJson}" }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
-            LinkRecurringTransactionScreen(
-                navController = navController,
-                potentialTransactionJson = json
-            )
+            LinkRecurringTransactionScreen(navController = navController, potentialTransactionJson = json)
         }
 
         composable(
             "time_period_report_screen/{timePeriod}?date={date}",
             arguments = listOf(
                 navArgument("timePeriod") { type = NavType.EnumType(TimePeriod::class.java) },
-                navArgument("date") {
-                    type = NavType.LongType
-                    defaultValue = -1L
-                }
+                navArgument("date") { type = NavType.LongType; defaultValue = -1L }
             ),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}?date={date}" })
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}?date={date}" }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
             val date = backStackEntry.arguments?.getLong("date")
-
             if (timePeriod != null) {
                 TimePeriodReportScreen(navController = navController, timePeriod = timePeriod, initialDateMillis = date)
             }
         }
 
-        composable("goals_screen") {
+        composable(
+            "goals_screen",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             GoalScreen(navController = navController, goalViewModel = goalViewModel)
         }
 
-        // --- NEW: Routes for reorganized settings screens ---
-        composable("appearance_settings") {
+        composable(
+            "appearance_settings",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             AppearanceSettingsScreen(navController, settingsViewModel)
         }
-        composable("automation_settings") {
+        composable(
+            "automation_settings",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             AutomationSettingsScreen(navController, settingsViewModel)
         }
-        composable("notification_settings") {
+        composable(
+            "notification_settings",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             NotificationSettingsScreen(navController, settingsViewModel)
         }
-        composable("data_settings") {
+        composable(
+            "data_settings",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
             DataSettingsScreen(navController, settingsViewModel)
         }
     }

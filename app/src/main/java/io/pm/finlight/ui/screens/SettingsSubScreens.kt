@@ -136,7 +136,7 @@ fun AutomationSettingsScreen(navController: NavController, settingsViewModel: Se
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Automation & AI") },
+                title = { Text("Automation") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")

@@ -146,7 +146,7 @@ fun ProfileScreen(
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                 SettingsActionItem(
-                    text = "Automation & AI",
+                    text = "Automation",
                     subtitle = "Manage SMS parsing and rules",
                     icon = Icons.Default.AutoAwesome,
                     onClick = { navController.navigate("automation_settings") }

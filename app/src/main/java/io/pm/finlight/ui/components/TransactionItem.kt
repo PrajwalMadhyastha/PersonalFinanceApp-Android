@@ -1,3 +1,12 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
+// REASON: ANIMATION - Added `animateItemPlacement()` to the TransactionItem in the
+// TransactionList composable. This makes the list fluidly animate changes when
+// items are added, removed, or reordered due to filtering, enhancing the app's
+// snappy feel.
+// FIX - Added the 'modifier' parameter to the TransactionItem composable to
+// resolve the "No parameter with name 'modifier' found" compilation error.
+// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
@@ -29,10 +38,12 @@ import io.pm.finlight.ui.theme.IncomeGreenDark
 import io.pm.finlight.ui.theme.IncomeGreenLight
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionItem(
+    modifier: Modifier = Modifier,
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
 ) {
@@ -40,7 +51,7 @@ fun TransactionItem(
     val isUncategorized = transactionDetails.categoryName == null || transactionDetails.categoryName == "Uncategorized"
 
     GlassPanel(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
     ) {
@@ -176,6 +187,7 @@ fun AccountTransactionItem(transactionDetails: TransactionDetails) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransactionList(
     transactions: List<TransactionDetails>,
@@ -194,9 +206,11 @@ fun TransactionList(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(transactions, key = { it.transaction.id }) { details ->
                 TransactionItem(
+                    modifier = Modifier.animateItemPlacement(),
                     transactionDetails = details,
                     onClick = {
                         navController.navigate("transaction_detail/${details.transaction.id}")

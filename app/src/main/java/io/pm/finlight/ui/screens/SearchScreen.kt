@@ -9,11 +9,15 @@
 // it with the "Project Aurora" aesthetic for a consistent and modern look.
 // FIX: Applied a semi-opaque background to the filter dropdown menus to ensure
 // legibility and consistency with other popups in dark mode.
+// ANIMATION - The filter section is now wrapped in an AnimatedVisibility with
+// a fast, non-fading animation spec (`expandVertically` and `shrinkVertically`).
+// This makes showing/hiding the filters feel much snappier.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
@@ -27,6 +31,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,6 +64,7 @@ fun SearchScreen(navController: NavController) {
 
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
@@ -77,63 +84,93 @@ fun SearchScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- UPDATE: Filters are now inside a GlassPanel ---
+            // --- UPDATE: Filters are now inside a collapsible GlassPanel ---
             GlassPanel {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        "Filters",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    SearchableDropdown(
-                        label = "Account",
-                        options = searchUiState.accounts,
-                        selectedOption = searchUiState.selectedAccount,
-                        onOptionSelected = { viewModel.onAccountChange(it) },
-                        getDisplayName = { it.name },
-                    )
-                    SearchableDropdown(
-                        label = "Category",
-                        options = searchUiState.categories,
-                        selectedOption = searchUiState.selectedCategory,
-                        onOptionSelected = { viewModel.onCategoryChange(it) },
-                        getDisplayName = { it.name },
-                    )
-                    SearchableDropdown(
-                        label = "Transaction Type",
-                        options = listOf("All", "Income", "Expense"),
-                        selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
-                        onOptionSelected = { viewModel.onTypeChange(it) },
-                        getDisplayName = { it },
-                    )
+                Column {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showFilters = !showFilters }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        DateTextField(
-                            label = "Start Date",
-                            date = searchUiState.startDate,
-                            formatter = dateFormatter,
-                            onClick = { showStartDatePicker = true },
-                            onClear = { viewModel.onDateChange(start = null) },
-                            modifier = Modifier.weight(1f),
+                        Icon(
+                            Icons.Default.FilterList,
+                            contentDescription = "Filters",
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        DateTextField(
-                            label = "End Date",
-                            date = searchUiState.endDate,
-                            formatter = dateFormatter,
-                            onClick = { showEndDatePicker = true },
-                            onClear = { viewModel.onDateChange(end = null) },
-                            modifier = Modifier.weight(1f),
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Filters",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = if (showFilters) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (showFilters) "Collapse Filters" else "Expand Filters",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    OutlinedButton(
-                        onClick = { viewModel.clearFilters() },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Clear All Filters") }
+
+                    AnimatedVisibility(
+                        visible = showFilters,
+                        enter = expandVertically(animationSpec = tween(200)),
+                        exit = shrinkVertically(animationSpec = tween(200))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            SearchableDropdown(
+                                label = "Account",
+                                options = searchUiState.accounts,
+                                selectedOption = searchUiState.selectedAccount,
+                                onOptionSelected = { viewModel.onAccountChange(it) },
+                                getDisplayName = { it.name },
+                            )
+                            SearchableDropdown(
+                                label = "Category",
+                                options = searchUiState.categories,
+                                selectedOption = searchUiState.selectedCategory,
+                                onOptionSelected = { viewModel.onCategoryChange(it) },
+                                getDisplayName = { it.name },
+                            )
+                            SearchableDropdown(
+                                label = "Transaction Type",
+                                options = listOf("All", "Income", "Expense"),
+                                selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
+                                onOptionSelected = { viewModel.onTypeChange(it) },
+                                getDisplayName = { it },
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                DateTextField(
+                                    label = "Start Date",
+                                    date = searchUiState.startDate,
+                                    formatter = dateFormatter,
+                                    onClick = { showStartDatePicker = true },
+                                    onClear = { viewModel.onDateChange(start = null) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                DateTextField(
+                                    label = "End Date",
+                                    date = searchUiState.endDate,
+                                    formatter = dateFormatter,
+                                    onClick = { showEndDatePicker = true },
+                                    onClear = { viewModel.onDateChange(end = null) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.clearFilters() },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Clear All Filters") }
+                        }
+                    }
                 }
             }
         }
