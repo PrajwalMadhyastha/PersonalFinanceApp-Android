@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt
-// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with
-// the "Project Aurora" vision. The standard `ListItem` has been replaced with
-// a custom `GlassPanel` component, and the `AlertDialog` is now theme-aware,
-// ensuring a cohesive, modern, and high-contrast user experience.
+// REASON: UX REFINEMENT - The screen's layout is now wrapped in a Scaffold that
+// includes a SnackbarHost. This allows the screen to display feedback messages
+// from the ViewModel, such as "Category already exists," which was previously
+// failing silently.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -39,6 +39,7 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 // Helper function to determine if a color is 'dark' based on luminance.
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryListScreen(
     navController: NavController,
@@ -56,80 +57,87 @@ fun CategoryListScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Button(
-            onClick = {
-                selectedCategory = null
-                showEditDialog = true
-            },
-            modifier = Modifier.fillMaxWidth()
+    // --- NEW: Added Scaffold to host the Snackbar ---
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Add New Category")
-        }
+            Button(
+                onClick = {
+                    selectedCategory = null
+                    showEditDialog = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Add New Category")
+            }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(categories, key = { it.id }) { category ->
-                GlassPanel {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
-                            contentAlignment = Alignment.Center
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(categories, key = { it.id }) { category ->
+                    GlassPanel {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (category.iconKey == "letter_default") {
-                                Text(
-                                    text = category.name.firstOrNull()?.uppercase() ?: "?",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
-                                    color = Color.Black
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = CategoryIconHelper.getIcon(category.iconKey),
-                                    contentDescription = category.name,
-                                    tint = Color.Black,
-                                    modifier = Modifier.size(22.dp)
-                                )
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (category.iconKey == "letter_default") {
+                                    Text(
+                                        text = category.name.firstOrNull()?.uppercase() ?: "?",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp,
+                                        color = Color.Black
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                                        contentDescription = category.name,
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                             }
-                        }
-                        Spacer(Modifier.width(16.dp))
-                        Text(
-                            text = category.name,
-                            modifier = Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Row {
-                            IconButton(onClick = {
-                                selectedCategory = category
-                                showEditDialog = true
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit Category",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(onClick = {
-                                selectedCategory = category
-                                showDeleteDialog = true
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete Category",
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                text = category.name,
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Row {
+                                IconButton(onClick = {
+                                    selectedCategory = category
+                                    showEditDialog = true
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit Category",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    selectedCategory = category
+                                    showDeleteDialog = true
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete Category",
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                }
                             }
                         }
                     }

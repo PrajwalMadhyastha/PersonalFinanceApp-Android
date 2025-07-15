@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: UX REFINEMENT - The on-the-fly `createAccount` and `createCategory`
-// functions now check for existing items (case-insensitively) before insertion.
-// If a duplicate is found, a validation error is triggered, providing immediate
-// feedback to the user within the transaction composer instead of failing silently.
+// REASON: UX REFINEMENT - The on-the-fly `createAccount`, `createCategory`,
+// and `addTagOnTheGo` functions now check for existing items (case-insensitively)
+// before insertion. If a duplicate is found, a validation error is triggered,
+// providing immediate feedback to the user instead of failing silently.
 // =================================================================================
 package io.pm.finlight
 
@@ -410,7 +410,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _selectedMonth.value = calendar
     }
 
-    // --- UPDATED: Add pre-check and user feedback for duplicates ---
     fun createAccount(name: String, type: String, onAccountCreated: (Account) -> Unit) {
         if (name.isBlank() || type.isBlank()) return
         viewModelScope.launch {
@@ -427,7 +426,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- UPDATED: Add pre-check and user feedback for duplicates ---
     fun createCategory(name: String, iconKey: String, colorKey: String, onCategoryCreated: (Category) -> Unit) {
         if (name.isBlank()) return
         viewModelScope.launch {
@@ -583,9 +581,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _selectedTags.update { if (tag in it) it - tag else it + tag }
     }
 
+    // --- UPDATED: Add pre-check and user feedback for duplicates ---
     fun addTagOnTheGo(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
+                val existingTag = db.tagDao().findByName(tagName)
+                if (existingTag != null) {
+                    _validationError.value = "A tag named '$tagName' already exists."
+                    return@launch
+                }
                 val newTag = Tag(name = tagName)
                 val newId = tagRepository.insert(newTag)
                 if (newId != -1L) {

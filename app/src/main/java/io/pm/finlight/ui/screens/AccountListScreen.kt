@@ -1,13 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountListScreen.kt
-// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with
-// the "Project Aurora" vision. The standard ListItem has been replaced with a
-// custom GlassPanel component. The layout inside the panel is enhanced to
-// better feature the bank logo and balance, and all text colors are now
-// theme-aware to ensure high contrast and legibility in dark mode.
-// ANIMATION - Added `animateItemPlacement()` to the AccountListItem in the
-// LazyColumn. This makes the list fluidly animate changes when accounts are
-// added or removed.
+// REASON: UX REFINEMENT - The screen now includes a Scaffold with a SnackbarHost
+// and a LaunchedEffect to collect UI events from the AccountViewModel. This
+// ensures that feedback, such as the "Account already exists" message, is
+// displayed to the user instead of failing silently.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -19,16 +15,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,25 +31,40 @@ import io.pm.finlight.ui.components.GlassPanel
 import java.text.NumberFormat
 import java.util.*
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AccountListScreen(
     navController: NavController,
     viewModel: AccountViewModel,
 ) {
     val accounts by viewModel.accountsWithBalance.collectAsState(initial = emptyList())
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        items(accounts, key = { it.account.id }) { accountWithBalance ->
-            AccountListItem(
-                modifier = Modifier.animateItemPlacement(),
-                accountWithBalance = accountWithBalance,
-                onClick = { navController.navigate("account_detail/${accountWithBalance.account.id}") },
-                onEditClick = { navController.navigate("edit_account/${accountWithBalance.account.id}") }
-            )
+    // --- NEW: Collect UI events from the ViewModel to show snackbars ---
+    LaunchedEffect(key1 = viewModel.uiEvent) {
+        viewModel.uiEvent.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    // --- NEW: Added Scaffold to host the Snackbar ---
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(accounts, key = { it.account.id }) { accountWithBalance ->
+                AccountListItem(
+                    modifier = Modifier.animateItemPlacement(),
+                    accountWithBalance = accountWithBalance,
+                    onClick = { navController.navigate("account_detail/${accountWithBalance.account.id}") },
+                    onEditClick = { navController.navigate("edit_account/${accountWithBalance.account.id}") }
+                )
+            }
         }
     }
 }
