@@ -1,14 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: FEATURE - The ViewModel now exposes the user's selected theme as a
-// StateFlow, allowing the entire app's UI to react to changes. It also includes
-// the `saveSelectedTheme` function to persist the user's choice via the repository.
-// BUG FIX: The `saveMerchantRenameRule` function is now smarter. If the user
-// renames a merchant back to its original name, the function interprets this
-// as a desire to revert the change and now deletes the corresponding rename
-// rule from the database. This fixes the bug where a reverted name would not
-// stick in the UI.
-// UPDATE: Standardized the transaction source to "Imported" for clarity.
+// REASON: BUG FIX - The call to `SmsParser.parse` has been updated to include
+// the required `merchantCategoryMappingDao` argument. This resolves the
+// compilation error that occurred after the parser was updated to support
+// automatic categorization.
 // =================================================================================
 package io.pm.finlight
 
@@ -183,7 +178,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { sms ->
-                        SmsParser.parse(sms, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
+                        // --- FIX: Pass the missing merchantCategoryMappingDao argument ---
+                        SmsParser.parse(
+                            sms,
+                            existingMappings,
+                            db.customSmsRuleDao(),
+                            db.merchantRenameRuleDao(),
+                            db.ignoreRuleDao(),
+                            db.merchantCategoryMappingDao()
+                        )
                     }
                 }
 
@@ -222,11 +225,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (originalName.isBlank() || newName.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
             if (originalName.equals(newName, ignoreCase = true)) {
-                // If the new name is the same as the original, the user wants to revert. Delete the rule.
                 db.merchantRenameRuleDao().deleteByOriginalName(originalName)
                 Log.d("SettingsViewModel", "Deleted rename rule for: '$originalName'")
             } else {
-                // Otherwise, create or update the rule.
                 val rule = MerchantRenameRule(originalName = originalName, newName = newName)
                 db.merchantRenameRuleDao().insert(rule)
                 Log.d("SettingsViewModel", "Saved rename rule: '$originalName' -> '$newName'")
@@ -477,7 +478,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             transactionType = type,
                             accountId = account.id,
                             categoryId = category.id,
-                            source = "Imported" // --- UPDATED ---
+                            source = "Imported"
                         )
                     transactionRepository.insert(transaction)
                     Log.d("CsvImportDebug", "ViewModel: Inserted transaction for row ${row.lineNumber}: '${transaction.description}'")

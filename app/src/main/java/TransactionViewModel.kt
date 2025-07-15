@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: UX REFINEMENT - The on-the-fly `createAccount`, `createCategory`,
-// and `addTagOnTheGo` functions now check for existing items (case-insensitively)
-// before insertion. If a duplicate is found, a validation error is triggered,
-// providing immediate feedback to the user instead of failing silently.
+// REASON: BUG FIX - The call to `SmsParser.parse` within the
+// `reparseTransactionFromSms` function has been updated to include the required
+// `merchantCategoryMappingDao` argument, resolving a compilation error.
 // =================================================================================
 package io.pm.finlight
 
@@ -335,7 +334,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
+            // --- FIX: Pass the missing merchantCategoryMappingDao argument ---
+            val potentialTxn = SmsParser.parse(
+                smsMessage,
+                emptyMap(),
+                db.customSmsRuleDao(),
+                db.merchantRenameRuleDao(),
+                db.ignoreRuleDao(),
+                db.merchantCategoryMappingDao()
+            )
             Log.d(logTag, "SmsParser result: $potentialTxn")
 
             if (potentialTxn != null) {
@@ -581,7 +588,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _selectedTags.update { if (tag in it) it - tag else it + tag }
     }
 
-    // --- UPDATED: Add pre-check and user feedback for duplicates ---
     fun addTagOnTheGo(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
