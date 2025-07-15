@@ -1,12 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: BUG FIX - All `strftime` date functions have been updated to use the
-// 'localtime' modifier. This ensures that all date-based grouping (daily,
-// weekly, monthly) is performed using the device's local timezone instead of
-// UTC. This corrects the bug where transactions were being assigned to the
-// wrong period, fixing incorrect totals in reports and notifications.
-// REASON: BUG FIX - Restored the searchTransactions function that was
-// accidentally removed in a previous edit.
+// REASON: REFACTOR - All queries that filter, group by, or search on the
+// transaction `description` (merchant name) have been updated to use the
+// `LOWER()` function. This makes all merchant-related operations, such as
+// reporting, searching, and finding similar transactions, case-insensitive.
 // =================================================================================
 package io.pm.finlight
 
@@ -72,8 +69,8 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0 -- Keep filter for income summary
-          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND T.isExcluded = 0
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         ORDER BY
@@ -90,8 +87,8 @@ interface TransactionDao {
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0 -- Keep filter for aggregation
-          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND T.isExcluded = 0
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         GROUP BY C.name
@@ -106,11 +103,11 @@ interface TransactionDao {
             COUNT(id) as transactionCount
         FROM transactions
         WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
-          AND isExcluded = 0 -- Keep filter for aggregation
-          AND (:keyword IS NULL OR description LIKE '%' || :keyword || '%' OR notes LIKE '%' || :keyword || '%')
+          AND isExcluded = 0
+          AND (:keyword IS NULL OR LOWER(description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR accountId = :accountId)
           AND (:categoryId IS NULL OR categoryId = :categoryId)
-        GROUP BY description
+        GROUP BY LOWER(description)
         ORDER BY totalAmount DESC
     """)
     fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>>
@@ -144,7 +141,8 @@ interface TransactionDao {
     suspend fun updateDate(id: Int, date: Long)
 
 
-    @Query("""
+    @Query(
+        """
         SELECT
             T.*,
             A.name as accountName,
@@ -158,7 +156,8 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.id = :id
-    """)
+    """
+    )
     fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?>
 
 
@@ -201,7 +200,7 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.date BETWEEN :startDate AND :endDate
-          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         ORDER BY
@@ -267,7 +266,7 @@ interface TransactionDao {
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
           AND T.isExcluded = 0
-          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         GROUP BY C.name
@@ -401,14 +400,14 @@ interface TransactionDao {
 
     @Query("""
         SELECT COUNT(*) FROM transactions
-        WHERE (:description = description OR :description = originalDescription)
+        WHERE LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description)
         AND isExcluded = 0
     """)
     fun getTransactionCountForMerchant(description: String): Flow<Int>
 
     @Query("""
         SELECT * FROM transactions
-        WHERE (description = :description OR originalDescription = :description)
+        WHERE (LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description))
         AND id != :excludeId
         AND isExcluded = 0
     """)
@@ -420,14 +419,13 @@ interface TransactionDao {
     @Query("UPDATE transactions SET description = :newDescription WHERE id IN (:ids)")
     suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String)
 
-    // --- FIX: Restored the missing searchTransactions function ---
     @Query("""
         SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
         FROM transactions t
         LEFT JOIN accounts a ON t.accountId = a.id
         LEFT JOIN categories c ON t.categoryId = c.id
         WHERE
-            (:keyword = '' OR t.description LIKE '%' || :keyword || '%' OR t.notes LIKE '%' || :keyword || '%') AND
+            (:keyword = '' OR LOWER(t.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(t.notes) LIKE '%' || LOWER(:keyword) || '%') AND
             (:accountId IS NULL OR t.accountId = :accountId) AND
             (:categoryId IS NULL OR t.categoryId = :categoryId) AND
             (:transactionType IS NULL OR t.transactionType = :transactionType) AND
