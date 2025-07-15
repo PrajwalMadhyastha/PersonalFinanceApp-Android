@@ -1,11 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: BUG FIX - The receiver now calls the updated
-// `showTransactionNotification` function, passing the newly saved `Transaction`
-// object (with its ID) instead of the old `PotentialTransaction`. This ensures
-// the notification's deep link correctly points to the `TransactionDetailScreen`,
-// resolving the navigation bug.
-// UPDATE: Standardized the transaction source to "Auto-Captured" for clarity.
+// REASON: FEATURE - The receiver now passes the `merchantCategoryMappingDao`
+// to the SmsParser. It then uses the `categoryId` from the resulting
+// `PotentialTransaction` when creating the new `Transaction` object, enabling
+// fully automatic categorization for known merchants.
 // =================================================================================
 package io.pm.finlight
 
@@ -55,18 +53,18 @@ class SmsReceiver : BroadcastReceiver() {
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
                         val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
-                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), ignoreRuleDao)
+                        // --- UPDATED: Pass the merchantCategoryMappingDao to the parser ---
+                        val potentialTxn = SmsParser.parse(
+                            sms = smsMessage,
+                            mappings = existingMappings,
+                            customSmsRuleDao = db.customSmsRuleDao(),
+                            merchantRenameRuleDao = db.merchantRenameRuleDao(),
+                            ignoreRuleDao = ignoreRuleDao,
+                            merchantCategoryMappingDao = merchantCategoryMappingDao
+                        )
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
-
-                            var mappedCategoryId: Int? = null
-                            potentialTxn.merchantName?.let { merchantName ->
-                                mappedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
-                                if (mappedCategoryId != null) {
-                                    Log.d(TAG, "Found learned category ID $mappedCategoryId for merchant '$merchantName'")
-                                }
-                            }
 
                             val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                             val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
@@ -85,19 +83,21 @@ class SmsReceiver : BroadcastReceiver() {
                                     amount = potentialTxn.amount,
                                     date = System.currentTimeMillis(),
                                     accountId = account.id,
-                                    categoryId = mappedCategoryId,
+                                    // --- UPDATED: Use the categoryId from the parser result ---
+                                    categoryId = potentialTxn.categoryId,
                                     notes = "",
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                                    source = "Auto-Captured" // --- UPDATED ---
+                                    source = "Auto-Captured"
                                 )
                                 val newTransactionId = transactionDao.insert(newTransaction)
                                 Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
 
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                                     val savedTransaction = newTransaction.copy(id = newTransactionId.toInt())
-                                    if (mappedCategoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
+                                    // --- UPDATED: Check if the parser found a category ---
+                                    if (potentialTxn.categoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
                                         NotificationHelper.showTransactionNotification(context, savedTransaction)
                                     } else {
                                         NotificationHelper.showAutoSaveConfirmationNotification(context, savedTransaction)

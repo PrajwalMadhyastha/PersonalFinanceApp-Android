@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - The parser is enhanced to apply custom, user-defined
-// account rules. When a trigger-based rule matches, the parser now checks for
-// a custom `accountRegex`. If found, it uses this regex to extract the account
-// information, overriding the default account parsing logic and making the
-// feature more powerful and flexible.
+// REASON: FEATURE - The parser now accepts a `MerchantCategoryMappingDao` and
+// uses it to look up a learned category for the parsed merchant name. If a
+// mapping is found, the category ID is included in the returned
+// `PotentialTransaction`, enabling automatic categorization of new SMS messages.
 // =================================================================================
 package io.pm.finlight
 
@@ -75,7 +74,9 @@ object SmsParser {
         mappings: Map<String, String>,
         customSmsRuleDao: CustomSmsRuleDao,
         merchantRenameRuleDao: MerchantRenameRuleDao,
-        ignoreRuleDao: IgnoreRuleDao
+        ignoreRuleDao: IgnoreRuleDao,
+        // --- NEW: Add DAO for learned category mappings ---
+        merchantCategoryMappingDao: MerchantCategoryMappingDao
     ): PotentialTransaction? {
         val messageBody = sms.body
         Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
@@ -174,6 +175,15 @@ object SmsParser {
             Log.d("SmsParser", "Applied rename rule: '$originalName' -> '$merchantName'")
         }
 
+        // --- NEW: Look up the learned category ID ---
+        var learnedCategoryId: Int? = null
+        if (merchantName != null) {
+            learnedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
+            if (learnedCategoryId != null) {
+                Log.d("SmsParser", "Found learned category ID $learnedCategoryId for merchant '$merchantName'")
+            }
+        }
+
         val potentialAccount = extractedAccount ?: parseAccount(messageBody, sms.sender)
         val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
         val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
@@ -187,7 +197,9 @@ object SmsParser {
             merchantName = merchantName,
             originalMessage = messageBody,
             potentialAccount = potentialAccount,
-            sourceSmsHash = smsHash
+            sourceSmsHash = smsHash,
+            // --- NEW: Pass the learned category ID ---
+            categoryId = learnedCategoryId
         )
     }
 }
