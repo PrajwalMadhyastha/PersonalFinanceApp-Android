@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: REFACTOR - The logic for applying merchant aliases and finding similar
-// transactions has been made case-insensitive. This ensures that rename rules
-// and retrospective updates work correctly regardless of the casing in the
-// original transaction description.
+// REASON: UX REFINEMENT - The on-the-fly `createAccount` and `createCategory`
+// functions now check for existing items (case-insensitively) before insertion.
+// If a duplicate is found, a validation error is triggered, providing immediate
+// feedback to the user within the transaction composer instead of failing silently.
 // =================================================================================
 package io.pm.finlight
 
@@ -71,7 +71,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             Pair(month, filters)
         }
 
-    // --- UPDATED: Create a lowercase version of the aliases map for insensitive lookups ---
     private val merchantAliases: StateFlow<Map<String, String>>
 
     val transactionsForSelectedMonth: StateFlow<List<TransactionDetails>>
@@ -116,7 +115,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
 
-        // --- UPDATED: Transform keys to lowercase for case-insensitive matching ---
         merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
             .map { it.mapKeys { (key, _) -> key.lowercase(Locale.getDefault()) } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -205,7 +203,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- UPDATED: Use lowercase keys for case-insensitive alias application ---
     private fun applyAliases(transactions: List<TransactionDetails>, aliases: Map<String, String>): List<TransactionDetails> {
         return transactions.map { details ->
             val key = (details.transaction.originalDescription ?: details.transaction.description).lowercase(Locale.getDefault())
@@ -413,9 +410,16 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _selectedMonth.value = calendar
     }
 
+    // --- UPDATED: Add pre-check and user feedback for duplicates ---
     fun createAccount(name: String, type: String, onAccountCreated: (Account) -> Unit) {
         if (name.isBlank() || type.isBlank()) return
         viewModelScope.launch {
+            val existingAccount = db.accountDao().findByName(name)
+            if (existingAccount != null) {
+                _validationError.value = "An account named '$name' already exists."
+                return@launch
+            }
+
             val newAccountId = accountRepository.insert(Account(name = name, type = type))
             accountRepository.getAccountById(newAccountId.toInt()).first()?.let { newAccount ->
                 onAccountCreated(newAccount)
@@ -423,9 +427,16 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // --- UPDATED: Add pre-check and user feedback for duplicates ---
     fun createCategory(name: String, iconKey: String, colorKey: String, onCategoryCreated: (Category) -> Unit) {
         if (name.isBlank()) return
         viewModelScope.launch {
+            val existingCategory = db.categoryDao().findByName(name)
+            if (existingCategory != null) {
+                _validationError.value = "A category named '$name' already exists."
+                return@launch
+            }
+
             val usedColorKeys = allCategories.first().map { it.colorKey }
             val finalIconKey = if (iconKey == "category") "letter_default" else iconKey
             val finalColorKey = if (colorKey == "gray_light") CategoryIconHelper.getNextAvailableColor(usedColorKeys) else colorKey
