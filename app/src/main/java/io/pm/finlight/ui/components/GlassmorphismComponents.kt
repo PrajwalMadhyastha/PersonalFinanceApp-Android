@@ -5,6 +5,9 @@
 // `MaterialTheme` and stored in a variable *before* the Canvas is drawn,
 // resolving the issue where a composable function was being called from a
 // non-composable context.
+// ANIMATION - The duration of the `tween` animations for the hero card stats
+// and budget gauges has been reduced from 1500ms to a much snappier 400ms.
+// This makes the dashboard data visualizations feel more responsive.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -124,7 +127,7 @@ fun DashboardHeroCard(
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
-        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
+        animationSpec = tween(durationMillis = 400, easing = EaseOutCubic),
         label = "BudgetProgressAnimation"
     )
 
@@ -202,7 +205,7 @@ fun DashboardHeroCard(
 private fun StatItem(label: String, amount: Float, isCurrency: Boolean = true, isPerDay: Boolean = false, onClick: (() -> Unit)? = null) {
     val animatedAmount by animateFloatAsState(
         targetValue = amount,
-        animationSpec = tween(durationMillis = 1500, easing = EaseOutCubic),
+        animationSpec = tween(durationMillis = 400, easing = EaseOutCubic),
         label = "StatItemAnimation"
     )
     val clickableModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
@@ -442,7 +445,7 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
     val progress = if (budget.budget.amount > 0) (budget.spent / budget.budget.amount).toFloat() else 0f
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(1500),
+        animationSpec = tween(400),
         label = "CategoryBudgetGaugeAnimation"
     )
     val remaining = budget.budget.amount - budget.spent

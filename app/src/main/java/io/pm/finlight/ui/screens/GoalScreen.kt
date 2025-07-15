@@ -9,9 +9,12 @@
 // separately to prevent window conflicts, ensuring the Date Picker appears correctly.
 // ANIMATION - Added `animateItemPlacement()` to the GoalItem in the LazyColumn.
 // This makes the list fluidly animate changes when goals are added or removed.
+// ANIMATION - The duration of the `tween` animation for the goal progress bar
+// has been reduced from 1000ms to a much snappier 400ms.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -211,7 +214,7 @@ private fun GoalItem(
     val progress = (goal.savedAmount / goal.targetAmount).toFloat().coerceIn(0f, 1f)
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
-        animationSpec = tween(1000),
+        animationSpec = tween(durationMillis = 400, easing = EaseOutCubic),
         label = "GoalProgress"
     )
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
