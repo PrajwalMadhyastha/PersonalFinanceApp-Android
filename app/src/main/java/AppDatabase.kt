@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 24. The new
-// `Goal` entity has been added to the database, and a new migration,
-// MIGRATION_23_24, has been created to add the `goals` table.
+// REASON: REFACTOR - The database version has been incremented to 25. A new
+// migration, MIGRATION_24_25, has been added to rebuild the `accounts`,
+// `categories`, and `merchant_rename_rules` tables. This migration applies
+// case-insensitive (`NOCASE`) constraints to their respective `name` and
+// `originalName` columns, ensuring data consistency and preventing duplicates.
 // =================================================================================
 package io.pm.finlight
 
@@ -33,9 +35,9 @@ import java.util.Calendar
         MerchantRenameRule::class,
         MerchantCategoryMapping::class,
         IgnoreRule::class,
-        Goal::class // --- NEW: Add Goal entity ---
+        Goal::class
     ],
-    version = 24, // --- UPDATED: Incremented version number ---
+    version = 25, // --- UPDATED: Incremented version number for schema change ---
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -50,7 +52,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
     abstract fun ignoreRuleDao(): IgnoreRuleDao
-    abstract fun goalDao(): GoalDao // --- NEW: Add Goal DAO abstract function ---
+    abstract fun goalDao(): GoalDao
 
     companion object {
         @Volatile
@@ -236,7 +238,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the goals table ---
         val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -254,12 +255,56 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to enforce case-insensitive names ---
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Recreate accounts table with NOCASE
+                db.execSQL("""
+                    CREATE TABLE `accounts_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `name` TEXT NOT NULL COLLATE NOCASE, 
+                        `type` TEXT NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX `index_accounts_name_nocase` ON `accounts_new` (`name`)")
+                db.execSQL("INSERT INTO `accounts_new` (id, name, type) SELECT id, name, type FROM accounts")
+                db.execSQL("DROP TABLE `accounts`")
+                db.execSQL("ALTER TABLE `accounts_new` RENAME TO `accounts`")
+
+                // Recreate categories table with NOCASE
+                db.execSQL("""
+                    CREATE TABLE `categories_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `name` TEXT NOT NULL COLLATE NOCASE, 
+                        `iconKey` TEXT NOT NULL, 
+                        `colorKey` TEXT NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX `index_categories_name_nocase` ON `categories_new` (`name`)")
+                db.execSQL("INSERT INTO `categories_new` (id, name, iconKey, colorKey) SELECT id, name, iconKey, colorKey FROM categories")
+                db.execSQL("DROP TABLE `categories`")
+                db.execSQL("ALTER TABLE `categories_new` RENAME TO `categories`")
+
+                // Recreate merchant_rename_rules table with NOCASE
+                db.execSQL("""
+                    CREATE TABLE `merchant_rename_rules_new` (
+                        `originalName` TEXT NOT NULL COLLATE NOCASE, 
+                        `newName` TEXT NOT NULL, 
+                        PRIMARY KEY(`originalName`)
+                    )
+                """)
+                db.execSQL("INSERT INTO `merchant_rename_rules_new` (originalName, newName) SELECT originalName, newName FROM merchant_rename_rules")
+                db.execSQL("DROP TABLE `merchant_rename_rules`")
+                db.execSQL("ALTER TABLE `merchant_rename_rules_new` RENAME TO `merchant_rename_rules`")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
