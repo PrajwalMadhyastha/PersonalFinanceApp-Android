@@ -1,13 +1,15 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: REFACTOR - Changed the default time for the daily report notification
-// from 9 AM to 11 PM (23:00), enabled the daily report by default, and set the
-// weekly report default day to Sunday to improve the out-of-the-box user experience.
+// REASON: FIX - All instances of `prefs.edit()...apply()` have been replaced
+// with the more idiomatic and safer `prefs.edit { ... }` KTX extension function.
+// This resolves all "AndroidLintUseKtx" warnings in this file and makes the
+// code more concise.
 // =================================================================================
 package io.pm.finlight
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.pm.finlight.ui.theme.AppTheme
@@ -49,7 +51,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveSelectedTheme(theme: AppTheme) {
-        prefs.edit().putString(KEY_SELECTED_THEME, theme.key).apply()
+        prefs.edit {
+            putString(KEY_SELECTED_THEME, theme.key)
+        }
     }
 
     fun getSelectedTheme(): Flow<AppTheme> {
@@ -71,10 +75,10 @@ class SettingsRepository(context: Context) {
     fun saveDashboardLayout(order: List<DashboardCardType>, visible: Set<DashboardCardType>) {
         val orderJson = gson.toJson(order.map { it.name })
         val visibleJson = gson.toJson(visible.map { it.name })
-        prefs.edit()
-            .putString(KEY_DASHBOARD_CARD_ORDER, orderJson)
-            .putString(KEY_DASHBOARD_VISIBLE_CARDS, visibleJson)
-            .apply()
+        prefs.edit {
+            putString(KEY_DASHBOARD_CARD_ORDER, orderJson)
+            putString(KEY_DASHBOARD_VISIBLE_CARDS, visibleJson)
+        }
     }
 
     fun getDashboardCardOrder(): Flow<List<DashboardCardType>> {
@@ -128,13 +132,15 @@ class SettingsRepository(context: Context) {
             val names: Set<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }.toSet()
         } else {
-            DashboardCardType.values().toSet()
+            DashboardCardType.entries.toSet()
         }
     }
 
 
     fun saveBackupEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_BACKUP_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_BACKUP_ENABLED, isEnabled)
+        }
     }
 
     fun getBackupEnabled(): Flow<Boolean> {
@@ -152,7 +158,9 @@ class SettingsRepository(context: Context) {
 
 
     fun saveUserName(name: String) {
-        prefs.edit().putString(KEY_USER_NAME, name).apply()
+        prefs.edit {
+            putString(KEY_USER_NAME, name)
+        }
     }
 
     fun getUserName(): Flow<String> {
@@ -169,7 +177,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveProfilePictureUri(uriString: String?) {
-        prefs.edit().putString(KEY_PROFILE_PICTURE_URI, uriString).apply()
+        prefs.edit {
+            putString(KEY_PROFILE_PICTURE_URI, uriString)
+        }
     }
 
     fun getProfilePictureUri(): Flow<String?> {
@@ -190,7 +200,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun setHasSeenOnboarding(hasSeen: Boolean) {
-        prefs.edit().putBoolean(KEY_HAS_SEEN_ONBOARDING, hasSeen).apply()
+        prefs.edit {
+            putBoolean(KEY_HAS_SEEN_ONBOARDING, hasSeen)
+        }
     }
 
     private fun getBudgetKey(year: Int, month: Int): String {
@@ -202,11 +214,15 @@ class SettingsRepository(context: Context) {
         val year = calendar.get(Calendar.YEAR)
         val month = calendar.get(Calendar.MONTH) + 1
         val key = getBudgetKey(year, month)
-        prefs.edit().putFloat(key, amount).apply()
+        prefs.edit {
+            putFloat(key, amount)
+        }
     }
 
     fun saveSmsScanStartDate(date: Long) {
-        prefs.edit().putLong(KEY_SMS_SCAN_START_DATE, date).apply()
+        prefs.edit {
+            putLong(KEY_SMS_SCAN_START_DATE, date)
+        }
     }
 
     fun getSmsScanStartDate(): Flow<Long> {
@@ -224,10 +240,14 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveAppLockEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_APP_LOCK_ENABLED, isEnabled)
+        }
     }
     fun saveDailyReportEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_DAILY_REPORT_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_DAILY_REPORT_ENABLED, isEnabled)
+        }
     }
     fun getDailyReportEnabled(): Flow<Boolean> {
         return callbackFlow {
@@ -296,7 +316,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveWeeklySummaryEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_WEEKLY_SUMMARY_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_WEEKLY_SUMMARY_ENABLED, isEnabled)
+        }
     }
     fun getWeeklySummaryEnabled(): Flow<Boolean> {
         return callbackFlow {
@@ -310,7 +332,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveMonthlySummaryEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_MONTHLY_SUMMARY_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_MONTHLY_SUMMARY_ENABLED, isEnabled)
+        }
     }
 
     fun getMonthlySummaryEnabled(): Flow<Boolean> {
@@ -325,7 +349,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveUnknownTransactionPopupEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled)
+        }
     }
     fun getUnknownTransactionPopupEnabled(): Flow<Boolean> {
         return callbackFlow {
@@ -343,10 +369,10 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveDailyReportTime(hour: Int, minute: Int) {
-        prefs.edit()
-            .putInt(KEY_DAILY_REPORT_HOUR, hour)
-            .putInt(KEY_DAILY_REPORT_MINUTE, minute)
-            .apply()
+        prefs.edit {
+            putInt(KEY_DAILY_REPORT_HOUR, hour)
+            putInt(KEY_DAILY_REPORT_MINUTE, minute)
+        }
     }
 
     fun getDailyReportTime(): Flow<Pair<Int, Int>> {
@@ -373,11 +399,11 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveWeeklyReportTime(dayOfWeek: Int, hour: Int, minute: Int) {
-        prefs.edit()
-            .putInt(KEY_WEEKLY_REPORT_DAY, dayOfWeek)
-            .putInt(KEY_WEEKLY_REPORT_HOUR, hour)
-            .putInt(KEY_WEEKLY_REPORT_MINUTE, minute)
-            .apply()
+        prefs.edit {
+            putInt(KEY_WEEKLY_REPORT_DAY, dayOfWeek)
+            putInt(KEY_WEEKLY_REPORT_HOUR, hour)
+            putInt(KEY_WEEKLY_REPORT_MINUTE, minute)
+        }
     }
 
     fun getWeeklyReportTime(): Flow<Triple<Int, Int, Int>> {
@@ -403,11 +429,11 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveMonthlyReportTime(dayOfMonth: Int, hour: Int, minute: Int) {
-        prefs.edit()
-            .putInt(KEY_MONTHLY_REPORT_DAY, dayOfMonth)
-            .putInt(KEY_MONTHLY_REPORT_HOUR, hour)
-            .putInt(KEY_MONTHLY_REPORT_MINUTE, minute)
-            .apply()
+        prefs.edit {
+            putInt(KEY_MONTHLY_REPORT_DAY, dayOfMonth)
+            putInt(KEY_MONTHLY_REPORT_HOUR, hour)
+            putInt(KEY_MONTHLY_REPORT_MINUTE, minute)
+        }
     }
 
     fun getMonthlyReportTime(): Flow<Triple<Int, Int, Int>> {
