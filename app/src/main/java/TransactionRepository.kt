@@ -1,10 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: FIX - Several unused functions (`getAllTransactionsSimple`,
-// `getSpendingForCategory`, `insert`, `update`, and `findLinkableTransactions`)
-// have been removed to resolve the "UnusedSymbol" warnings and clean up the
-// repository's public API.
-// =================================================================================
 package io.pm.finlight
 
 import android.util.Log
@@ -20,6 +13,14 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                     "Repository Flow Emitted. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}",
                 )
             }
+
+    fun getFinancialSummaryForRangeFlow(startDate: Long, endDate: Long): Flow<FinancialSummary?> {
+        return transactionDao.getFinancialSummaryForRangeFlow(startDate, endDate)
+    }
+
+    fun getTopSpendingCategoriesForRangeFlow(startDate: Long, endDate: Long): Flow<CategorySpending?> {
+        return transactionDao.getTopSpendingCategoriesForRangeFlow(startDate, endDate)
+    }
 
     fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>> {
         return transactionDao.getIncomeTransactionsForRange(startDate, endDate, keyword, accountId, categoryId)
@@ -180,17 +181,14 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.getTransactionCountForMerchant(description)
     }
 
-    // --- NEW: Expose DAO function for finding similar transactions ---
     suspend fun findSimilarTransactions(description: String, excludeId: Int): List<Transaction> {
         return transactionDao.findSimilarTransactions(description, excludeId)
     }
 
-    // --- NEW: Expose DAO function for batch updating category ---
     suspend fun updateCategoryForIds(ids: List<Int>, categoryId: Int) {
         transactionDao.updateCategoryForIds(ids, categoryId)
     }
 
-    // --- NEW: Expose DAO function for batch updating description ---
     suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String) {
         transactionDao.updateDescriptionForIds(ids, newDescription)
     }

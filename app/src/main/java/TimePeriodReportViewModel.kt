@@ -43,11 +43,6 @@ class TimePeriodReportViewModelFactory(
     }
 }
 
-data class ReportInsights(
-    val percentageChange: Int?,
-    val topCategory: CategorySpending?
-)
-
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimePeriodReportViewModel(
     private val transactionDao: TransactionDao,

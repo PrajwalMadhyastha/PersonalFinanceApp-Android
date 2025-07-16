@@ -22,6 +22,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Enum to represent the selectable time periods on the Reports screen.
@@ -34,23 +35,30 @@ enum class ReportPeriod(val displayName: String) {
 }
 
 /**
+ * Data class to hold key insights calculated for the selected period.
+ */
+data class ReportInsights(
+    val percentageChange: Int?,
+    val topCategory: CategorySpending?
+)
+
+/**
  * Data class to hold all the computed data for the reports screen.
  */
 data class ReportScreenData(
     val pieData: PieData?,
     val trendData: Pair<BarData, List<String>>?,
-    val periodTitle: String
+    val periodTitle: String,
+    val insights: ReportInsights?
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
 
-    // --- NEW: State for the selected time period ---
     private val _selectedPeriod = MutableStateFlow(ReportPeriod.MONTH)
     val selectedPeriod: StateFlow<ReportPeriod> = _selectedPeriod.asStateFlow()
 
-    // --- REFACTORED: A single reactive flow for all report data ---
     val reportData: StateFlow<ReportScreenData>
 
     init {
@@ -58,18 +66,30 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         transactionRepository = TransactionRepository(db.transactionDao())
 
         reportData = _selectedPeriod.flatMapLatest { period ->
-            val (startDate, endDate) = calculateDateRange(period)
+            val (currentStartDate, currentEndDate) = calculateDateRange(period)
+            val (previousStartDate, previousEndDate) = calculatePreviousDateRange(period)
             val trendStartDate = calculateTrendStartDate(period)
 
             val categorySpendingFlow = transactionRepository.getSpendingByCategoryForMonth(
-                startDate = startDate,
-                endDate = endDate,
+                startDate = currentStartDate,
+                endDate = currentEndDate,
                 keyword = null, accountId = null, categoryId = null
             )
 
             val monthlyTrendFlow = transactionRepository.getMonthlyTrends(trendStartDate)
 
-            combine(categorySpendingFlow, monthlyTrendFlow) { spendingList, trends ->
+            // Correctly define flows for summary and top category
+            val currentSummaryFlow = transactionRepository.getFinancialSummaryForRangeFlow(currentStartDate, currentEndDate)
+            val previousSummaryFlow = transactionRepository.getFinancialSummaryForRangeFlow(previousStartDate, previousEndDate)
+            val topCategoryFlow = transactionRepository.getTopSpendingCategoriesForRangeFlow(currentStartDate, currentEndDate)
+
+            combine(
+                categorySpendingFlow,
+                monthlyTrendFlow,
+                currentSummaryFlow,
+                previousSummaryFlow,
+                topCategoryFlow
+            ) { spendingList, trends, currentSummary, previousSummary, topCategory ->
                 // Create PieData
                 val pieEntries = spendingList.map { PieEntry(it.totalAmount.toFloat(), it.categoryName) }
                 val pieColors = spendingList.map {
@@ -95,32 +115,35 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 val expenseDataSet = BarDataSet(expenseEntries, "Expense").apply { color = android.graphics.Color.rgb(239, 83, 80) }
                 val finalTrendData = if (trends.isEmpty()) null else Pair(BarData(incomeDataSet, expenseDataSet), labels)
 
-                val periodTitle = when(period) {
+                // Calculate insights
+                val percentageChange = if (previousSummary?.totalExpenses != null && previousSummary.totalExpenses > 0) {
+                    val currentExpenses = currentSummary?.totalExpenses ?: 0.0
+                    ((currentExpenses - previousSummary.totalExpenses) / previousSummary.totalExpenses * 100).roundToInt()
+                } else {
+                    null
+                }
+                val insights = ReportInsights(percentageChange, topCategory)
+
+                val periodTitle = when (period) {
                     ReportPeriod.WEEK -> "This Week"
                     ReportPeriod.MONTH -> "This Month"
                     ReportPeriod.QUARTER -> "Last 3 Months"
                     ReportPeriod.ALL_TIME -> "All Time"
                 }
 
-                ReportScreenData(finalPieData, finalTrendData, periodTitle)
+                ReportScreenData(finalPieData, finalTrendData, periodTitle, insights)
             }
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = ReportScreenData(null, null, "This Month")
+            initialValue = ReportScreenData(null, null, "This Month", null)
         )
     }
 
-    /**
-     * Updates the selected time period, triggering the data flows to reload.
-     */
     fun selectPeriod(period: ReportPeriod) {
         _selectedPeriod.value = period
     }
 
-    /**
-     * Calculates the start and end timestamps for a given report period.
-     */
     private fun calculateDateRange(period: ReportPeriod): Pair<Long, Long> {
         val calendar = Calendar.getInstance()
         val endDate = calendar.timeInMillis
@@ -133,9 +156,28 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         return Pair(startDate, endDate)
     }
 
-    /**
-     * Calculates the start timestamp for the trend chart based on the selected period.
-     */
+    private fun calculatePreviousDateRange(period: ReportPeriod): Pair<Long, Long> {
+        val calendar = Calendar.getInstance()
+        return when (period) {
+            ReportPeriod.WEEK -> {
+                val endDate = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -7) }.timeInMillis
+                val startDate = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -14) }.timeInMillis
+                Pair(startDate, endDate)
+            }
+            ReportPeriod.MONTH -> {
+                val endDate = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1) }.timeInMillis
+                val startDate = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, -1); set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
+                Pair(startDate, endDate)
+            }
+            ReportPeriod.QUARTER -> {
+                val endDate = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, -3) }.timeInMillis
+                val startDate = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, -6) }.timeInMillis
+                Pair(startDate, endDate)
+            }
+            ReportPeriod.ALL_TIME -> Pair(0L, 0L) // No previous period for "All Time"
+        }
+    }
+
     private fun calculateTrendStartDate(period: ReportPeriod): Long {
         val calendar = Calendar.getInstance()
         return when (period) {

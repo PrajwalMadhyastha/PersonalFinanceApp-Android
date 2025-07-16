@@ -1,10 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE - Added the `getTagsForTransactionSimple` suspend function.
-// This provides a non-Flow, one-shot method to fetch tags for a given
-// transaction, which is necessary for the CSV export process to efficiently
-// gather and append tag data for each row.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -30,6 +23,24 @@ interface TransactionDao {
     """
     )
     suspend fun getTopSpendingCategoriesForRange(startDate: Long, endDate: Long): List<CategorySpending>
+
+    @Query(
+        """
+        SELECT
+            C.name as categoryName,
+            SUM(T.amount) as totalAmount,
+            C.iconKey as iconKey,
+            C.colorKey as categoryColorKey
+        FROM transactions AS T
+        INNER JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
+          AND T.isExcluded = 0
+        GROUP BY C.name
+        ORDER BY totalAmount DESC
+        LIMIT 1
+    """
+    )
+    fun getTopSpendingCategoriesForRangeFlow(startDate: Long, endDate: Long): Flow<CategorySpending?>
 
 
     @Query("UPDATE transactions SET isExcluded = :isExcluded WHERE id = :id")
@@ -310,6 +321,15 @@ interface TransactionDao {
     """)
     suspend fun getFinancialSummaryForRange(startDate: Long, endDate: Long): FinancialSummary?
 
+    @Query("""
+        SELECT
+            SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
+        FROM transactions
+        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+    """)
+    fun getFinancialSummaryForRangeFlow(startDate: Long, endDate: Long): Flow<FinancialSummary?>
+
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(transactions: List<Transaction>)
@@ -335,7 +355,6 @@ interface TransactionDao {
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
 
-    // --- NEW: Non-flow version for one-shot queries like CSV export ---
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag>
 

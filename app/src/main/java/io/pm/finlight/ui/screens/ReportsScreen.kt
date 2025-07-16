@@ -1,5 +1,6 @@
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
@@ -28,19 +30,25 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.PieChart
+import io.pm.finlight.CategoryIconHelper
+import io.pm.finlight.ReportInsights
 import io.pm.finlight.ReportPeriod
 import io.pm.finlight.ReportsViewModel
 import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
+import kotlin.math.abs
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -89,6 +97,12 @@ fun ReportsScreen(
                         }
                     }
                 }
+            }
+        }
+
+        item {
+            reportData.insights?.let {
+                ReportInsightsCard(insights = it)
             }
         }
 
@@ -200,6 +214,50 @@ fun ReportsScreen(
                 icon = Icons.Default.CalendarViewMonth,
                 onClick = { navController.navigate("time_period_report_screen/${TimePeriod.MONTHLY}") }
             )
+        }
+    }
+}
+
+@Composable
+private fun ReportInsightsCard(insights: ReportInsights) {
+    GlassPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Change", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val (text, color) = when {
+                    insights.percentageChange == null -> "--" to MaterialTheme.colorScheme.onSurface
+                    insights.percentageChange > 0 -> "↑ ${insights.percentageChange}%" to MaterialTheme.colorScheme.error
+                    insights.percentageChange < 0 -> "↓ ${abs(insights.percentageChange)}%" to MaterialTheme.colorScheme.primary
+                    else -> "No Change" to MaterialTheme.colorScheme.onSurface
+                }
+                Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = color)
+                Text("vs. previous period", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Top Spend", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (insights.topCategory != null) {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(insights.topCategory.iconKey ?: "category"),
+                        contentDescription = insights.topCategory.categoryName,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(CategoryIconHelper.getIconBackgroundColor(insights.topCategory.colorKey ?: "gray_light"))
+                            .padding(8.dp),
+                        tint = Color.Black
+                    )
+                    Text(insights.topCategory.categoryName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text("--", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
         }
     }
 }
