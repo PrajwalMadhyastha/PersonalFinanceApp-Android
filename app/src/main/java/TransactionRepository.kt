@@ -1,14 +1,12 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: FEATURE - The repository now exposes the new DAO functions for the
-// Retrospective Update feature. `findSimilarTransactions`,
-// `updateCategoryForIds`, and `updateDescriptionForIds` are now available to
-// be called by the ViewModel layer, providing a clean abstraction over the
-// database operations.
+// REASON: FIX - Several unused functions (`getAllTransactionsSimple`,
+// `getSpendingForCategory`, `insert`, `update`, and `findLinkableTransactions`)
+// have been removed to resolve the "UnusedSymbol" warnings and clean up the
+// repository's public API.
 // =================================================================================
 package io.pm.finlight
 
-import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
@@ -80,10 +78,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.getTransactionDetailsForRange(startDate, endDate, keyword, accountId, categoryId)
     }
 
-    fun getAllTransactionsSimple(): Flow<List<Transaction>> {
-        return transactionDao.getAllTransactionsSimple()
-    }
-
     fun getAllTransactionsForRange(
         startDate: Long,
         endDate: Long,
@@ -97,14 +91,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getTransactionsForAccount(accountId: Int): Flow<List<Transaction>> {
         return transactionDao.getTransactionsForAccount(accountId)
-    }
-
-    fun getSpendingForCategory(
-        categoryName: String,
-        startDate: Long,
-        endDate: Long,
-    ): Flow<Double?> {
-        return transactionDao.getSpendingForCategory(categoryName, startDate, endDate)
     }
 
     fun getSpendingByCategoryForMonth(
@@ -182,43 +168,12 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return newTransactionId
     }
 
-    suspend fun insert(transaction: Transaction) {
-        transactionDao.insert(transaction)
-    }
-
-    suspend fun update(transaction: Transaction) {
-        transactionDao.update(transaction)
-    }
-
     suspend fun delete(transaction: Transaction) {
         transactionDao.delete(transaction)
     }
 
     suspend fun setSmsHash(transactionId: Int, smsHash: String) {
         transactionDao.setSmsHash(transactionId, smsHash)
-    }
-
-    suspend fun findLinkableTransactions(
-        smsDate: Long,
-        smsAmount: Double,
-        transactionType: String
-    ): List<Transaction> {
-        val sevenDaysInMillis = 7 * 24 * 60 * 60 * 1000
-        val startDate = smsDate - sevenDaysInMillis
-        val endDate = smsDate + sevenDaysInMillis
-
-        val amountRange = smsAmount * 0.10
-        val minAmount = smsAmount - amountRange
-        val maxAmount = smsAmount + amountRange
-
-        return transactionDao.findLinkableTransactions(
-            startDate = startDate,
-            endDate = endDate,
-            minAmount = minAmount,
-            maxAmount = maxAmount,
-            smsDate = smsDate,
-            transactionType = transactionType
-        )
     }
 
     fun getTransactionCountForMerchant(description: String): Flow<Int> {

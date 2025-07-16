@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: BUG FIX - The call to `SmsParser.parse` within the
-// `reparseTransactionFromSms` function has been updated to include the required
-// `merchantCategoryMappingDao` argument, resolving a compilation error.
+// REASON: FIX - The unused properties `allTransactions` and `safeToSpendPerDay`,
+// along with the unused functions `getTransactionById` and `updateTransaction`,
+// have been removed to resolve the "UnusedSymbol" warnings.
+// FIX - The unused parameter 'e' in the catch block of `approveSmsTransaction`
+// is now used for logging the exception, resolving the warning.
 // =================================================================================
 package io.pm.finlight
 
@@ -79,8 +81,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>>
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
-    val safeToSpendPerDay: StateFlow<Float>
-    val allTransactions: StateFlow<List<TransactionDetails>>
     val allAccounts: StateFlow<List<Account>>
     val allCategories: Flow<List<Category>>
     val allTags: StateFlow<List<Tag>>
@@ -146,15 +146,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        allTransactions = transactionRepository.allTransactions
-            .combine(merchantAliases) { transactions, aliases ->
-                applyAliases(transactions, aliases)
-            }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
-            )
         allAccounts = accountRepository.allAccounts.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -190,12 +181,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
         overallMonthlyBudget = _selectedMonth.flatMapLatest { settingsRepository.getOverallBudgetForMonth(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
         amountRemaining = combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses -> budget - expenses.toFloat() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
-        safeToSpendPerDay = combine(amountRemaining, _selectedMonth) { remaining, calendar ->
-            val today = Calendar.getInstance()
-            val lastDayOfMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-            val remainingDays = if (today.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) && today.get(Calendar.MONTH) == calendar.get(Calendar.MONTH)) { (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1) } else if (calendar.after(today)) { lastDayOfMonth } else { 1 }
-            if (remaining > 0) remaining / remainingDays else 0f
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
         viewModelScope.launch {
             _defaultAccount.value = db.accountDao().findByName("Cash Spends")
@@ -623,10 +608,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         currentTxnIdForTags = null
     }
 
-    fun getTransactionById(id: Int): Flow<Transaction?> {
-        return transactionRepository.getTransactionById(id)
-    }
-
     suspend fun approveSmsTransaction(
         potentialTxn: PotentialTransaction,
         description: String,
@@ -676,27 +657,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
                 true
             } catch (e: Exception) {
+                // --- FIX: Log the exception to fix the unused parameter warning ---
+                Log.e(TAG, "Failed to approve SMS transaction", e)
                 false
             }
         }
-    }
-
-    fun updateTransaction(transaction: Transaction): Boolean {
-        _validationError.value = null
-
-        if (transaction.description.isBlank()) {
-            _validationError.value = "Description cannot be empty."
-            return false
-        }
-        if (transaction.amount <= 0.0) {
-            _validationError.value = "Amount must be a valid, positive number."
-            return false
-        }
-
-        viewModelScope.launch {
-            transactionRepository.updateTransactionWithTags(transaction, _selectedTags.value)
-        }
-        return true
     }
 
     fun deleteTransaction(transaction: Transaction) =
