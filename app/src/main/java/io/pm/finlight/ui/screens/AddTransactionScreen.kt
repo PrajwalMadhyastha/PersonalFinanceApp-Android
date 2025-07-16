@@ -84,7 +84,6 @@ fun AddTransactionScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
     isCsvEdit: Boolean = false,
-    csvLineNumber: Int = -1,
     initialDataJson: String? = null
 ) {
     // region State Variables
@@ -126,17 +125,6 @@ fun AddTransactionScreen(
     val isSaveEnabled = amount.isNotBlank() && description.isNotBlank() && selectedAccount != null && selectedCategory != null
     // endregion
 
-    // region Helper Functions & Effects
-    fun resetAllState() {
-        amount = ""
-        description = ""
-        transactionType = "expense"
-        notes = ""
-        attachedImageUris = emptyList()
-        selectedCategory = null
-        selectedDateTime.timeInMillis = System.currentTimeMillis()
-        viewModel.clearAddTransactionState()
-    }
 
     LaunchedEffect(Unit) {
         viewModel.clearAddTransactionState()

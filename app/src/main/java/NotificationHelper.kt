@@ -4,6 +4,8 @@
 // function creates a specific notification for due recurring payments, with a
 // deep link to the new LinkTransactionScreen. This is a core component of the
 // new user-driven recurring transaction workflow.
+// FIX - Removed the unused `percentageChange` parameter from the internal
+// `createEnhancedSummaryNotification` function to resolve the "unused" warning.
 // =================================================================================
 package io.pm.finlight
 
@@ -25,7 +27,6 @@ import java.util.Locale
 import kotlin.math.abs
 
 object NotificationHelper {
-    private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
     private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
     // --- NEW: Deep link for the new recurring transaction flow ---
@@ -77,9 +78,8 @@ object NotificationHelper {
         context: Context,
         channelId: String,
         notificationId: Int,
-        title: String, // Changed from periodText to full title for more flexibility
+        title: String,
         totalExpenses: Double,
-        percentageChange: Int?, // Kept for logic, but title is now pre-formatted
         topCategories: List<CategorySpending>,
         deepLinkUri: String
     ) {
@@ -148,7 +148,6 @@ object NotificationHelper {
             2,
             title,
             totalExpenses,
-            null,
             topCategories,
             deepLinkUri
         )
@@ -172,7 +171,6 @@ object NotificationHelper {
             3,
             title,
             totalExpenses,
-            null,
             topCategories,
             "$DEEP_LINK_URI_REPORT_BASE/${TimePeriod.WEEKLY}"
         )
@@ -198,7 +196,6 @@ object NotificationHelper {
             4,
             title,
             totalExpenses,
-            null,
             topCategories,
             "$DEEP_LINK_URI_REPORT_BASE/${TimePeriod.MONTHLY}"
         )

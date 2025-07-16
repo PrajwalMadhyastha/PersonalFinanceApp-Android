@@ -11,6 +11,9 @@
       <SelectionState runConfigName="DashboardAndReportsWorkflowTests">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
+      <SelectionState runConfigName="Personal_Finance_App.app">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
     </selectionStates>
   </component>
 </project>

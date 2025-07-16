@@ -1,8 +1,15 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul 16 11:08:44 IST 2025
+Generated on: Wed Jul 16 13:06:17 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
+// =================================================================================
+// FILE: ./app/build.gradle.kts
+// REASON: FIX - Added @Suppress("UnstableApiUsage") to the testOptions block.
+// This resolves the lint warning about using an incubating API without affecting
+// the build's functionality, as this API is standard practice for configuring
+// unit tests.
+// =================================================================================
 import java.util.Properties
 import java.io.FileInputStream
 
@@ -100,6 +107,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    @Suppress("UnstableApiUsage")
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -300,7 +308,6 @@ package io.pm.finlight
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -728,17 +735,16 @@ data class FinancialSummary(
 
 
 ================== FILE: ./app/src/main/java/BudgetRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/BudgetRepository.kt
+// REASON: FIX - The unused `getBudgetsForMonth` function has been removed to
+// resolve the "UnusedSymbol" warning.
+// =================================================================================
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
 
 class BudgetRepository(private val budgetDao: BudgetDao) {
-    fun getBudgetsForMonth(
-        month: Int,
-        year: Int,
-    ): Flow<List<Budget>> {
-        return budgetDao.getBudgetsForMonth(month, year)
-    }
 
     fun getBudgetsForMonthWithSpending(yearMonth: String, month: Int, year: Int): Flow<List<BudgetWithSpending>> {
         return budgetDao.getBudgetsWithSpendingForMonth(yearMonth, month, year)
@@ -1096,9 +1102,11 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: BUG FIX - The call to `SmsParser.parse` within the
-// `reparseTransactionFromSms` function has been updated to include the required
-// `merchantCategoryMappingDao` argument, resolving a compilation error.
+// REASON: FIX - The unused properties `allTransactions` and `safeToSpendPerDay`,
+// along with the unused functions `getTransactionById` and `updateTransaction`,
+// have been removed to resolve the "UnusedSymbol" warnings.
+// FIX - The unused parameter 'e' in the catch block of `approveSmsTransaction`
+// is now used for logging the exception, resolving the warning.
 // =================================================================================
 package io.pm.finlight
 
@@ -1175,8 +1183,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val merchantSpendingForSelectedMonth: StateFlow<List<MerchantSpendingSummary>>
     val overallMonthlyBudget: StateFlow<Float>
     val amountRemaining: StateFlow<Float>
-    val safeToSpendPerDay: StateFlow<Float>
-    val allTransactions: StateFlow<List<TransactionDetails>>
     val allAccounts: StateFlow<List<Account>>
     val allCategories: Flow<List<Category>>
     val allTags: StateFlow<List<Tag>>
@@ -1242,15 +1248,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             transactionRepository.getSpendingByMerchantForMonth(monthStart, monthEnd, filters.keyword.takeIf { it.isNotBlank() }, filters.account?.id, filters.category?.id)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        allTransactions = transactionRepository.allTransactions
-            .combine(merchantAliases) { transactions, aliases ->
-                applyAliases(transactions, aliases)
-            }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
-            )
         allAccounts = accountRepository.allAccounts.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -1286,12 +1283,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
         overallMonthlyBudget = _selectedMonth.flatMapLatest { settingsRepository.getOverallBudgetForMonth(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
         amountRemaining = combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses -> budget - expenses.toFloat() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
-        safeToSpendPerDay = combine(amountRemaining, _selectedMonth) { remaining, calendar ->
-            val today = Calendar.getInstance()
-            val lastDayOfMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-            val remainingDays = if (today.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) && today.get(Calendar.MONTH) == calendar.get(Calendar.MONTH)) { (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1) } else if (calendar.after(today)) { lastDayOfMonth } else { 1 }
-            if (remaining > 0) remaining / remainingDays else 0f
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
         viewModelScope.launch {
             _defaultAccount.value = db.accountDao().findByName("Cash Spends")
@@ -1719,10 +1710,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         currentTxnIdForTags = null
     }
 
-    fun getTransactionById(id: Int): Flow<Transaction?> {
-        return transactionRepository.getTransactionById(id)
-    }
-
     suspend fun approveSmsTransaction(
         potentialTxn: PotentialTransaction,
         description: String,
@@ -1772,27 +1759,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
                 true
             } catch (e: Exception) {
+                // --- FIX: Log the exception to fix the unused parameter warning ---
+                Log.e(TAG, "Failed to approve SMS transaction", e)
                 false
             }
         }
-    }
-
-    fun updateTransaction(transaction: Transaction): Boolean {
-        _validationError.value = null
-
-        if (transaction.description.isBlank()) {
-            _validationError.value = "Description cannot be empty."
-            return false
-        }
-        if (transaction.amount <= 0.0) {
-            _validationError.value = "Amount must be a valid, positive number."
-            return false
-        }
-
-        viewModelScope.launch {
-            transactionRepository.updateTransactionWithTags(transaction, _selectedTags.value)
-        }
-        return true
     }
 
     fun deleteTransaction(transaction: Transaction) =
@@ -1845,7 +1816,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             dismissRetroUpdateSheet()
         }
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/TransactionDetails.kt ==================
@@ -1871,6 +1843,11 @@ data class TransactionDetails(
 
 
 ================== FILE: ./app/src/main/java/CsvValidationReport.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CsvValidationReport.kt
+// REASON: FIX - The unused enum constants ACCOUNT_NOT_FOUND and
+// CATEGORY_NOT_FOUND have been removed to resolve the "UnusedSymbol" warnings.
+// =================================================================================
 package io.pm.finlight
 
 /**
@@ -1881,8 +1858,6 @@ enum class CsvRowStatus {
     INVALID_COLUMN_COUNT,
     INVALID_DATE,
     INVALID_AMOUNT,
-    ACCOUNT_NOT_FOUND,
-    CATEGORY_NOT_FOUND,
     NEEDS_ACCOUNT_CREATION,
     NEEDS_CATEGORY_CREATION,
     NEEDS_BOTH_CREATION,
@@ -2105,7 +2080,6 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 import kotlin.math.roundToInt
@@ -2659,15 +2633,14 @@ data class SmsMessage(
 ================== FILE: ./app/src/main/java/GoalViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/GoalViewModel.kt
-// REASON: NEW FILE - Manages the business logic for the Savings Goals feature.
-// It exposes goals, handles saving/deleting, and provides data for the UI.
+// REASON: FIX - The unused `getGoalById` function has been removed to resolve
+// the "UnusedSymbol" warning, cleaning up the ViewModel's public API.
 // =================================================================================
 package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -2687,10 +2660,6 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
-    }
-
-    fun getGoalById(id: Int): Flow<Goal?> {
-        return goalRepository.getGoalById(id)
     }
 
     fun saveGoal(
@@ -2808,7 +2777,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -2901,6 +2869,8 @@ class LinkTransactionViewModel(
 // case-insensitive check to see if a category with the same name already exists
 // before insertion. If it does, it sends a feedback message to the UI via the
 // `uiEvent` channel, preventing silent failures.
+// FIX - The unused `getCategoryById` function has been removed to resolve the
+// "UnusedSymbol" warning.
 // =================================================================================
 package io.pm.finlight
 
@@ -2928,10 +2898,6 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
         categoryRepository = CategoryRepository(categoryDao)
         transactionRepository = TransactionRepository(db.transactionDao())
         allCategories = categoryRepository.allCategories
-    }
-
-    suspend fun getCategoryById(id: Int): Category? {
-        return allCategories.firstOrNull()?.find { it.id == id }
     }
 
     // --- UPDATED: Add pre-check and user feedback for duplicates ---
@@ -2971,7 +2937,8 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
                 _uiEvent.send("Cannot delete '${category.name}'. It's used by $transactionCount transaction(s).")
             }
         }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/CategorySpending.kt ==================
@@ -3483,7 +3450,6 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -5424,7 +5390,6 @@ fun AddEditBudgetScreen(
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -5613,10 +5578,6 @@ fun ManageIgnoreRulesScreen(
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.util.Log
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -5645,8 +5606,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.google.gson.Gson
 import io.pm.finlight.*
@@ -6175,13 +6134,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -6603,7 +6559,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import io.pm.finlight.DataExportService
-import io.pm.finlight.ScanResult
 import io.pm.finlight.SettingsViewModel
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.MonthlyReportTimePicker
@@ -7317,8 +7272,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -7328,7 +7281,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -8243,7 +8195,6 @@ private fun TransactionTypeToggle(
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -8549,7 +8500,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8574,7 +8524,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.Budget
@@ -8582,8 +8531,6 @@ import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.ui.components.GlassPanel
-//import io.pm.finlight.ui.theme.AuroraPrimary
-//import io.pm.finlight.ui.theme.AuroraSecondary
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.NumberFormat
@@ -8929,7 +8876,6 @@ fun EditOverallBudgetDialog(
 package io.pm.finlight.ui.screens
 
 import android.app.Application
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -8959,8 +8905,6 @@ import androidx.navigation.NavController
 import com.google.gson.Gson
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
-import io.pm.finlight.ui.theme.PopupSurfaceDark
-import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.max
@@ -9232,22 +9176,8 @@ private fun RuleSummaryItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: REFACTOR - The local `Scaffold` and `TopAppBar` have been removed.
-// The screen's header, title, and actions are now handled centrally by the
-// `TopAppBar` in `MainActivity`, creating a more consistent UI and simplifying
-// this screen's logic. The filter state is now collected from the ViewModel to
-// drive the bottom sheet.
-// FIX: Explicitly set text colors in the MonthlySummaryHeader and BudgetProgress
-// composables to ensure proper contrast and legibility in dark mode.
-// FIX: Corrected an invalid SimpleDateFormat pattern that was causing a runtime crash.
-// UPDATE: Applied the semi-opaque popup surface color to the filter bottom
-// sheet to match the style used in the Transaction Detail screen, ensuring
-// a consistent UI for all popups.
-// ANIMATION - Added `animateItemPlacement()` to the TransactionItem in the
-// LazyColumn. This makes the list fluidly animate changes when items are
-// added, removed, or reordered due to filtering, enhancing the app's snappy feel.
-// ANIMATION - Optimized the AnimatedVisibility for the month scroller by removing
-// the fade and using a faster tween spec, making it feel more responsive.
+// REASON: FIX - The unused `PlaceholderTabContent` composable has been removed
+// to resolve the "UnusedSymbol" warning.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -9257,7 +9187,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -9267,7 +9196,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -9564,19 +9492,6 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
         }
     }
 }
-
-
-@Composable
-fun PlaceholderTabContent(title: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("Content for $title", style = MaterialTheme.typography.headlineMedium)
-    }
-}
 -e 
 
 
@@ -9617,7 +9532,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.layout.ContentScale
@@ -9652,7 +9566,6 @@ import java.io.File
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.pow
 import io.pm.finlight.R
 
 private const val TAG = "DetailScreenDebug"
@@ -11576,9 +11489,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.RemoveCircleOutline
-import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -11592,8 +11503,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import io.pm.finlight.BottomNavItem
 import io.pm.finlight.DashboardCardType
 import io.pm.finlight.DashboardViewModel
 import io.pm.finlight.DashboardViewModelFactory
@@ -11820,8 +11729,11 @@ private fun AddCardSheetContent(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/EditProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/EditProfileScreen.kt
-// REASON: New screen to allow users to update their profile information
-// (name and picture) after the initial onboarding.
+// REASON: FIX - Replaced the `Uri.parse(it)` call with the more idiomatic
+// `it.toUri()` KTX extension function. This resolves the "AndroidLintUseKtx"
+// warning and improves code readability.
+// FIX - Removed a redundant `.let` call for converting the saved URI string,
+// making the code more concise.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -11852,6 +11764,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -11879,7 +11792,8 @@ fun EditProfileScreen(
     var tempCameraImageUri by remember { mutableStateOf<Uri?>(null) }
     var showImageSourceDialog by remember { mutableStateOf(false) }
 
-    val displayUri = croppedImageUri ?: savedProfilePictureUri?.let { Uri.parse(it) }
+    // --- FIX: Removed redundant .let call ---
+    val displayUri = croppedImageUri ?: savedProfilePictureUri?.toUri()
 
     val toolbarColor = MaterialTheme.colorScheme.primary.toArgb()
     val toolbarTintColor = MaterialTheme.colorScheme.onPrimary.toArgb()
@@ -12234,7 +12148,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
@@ -12245,7 +12158,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -12558,7 +12470,6 @@ package io.pm.finlight.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12571,7 +12482,6 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -12581,8 +12491,6 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
-import io.pm.finlight.ui.theme.PopupSurfaceDark
-import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
@@ -12792,7 +12700,6 @@ fun EditableRowItem(row: ReviewableRow, onEditClick: () -> Unit, onDeleteClick: 
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13568,9 +13475,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -14114,12 +14019,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.*
@@ -14947,86 +14850,14 @@ fun Modifier.pagerTabIndicatorOffset(
 -e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/components/DashboardComponents.kt
-// REASON: REFACTOR - The unused `RecentActivityCard` has been removed from this
-// file. The correct component, `AuroraRecentActivityCard`, is located in
-// `GlassmorphismComponents.kt` and has been updated there. This cleanup
-// prevents future confusion.
-// =================================================================================
-package io.pm.finlight.ui.components
-
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Category
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import io.pm.finlight.BottomNavItem
-import io.pm.finlight.BudgetViewModel
-import io.pm.finlight.BudgetWithSpending
-import io.pm.finlight.CategoryIconHelper
-import io.pm.finlight.TransactionDetails
-
-// Note: The old OverallBudgetCard, StatCard, and AccountSummaryCard have been
-// removed and replaced by the new Aurora-themed components in GlassmorphismComponents.kt
-
-@Composable
-fun NetWorthCard(netWorth: Double) {
-    Card(elevation = CardDefaults.cardElevation(4.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Net Worth", style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = "₹${"%,.2f".format(netWorth)}",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-// --- REMOVED: The old RecentActivityCard, BudgetWatchCard, and BudgetItem are no longer needed ---
-// They have been replaced by the new components in GlassmorphismComponents.kt
--e 
-
-
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: ANIMATION - Added `animateItemPlacement()` to the TransactionItem in the
-// TransactionList composable. This makes the list fluidly animate changes when
-// items are added, removed, or reordered due to filtering, enhancing the app's
-// snappy feel.
-// FIX - Added the 'modifier' parameter to the TransactionItem composable to
-// resolve the "No parameter with name 'modifier' found" compilation error.
+// REASON: FIX - The unused `AccountTransactionItem` composable has been removed
+// to resolve the "UnusedSymbol" warning.
+// FIX - Removed an unnecessary non-null assertion (!!) on the 'notes' property.
+// The compiler already smart-casts it to a non-null type within the if-check,
+// so the assertion was redundant.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -15104,7 +14935,7 @@ fun TransactionItem(
                     }
                     transactionDetails.categoryIconKey == "letter_default" -> {
                         Text(
-                            text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
+                            text = transactionDetails.categoryName.firstOrNull()?.uppercase() ?: "?",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             color = Color.Black.copy(alpha = contentAlpha)
@@ -15130,7 +14961,7 @@ fun TransactionItem(
                 )
                 if (!transactionDetails.transaction.notes.isNullOrBlank()) {
                     Text(
-                        text = transactionDetails.transaction.notes!!,
+                        text = transactionDetails.transaction.notes,
                         style = MaterialTheme.typography.bodyMedium,
                         fontStyle = FontStyle.Italic,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
@@ -15167,44 +14998,6 @@ fun TransactionItem(
                 )
             }
         }
-    }
-}
-
-@Composable
-fun AccountTransactionItem(transactionDetails: TransactionDetails) {
-    val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
-
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = transactionDetails.transaction.description,
-                style = MaterialTheme.typography.bodyLarge,
-                color = LocalContentColor.current.copy(alpha = contentAlpha)
-            )
-            Text(
-                text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
-            )
-        }
-        val isIncome = transactionDetails.transaction.transactionType == "income"
-        val amountColor = if (isSystemInDarkTheme()) {
-            if (isIncome) IncomeGreenDark else ExpenseRedDark
-        } else {
-            if (isIncome) IncomeGreenLight else ExpenseRedLight
-        }.copy(alpha = contentAlpha)
-
-        Text(
-            text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
-            style = MaterialTheme.typography.bodyLarge,
-            color = amountColor,
-        )
     }
 }
 
@@ -15440,7 +15233,6 @@ package io.pm.finlight.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -15458,7 +15250,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
-import java.text.SimpleDateFormat
 import java.util.*
 
 // Helper function to determine if a color is 'dark' based on luminance.
@@ -16493,17 +16284,11 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - The screen transitions have been updated from a simple slide
-// to a more polished "shared axis" effect. This combines the fast 300ms slide
-// with a subtle fade and scale. This change addresses the "flimsy" feel of the
-// previous animation, creating a more robust and high-quality navigation
-// experience while maintaining snappiness.
-// FIX - Corrected all transition-related type mismatch errors by defining the
-// animations inline for each composable route, satisfying the NavHost function
-// signature.
-// FIX (Navigation) - Updated the onClick handler in the NavigationBarItem to
-// explicitly popUpTo the Dashboard's route. This fixes the back stack issue
-// where screens would pile up instead of being replaced.
+// REASON: FIX - The @RequiresApi(Build.VERSION_CODES.TIRAMISU) annotation has
+// been removed from the AppNavHost function. The app's logic already handles
+// notification permissions safely within the NotificationHelper, making this
+// annotation overly restrictive and causing a lint error. This change resolves
+// the "NewApi" error without affecting functionality.
 // =================================================================================
 package io.pm.finlight
 
@@ -16518,14 +16303,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
@@ -16548,11 +16330,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.NavOptions
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -16913,7 +16692,6 @@ fun MainAppScreen() {
 }
 
 
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
 fun AppNavHost(
     navController: NavHostController,
@@ -17249,7 +17027,12 @@ fun AppNavHost(
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
-            val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
+            val timePeriod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                backStackEntry.arguments?.getSerializable("timePeriod") as? TimePeriod
+            }
             val date = backStackEntry.arguments?.getLong("date")
             if (timePeriod != null) {
                 TimePeriodReportScreen(navController = navController, timePeriod = timePeriod, initialDateMillis = date)
@@ -17522,20 +17305,6 @@ class TagRepository(
         return transactionDao.countTransactionsForTag(tagId) > 0
     }
 }
--e 
-
-
-================== FILE: ./app/src/main/java/MonthlySummary.kt ==================
-package io.pm.finlight
-
-/**
- * A data class to hold the results of a GROUP BY query for monthly summaries.
- */
-data class MonthlySummary(
-    val year: Int,
-    val month: Int,
-    val totalAmount: Double,
-)
 -e 
 
 
@@ -17855,16 +17624,6 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 -e 
 
 
-================== FILE: ./app/src/main/java/LoginRequest.kt ==================
-package io.pm.finlight
-
-data class LoginRequest(
-    val email: String,
-    val password: String,
-)
--e 
-
-
 ================== FILE: ./app/src/main/java/OnboardingViewModel.kt ==================
 package io.pm.finlight
 
@@ -18167,16 +17926,23 @@ interface IgnoreRuleDao {
 
 
 ================== FILE: ./app/src/main/java/BudgetViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/BudgetViewModel.kt
+// REASON: FIX - The unused `getCurrentMonthYearString` function has been removed
+// to resolve the "UnusedSymbol" warning.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class BudgetViewModel(application: Application) : AndroidViewModel(application) {
     private val budgetRepository: BudgetRepository
     private val settingsRepository: SettingsRepository
@@ -18289,10 +18055,6 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             budgetRepository.delete(budget)
         }
-
-    fun getCurrentMonthYearString(): String {
-        return SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(calendar.time)
-    }
 }
 -e 
 
@@ -18300,11 +18062,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: REFACTOR - The database version has been incremented to 25. A new
-// migration, MIGRATION_24_25, has been added to rebuild the `accounts`,
-// `categories`, and `merchant_rename_rules` tables. This migration applies
-// case-insensitive (`NOCASE`) constraints to their respective `name` and
-// `originalName` columns, ensuring data consistency and preventing duplicates.
+// REASON: FIX - The redundant 'RoomDatabase' qualifier has been removed from
+// the DatabaseCallback class signature. A direct import for 'Callback' has been
+// added, making the code cleaner and resolving the lint warning.
+// FIX - Removed the unused import for `kotlinx.coroutines.flow.first`.
 // =================================================================================
 package io.pm.finlight
 
@@ -18316,7 +18077,6 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -18612,7 +18372,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        private class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
+        // --- FIX: Removed redundant qualifier and added import ---
+        private class DatabaseCallback(private val context: Context) : Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 CoroutineScope(Dispatchers.IO).launch {
@@ -18696,7 +18457,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
@@ -18711,7 +18473,6 @@ package io.pm.finlight
 
 import android.util.Log
 import kotlinx.coroutines.flow.first
-import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 
 data class PotentialAccount(
@@ -18951,14 +18712,21 @@ data class AppDataBackup(
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: REFACTOR - Changed the default time for the daily report notification
-// from 9 AM to 11 PM (23:00), enabled the daily report by default, and set the
-// weekly report default day to Sunday to improve the out-of-the-box user experience.
+// REASON: FIX - All instances of `prefs.edit()...apply()` have been replaced
+// with the more idiomatic and safer `prefs.edit { ... }` KTX extension function.
+// This resolves all "AndroidLintUseKtx" warnings in this file and makes the
+// code more concise.
+// FIX - Replaced the deprecated `Enum.values()` call with the modern and more
+// performant `Enum.entries` property to resolve the "EnumValuesSoftDeprecate"
+// warning.
+// FIX - The `getBudgetKey` function now uses `String.format(Locale.ROOT, ...)`
+// to prevent potential bugs related to default locale formatting.
 // =================================================================================
 package io.pm.finlight
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.pm.finlight.ui.theme.AppTheme
@@ -18966,6 +18734,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.util.Calendar
+import java.util.Locale
 
 class SettingsRepository(context: Context) {
 
@@ -19000,7 +18769,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveSelectedTheme(theme: AppTheme) {
-        prefs.edit().putString(KEY_SELECTED_THEME, theme.key).apply()
+        prefs.edit {
+            putString(KEY_SELECTED_THEME, theme.key)
+        }
     }
 
     fun getSelectedTheme(): Flow<AppTheme> {
@@ -19022,10 +18793,10 @@ class SettingsRepository(context: Context) {
     fun saveDashboardLayout(order: List<DashboardCardType>, visible: Set<DashboardCardType>) {
         val orderJson = gson.toJson(order.map { it.name })
         val visibleJson = gson.toJson(visible.map { it.name })
-        prefs.edit()
-            .putString(KEY_DASHBOARD_CARD_ORDER, orderJson)
-            .putString(KEY_DASHBOARD_VISIBLE_CARDS, visibleJson)
-            .apply()
+        prefs.edit {
+            putString(KEY_DASHBOARD_CARD_ORDER, orderJson)
+            putString(KEY_DASHBOARD_VISIBLE_CARDS, visibleJson)
+        }
     }
 
     fun getDashboardCardOrder(): Flow<List<DashboardCardType>> {
@@ -19079,13 +18850,16 @@ class SettingsRepository(context: Context) {
             val names: Set<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }.toSet()
         } else {
-            DashboardCardType.values().toSet()
+            // --- FIX: Use modern and more performant .entries property ---
+            DashboardCardType.entries.toSet()
         }
     }
 
 
     fun saveBackupEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_BACKUP_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_BACKUP_ENABLED, isEnabled)
+        }
     }
 
     fun getBackupEnabled(): Flow<Boolean> {
@@ -19103,7 +18877,9 @@ class SettingsRepository(context: Context) {
 
 
     fun saveUserName(name: String) {
-        prefs.edit().putString(KEY_USER_NAME, name).apply()
+        prefs.edit {
+            putString(KEY_USER_NAME, name)
+        }
     }
 
     fun getUserName(): Flow<String> {
@@ -19120,7 +18896,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveProfilePictureUri(uriString: String?) {
-        prefs.edit().putString(KEY_PROFILE_PICTURE_URI, uriString).apply()
+        prefs.edit {
+            putString(KEY_PROFILE_PICTURE_URI, uriString)
+        }
     }
 
     fun getProfilePictureUri(): Flow<String?> {
@@ -19141,11 +18919,13 @@ class SettingsRepository(context: Context) {
     }
 
     fun setHasSeenOnboarding(hasSeen: Boolean) {
-        prefs.edit().putBoolean(KEY_HAS_SEEN_ONBOARDING, hasSeen).apply()
+        prefs.edit {
+            putBoolean(KEY_HAS_SEEN_ONBOARDING, hasSeen)
+        }
     }
 
     private fun getBudgetKey(year: Int, month: Int): String {
-        return String.format("%s%d_%02d", KEY_BUDGET_PREFIX, year, month)
+        return String.format(Locale.ROOT, "%s%d_%02d", KEY_BUDGET_PREFIX, year, month)
     }
 
     fun saveOverallBudgetForCurrentMonth(amount: Float) {
@@ -19153,11 +18933,15 @@ class SettingsRepository(context: Context) {
         val year = calendar.get(Calendar.YEAR)
         val month = calendar.get(Calendar.MONTH) + 1
         val key = getBudgetKey(year, month)
-        prefs.edit().putFloat(key, amount).apply()
+        prefs.edit {
+            putFloat(key, amount)
+        }
     }
 
     fun saveSmsScanStartDate(date: Long) {
-        prefs.edit().putLong(KEY_SMS_SCAN_START_DATE, date).apply()
+        prefs.edit {
+            putLong(KEY_SMS_SCAN_START_DATE, date)
+        }
     }
 
     fun getSmsScanStartDate(): Flow<Long> {
@@ -19175,10 +18959,14 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveAppLockEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_APP_LOCK_ENABLED, isEnabled)
+        }
     }
     fun saveDailyReportEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_DAILY_REPORT_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_DAILY_REPORT_ENABLED, isEnabled)
+        }
     }
     fun getDailyReportEnabled(): Flow<Boolean> {
         return callbackFlow {
@@ -19247,7 +19035,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveWeeklySummaryEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_WEEKLY_SUMMARY_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_WEEKLY_SUMMARY_ENABLED, isEnabled)
+        }
     }
     fun getWeeklySummaryEnabled(): Flow<Boolean> {
         return callbackFlow {
@@ -19261,7 +19051,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveMonthlySummaryEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_MONTHLY_SUMMARY_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_MONTHLY_SUMMARY_ENABLED, isEnabled)
+        }
     }
 
     fun getMonthlySummaryEnabled(): Flow<Boolean> {
@@ -19276,7 +19068,9 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveUnknownTransactionPopupEnabled(isEnabled: Boolean) {
-        prefs.edit().putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled).apply()
+        prefs.edit {
+            putBoolean(KEY_UNKNOWN_TRANSACTION_POPUP_ENABLED, isEnabled)
+        }
     }
     fun getUnknownTransactionPopupEnabled(): Flow<Boolean> {
         return callbackFlow {
@@ -19294,10 +19088,10 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveDailyReportTime(hour: Int, minute: Int) {
-        prefs.edit()
-            .putInt(KEY_DAILY_REPORT_HOUR, hour)
-            .putInt(KEY_DAILY_REPORT_MINUTE, minute)
-            .apply()
+        prefs.edit {
+            putInt(KEY_DAILY_REPORT_HOUR, hour)
+            putInt(KEY_DAILY_REPORT_MINUTE, minute)
+        }
     }
 
     fun getDailyReportTime(): Flow<Pair<Int, Int>> {
@@ -19324,11 +19118,11 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveWeeklyReportTime(dayOfWeek: Int, hour: Int, minute: Int) {
-        prefs.edit()
-            .putInt(KEY_WEEKLY_REPORT_DAY, dayOfWeek)
-            .putInt(KEY_WEEKLY_REPORT_HOUR, hour)
-            .putInt(KEY_WEEKLY_REPORT_MINUTE, minute)
-            .apply()
+        prefs.edit {
+            putInt(KEY_WEEKLY_REPORT_DAY, dayOfWeek)
+            putInt(KEY_WEEKLY_REPORT_HOUR, hour)
+            putInt(KEY_WEEKLY_REPORT_MINUTE, minute)
+        }
     }
 
     fun getWeeklyReportTime(): Flow<Triple<Int, Int, Int>> {
@@ -19354,11 +19148,11 @@ class SettingsRepository(context: Context) {
     }
 
     fun saveMonthlyReportTime(dayOfMonth: Int, hour: Int, minute: Int) {
-        prefs.edit()
-            .putInt(KEY_MONTHLY_REPORT_DAY, dayOfMonth)
-            .putInt(KEY_MONTHLY_REPORT_HOUR, hour)
-            .putInt(KEY_MONTHLY_REPORT_MINUTE, minute)
-            .apply()
+        prefs.edit {
+            putInt(KEY_MONTHLY_REPORT_DAY, dayOfMonth)
+            putInt(KEY_MONTHLY_REPORT_HOUR, hour)
+            putInt(KEY_MONTHLY_REPORT_MINUTE, minute)
+        }
     }
 
     fun getMonthlyReportTime(): Flow<Triple<Int, Int, Int>> {
@@ -20828,10 +20622,8 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
 ================== FILE: ./app/src/main/java/CategoryIconHelper.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CategoryIconHelper.kt
-// REASON: FEATURE - A new, more comprehensive set of default categories has been
-// added to the `predefinedCategories` list. The helper maps have also been
-// updated with the corresponding new icons and background drawable mappings to
-// support this expanded default set.
+// REASON: FIX - Removed unused imports for `HelpOutline` and `R` to resolve
+// lint warnings.
 // =================================================================================
 package io.pm.finlight
 
@@ -20842,10 +20634,8 @@ import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import io.pm.finlight.R
 
 /**
  * A helper object to manage category icons and colors, and provide a predefined list of categories.
@@ -20972,7 +20762,7 @@ object CategoryIconHelper {
             "fastfood" -> Icons.Default.Fastfood
             "directions_car" -> Icons.Default.DirectionsCar
             "work" -> Icons.Default.Work
-            "redo" -> Icons.Default.Redo
+            "redo" -> Icons.AutoMirrored.Filled.Redo
             "add_card" -> Icons.Default.AddCard
             "schedule" -> Icons.Default.Schedule
             // --- NEW: Mappings for new category icons ---
@@ -21078,6 +20868,11 @@ interface CategoryDao {
 
 
 ================== FILE: ./app/src/main/java/MerchantCategoryMappingRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MerchantCategoryMappingRepository.kt
+// REASON: FIX - The unused `getCategoryIdForMerchant` function has been removed
+// to resolve the "UnusedSymbol" warning.
+// =================================================================================
 package io.pm.finlight
 
 /**
@@ -21093,16 +20888,6 @@ class MerchantCategoryMappingRepository(private val dao: MerchantCategoryMapping
      */
     suspend fun insert(mapping: MerchantCategoryMapping) {
         dao.insert(mapping)
-    }
-
-    /**
-     * Retrieves the learned category ID for a given merchant name.
-     *
-     * @param parsedName The name of the merchant.
-     * @return The associated category ID, or null if none is found.
-     */
-    suspend fun getCategoryIdForMerchant(parsedName: String): Int? {
-        return dao.getCategoryIdForMerchant(parsedName)
     }
 }
 -e 
@@ -21272,10 +21057,8 @@ class DailyReportWorker(
 ================== FILE: ./app/src/main/java/MerchantRenameRuleRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MerchantRenameRuleRepository.kt
-// REASON: NEW FILE - This repository centralizes access to merchant renaming
-// rules. It provides a clean, reusable way for different ViewModels to get all
-// aliases as a simple Map, avoiding code duplication and promoting a clean
-// architecture.
+// REASON: FIX - The unused `getAllRules` function has been removed to resolve
+// the "UnusedSymbol" warning, cleaning up the repository's public API.
 // =================================================================================
 package io.pm.finlight
 
@@ -21286,11 +21069,6 @@ import kotlinx.coroutines.flow.map
  * Repository that abstracts access to the MerchantRenameRule data source.
  */
 class MerchantRenameRuleRepository(private val dao: MerchantRenameRuleDao) {
-    /**
-     * Retrieves all rename rules from the database.
-     */
-    fun getAllRules(): Flow<List<MerchantRenameRule>> = dao.getAllRules()
-
     /**
      * Retrieves all rename rules and transforms them into a key-value map
      * for efficient lookups at display time.
@@ -21433,16 +21211,6 @@ interface TagDao {
     @Delete
     suspend fun delete(tag: Tag)
 }-e 
-
-
-================== FILE: ./app/src/main/java/LoginResponse.kt ==================
-package io.pm.finlight
-
-data class LoginResponse(
-    val message: String,
-    // We can add a 'token' field later, e.g., val token: String
-)
--e 
 
 
 ================== FILE: ./app/src/main/java/MerchantSpendingSummary.kt ==================
@@ -21690,10 +21458,9 @@ data class Transaction(
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: FEATURE - The receiver now passes the `merchantCategoryMappingDao`
-// to the SmsParser. It then uses the `categoryId` from the resulting
-// `PotentialTransaction` when creating the new `Transaction` object, enabling
-// fully automatic categorization for known merchants.
+// REASON: FIX - The private property 'TAG' has been renamed to 'tag' to comply
+// with Kotlin's naming conventions for private constants. Its usage has been
+// updated accordingly throughout the file.
 // =================================================================================
 package io.pm.finlight
 
@@ -21703,7 +21470,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Telephony
-import android.telephony.SmsMessage as TelephonySmsMessage
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.CoroutineScope
@@ -21712,7 +21478,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class SmsReceiver : BroadcastReceiver() {
-    private val TAG = "SmsReceiver"
+    // --- FIX: Renamed TAG to tag for Kotlin conventions ---
+    private val tag = "SmsReceiver"
 
     override fun onReceive(
         context: Context,
@@ -21754,7 +21521,7 @@ class SmsReceiver : BroadcastReceiver() {
                         )
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
-                            Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
+                            Log.d(tag, "New potential transaction found: $potentialTxn. Saving automatically.")
 
                             val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                             val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
@@ -21782,7 +21549,7 @@ class SmsReceiver : BroadcastReceiver() {
                                     source = "Auto-Captured"
                                 )
                                 val newTransactionId = transactionDao.insert(newTransaction)
-                                Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
+                                Log.d(tag, "Transaction saved successfully with ID: $newTransactionId")
 
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                                     val savedTransaction = newTransaction.copy(id = newTransactionId.toInt())
@@ -21795,19 +21562,20 @@ class SmsReceiver : BroadcastReceiver() {
                                 }
 
                             } else {
-                                Log.e(TAG, "Failed to find or create an account for the transaction.")
+                                Log.e(tag, "Failed to find or create an account for the transaction.")
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error processing SMS", e)
+                    Log.e(tag, "Error processing SMS", e)
                 } finally {
                     pendingResult.finish()
                 }
             }
         }
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/NotificationHelper.kt ==================
@@ -22111,7 +21879,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
@@ -22209,15 +21976,13 @@ class RecurringTransactionWorker(
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: FEATURE - The repository now exposes the new DAO functions for the
-// Retrospective Update feature. `findSimilarTransactions`,
-// `updateCategoryForIds`, and `updateDescriptionForIds` are now available to
-// be called by the ViewModel layer, providing a clean abstraction over the
-// database operations.
+// REASON: FIX - Several unused functions (`getAllTransactionsSimple`,
+// `getSpendingForCategory`, `insert`, `update`, and `findLinkableTransactions`)
+// have been removed to resolve the "UnusedSymbol" warnings and clean up the
+// repository's public API.
 // =================================================================================
 package io.pm.finlight
 
-import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
@@ -22289,10 +22054,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.getTransactionDetailsForRange(startDate, endDate, keyword, accountId, categoryId)
     }
 
-    fun getAllTransactionsSimple(): Flow<List<Transaction>> {
-        return transactionDao.getAllTransactionsSimple()
-    }
-
     fun getAllTransactionsForRange(
         startDate: Long,
         endDate: Long,
@@ -22306,14 +22067,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getTransactionsForAccount(accountId: Int): Flow<List<Transaction>> {
         return transactionDao.getTransactionsForAccount(accountId)
-    }
-
-    fun getSpendingForCategory(
-        categoryName: String,
-        startDate: Long,
-        endDate: Long,
-    ): Flow<Double?> {
-        return transactionDao.getSpendingForCategory(categoryName, startDate, endDate)
     }
 
     fun getSpendingByCategoryForMonth(
@@ -22391,43 +22144,12 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return newTransactionId
     }
 
-    suspend fun insert(transaction: Transaction) {
-        transactionDao.insert(transaction)
-    }
-
-    suspend fun update(transaction: Transaction) {
-        transactionDao.update(transaction)
-    }
-
     suspend fun delete(transaction: Transaction) {
         transactionDao.delete(transaction)
     }
 
     suspend fun setSmsHash(transactionId: Int, smsHash: String) {
         transactionDao.setSmsHash(transactionId, smsHash)
-    }
-
-    suspend fun findLinkableTransactions(
-        smsDate: Long,
-        smsAmount: Double,
-        transactionType: String
-    ): List<Transaction> {
-        val sevenDaysInMillis = 7 * 24 * 60 * 60 * 1000
-        val startDate = smsDate - sevenDaysInMillis
-        val endDate = smsDate + sevenDaysInMillis
-
-        val amountRange = smsAmount * 0.10
-        val minAmount = smsAmount - amountRange
-        val maxAmount = smsAmount + amountRange
-
-        return transactionDao.findLinkableTransactions(
-            startDate = startDate,
-            endDate = endDate,
-            minAmount = minAmount,
-            maxAmount = maxAmount,
-            smsDate = smsDate,
-            transactionType = transactionType
-        )
     }
 
     fun getTransactionCountForMerchant(description: String): Flow<Int> {
@@ -22468,11 +22190,8 @@ data class DailyTotal(
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FEATURE - The ViewModel now fully manages card visibility. It maintains
-// a separate StateFlow for the visible card set, provides `hideCard` and
-// `showCard` functions to modify it, and exposes a `hiddenCards` flow for the
-// "Add Card" UI. The `exitCustomizationModeAndSave` function now saves both
-// the order and the visibility state.
+// REASON: FIX - Removed the unused import for `java.util.Collections` to resolve
+// the "KotlinUnusedImport" warning.
 // =================================================================================
 package io.pm.finlight
 
@@ -22489,7 +22208,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Collections
 import java.util.Locale
 
 class DashboardViewModel(
@@ -22941,6 +22659,11 @@ class DisableAppLockRule : TestRule {
 
 
 ================== FILE: ./app/src/androidTest/java/io/pm/finlight/DashboardAndReportsWorkflowTests.kt ==================
+// =================================================================================
+// FILE: ./app/src/androidTest/java/io/pm/finlight/DashboardAndReportsWorkflowTests.kt
+// REASON: FIX - Removed unused imports for SimpleDateFormat and java.util.* to
+// resolve lint warnings.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -22953,8 +22676,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
-import java.text.SimpleDateFormat
-import java.util.*
 
 /**
  * Instrumented UI tests for the "Project Aurora" dashboard and the new
@@ -23069,22 +22790,22 @@ class DashboardAndReportsWorkflowTests {
 
 
 ================== FILE: ./app/src/androidTest/java/io/pm/finlight/AppWorkflowTests.kt ==================
+// =================================================================================
+// FILE: ./app/src/androidTest/java/io/pm/finlight/AppWorkflowTests.kt
+// REASON: FIX - Removed several unused import directives to resolve lint warnings
+// and clean up the file.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
-import android.content.Context
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
-import org.junit.rules.TestRule
-import org.junit.runner.Description
 import org.junit.runner.RunWith
-import org.junit.runners.model.Statement
 import java.util.UUID
 
 

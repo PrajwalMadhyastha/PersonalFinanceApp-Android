@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt
+// REASON: FIX - The `draggingItemIndex` property has been refactored to use an
+// explicit private backing property (`_draggingItemIndex`). This resolves the
+// "EmptyMethod" and "unused" warnings by making the state mutations clearer to
+// the linter, without changing the component's behavior.
+// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.lazy.LazyListItemInfo
@@ -23,8 +30,9 @@ class DragDropState(
     val lazyListState: LazyListState,
     private val onMove: (Int, Int) -> Unit
 ) {
-    var draggingItemIndex by mutableStateOf<Int?>(null)
-        private set
+    // --- FIX: Refactored to use a private backing property ---
+    private val _draggingItemIndex = mutableStateOf<Int?>(null)
+    val draggingItemIndex: Int? get() = _draggingItemIndex.value
 
     // This is the total displacement of the user's finger since the drag started.
     private var draggingItemOffset by mutableFloatStateOf(0f)
@@ -57,7 +65,7 @@ class DragDropState(
                 // Prevent dragging the hero card at index 0
                 if (it.index == 0) return
 
-                draggingItemIndex = it.index
+                _draggingItemIndex.value = it.index
                 initialDraggingItemOffset = it.offset
             }
     }
@@ -88,7 +96,7 @@ class DragDropState(
             val to = targetItem.index
             onMove(from, to)
             // Only update the index. The offset logic will handle the visual position.
-            draggingItemIndex = to
+            _draggingItemIndex.value = to
         }
     }
 
@@ -96,7 +104,7 @@ class DragDropState(
      * Called when the drag gesture ends. Resets the state.
      */
     fun onDragEnd() {
-        draggingItemIndex = null
+        _draggingItemIndex.value = null
         draggingItemOffset = 0f
         initialDraggingItemOffset = null
     }

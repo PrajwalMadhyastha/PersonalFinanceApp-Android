@@ -566,7 +566,6 @@ fun AppNavHost(
                 navController = navController,
                 viewModel = transactionViewModel,
                 isCsvEdit = arguments.getBoolean("isCsvEdit"),
-                csvLineNumber = arguments.getInt("csvLineNumber"),
                 initialDataJson = arguments.getString("initialDataJson")?.let { URLDecoder.decode(it, "UTF-8") }
             )
         }

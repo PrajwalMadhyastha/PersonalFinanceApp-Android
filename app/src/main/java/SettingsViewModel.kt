@@ -5,12 +5,14 @@
 // by a pipe delimiter, and for each tag name, it either finds the existing tag
 // or creates a new one. These tags are then associated with the newly created
 // transaction, completing the tag import feature.
+// FIX - Removed several unused properties and functions (`scanEvent`,
+// `backupEnabled`, `overallBudget`, etc.) to resolve "UnusedSymbol" warnings.
+// The unused `count` parameter was also removed from `ScanResult.Success`.
 // =================================================================================
 package io.pm.finlight
 
 import android.Manifest
 import android.app.Application
-import android.app.backup.BackupManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
@@ -19,7 +21,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.pm.finlight.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -45,13 +46,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val smsScanStartDate: StateFlow<Long>
 
-    private val _scanEvent = Channel<ScanResult>()
-    val scanEvent = _scanEvent.receiveAsFlow()
-
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
-
-    val overallBudget: StateFlow<Float>
 
     val dailyReportEnabled: StateFlow<Boolean> =
         settingsRepository.getDailyReportEnabled().stateIn(
@@ -83,13 +79,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val unknownTransactionPopupEnabled: StateFlow<Boolean> =
         settingsRepository.getUnknownTransactionPopupEnabled().stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = true,
-        )
-
-    val backupEnabled: StateFlow<Boolean> =
-        settingsRepository.getBackupEnabled().stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = true,
@@ -137,27 +126,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = 0L,
                 )
-
-        val calendar = Calendar.getInstance()
-        val currentYear = calendar.get(Calendar.YEAR)
-        val currentMonth = calendar.get(Calendar.MONTH) + 1
-
-        overallBudget =
-            settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth).stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = 0f,
-            )
     }
 
     fun saveSelectedTheme(theme: AppTheme) {
         settingsRepository.saveSelectedTheme(theme)
-    }
-
-    fun setBackupEnabled(enabled: Boolean) {
-        settingsRepository.saveBackupEnabled(enabled)
-        val backupManager = BackupManager(context)
-        backupManager.dataChanged()
     }
 
     fun rescanSmsForReview(startDate: Long?) {
@@ -198,10 +170,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 _potentialTransactions.value = newPotentialTransactions
-                _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Error during SMS scan for review", e)
-                _scanEvent.send(ScanResult.Error)
             } finally {
                 _isScanning.value = false
             }
@@ -242,11 +212,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             settingsRepository.saveSmsScanStartDate(date)
         }
-    }
-
-    fun saveOverallBudget(budget: String) {
-        val budgetFloat = budget.toFloatOrNull() ?: 0f
-        settingsRepository.saveOverallBudgetForCurrentMonth(budgetFloat)
     }
 
     fun setDailyReportEnabled(enabled: Boolean) {
