@@ -1,7 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/EditProfileScreen.kt
-// REASON: New screen to allow users to update their profile information
-// (name and picture) after the initial onboarding.
+// REASON: FIX - Replaced the `Uri.parse(it)` call with the more idiomatic
+// `it.toUri()` KTX extension function. This resolves the "AndroidLintUseKtx"
+// warning and improves code readability.
+// FIX - Removed a redundant `.let` call for converting the saved URI string,
+// making the code more concise.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -32,6 +35,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -59,7 +63,8 @@ fun EditProfileScreen(
     var tempCameraImageUri by remember { mutableStateOf<Uri?>(null) }
     var showImageSourceDialog by remember { mutableStateOf(false) }
 
-    val displayUri = croppedImageUri ?: savedProfilePictureUri?.let { Uri.parse(it) }
+    // --- FIX: Removed redundant .let call ---
+    val displayUri = croppedImageUri ?: savedProfilePictureUri?.toUri()
 
     val toolbarColor = MaterialTheme.colorScheme.primary.toArgb()
     val toolbarTintColor = MaterialTheme.colorScheme.onPrimary.toArgb()
