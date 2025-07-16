@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CsvValidationReport.kt
+// REASON: FIX - The unused enum constants ACCOUNT_NOT_FOUND and
+// CATEGORY_NOT_FOUND have been removed to resolve the "UnusedSymbol" warnings.
+// =================================================================================
 package io.pm.finlight
 
 /**
@@ -8,8 +13,6 @@ enum class CsvRowStatus {
     INVALID_COLUMN_COUNT,
     INVALID_DATE,
     INVALID_AMOUNT,
-    ACCOUNT_NOT_FOUND,
-    CATEGORY_NOT_FOUND,
     NEEDS_ACCOUNT_CREATION,
     NEEDS_CATEGORY_CREATION,
     NEEDS_BOTH_CREATION,

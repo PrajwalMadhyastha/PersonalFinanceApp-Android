@@ -1,14 +1,13 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/BudgetRepository.kt
+// REASON: FIX - The unused `getBudgetsForMonth` function has been removed to
+// resolve the "UnusedSymbol" warning.
+// =================================================================================
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
 
 class BudgetRepository(private val budgetDao: BudgetDao) {
-    fun getBudgetsForMonth(
-        month: Int,
-        year: Int,
-    ): Flow<List<Budget>> {
-        return budgetDao.getBudgetsForMonth(month, year)
-    }
 
     fun getBudgetsForMonthWithSpending(yearMonth: String, month: Int, year: Int): Flow<List<BudgetWithSpending>> {
         return budgetDao.getBudgetsWithSpendingForMonth(yearMonth, month, year)
