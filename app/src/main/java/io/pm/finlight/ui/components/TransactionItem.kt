@@ -1,11 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: ANIMATION - Added `animateItemPlacement()` to the TransactionItem in the
-// TransactionList composable. This makes the list fluidly animate changes when
-// items are added, removed, or reordered due to filtering, enhancing the app's
-// snappy feel.
-// FIX - Added the 'modifier' parameter to the TransactionItem composable to
-// resolve the "No parameter with name 'modifier' found" compilation error.
+// REASON: FIX - The unused `AccountTransactionItem` composable has been removed
+// to resolve the "UnusedSymbol" warning.
+// FIX - Removed an unnecessary non-null assertion (!!) on the 'notes' property.
+// The compiler already smart-casts it to a non-null type within the if-check,
+// so the assertion was redundant.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -83,7 +82,7 @@ fun TransactionItem(
                     }
                     transactionDetails.categoryIconKey == "letter_default" -> {
                         Text(
-                            text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
+                            text = transactionDetails.categoryName.firstOrNull()?.uppercase() ?: "?",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             color = Color.Black.copy(alpha = contentAlpha)
@@ -109,7 +108,7 @@ fun TransactionItem(
                 )
                 if (!transactionDetails.transaction.notes.isNullOrBlank()) {
                     Text(
-                        text = transactionDetails.transaction.notes!!,
+                        text = transactionDetails.transaction.notes,
                         style = MaterialTheme.typography.bodyMedium,
                         fontStyle = FontStyle.Italic,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
@@ -146,44 +145,6 @@ fun TransactionItem(
                 )
             }
         }
-    }
-}
-
-@Composable
-fun AccountTransactionItem(transactionDetails: TransactionDetails) {
-    val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
-
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = transactionDetails.transaction.description,
-                style = MaterialTheme.typography.bodyLarge,
-                color = LocalContentColor.current.copy(alpha = contentAlpha)
-            )
-            Text(
-                text = SimpleDateFormat("dd MMM yy", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
-            )
-        }
-        val isIncome = transactionDetails.transaction.transactionType == "income"
-        val amountColor = if (isSystemInDarkTheme()) {
-            if (isIncome) IncomeGreenDark else ExpenseRedDark
-        } else {
-            if (isIncome) IncomeGreenLight else ExpenseRedLight
-        }.copy(alpha = contentAlpha)
-
-        Text(
-            text = "₹${"%.2f".format(transactionDetails.transaction.amount)}",
-            style = MaterialTheme.typography.bodyLarge,
-            color = amountColor,
-        )
     }
 }
 

@@ -1,21 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: REFACTOR - The local `Scaffold` and `TopAppBar` have been removed.
-// The screen's header, title, and actions are now handled centrally by the
-// `TopAppBar` in `MainActivity`, creating a more consistent UI and simplifying
-// this screen's logic. The filter state is now collected from the ViewModel to
-// drive the bottom sheet.
-// FIX: Explicitly set text colors in the MonthlySummaryHeader and BudgetProgress
-// composables to ensure proper contrast and legibility in dark mode.
-// FIX: Corrected an invalid SimpleDateFormat pattern that was causing a runtime crash.
-// UPDATE: Applied the semi-opaque popup surface color to the filter bottom
-// sheet to match the style used in the Transaction Detail screen, ensuring
-// a consistent UI for all popups.
-// ANIMATION - Added `animateItemPlacement()` to the TransactionItem in the
-// LazyColumn. This makes the list fluidly animate changes when items are
-// added, removed, or reordered due to filtering, enhancing the app's snappy feel.
-// ANIMATION - Optimized the AnimatedVisibility for the month scroller by removing
-// the fade and using a faster tween spec, making it feel more responsive.
+// REASON: FIX - The unused `PlaceholderTabContent` composable has been removed
+// to resolve the "UnusedSymbol" warning.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -25,7 +11,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -35,7 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -330,18 +314,5 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-    }
-}
-
-
-@Composable
-fun PlaceholderTabContent(title: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("Content for $title", style = MaterialTheme.typography.headlineMedium)
     }
 }
