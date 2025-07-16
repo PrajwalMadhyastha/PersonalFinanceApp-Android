@@ -3,6 +3,7 @@
 // REASON: FIX - The redundant 'RoomDatabase' qualifier has been removed from
 // the DatabaseCallback class signature. A direct import for 'Callback' has been
 // added, making the code cleaner and resolving the lint warning.
+// FIX - Removed the unused import for `kotlinx.coroutines.flow.first`.
 // =================================================================================
 package io.pm.finlight
 

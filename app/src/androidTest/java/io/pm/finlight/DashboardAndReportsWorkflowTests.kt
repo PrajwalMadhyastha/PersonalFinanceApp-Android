@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/androidTest/java/io/pm/finlight/DashboardAndReportsWorkflowTests.kt
+// REASON: FIX - Removed unused imports for SimpleDateFormat and java.util.* to
+// resolve lint warnings.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -10,8 +15,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
-import java.text.SimpleDateFormat
-import java.util.*
 
 /**
  * Instrumented UI tests for the "Project Aurora" dashboard and the new

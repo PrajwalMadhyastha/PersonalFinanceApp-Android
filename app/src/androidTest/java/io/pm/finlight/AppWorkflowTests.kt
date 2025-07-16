@@ -1,19 +1,19 @@
+// =================================================================================
+// FILE: ./app/src/androidTest/java/io/pm/finlight/AppWorkflowTests.kt
+// REASON: FIX - Removed several unused import directives to resolve lint warnings
+// and clean up the file.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
-import android.content.Context
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
-import org.junit.rules.TestRule
-import org.junit.runner.Description
 import org.junit.runner.RunWith
-import org.junit.runners.model.Statement
 import java.util.UUID
 
 

@@ -1,9 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CategoryIconHelper.kt
-// REASON: FEATURE - A new, more comprehensive set of default categories has been
-// added to the `predefinedCategories` list. The helper maps have also been
-// updated with the corresponding new icons and background drawable mappings to
-// support this expanded default set.
+// REASON: FIX - Removed unused imports for `HelpOutline` and `R` to resolve
+// lint warnings.
 // =================================================================================
 package io.pm.finlight
 
@@ -14,10 +12,8 @@ import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import io.pm.finlight.R
 
 /**
  * A helper object to manage category icons and colors, and provide a predefined list of categories.
@@ -144,7 +140,7 @@ object CategoryIconHelper {
             "fastfood" -> Icons.Default.Fastfood
             "directions_car" -> Icons.Default.DirectionsCar
             "work" -> Icons.Default.Work
-            "redo" -> Icons.Default.Redo
+            "redo" -> Icons.AutoMirrored.Filled.Redo
             "add_card" -> Icons.Default.AddCard
             "schedule" -> Icons.Default.Schedule
             // --- NEW: Mappings for new category icons ---
