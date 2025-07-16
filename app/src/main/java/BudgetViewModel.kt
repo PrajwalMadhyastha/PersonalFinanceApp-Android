@@ -1,13 +1,20 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/BudgetViewModel.kt
+// REASON: FIX - The unused `getCurrentMonthYearString` function has been removed
+// to resolve the "UnusedSymbol" warning.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class BudgetViewModel(application: Application) : AndroidViewModel(application) {
     private val budgetRepository: BudgetRepository
     private val settingsRepository: SettingsRepository
@@ -120,8 +127,4 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             budgetRepository.delete(budget)
         }
-
-    fun getCurrentMonthYearString(): String {
-        return SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(calendar.time)
-    }
 }

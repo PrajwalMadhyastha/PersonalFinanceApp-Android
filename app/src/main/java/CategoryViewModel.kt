@@ -4,6 +4,8 @@
 // case-insensitive check to see if a category with the same name already exists
 // before insertion. If it does, it sends a feedback message to the UI via the
 // `uiEvent` channel, preventing silent failures.
+// FIX - The unused `getCategoryById` function has been removed to resolve the
+// "UnusedSymbol" warning.
 // =================================================================================
 package io.pm.finlight
 
@@ -31,10 +33,6 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
         categoryRepository = CategoryRepository(categoryDao)
         transactionRepository = TransactionRepository(db.transactionDao())
         allCategories = categoryRepository.allCategories
-    }
-
-    suspend fun getCategoryById(id: Int): Category? {
-        return allCategories.firstOrNull()?.find { it.id == id }
     }
 
     // --- UPDATED: Add pre-check and user feedback for duplicates ---
