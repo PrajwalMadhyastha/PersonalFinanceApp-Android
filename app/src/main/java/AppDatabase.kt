@@ -1,10 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: REFACTOR - The database version has been incremented to 25. A new
-// migration, MIGRATION_24_25, has been added to rebuild the `accounts`,
-// `categories`, and `merchant_rename_rules` tables. This migration applies
-// case-insensitive (`NOCASE`) constraints to their respective `name` and
-// `originalName` columns, ensuring data consistency and preventing duplicates.
+// REASON: FIX - The redundant 'RoomDatabase' qualifier has been removed from
+// the DatabaseCallback class signature. A direct import for 'Callback' has been
+// added, making the code cleaner and resolving the lint warning.
 // =================================================================================
 package io.pm.finlight
 
@@ -16,7 +14,6 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -312,7 +309,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        private class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
+        // --- FIX: Removed redundant qualifier and added import ---
+        private class DatabaseCallback(private val context: Context) : Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 CoroutineScope(Dispatchers.IO).launch {
