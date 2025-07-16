@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: FEATURE - The receiver now passes the `merchantCategoryMappingDao`
-// to the SmsParser. It then uses the `categoryId` from the resulting
-// `PotentialTransaction` when creating the new `Transaction` object, enabling
-// fully automatic categorization for known merchants.
+// REASON: FIX - The private property 'TAG' has been renamed to 'tag' to comply
+// with Kotlin's naming conventions for private constants. Its usage has been
+// updated accordingly throughout the file.
 // =================================================================================
 package io.pm.finlight
 
@@ -13,7 +12,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Telephony
-import android.telephony.SmsMessage as TelephonySmsMessage
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.CoroutineScope
@@ -22,7 +20,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class SmsReceiver : BroadcastReceiver() {
-    private val TAG = "SmsReceiver"
+    // --- FIX: Renamed TAG to tag for Kotlin conventions ---
+    private val tag = "SmsReceiver"
 
     override fun onReceive(
         context: Context,
@@ -64,7 +63,7 @@ class SmsReceiver : BroadcastReceiver() {
                         )
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
-                            Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
+                            Log.d(tag, "New potential transaction found: $potentialTxn. Saving automatically.")
 
                             val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                             val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
@@ -92,7 +91,7 @@ class SmsReceiver : BroadcastReceiver() {
                                     source = "Auto-Captured"
                                 )
                                 val newTransactionId = transactionDao.insert(newTransaction)
-                                Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
+                                Log.d(tag, "Transaction saved successfully with ID: $newTransactionId")
 
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                                     val savedTransaction = newTransaction.copy(id = newTransactionId.toInt())
@@ -105,12 +104,12 @@ class SmsReceiver : BroadcastReceiver() {
                                 }
 
                             } else {
-                                Log.e(TAG, "Failed to find or create an account for the transaction.")
+                                Log.e(tag, "Failed to find or create an account for the transaction.")
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error processing SMS", e)
+                    Log.e(tag, "Error processing SMS", e)
                 } finally {
                     pendingResult.finish()
                 }
