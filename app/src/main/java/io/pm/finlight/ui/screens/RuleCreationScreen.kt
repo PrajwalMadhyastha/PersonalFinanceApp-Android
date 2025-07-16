@@ -9,7 +9,6 @@
 package io.pm.finlight.ui.screens
 
 import android.app.Application
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -39,8 +38,6 @@ import androidx.navigation.NavController
 import com.google.gson.Gson
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
-import io.pm.finlight.ui.theme.PopupSurfaceDark
-import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.max

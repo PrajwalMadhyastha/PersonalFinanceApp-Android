@@ -9,7 +9,6 @@ package io.pm.finlight
 
 import android.util.Log
 import kotlinx.coroutines.flow.first
-import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 
 data class PotentialAccount(

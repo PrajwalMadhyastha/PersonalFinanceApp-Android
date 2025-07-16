@@ -19,7 +19,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,7 +43,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.Budget
@@ -52,8 +50,6 @@ import io.pm.finlight.BudgetViewModel
 import io.pm.finlight.BudgetWithSpending
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.ui.components.GlassPanel
-//import io.pm.finlight.ui.theme.AuroraPrimary
-//import io.pm.finlight.ui.theme.AuroraSecondary
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.NumberFormat

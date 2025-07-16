@@ -37,7 +37,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import io.pm.finlight.DataExportService
-import io.pm.finlight.ScanResult
 import io.pm.finlight.SettingsViewModel
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.MonthlyReportTimePicker

@@ -34,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.layout.ContentScale
@@ -69,7 +68,6 @@ import java.io.File
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.pow
 import io.pm.finlight.R
 
 private const val TAG = "DetailScreenDebug"
