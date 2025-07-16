@@ -1,18 +1,28 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: REFACTOR - The "Daily Report" navigation card has been removed from
-// this screen. This report is now only accessible via its daily notification,
-// as per the user's request to declutter the main reports interface.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,56 +35,61 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.PieChart
-import io.pm.finlight.*
+import io.pm.finlight.ReportPeriod
+import io.pm.finlight.ReportsViewModel
+import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReportsScreen(
     navController: NavController,
     viewModel: ReportsViewModel = viewModel(),
 ) {
-    val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
-    val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
+    val reportData by viewModel.reportData.collectAsState()
+    val selectedPeriod by viewModel.selectedPeriod.collectAsState()
     val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxSize()
     ) {
         item {
-            Text(
-                "Spending Reports",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        // --- REMOVED: The Daily Report card is no longer shown here. ---
-        item {
-            GlassReportNavigationCard(
-                title = "Weekly Report",
-                subtitle = "Analyze your spending week by week.",
-                icon = Icons.Default.CalendarViewWeek,
-                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.WEEKLY}") }
-            )
-        }
-        item {
-            GlassReportNavigationCard(
-                title = "Monthly Report",
-                subtitle = "Get a high-level overview of your monthly habits.",
-                icon = Icons.Default.CalendarViewMonth,
-                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.MONTHLY}") }
-            )
-        }
-
-        item {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Analysis",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val periods = ReportPeriod.entries
+                periods.chunked(2).forEach { rowPeriods ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowPeriods.forEach { period ->
+                            FilterChip(
+                                modifier = Modifier.weight(1f),
+                                selected = period == selectedPeriod,
+                                onClick = { viewModel.selectPeriod(period) },
+                                label = { Text(period.displayName) },
+                                leadingIcon = if (period == selectedPeriod) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "Selected",
+                                            modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                        )
+                                    }
+                                } else {
+                                    null
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         item {
@@ -84,12 +99,13 @@ fun ReportsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        "Spending by Category for ${viewModel.monthYear}",
+                        "Spending by Category for ${reportData.periodTitle}",
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    if (pieData == null || pieData?.entryCount == 0) {
+                    Spacer(Modifier.height(16.dp))
+                    val pieData = reportData.pieData
+                    if (pieData == null || pieData.entryCount == 0) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -97,7 +113,7 @@ fun ReportsScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "No expense data for this month.",
+                                "No expense data for this period.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -139,9 +155,10 @@ fun ReportsScreen(
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
-                        GroupedBarChart(trendDataPair!!)
+                    Spacer(Modifier.height(16.dp))
+                    val trendDataPair = reportData.trendData
+                    if (trendDataPair != null && trendDataPair.first.entryCount > 0) {
+                        GroupedBarChart(trendDataPair)
                     } else {
                         Box(
                             modifier = Modifier
@@ -157,6 +174,32 @@ fun ReportsScreen(
                     }
                 }
             }
+        }
+
+        item {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Detailed Reports",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        item {
+            GlassReportNavigationCard(
+                title = "Weekly Report",
+                subtitle = "Analyze your spending week by week.",
+                icon = Icons.Default.CalendarViewWeek,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.WEEKLY}") }
+            )
+        }
+        item {
+            GlassReportNavigationCard(
+                title = "Monthly Report",
+                subtitle = "Get a high-level overview of your monthly habits.",
+                icon = Icons.Default.CalendarViewMonth,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.MONTHLY}") }
+            )
         }
     }
 }

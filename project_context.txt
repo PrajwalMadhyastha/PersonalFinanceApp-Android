@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul 16 13:06:17 IST 2025
+Generated on: Wed Jul 16 13:36:01 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -7313,7 +7313,6 @@ fun AddTransactionScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
     isCsvEdit: Boolean = false,
-    csvLineNumber: Int = -1,
     initialDataJson: String? = null
 ) {
     // region State Variables
@@ -7355,17 +7354,6 @@ fun AddTransactionScreen(
     val isSaveEnabled = amount.isNotBlank() && description.isNotBlank() && selectedAccount != null && selectedCategory != null
     // endregion
 
-    // region Helper Functions & Effects
-    fun resetAllState() {
-        amount = ""
-        description = ""
-        transactionType = "expense"
-        notes = ""
-        attachedImageUris = emptyList()
-        selectedCategory = null
-        selectedDateTime.timeInMillis = System.currentTimeMillis()
-        viewModel.clearAddTransactionState()
-    }
 
     LaunchedEffect(Unit) {
         viewModel.clearAddTransactionState()
@@ -13456,9 +13444,6 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13477,7 +13462,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -13489,8 +13473,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun ProfileScreen(
     navController: NavController,
-    profileViewModel: ProfileViewModel = viewModel(),
-    settingsViewModel: SettingsViewModel
+    profileViewModel: ProfileViewModel = viewModel()
 ) {
     val userName by profileViewModel.userName.collectAsState()
     val savedProfilePictureUri by profileViewModel.profilePictureUri.collectAsState()
@@ -13614,10 +13597,6 @@ fun ProfileScreen(
             }
         }
     }
-}
-
-private fun hasSmsPermission(context: Context): Boolean {
-    return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 }
 
 @Composable
@@ -15766,6 +15745,13 @@ private fun <T> SearchableDropdown(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt
+// REASON: FIX - The `draggingItemIndex` property has been refactored to use an
+// explicit private backing property (`_draggingItemIndex`). This resolves the
+// "EmptyMethod" and "unused" warnings by making the state mutations clearer to
+// the linter, without changing the component's behavior.
+// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.lazy.LazyListItemInfo
@@ -15791,8 +15777,9 @@ class DragDropState(
     val lazyListState: LazyListState,
     private val onMove: (Int, Int) -> Unit
 ) {
-    var draggingItemIndex by mutableStateOf<Int?>(null)
-        private set
+    // --- FIX: Refactored to use a private backing property ---
+    private val _draggingItemIndex = mutableStateOf<Int?>(null)
+    val draggingItemIndex: Int? get() = _draggingItemIndex.value
 
     // This is the total displacement of the user's finger since the drag started.
     private var draggingItemOffset by mutableFloatStateOf(0f)
@@ -15825,7 +15812,7 @@ class DragDropState(
                 // Prevent dragging the hero card at index 0
                 if (it.index == 0) return
 
-                draggingItemIndex = it.index
+                _draggingItemIndex.value = it.index
                 initialDraggingItemOffset = it.offset
             }
     }
@@ -15856,7 +15843,7 @@ class DragDropState(
             val to = targetItem.index
             onMove(from, to)
             // Only update the index. The offset logic will handle the visual position.
-            draggingItemIndex = to
+            _draggingItemIndex.value = to
         }
     }
 
@@ -15864,7 +15851,7 @@ class DragDropState(
      * Called when the drag gesture ends. Resets the state.
      */
     fun onDragEnd() {
-        draggingItemIndex = null
+        _draggingItemIndex.value = null
         draggingItemOffset = 0f
         initialDraggingItemOffset = null
     }
@@ -16769,8 +16756,7 @@ fun AppNavHost(
         ) {
             ProfileScreen(
                 navController = navController,
-                profileViewModel = profileViewModel,
-                settingsViewModel = settingsViewModel
+                profileViewModel = profileViewModel
             )
         }
         composable(
@@ -16850,7 +16836,6 @@ fun AppNavHost(
                 navController = navController,
                 viewModel = transactionViewModel,
                 isCsvEdit = arguments.getBoolean("isCsvEdit"),
-                csvLineNumber = arguments.getInt("csvLineNumber"),
                 initialDataJson = arguments.getString("initialDataJson")?.let { URLDecoder.decode(it, "UTF-8") }
             )
         }
@@ -17466,12 +17451,7 @@ class MerchantMappingRepository(private val merchantMappingDao: MerchantMappingD
         merchantMappingDao.insert(mapping)
     }
 
-    /**
-     * Gets a specific mapping for a given SMS sender address.
-     */
-    suspend fun getMappingForSender(sender: String): MerchantMapping? {
-        return merchantMappingDao.getMappingForSender(sender)
-    }
+
 }
 -e 
 
@@ -19368,12 +19348,14 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
 // by a pipe delimiter, and for each tag name, it either finds the existing tag
 // or creates a new one. These tags are then associated with the newly created
 // transaction, completing the tag import feature.
+// FIX - Removed several unused properties and functions (`scanEvent`,
+// `backupEnabled`, `overallBudget`, etc.) to resolve "UnusedSymbol" warnings.
+// The unused `count` parameter was also removed from `ScanResult.Success`.
 // =================================================================================
 package io.pm.finlight
 
 import android.Manifest
 import android.app.Application
-import android.app.backup.BackupManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
@@ -19382,7 +19364,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.pm.finlight.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -19408,13 +19389,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val smsScanStartDate: StateFlow<Long>
 
-    private val _scanEvent = Channel<ScanResult>()
-    val scanEvent = _scanEvent.receiveAsFlow()
-
     private val _csvValidationReport = MutableStateFlow<CsvValidationReport?>(null)
     val csvValidationReport: StateFlow<CsvValidationReport?> = _csvValidationReport.asStateFlow()
-
-    val overallBudget: StateFlow<Float>
 
     val dailyReportEnabled: StateFlow<Boolean> =
         settingsRepository.getDailyReportEnabled().stateIn(
@@ -19446,13 +19422,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val unknownTransactionPopupEnabled: StateFlow<Boolean> =
         settingsRepository.getUnknownTransactionPopupEnabled().stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = true,
-        )
-
-    val backupEnabled: StateFlow<Boolean> =
-        settingsRepository.getBackupEnabled().stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = true,
@@ -19500,27 +19469,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = 0L,
                 )
-
-        val calendar = Calendar.getInstance()
-        val currentYear = calendar.get(Calendar.YEAR)
-        val currentMonth = calendar.get(Calendar.MONTH) + 1
-
-        overallBudget =
-            settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth).stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = 0f,
-            )
     }
 
     fun saveSelectedTheme(theme: AppTheme) {
         settingsRepository.saveSelectedTheme(theme)
-    }
-
-    fun setBackupEnabled(enabled: Boolean) {
-        settingsRepository.saveBackupEnabled(enabled)
-        val backupManager = BackupManager(context)
-        backupManager.dataChanged()
     }
 
     fun rescanSmsForReview(startDate: Long?) {
@@ -19561,10 +19513,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 _potentialTransactions.value = newPotentialTransactions
-                _scanEvent.send(ScanResult.Success(newPotentialTransactions.size))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Error during SMS scan for review", e)
-                _scanEvent.send(ScanResult.Error)
             } finally {
                 _isScanning.value = false
             }
@@ -19605,11 +19555,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             settingsRepository.saveSmsScanStartDate(date)
         }
-    }
-
-    fun saveOverallBudget(budget: String) {
-        val budgetFloat = budget.toFloatOrNull() ?: 0f
-        settingsRepository.saveOverallBudgetForCurrentMonth(budgetFloat)
     }
 
     fun setDailyReportEnabled(enabled: Boolean) {
@@ -19871,7 +19816,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun clearCsvValidationReport() {
         _csvValidationReport.value = null
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/AccountViewModel.kt ==================
@@ -21585,6 +21531,8 @@ class SmsReceiver : BroadcastReceiver() {
 // function creates a specific notification for due recurring payments, with a
 // deep link to the new LinkTransactionScreen. This is a core component of the
 // new user-driven recurring transaction workflow.
+// FIX - Removed the unused `percentageChange` parameter from the internal
+// `createEnhancedSummaryNotification` function to resolve the "unused" warning.
 // =================================================================================
 package io.pm.finlight
 
@@ -21606,7 +21554,6 @@ import java.util.Locale
 import kotlin.math.abs
 
 object NotificationHelper {
-    private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_sms"
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
     private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
     // --- NEW: Deep link for the new recurring transaction flow ---
@@ -21658,9 +21605,8 @@ object NotificationHelper {
         context: Context,
         channelId: String,
         notificationId: Int,
-        title: String, // Changed from periodText to full title for more flexibility
+        title: String,
         totalExpenses: Double,
-        percentageChange: Int?, // Kept for logic, but title is now pre-formatted
         topCategories: List<CategorySpending>,
         deepLinkUri: String
     ) {
@@ -21729,7 +21675,6 @@ object NotificationHelper {
             2,
             title,
             totalExpenses,
-            null,
             topCategories,
             deepLinkUri
         )
@@ -21753,7 +21698,6 @@ object NotificationHelper {
             3,
             title,
             totalExpenses,
-            null,
             topCategories,
             "$DEEP_LINK_URI_REPORT_BASE/${TimePeriod.WEEKLY}"
         )
@@ -21779,7 +21723,6 @@ object NotificationHelper {
             4,
             title,
             totalExpenses,
-            null,
             topCategories,
             "$DEEP_LINK_URI_REPORT_BASE/${TimePeriod.MONTHLY}"
         )
