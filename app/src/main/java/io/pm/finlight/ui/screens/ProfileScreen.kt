@@ -8,9 +8,6 @@
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -41,8 +37,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun ProfileScreen(
     navController: NavController,
-    profileViewModel: ProfileViewModel = viewModel(),
-    settingsViewModel: SettingsViewModel
+    profileViewModel: ProfileViewModel = viewModel()
 ) {
     val userName by profileViewModel.userName.collectAsState()
     val savedProfilePictureUri by profileViewModel.profilePictureUri.collectAsState()
@@ -166,10 +161,6 @@ fun ProfileScreen(
             }
         }
     }
-}
-
-private fun hasSmsPermission(context: Context): Boolean {
-    return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 }
 
 @Composable

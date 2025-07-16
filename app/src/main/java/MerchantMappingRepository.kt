@@ -18,10 +18,5 @@ class MerchantMappingRepository(private val merchantMappingDao: MerchantMappingD
         merchantMappingDao.insert(mapping)
     }
 
-    /**
-     * Gets a specific mapping for a given SMS sender address.
-     */
-    suspend fun getMappingForSender(sender: String): MerchantMapping? {
-        return merchantMappingDao.getMappingForSender(sender)
-    }
+
 }

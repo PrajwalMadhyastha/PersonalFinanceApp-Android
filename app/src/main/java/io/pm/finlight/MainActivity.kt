@@ -485,8 +485,7 @@ fun AppNavHost(
         ) {
             ProfileScreen(
                 navController = navController,
-                profileViewModel = profileViewModel,
-                settingsViewModel = settingsViewModel
+                profileViewModel = profileViewModel
             )
         }
         composable(
