@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MerchantCategoryMappingRepository.kt
+// REASON: FIX - The unused `getCategoryIdForMerchant` function has been removed
+// to resolve the "UnusedSymbol" warning.
+// =================================================================================
 package io.pm.finlight
 
 /**
@@ -13,15 +18,5 @@ class MerchantCategoryMappingRepository(private val dao: MerchantCategoryMapping
      */
     suspend fun insert(mapping: MerchantCategoryMapping) {
         dao.insert(mapping)
-    }
-
-    /**
-     * Retrieves the learned category ID for a given merchant name.
-     *
-     * @param parsedName The name of the merchant.
-     * @return The associated category ID, or null if none is found.
-     */
-    suspend fun getCategoryIdForMerchant(parsedName: String): Int? {
-        return dao.getCategoryIdForMerchant(parsedName)
     }
 }

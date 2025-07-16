@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/build.gradle.kts
+// REASON: FIX - Added @Suppress("UnstableApiUsage") to the testOptions block.
+// This resolves the lint warning about using an incubating API without affecting
+// the build's functionality, as this API is standard practice for configuring
+// unit tests.
+// =================================================================================
 import java.util.Properties
 import java.io.FileInputStream
 
@@ -95,6 +102,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    @Suppress("UnstableApiUsage")
     testOptions {
         unitTests {
             isIncludeAndroidResources = true

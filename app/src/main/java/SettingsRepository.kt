@@ -4,6 +4,11 @@
 // with the more idiomatic and safer `prefs.edit { ... }` KTX extension function.
 // This resolves all "AndroidLintUseKtx" warnings in this file and makes the
 // code more concise.
+// FIX - Replaced the deprecated `Enum.values()` call with the modern and more
+// performant `Enum.entries` property to resolve the "EnumValuesSoftDeprecate"
+// warning.
+// FIX - The `getBudgetKey` function now uses `String.format(Locale.ROOT, ...)`
+// to prevent potential bugs related to default locale formatting.
 // =================================================================================
 package io.pm.finlight
 
@@ -17,6 +22,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.util.Calendar
+import java.util.Locale
 
 class SettingsRepository(context: Context) {
 
@@ -132,6 +138,7 @@ class SettingsRepository(context: Context) {
             val names: Set<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }.toSet()
         } else {
+            // --- FIX: Use modern and more performant .entries property ---
             DashboardCardType.entries.toSet()
         }
     }
@@ -206,7 +213,7 @@ class SettingsRepository(context: Context) {
     }
 
     private fun getBudgetKey(year: Int, month: Int): String {
-        return String.format("%s%d_%02d", KEY_BUDGET_PREFIX, year, month)
+        return String.format(Locale.ROOT, "%s%d_%02d", KEY_BUDGET_PREFIX, year, month)
     }
 
     fun saveOverallBudgetForCurrentMonth(amount: Float) {
