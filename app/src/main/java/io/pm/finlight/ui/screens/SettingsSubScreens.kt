@@ -1,12 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsSubScreens.kt
-// REASON: NEW FILE - This file contains the composables for the reorganized
-// settings screens, keeping the ProfileScreen clean and focused on navigation.
-// FIX: Added the previously private helper functions `isDark` and
-// `hasSmsPermission` to this file to resolve compilation errors.
-// FEATURE: Added a new dialog for CSV import to show the template and allow
-// exporting a template file.
-// FIX: Reorganized the CsvInfoDialog to fix button padding issues and improve clarity.
+// REASON: UX REFINEMENT - The informational text within the `CsvInfoDialog` has
+// been updated to include the new "Tags" column. This ensures the user is
+// shown the correct, up-to-date format required for CSV imports, including
+// instructions on how to format multiple tags.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -55,10 +52,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.ui.unit.dp
 
-// --- FIX: Added helper function to this file to resolve visibility issues. ---
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
-// --- FIX: Added helper function to this file to resolve visibility issues. ---
 private fun hasSmsPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 }
@@ -412,7 +407,7 @@ fun DataSettingsScreen(navController: NavController, settingsViewModel: Settings
     val scope = rememberCoroutineScope()
     val isAppLockEnabled by settingsViewModel.appLockEnabled.collectAsState()
     var showImportJsonDialog by remember { mutableStateOf(false) }
-    var showCsvInfoDialog by remember { mutableStateOf(false) } // --- UPDATED ---
+    var showCsvInfoDialog by remember { mutableStateOf(false) }
     val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
     val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
@@ -677,8 +672,9 @@ private fun CsvInfoDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Please ensure your CSV file has the following columns in this exact order:")
+                // --- UPDATED: Added "Tags" to the format string ---
                 Text(
-                    text = "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded",
+                    text = "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags",
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodyMedium
@@ -686,6 +682,8 @@ private fun CsvInfoDialog(
                 Text("• Date format must be: yyyy-MM-dd HH:mm:ss")
                 Text("• Type must be 'income' or 'expense'.")
                 Text("• isExcluded must be 'true' or 'false'.")
+                // --- NEW: Added instruction for tags ---
+                Text("• Multiple tags should be separated by a pipe character (e.g., \"Work|Travel\").")
                 Spacer(Modifier.height(16.dp))
                 TextButton(onClick = onExportTemplate, modifier = Modifier.fillMaxWidth()) {
                     Text("Export Template File")

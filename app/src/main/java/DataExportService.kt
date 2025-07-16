@@ -1,12 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DataExportService.kt
-// REASON: BUG FIX - The `forEach` loop in `exportToCsvString` now explicitly
-// specifies the type of the loop variable (`details: TransactionDetails`). This
-// resolves the compiler's type inference ambiguity and fixes all related
-// "Unresolved reference" errors.
-// FEATURE - The CSV export has been enhanced to include the new `isExcluded`
-// field, providing a more complete data export.
-// FEATURE - Added a function to get the CSV template string for the new import dialog.
+// REASON: FEATURE - The CSV export functionality has been enhanced to include
+// tags. The CSV header now includes a "Tags" column, and the export logic
+// fetches the tags for each transaction and appends them as a pipe-separated
+// string, providing a more complete data export.
 // =================================================================================
 package io.pm.finlight
 
@@ -29,9 +26,9 @@ object DataExportService {
             ignoreUnknownKeys = true
         }
 
-    // --- NEW: Function to provide the CSV template header ---
+    // --- UPDATED: Add "Tags" to the CSV template header ---
     fun getCsvTemplateString(): String {
-        return "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded\n"
+        return "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags\n"
     }
 
     suspend fun exportToJsonString(context: Context): String? {
@@ -98,15 +95,14 @@ object DataExportService {
         return withContext(Dispatchers.IO) {
             try {
                 val db = AppDatabase.getInstance(context)
-                val transactions = db.transactionDao().getAllTransactions().first()
+                val transactionDao = db.transactionDao()
+                val transactions = transactionDao.getAllTransactions().first()
                 val csvBuilder = StringBuilder()
 
-                // Use the template function for the header
                 csvBuilder.append(getCsvTemplateString())
 
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
-                // Explicitly define the type of 'details' to resolve compiler ambiguity
                 transactions.forEach { details: TransactionDetails ->
                     val date = dateFormat.format(Date(details.transaction.date))
                     val description = escapeCsvField(details.transaction.description)
@@ -117,7 +113,12 @@ object DataExportService {
                     val notes = escapeCsvField(details.transaction.notes ?: "")
                     val isExcluded = details.transaction.isExcluded.toString()
 
-                    csvBuilder.append("$date,$description,$amount,$type,$category,$account,$notes,$isExcluded\n")
+                    // --- NEW: Fetch and append tags ---
+                    val tags = transactionDao.getTagsForTransactionSimple(details.transaction.id)
+                    val tagsString = tags.joinToString("|") { it.name } // Use pipe as a safe delimiter
+                    val escapedTags = escapeCsvField(tagsString)
+
+                    csvBuilder.append("$date,$description,$amount,$type,$category,$account,$notes,$isExcluded,$escapedTags\n")
                 }
                 csvBuilder.toString()
             } catch (e: Exception) {
@@ -127,85 +128,8 @@ object DataExportService {
         }
     }
 
-    suspend fun importFromCsv(
-        context: Context,
-        uri: Uri,
-    ): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                val db = AppDatabase.getInstance(context)
-                val accountDao = db.accountDao()
-                val categoryDao = db.categoryDao()
-                val transactionDao = db.transactionDao()
-
-                val newTransactions = mutableListOf<Transaction>()
-                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-
-                context.contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
-                    // Use .iterator() to avoid issues with concurrent modification
-                    val lineIterator = lines.iterator()
-                    // Skip header row
-                    if (lineIterator.hasNext()) {
-                        lineIterator.next()
-                    }
-
-                    while (lineIterator.hasNext()) {
-                        val line = lineIterator.next()
-                        val tokens =
-                            line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex())
-                                .map { it.trim().removeSurrounding("\"") }
-
-                        if (tokens.size >= 6) {
-                            val date = dateFormat.parse(tokens[0])?.time ?: System.currentTimeMillis()
-                            val description = tokens[1]
-                            val amount = tokens[2].toDoubleOrNull() ?: 0.0
-                            val type = tokens[3]
-                            val categoryName = tokens[4]
-                            val accountName = tokens[5]
-                            val notes = if (tokens.size > 6) tokens[6] else null
-
-                            var category: Category? = categoryDao.findByName(categoryName)
-                            if (category == null && categoryName.isNotBlank()) {
-                                categoryDao.insert(Category(name = categoryName))
-                                category = categoryDao.findByName(categoryName) // Query again to get the object with the ID
-                            }
-
-                            var account: Account? = accountDao.findByName(accountName)
-                            if (account == null && accountName.isNotBlank()) {
-                                accountDao.insert(Account(name = accountName, type = "Imported"))
-                                account = accountDao.findByName(accountName) // Query again to get the object with the ID
-                            }
-
-                            // Ensure account and category were successfully found or created before adding transaction
-                            if (account != null && category != null) {
-                                newTransactions.add(
-                                    Transaction(
-                                        description = description,
-                                        amount = amount,
-                                        date = date,
-                                        transactionType = type,
-                                        accountId = account.id,
-                                        categoryId = category.id,
-                                        notes = notes,
-                                    ),
-                                )
-                            } else {
-                                Log.w("DataExportService", "Skipping row due to missing account/category: $line")
-                            }
-                        }
-                    }
-                }
-
-                if (newTransactions.isNotEmpty()) {
-                    transactionDao.insertAll(newTransactions)
-                }
-                true
-            } catch (e: Exception) {
-                Log.e("DataExportService", "Error importing from CSV", e)
-                false
-            }
-        }
-    }
+    // --- NOTE: The importFromCsv function has been moved to SettingsViewModel ---
+    // This file now only handles data formatting (export).
 
     private fun escapeCsvField(field: String): String {
         if (field.contains(",") || field.contains("\"") || field.contains("\n")) {

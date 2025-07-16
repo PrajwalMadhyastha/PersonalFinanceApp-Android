@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: BUG FIX - The call to `SmsParser.parse` has been updated to include
-// the required `merchantCategoryMappingDao` argument. This resolves the
-// compilation error that occurred after the parser was updated to support
-// automatic categorization.
+// REASON: FEATURE - The `commitCsvImport` logic has been significantly enhanced
+// to handle tags. It now parses a "Tags" column from the CSV, splits the string
+// by a pipe delimiter, and for each tag name, it either finds the existing tag
+// or creates a new one. These tags are then associated with the newly created
+// transaction, completing the tag import feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -39,6 +40,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val context = application
     private val accountRepository = AccountRepository(db.accountDao())
     private val categoryRepository = CategoryRepository(db.categoryDao())
+    // --- NEW: Add TagDao for direct access during import ---
+    private val tagDao = db.tagDao()
+
     val smsScanStartDate: StateFlow<Long>
 
     private val _scanEvent = Channel<ScanResult>()
@@ -178,7 +182,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { sms ->
-                        // --- FIX: Pass the missing merchantCategoryMappingDao argument ---
                         SmsParser.parse(
                             sms,
                             existingMappings,
@@ -344,7 +347,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         accounts: Map<String, Account>,
         categories: Map<String, Category>,
     ): ReviewableRow {
-        if (tokens.size < 6) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count.")
+        // --- UPDATED: Loosen column count check for optional tags ---
+        if (tokens.size < 8) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count. Expected at least 8.")
 
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         try {
@@ -412,10 +416,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // --- UPDATED: Logic to handle tag creation and association ---
     fun commitCsvImport(rowsToImport: List<ReviewableRow>) {
         viewModelScope.launch(Dispatchers.IO) {
-            Log.d("CsvImportDebug", "ViewModel: commitCsvImport called with ${rowsToImport.size} rows.")
-
             val allAccounts = accountRepository.allAccounts.first()
             val allCategories = categoryRepository.allCategories.first()
             val accountMap = allAccounts.associateBy { it.name.lowercase() }.toMutableMap()
@@ -433,6 +436,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     val categoryName = columns[4]
                     val accountName = columns[5]
                     val notes = columns.getOrNull(6)
+                    val isExcluded = columns.getOrNull(7)?.toBoolean() ?: false
+                    // --- NEW: Parse tags from the 9th column ---
+                    val tagsString = columns.getOrNull(8)
 
                     var category = categoryMap[categoryName.lowercase()]
                     if (category == null) {
@@ -442,9 +448,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         category = updatedCategories.find { it.name.equals(categoryName, ignoreCase = true) }
                         if (category != null) {
                             categoryMap[categoryName.lowercase()] = category
-                            Log.d("CsvImportDebug", "ViewModel: Created and found new category '$categoryName' with ID ${category.id}")
                         } else {
-                            Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new category '$categoryName'")
                             continue
                         }
                     }
@@ -457,16 +461,27 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         account = updatedAccounts.find { it.name.equals(accountName, ignoreCase = true) }
                         if (account != null) {
                             accountMap[accountName.lowercase()] = account
-                            Log.d("CsvImportDebug", "ViewModel: Created and found new account '$accountName' with ID ${account.id}")
                         } else {
-                            Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new account '$accountName'")
                             continue
                         }
                     }
 
                     if (account == null || category == null) {
-                        Log.e("CsvImportDebug", "ViewModel: Could not find or create account/category for row ${row.lineNumber}. Skipping.")
                         continue
+                    }
+
+                    // --- NEW: Process tags ---
+                    val tagsToAssociate = mutableSetOf<Tag>()
+                    if (!tagsString.isNullOrBlank()) {
+                        val tagNames = tagsString.split('|').map { it.trim() }.filter { it.isNotEmpty() }
+                        for (tagName in tagNames) {
+                            var tag = tagDao.findByName(tagName)
+                            if (tag == null) {
+                                val newTagId = tagDao.insert(Tag(name = tagName))
+                                tag = Tag(id = newTagId.toInt(), name = tagName)
+                            }
+                            tagsToAssociate.add(tag)
+                        }
                     }
 
                     val transaction =
@@ -478,15 +493,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             transactionType = type,
                             accountId = account.id,
                             categoryId = category.id,
+                            isExcluded = isExcluded,
                             source = "Imported"
                         )
-                    transactionRepository.insert(transaction)
-                    Log.d("CsvImportDebug", "ViewModel: Inserted transaction for row ${row.lineNumber}: '${transaction.description}'")
+                    // --- UPDATED: Use the repository function that handles tags ---
+                    transactionRepository.insertTransactionWithTags(transaction, tagsToAssociate)
                 } catch (e: Exception) {
                     Log.e("CsvImportDebug", "ViewModel: Failed to parse or insert row ${row.lineNumber}. Data: ${row.rowData}", e)
                 }
             }
-            Log.d("CsvImportDebug", "ViewModel: Finished commitCsvImport.")
         }
     }
 

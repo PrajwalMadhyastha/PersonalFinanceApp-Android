@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: REFACTOR - All queries that filter, group by, or search on the
-// transaction `description` (merchant name) have been updated to use the
-// `LOWER()` function. This makes all merchant-related operations, such as
-// reporting, searching, and finding similar transactions, case-insensitive.
+// REASON: FEATURE - Added the `getTagsForTransactionSimple` suspend function.
+// This provides a non-Flow, one-shot method to fetch tags for a given
+// transaction, which is necessary for the CSV export process to efficiently
+// gather and append tag data for each row.
 // =================================================================================
 package io.pm.finlight
 
@@ -19,7 +19,7 @@ interface TransactionDao {
             C.name as categoryName,
             SUM(T.amount) as totalAmount,
             C.iconKey as iconKey,
-            C.colorKey as colorKey
+            C.colorKey as categoryColorKey
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
@@ -334,6 +334,10 @@ interface TransactionDao {
 
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
+
+    // --- NEW: Non-flow version for one-shot queries like CSV export ---
+    @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
+    suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag>
 
     @Query("""
         SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
