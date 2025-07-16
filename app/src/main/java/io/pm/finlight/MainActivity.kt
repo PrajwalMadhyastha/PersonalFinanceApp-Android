@@ -1,16 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - The screen transitions have been updated from a simple slide
-// to a more polished "shared axis" effect. This combines the fast 300ms slide
-// with a subtle fade and scale. This change addresses the "flimsy" feel of the
-// previous animation, creating a more robust and high-quality navigation
-// experience while maintaining snappiness.
-// FIX - Corrected all transition-related type mismatch errors by defining the
-// animations inline for each composable route, satisfying the NavHost function
-// signature.
-// FIX (Navigation) - Updated the onClick handler in the NavigationBarItem to
-// explicitly popUpTo the Dashboard's route. This fixes the back stack issue
-// where screens would pile up instead of being replaced.
+// REASON: FIX - The @RequiresApi(Build.VERSION_CODES.TIRAMISU) annotation has
+// been removed from the AppNavHost function. The app's logic already handles
+// notification permissions safely within the NotificationHelper, making this
+// annotation overly restrictive and causing a lint error. This change resolves
+// the "NewApi" error without affecting functionality.
 // =================================================================================
 package io.pm.finlight
 
@@ -31,8 +25,6 @@ import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
@@ -55,11 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.NavOptions
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -420,7 +409,6 @@ fun MainAppScreen() {
 }
 
 
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
 fun AppNavHost(
     navController: NavHostController,
@@ -756,7 +744,12 @@ fun AppNavHost(
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
-            val timePeriod = backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
+            val timePeriod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                backStackEntry.arguments?.getSerializable("timePeriod") as? TimePeriod
+            }
             val date = backStackEntry.arguments?.getLong("date")
             if (timePeriod != null) {
                 TimePeriodReportScreen(navController = navController, timePeriod = timePeriod, initialDateMillis = date)

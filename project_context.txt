@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul 15 19:36:13 IST 2025
+Generated on: Wed Jul 16 11:08:44 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -536,13 +536,10 @@ data class MonthlySummaryItem(val calendar: Calendar, val totalSpent: Double)
 ================== FILE: ./app/src/main/java/DataExportService.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DataExportService.kt
-// REASON: BUG FIX - The `forEach` loop in `exportToCsvString` now explicitly
-// specifies the type of the loop variable (`details: TransactionDetails`). This
-// resolves the compiler's type inference ambiguity and fixes all related
-// "Unresolved reference" errors.
-// FEATURE - The CSV export has been enhanced to include the new `isExcluded`
-// field, providing a more complete data export.
-// FEATURE - Added a function to get the CSV template string for the new import dialog.
+// REASON: FEATURE - The CSV export functionality has been enhanced to include
+// tags. The CSV header now includes a "Tags" column, and the export logic
+// fetches the tags for each transaction and appends them as a pipe-separated
+// string, providing a more complete data export.
 // =================================================================================
 package io.pm.finlight
 
@@ -565,9 +562,9 @@ object DataExportService {
             ignoreUnknownKeys = true
         }
 
-    // --- NEW: Function to provide the CSV template header ---
+    // --- UPDATED: Add "Tags" to the CSV template header ---
     fun getCsvTemplateString(): String {
-        return "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded\n"
+        return "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags\n"
     }
 
     suspend fun exportToJsonString(context: Context): String? {
@@ -634,15 +631,14 @@ object DataExportService {
         return withContext(Dispatchers.IO) {
             try {
                 val db = AppDatabase.getInstance(context)
-                val transactions = db.transactionDao().getAllTransactions().first()
+                val transactionDao = db.transactionDao()
+                val transactions = transactionDao.getAllTransactions().first()
                 val csvBuilder = StringBuilder()
 
-                // Use the template function for the header
                 csvBuilder.append(getCsvTemplateString())
 
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
-                // Explicitly define the type of 'details' to resolve compiler ambiguity
                 transactions.forEach { details: TransactionDetails ->
                     val date = dateFormat.format(Date(details.transaction.date))
                     val description = escapeCsvField(details.transaction.description)
@@ -653,7 +649,12 @@ object DataExportService {
                     val notes = escapeCsvField(details.transaction.notes ?: "")
                     val isExcluded = details.transaction.isExcluded.toString()
 
-                    csvBuilder.append("$date,$description,$amount,$type,$category,$account,$notes,$isExcluded\n")
+                    // --- NEW: Fetch and append tags ---
+                    val tags = transactionDao.getTagsForTransactionSimple(details.transaction.id)
+                    val tagsString = tags.joinToString("|") { it.name } // Use pipe as a safe delimiter
+                    val escapedTags = escapeCsvField(tagsString)
+
+                    csvBuilder.append("$date,$description,$amount,$type,$category,$account,$notes,$isExcluded,$escapedTags\n")
                 }
                 csvBuilder.toString()
             } catch (e: Exception) {
@@ -663,85 +664,8 @@ object DataExportService {
         }
     }
 
-    suspend fun importFromCsv(
-        context: Context,
-        uri: Uri,
-    ): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                val db = AppDatabase.getInstance(context)
-                val accountDao = db.accountDao()
-                val categoryDao = db.categoryDao()
-                val transactionDao = db.transactionDao()
-
-                val newTransactions = mutableListOf<Transaction>()
-                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-
-                context.contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
-                    // Use .iterator() to avoid issues with concurrent modification
-                    val lineIterator = lines.iterator()
-                    // Skip header row
-                    if (lineIterator.hasNext()) {
-                        lineIterator.next()
-                    }
-
-                    while (lineIterator.hasNext()) {
-                        val line = lineIterator.next()
-                        val tokens =
-                            line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex())
-                                .map { it.trim().removeSurrounding("\"") }
-
-                        if (tokens.size >= 6) {
-                            val date = dateFormat.parse(tokens[0])?.time ?: System.currentTimeMillis()
-                            val description = tokens[1]
-                            val amount = tokens[2].toDoubleOrNull() ?: 0.0
-                            val type = tokens[3]
-                            val categoryName = tokens[4]
-                            val accountName = tokens[5]
-                            val notes = if (tokens.size > 6) tokens[6] else null
-
-                            var category: Category? = categoryDao.findByName(categoryName)
-                            if (category == null && categoryName.isNotBlank()) {
-                                categoryDao.insert(Category(name = categoryName))
-                                category = categoryDao.findByName(categoryName) // Query again to get the object with the ID
-                            }
-
-                            var account: Account? = accountDao.findByName(accountName)
-                            if (account == null && accountName.isNotBlank()) {
-                                accountDao.insert(Account(name = accountName, type = "Imported"))
-                                account = accountDao.findByName(accountName) // Query again to get the object with the ID
-                            }
-
-                            // Ensure account and category were successfully found or created before adding transaction
-                            if (account != null && category != null) {
-                                newTransactions.add(
-                                    Transaction(
-                                        description = description,
-                                        amount = amount,
-                                        date = date,
-                                        transactionType = type,
-                                        accountId = account.id,
-                                        categoryId = category.id,
-                                        notes = notes,
-                                    ),
-                                )
-                            } else {
-                                Log.w("DataExportService", "Skipping row due to missing account/category: $line")
-                            }
-                        }
-                    }
-                }
-
-                if (newTransactions.isNotEmpty()) {
-                    transactionDao.insertAll(newTransactions)
-                }
-                true
-            } catch (e: Exception) {
-                Log.e("DataExportService", "Error importing from CSV", e)
-                false
-            }
-        }
-    }
+    // --- NOTE: The importFromCsv function has been moved to SettingsViewModel ---
+    // This file now only handles data formatting (export).
 
     private fun escapeCsvField(field: String): String {
         if (field.contains(",") || field.contains("\"") || field.contains("\n")) {
@@ -749,8 +673,7 @@ object DataExportService {
         }
         return field
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/AccountRepository.kt ==================
@@ -1173,17 +1096,9 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: REFACTOR - State management for the filter bottom sheet has been added
-// here. A new `showFilterSheet` StateFlow and corresponding `onFilterClick` and
-// `onFilterSheetDismiss` functions allow the centralized TopAppBar in MainActivity
-// to control the visibility of the filter sheet, which is now part of the
-// TransactionListScreen.
-// BUG FIX: The `findTransactionDetailsById` function now applies merchant
-// aliases. This ensures the Transaction Detail screen is consistent with list
-// views, which already had aliasing applied, fixing the bug where a reverted
-// merchant name would still show the old alias on list screens but not on the
-// detail screen.
-// UPDATE: Standardized the transaction source labels for clarity.
+// REASON: BUG FIX - The call to `SmsParser.parse` within the
+// `reparseTransactionFromSms` function has been updated to include the required
+// `merchantCategoryMappingDao` argument, resolving a compilation error.
 // =================================================================================
 package io.pm.finlight
 
@@ -1296,6 +1211,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
 
         merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
+            .map { it.mapKeys { (key, _) -> key.lowercase(Locale.getDefault()) } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
         transactionsForSelectedMonth = combinedState.flatMapLatest { (calendar, filters) ->
@@ -1384,7 +1300,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun applyAliases(transactions: List<TransactionDetails>, aliases: Map<String, String>): List<TransactionDetails> {
         return transactions.map { details ->
-            val key = details.transaction.originalDescription ?: details.transaction.description
+            val key = (details.transaction.originalDescription ?: details.transaction.description).lowercase(Locale.getDefault())
             val newDescription = aliases[key] ?: details.transaction.description
             details.copy(transaction = details.transaction.copy(description = newDescription))
         }
@@ -1451,7 +1367,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         isExcluded = false,
                         sourceSmsId = null,
                         sourceSmsHash = null,
-                        source = "Added Manually" // --- UPDATED ---
+                        source = "Added Manually"
                     )
 
                 transactionRepository.insertTransactionWithTagsAndImages(
@@ -1514,7 +1430,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            val potentialTxn = SmsParser.parse(smsMessage, emptyMap(), db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
+            // --- FIX: Pass the missing merchantCategoryMappingDao argument ---
+            val potentialTxn = SmsParser.parse(
+                smsMessage,
+                emptyMap(),
+                db.customSmsRuleDao(),
+                db.merchantRenameRuleDao(),
+                db.ignoreRuleDao(),
+                db.merchantCategoryMappingDao()
+            )
             Log.d(logTag, "SmsParser result: $potentialTxn")
 
             if (potentialTxn != null) {
@@ -1592,6 +1516,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun createAccount(name: String, type: String, onAccountCreated: (Account) -> Unit) {
         if (name.isBlank() || type.isBlank()) return
         viewModelScope.launch {
+            val existingAccount = db.accountDao().findByName(name)
+            if (existingAccount != null) {
+                _validationError.value = "An account named '$name' already exists."
+                return@launch
+            }
+
             val newAccountId = accountRepository.insert(Account(name = name, type = type))
             accountRepository.getAccountById(newAccountId.toInt()).first()?.let { newAccount ->
                 onAccountCreated(newAccount)
@@ -1602,6 +1532,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun createCategory(name: String, iconKey: String, colorKey: String, onCategoryCreated: (Category) -> Unit) {
         if (name.isBlank()) return
         viewModelScope.launch {
+            val existingCategory = db.categoryDao().findByName(name)
+            if (existingCategory != null) {
+                _validationError.value = "A category named '$name' already exists."
+                return@launch
+            }
+
             val usedColorKeys = allCategories.first().map { it.colorKey }
             val finalIconKey = if (iconKey == "category") "letter_default" else iconKey
             val finalColorKey = if (colorKey == "gray_light") CategoryIconHelper.getNextAvailableColor(usedColorKeys) else colorKey
@@ -1751,6 +1687,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun addTagOnTheGo(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
+                val existingTag = db.tagDao().findByName(tagName)
+                if (existingTag != null) {
+                    _validationError.value = "A tag named '$tagName' already exists."
+                    return@launch
+                }
                 val newTag = Tag(name = tagName)
                 val newId = tagRepository.insert(newTag)
                 if (newId != -1L) {
@@ -1816,7 +1757,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     transactionType = potentialTxn.transactionType,
                     sourceSmsId = potentialTxn.sourceSmsId,
                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                    source = "Imported" // --- UPDATED ---
+                    source = "Imported"
                 )
                 transactionRepository.insertTransactionWithTags(newTransaction, tags)
 
@@ -1904,8 +1845,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             dismissRetroUpdateSheet()
         }
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/TransactionDetails.kt ==================
@@ -2669,23 +2609,36 @@ data class AccountWithBalance(
 
 
 ================== FILE: ./app/src/main/java/Account.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/Account.kt
+// REASON: REFACTOR - A unique, case-insensitive index (`collate = NOCASE`) has
+// been added to the 'name' column. This prevents duplicate account names with
+// different casing (e.g., "SBI" and "sbi") from being created.
+// =================================================================================
 package io.pm.finlight
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
 @Serializable
-@Entity(tableName = "accounts")
+@Entity(
+    tableName = "accounts",
+    // --- NEW: Add a unique, case-insensitive index to the name column ---
+    indices = [Index(value = ["name"], unique = true, name = "index_accounts_name_nocase")]
+)
 data class Account(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
+    // --- UPDATED: Added COLLATE NOCASE to the column definition ---
+    @ColumnInfo(name = "name", collate = ColumnInfo.NOCASE)
     val name: String,
     val type: String,
     // The balance field is intentionally removed from the database entity.
     // It will be calculated on-the-fly.
-)
--e 
+)-e 
 
 
 ================== FILE: ./app/src/main/java/SmsMessage.kt ==================
@@ -2942,6 +2895,13 @@ class LinkTransactionViewModel(
 
 
 ================== FILE: ./app/src/main/java/CategoryViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CategoryViewModel.kt
+// REASON: UX REFINEMENT - The `addCategory` function now performs a
+// case-insensitive check to see if a category with the same name already exists
+// before insertion. If it does, it sends a feedback message to the UI via the
+// `uiEvent` channel, preventing silent failures.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -2956,13 +2916,16 @@ import kotlinx.coroutines.launch
 class CategoryViewModel(application: Application) : AndroidViewModel(application) {
     private val categoryRepository: CategoryRepository
     private val transactionRepository: TransactionRepository
+    private val categoryDao: CategoryDao // Expose DAO for direct checks
+
     val allCategories: Flow<List<Category>>
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
 
     init {
         val db = AppDatabase.getInstance(application)
-        categoryRepository = CategoryRepository(db.categoryDao())
+        categoryDao = db.categoryDao() // Initialize DAO
+        categoryRepository = CategoryRepository(categoryDao)
         transactionRepository = TransactionRepository(db.transactionDao())
         allCategories = categoryRepository.allCategories
     }
@@ -2971,16 +2934,18 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
         return allCategories.firstOrNull()?.find { it.id == id }
     }
 
+    // --- UPDATED: Add pre-check and user feedback for duplicates ---
     fun addCategory(name: String, iconKey: String, colorKey: String) =
         viewModelScope.launch {
-            // --- NEW: Logic to assign a better default icon and color ---
+            // Check if a category with this name already exists
+            val existingCategory = categoryDao.findByName(name)
+            if (existingCategory != null) {
+                _uiEvent.send("A category named '$name' already exists.")
+                return@launch
+            }
+
             val usedColorKeys = allCategories.firstOrNull()?.map { it.colorKey } ?: emptyList()
-
-            // If the default icon was passed, use our special "letter" key.
-            // The UI will know how to render this.
             val finalIconKey = if (iconKey == "category") "letter_default" else iconKey
-
-            // If the default color was passed, find the next available color.
             val finalColorKey = if (colorKey == "gray_light") {
                 CategoryIconHelper.getNextAvailableColor(usedColorKeys)
             } else {
@@ -2988,6 +2953,7 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
             }
 
             categoryRepository.insert(Category(name = name, iconKey = finalIconKey, colorKey = finalColorKey))
+            _uiEvent.send("Category '$name' created.")
         }
 
     fun updateCategory(category: Category) =
@@ -3005,8 +2971,7 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
                 _uiEvent.send("Cannot delete '${category.name}'. It's used by $transactionCount transaction(s).")
             }
         }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/CategorySpending.kt ==================
@@ -3026,6 +2991,12 @@ data class CategorySpending(
 
 
 ================== FILE: ./app/src/main/java/Category.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/Category.kt
+// REASON: REFACTOR - The index on the 'name' column has been updated with
+// `collate = NOCASE`. This makes the uniqueness constraint case-insensitive at
+// the database level, preventing duplicate categories like "Food" and "food".
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.ColumnInfo
@@ -3037,22 +3008,22 @@ import kotlinx.serialization.Serializable
 @Serializable
 @Entity(
     tableName = "categories",
-    // Ensure that no two categories can have the same name.
-    indices = [Index(value = ["name"], unique = true)],
+    // --- UPDATED: Ensure the unique index on 'name' is case-insensitive ---
+    indices = [Index(value = ["name"], unique = true, name = "index_categories_name_nocase")],
 )
 data class Category(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    @ColumnInfo(name = "name")
+    // --- UPDATED: Added COLLATE NOCASE to the column definition for robustness ---
+    @ColumnInfo(name = "name", collate = ColumnInfo.NOCASE)
     val name: String,
     // A key to identify the Material Icon for the category
     @ColumnInfo(name = "iconKey")
     val iconKey: String = "category", // Default icon
-    // --- NEW: A key to identify the icon's background color ---
+    // A key to identify the icon's background color
     @ColumnInfo(name = "colorKey")
     val colorKey: String = "gray" // Default color
-)
--e 
+)-e 
 
 
 ================== FILE: ./app/src/main/java/ReminderManager.kt ==================
@@ -4454,10 +4425,10 @@ fun CompletionPage() {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt
-// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with
-// the "Project Aurora" vision. The standard `ListItem` has been replaced with
-// a custom `GlassPanel` component, and the `AlertDialog` is now theme-aware,
-// ensuring a cohesive, modern, and high-contrast user experience.
+// REASON: UX REFINEMENT - The screen's layout is now wrapped in a Scaffold that
+// includes a SnackbarHost. This allows the screen to display feedback messages
+// from the ViewModel, such as "Category already exists," which was previously
+// failing silently.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -4493,6 +4464,7 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 // Helper function to determine if a color is 'dark' based on luminance.
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryListScreen(
     navController: NavController,
@@ -4510,80 +4482,87 @@ fun CategoryListScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Button(
-            onClick = {
-                selectedCategory = null
-                showEditDialog = true
-            },
-            modifier = Modifier.fillMaxWidth()
+    // --- NEW: Added Scaffold to host the Snackbar ---
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Add New Category")
-        }
+            Button(
+                onClick = {
+                    selectedCategory = null
+                    showEditDialog = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = "Add")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Add New Category")
+            }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(categories, key = { it.id }) { category ->
-                GlassPanel {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
-                            contentAlignment = Alignment.Center
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(categories, key = { it.id }) { category ->
+                    GlassPanel {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (category.iconKey == "letter_default") {
-                                Text(
-                                    text = category.name.firstOrNull()?.uppercase() ?: "?",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
-                                    color = Color.Black
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = CategoryIconHelper.getIcon(category.iconKey),
-                                    contentDescription = category.name,
-                                    tint = Color.Black,
-                                    modifier = Modifier.size(22.dp)
-                                )
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (category.iconKey == "letter_default") {
+                                    Text(
+                                        text = category.name.firstOrNull()?.uppercase() ?: "?",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp,
+                                        color = Color.Black
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                                        contentDescription = category.name,
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                             }
-                        }
-                        Spacer(Modifier.width(16.dp))
-                        Text(
-                            text = category.name,
-                            modifier = Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Row {
-                            IconButton(onClick = {
-                                selectedCategory = category
-                                showEditDialog = true
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit Category",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(onClick = {
-                                selectedCategory = category
-                                showDeleteDialog = true
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete Category",
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                text = category.name,
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Row {
+                                IconButton(onClick = {
+                                    selectedCategory = category
+                                    showEditDialog = true
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit Category",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    selectedCategory = category
+                                    showDeleteDialog = true
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete Category",
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                }
                             }
                         }
                     }
@@ -4742,8 +4721,7 @@ fun DeleteCategoryDialog(
         },
         containerColor = containerColor
     )
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/GoalScreen.kt ==================
@@ -6588,13 +6566,10 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsSubScreens.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsSubScreens.kt
-// REASON: NEW FILE - This file contains the composables for the reorganized
-// settings screens, keeping the ProfileScreen clean and focused on navigation.
-// FIX: Added the previously private helper functions `isDark` and
-// `hasSmsPermission` to this file to resolve compilation errors.
-// FEATURE: Added a new dialog for CSV import to show the template and allow
-// exporting a template file.
-// FIX: Reorganized the CsvInfoDialog to fix button padding issues and improve clarity.
+// REASON: UX REFINEMENT - The informational text within the `CsvInfoDialog` has
+// been updated to include the new "Tags" column. This ensures the user is
+// shown the correct, up-to-date format required for CSV imports, including
+// instructions on how to format multiple tags.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -6643,10 +6618,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.ui.unit.dp
 
-// --- FIX: Added helper function to this file to resolve visibility issues. ---
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
-// --- FIX: Added helper function to this file to resolve visibility issues. ---
 private fun hasSmsPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 }
@@ -7000,7 +6973,7 @@ fun DataSettingsScreen(navController: NavController, settingsViewModel: Settings
     val scope = rememberCoroutineScope()
     val isAppLockEnabled by settingsViewModel.appLockEnabled.collectAsState()
     var showImportJsonDialog by remember { mutableStateOf(false) }
-    var showCsvInfoDialog by remember { mutableStateOf(false) } // --- UPDATED ---
+    var showCsvInfoDialog by remember { mutableStateOf(false) }
     val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
     val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
@@ -7265,8 +7238,9 @@ private fun CsvInfoDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Please ensure your CSV file has the following columns in this exact order:")
+                // --- UPDATED: Added "Tags" to the format string ---
                 Text(
-                    text = "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded",
+                    text = "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags",
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodyMedium
@@ -7274,6 +7248,8 @@ private fun CsvInfoDialog(
                 Text("• Date format must be: yyyy-MM-dd HH:mm:ss")
                 Text("• Type must be 'income' or 'expense'.")
                 Text("• isExcluded must be 'true' or 'false'.")
+                // --- NEW: Added instruction for tags ---
+                Text("• Multiple tags should be separated by a pipe character (e.g., \"Work|Travel\").")
                 Spacer(Modifier.height(16.dp))
                 TextButton(onClick = onExportTemplate, modifier = Modifier.fillMaxWidth()) {
                     Text("Export Template File")
@@ -8431,14 +8407,10 @@ fun AddEditAccountScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountListScreen.kt
-// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with
-// the "Project Aurora" vision. The standard ListItem has been replaced with a
-// custom GlassPanel component. The layout inside the panel is enhanced to
-// better feature the bank logo and balance, and all text colors are now
-// theme-aware to ensure high contrast and legibility in dark mode.
-// ANIMATION - Added `animateItemPlacement()` to the AccountListItem in the
-// LazyColumn. This makes the list fluidly animate changes when accounts are
-// added or removed.
+// REASON: UX REFINEMENT - The screen now includes a Scaffold with a SnackbarHost
+// and a LaunchedEffect to collect UI events from the AccountViewModel. This
+// ensures that feedback, such as the "Account already exists" message, is
+// displayed to the user instead of failing silently.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -8450,16 +8422,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -8471,25 +8438,40 @@ import io.pm.finlight.ui.components.GlassPanel
 import java.text.NumberFormat
 import java.util.*
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AccountListScreen(
     navController: NavController,
     viewModel: AccountViewModel,
 ) {
     val accounts by viewModel.accountsWithBalance.collectAsState(initial = emptyList())
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        items(accounts, key = { it.account.id }) { accountWithBalance ->
-            AccountListItem(
-                modifier = Modifier.animateItemPlacement(),
-                accountWithBalance = accountWithBalance,
-                onClick = { navController.navigate("account_detail/${accountWithBalance.account.id}") },
-                onEditClick = { navController.navigate("edit_account/${accountWithBalance.account.id}") }
-            )
+    // --- NEW: Collect UI events from the ViewModel to show snackbars ---
+    LaunchedEffect(key1 = viewModel.uiEvent) {
+        viewModel.uiEvent.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    // --- NEW: Added Scaffold to host the Snackbar ---
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(accounts, key = { it.account.id }) { accountWithBalance ->
+                AccountListItem(
+                    modifier = Modifier.animateItemPlacement(),
+                    accountWithBalance = accountWithBalance,
+                    onClick = { navController.navigate("account_detail/${accountWithBalance.account.id}") },
+                    onEditClick = { navController.navigate("edit_account/${accountWithBalance.account.id}") }
+                )
+            }
         }
     }
 }
@@ -8542,8 +8524,7 @@ private fun AccountListItem(
             }
         }
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/BudgetScreen.kt ==================
@@ -18319,9 +18300,11 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database version has been incremented to 24. The new
-// `Goal` entity has been added to the database, and a new migration,
-// MIGRATION_23_24, has been created to add the `goals` table.
+// REASON: REFACTOR - The database version has been incremented to 25. A new
+// migration, MIGRATION_24_25, has been added to rebuild the `accounts`,
+// `categories`, and `merchant_rename_rules` tables. This migration applies
+// case-insensitive (`NOCASE`) constraints to their respective `name` and
+// `originalName` columns, ensuring data consistency and preventing duplicates.
 // =================================================================================
 package io.pm.finlight
 
@@ -18352,9 +18335,9 @@ import java.util.Calendar
         MerchantRenameRule::class,
         MerchantCategoryMapping::class,
         IgnoreRule::class,
-        Goal::class // --- NEW: Add Goal entity ---
+        Goal::class
     ],
-    version = 24, // --- UPDATED: Incremented version number ---
+    version = 25, // --- UPDATED: Incremented version number for schema change ---
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -18369,7 +18352,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
     abstract fun ignoreRuleDao(): IgnoreRuleDao
-    abstract fun goalDao(): GoalDao // --- NEW: Add Goal DAO abstract function ---
+    abstract fun goalDao(): GoalDao
 
     companion object {
         @Volatile
@@ -18555,7 +18538,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the goals table ---
         val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -18573,12 +18555,56 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to enforce case-insensitive names ---
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Recreate accounts table with NOCASE
+                db.execSQL("""
+                    CREATE TABLE `accounts_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `name` TEXT NOT NULL COLLATE NOCASE, 
+                        `type` TEXT NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX `index_accounts_name_nocase` ON `accounts_new` (`name`)")
+                db.execSQL("INSERT INTO `accounts_new` (id, name, type) SELECT id, name, type FROM accounts")
+                db.execSQL("DROP TABLE `accounts`")
+                db.execSQL("ALTER TABLE `accounts_new` RENAME TO `accounts`")
+
+                // Recreate categories table with NOCASE
+                db.execSQL("""
+                    CREATE TABLE `categories_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `name` TEXT NOT NULL COLLATE NOCASE, 
+                        `iconKey` TEXT NOT NULL, 
+                        `colorKey` TEXT NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX `index_categories_name_nocase` ON `categories_new` (`name`)")
+                db.execSQL("INSERT INTO `categories_new` (id, name, iconKey, colorKey) SELECT id, name, iconKey, colorKey FROM categories")
+                db.execSQL("DROP TABLE `categories`")
+                db.execSQL("ALTER TABLE `categories_new` RENAME TO `categories`")
+
+                // Recreate merchant_rename_rules table with NOCASE
+                db.execSQL("""
+                    CREATE TABLE `merchant_rename_rules_new` (
+                        `originalName` TEXT NOT NULL COLLATE NOCASE, 
+                        `newName` TEXT NOT NULL, 
+                        PRIMARY KEY(`originalName`)
+                    )
+                """)
+                db.execSQL("INSERT INTO `merchant_rename_rules_new` (originalName, newName) SELECT originalName, newName FROM merchant_rename_rules")
+                db.execSQL("DROP TABLE `merchant_rename_rules`")
+                db.execSQL("ALTER TABLE `merchant_rename_rules_new` RENAME TO `merchant_rename_rules`")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -18670,18 +18696,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - The parser is enhanced to apply custom, user-defined
-// account rules. When a trigger-based rule matches, the parser now checks for
-// a custom `accountRegex`. If found, it uses this regex to extract the account
-// information, overriding the default account parsing logic and making the
-// feature more powerful and flexible.
+// REASON: FEATURE - The parser now accepts a `MerchantCategoryMappingDao` and
+// uses it to look up a learned category for the parsed merchant name. If a
+// mapping is found, the category ID is included in the returned
+// `PotentialTransaction`, enabling automatic categorization of new SMS messages.
 // =================================================================================
 package io.pm.finlight
 
@@ -18752,7 +18776,9 @@ object SmsParser {
         mappings: Map<String, String>,
         customSmsRuleDao: CustomSmsRuleDao,
         merchantRenameRuleDao: MerchantRenameRuleDao,
-        ignoreRuleDao: IgnoreRuleDao
+        ignoreRuleDao: IgnoreRuleDao,
+        // --- NEW: Add DAO for learned category mappings ---
+        merchantCategoryMappingDao: MerchantCategoryMappingDao
     ): PotentialTransaction? {
         val messageBody = sms.body
         Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
@@ -18851,6 +18877,15 @@ object SmsParser {
             Log.d("SmsParser", "Applied rename rule: '$originalName' -> '$merchantName'")
         }
 
+        // --- NEW: Look up the learned category ID ---
+        var learnedCategoryId: Int? = null
+        if (merchantName != null) {
+            learnedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
+            if (learnedCategoryId != null) {
+                Log.d("SmsParser", "Found learned category ID $learnedCategoryId for merchant '$merchantName'")
+            }
+        }
+
         val potentialAccount = extractedAccount ?: parseAccount(messageBody, sms.sender)
         val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
         val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
@@ -18864,11 +18899,12 @@ object SmsParser {
             merchantName = merchantName,
             originalMessage = messageBody,
             potentialAccount = potentialAccount,
-            sourceSmsHash = smsHash
+            sourceSmsHash = smsHash,
+            // --- NEW: Pass the learned category ID ---
+            categoryId = learnedCategoryId
         )
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/PeriodTotal.kt ==================
@@ -19453,9 +19489,10 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 ================== FILE: ./app/src/main/java/TagViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TagViewModel.kt
-// REASON: Corrected the addTag function. This ViewModel is for the "Manage Tags"
-// screen, so it only needs to insert the tag. The UI will be updated
-// automatically by the Flow from the database.
+// REASON: UX REFINEMENT - The `addTag` function now checks if a tag with the
+// same name already exists (case-insensitively). If a duplicate is found, it
+// sends a feedback message to the UI via the `uiEvent` channel, improving the
+// user experience by preventing silent failures.
 // =================================================================================
 package io.pm.finlight
 
@@ -19471,6 +19508,7 @@ import kotlinx.coroutines.launch
 
 class TagViewModel(application: Application) : AndroidViewModel(application) {
     private val tagRepository: TagRepository
+    private val tagDao: TagDao // Expose DAO for direct checks
     private val _uiEvent = Channel<String>()
     val uiEvent = _uiEvent.receiveAsFlow()
 
@@ -19478,7 +19516,7 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         val database = AppDatabase.getInstance(application)
-        val tagDao = database.tagDao()
+        tagDao = database.tagDao() // Initialize DAO
         val transactionDao = database.transactionDao()
         tagRepository = TagRepository(tagDao, transactionDao)
 
@@ -19495,7 +19533,14 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
     fun addTag(tagName: String) {
         if (tagName.isNotBlank()) {
             viewModelScope.launch {
-                tagRepository.insert(Tag(name = tagName))
+                // Check if a tag with this name already exists
+                val existingTag = tagDao.findByName(tagName)
+                if (existingTag != null) {
+                    _uiEvent.send("A tag named '$tagName' already exists.")
+                } else {
+                    tagRepository.insert(Tag(name = tagName))
+                    _uiEvent.send("Tag '$tagName' created.")
+                }
             }
         }
     }
@@ -19518,22 +19563,17 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/SettingsViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: FEATURE - The ViewModel now exposes the user's selected theme as a
-// StateFlow, allowing the entire app's UI to react to changes. It also includes
-// the `saveSelectedTheme` function to persist the user's choice via the repository.
-// BUG FIX: The `saveMerchantRenameRule` function is now smarter. If the user
-// renames a merchant back to its original name, the function interprets this
-// as a desire to revert the change and now deletes the corresponding rename
-// rule from the database. This fixes the bug where a reverted name would not
-// stick in the UI.
-// UPDATE: Standardized the transaction source to "Imported" for clarity.
+// REASON: FEATURE - The `commitCsvImport` logic has been significantly enhanced
+// to handle tags. It now parses a "Tags" column from the CSV, splits the string
+// by a pipe delimiter, and for each tag name, it either finds the existing tag
+// or creates a new one. These tags are then associated with the newly created
+// transaction, completing the tag import feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -19569,6 +19609,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val context = application
     private val accountRepository = AccountRepository(db.accountDao())
     private val categoryRepository = CategoryRepository(db.categoryDao())
+    // --- NEW: Add TagDao for direct access during import ---
+    private val tagDao = db.tagDao()
+
     val smsScanStartDate: StateFlow<Long>
 
     private val _scanEvent = Channel<ScanResult>()
@@ -19708,7 +19751,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 val parsedList = withContext(Dispatchers.Default) {
                     rawMessages.mapNotNull { sms ->
-                        SmsParser.parse(sms, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), db.ignoreRuleDao())
+                        SmsParser.parse(
+                            sms,
+                            existingMappings,
+                            db.customSmsRuleDao(),
+                            db.merchantRenameRuleDao(),
+                            db.ignoreRuleDao(),
+                            db.merchantCategoryMappingDao()
+                        )
                     }
                 }
 
@@ -19747,11 +19797,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (originalName.isBlank() || newName.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
             if (originalName.equals(newName, ignoreCase = true)) {
-                // If the new name is the same as the original, the user wants to revert. Delete the rule.
                 db.merchantRenameRuleDao().deleteByOriginalName(originalName)
                 Log.d("SettingsViewModel", "Deleted rename rule for: '$originalName'")
             } else {
-                // Otherwise, create or update the rule.
                 val rule = MerchantRenameRule(originalName = originalName, newName = newName)
                 db.merchantRenameRuleDao().insert(rule)
                 Log.d("SettingsViewModel", "Saved rename rule: '$originalName' -> '$newName'")
@@ -19868,7 +19916,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         accounts: Map<String, Account>,
         categories: Map<String, Category>,
     ): ReviewableRow {
-        if (tokens.size < 6) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count.")
+        // --- UPDATED: Loosen column count check for optional tags ---
+        if (tokens.size < 8) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count. Expected at least 8.")
 
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         try {
@@ -19936,10 +19985,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // --- UPDATED: Logic to handle tag creation and association ---
     fun commitCsvImport(rowsToImport: List<ReviewableRow>) {
         viewModelScope.launch(Dispatchers.IO) {
-            Log.d("CsvImportDebug", "ViewModel: commitCsvImport called with ${rowsToImport.size} rows.")
-
             val allAccounts = accountRepository.allAccounts.first()
             val allCategories = categoryRepository.allCategories.first()
             val accountMap = allAccounts.associateBy { it.name.lowercase() }.toMutableMap()
@@ -19957,6 +20005,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     val categoryName = columns[4]
                     val accountName = columns[5]
                     val notes = columns.getOrNull(6)
+                    val isExcluded = columns.getOrNull(7)?.toBoolean() ?: false
+                    // --- NEW: Parse tags from the 9th column ---
+                    val tagsString = columns.getOrNull(8)
 
                     var category = categoryMap[categoryName.lowercase()]
                     if (category == null) {
@@ -19966,9 +20017,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         category = updatedCategories.find { it.name.equals(categoryName, ignoreCase = true) }
                         if (category != null) {
                             categoryMap[categoryName.lowercase()] = category
-                            Log.d("CsvImportDebug", "ViewModel: Created and found new category '$categoryName' with ID ${category.id}")
                         } else {
-                            Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new category '$categoryName'")
                             continue
                         }
                     }
@@ -19981,16 +20030,27 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         account = updatedAccounts.find { it.name.equals(accountName, ignoreCase = true) }
                         if (account != null) {
                             accountMap[accountName.lowercase()] = account
-                            Log.d("CsvImportDebug", "ViewModel: Created and found new account '$accountName' with ID ${account.id}")
                         } else {
-                            Log.e("CsvImportDebug", "ViewModel: FAILED to create and re-find new account '$accountName'")
                             continue
                         }
                     }
 
                     if (account == null || category == null) {
-                        Log.e("CsvImportDebug", "ViewModel: Could not find or create account/category for row ${row.lineNumber}. Skipping.")
                         continue
+                    }
+
+                    // --- NEW: Process tags ---
+                    val tagsToAssociate = mutableSetOf<Tag>()
+                    if (!tagsString.isNullOrBlank()) {
+                        val tagNames = tagsString.split('|').map { it.trim() }.filter { it.isNotEmpty() }
+                        for (tagName in tagNames) {
+                            var tag = tagDao.findByName(tagName)
+                            if (tag == null) {
+                                val newTagId = tagDao.insert(Tag(name = tagName))
+                                tag = Tag(id = newTagId.toInt(), name = tagName)
+                            }
+                            tagsToAssociate.add(tag)
+                        }
                     }
 
                     val transaction =
@@ -20002,46 +20062,60 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             transactionType = type,
                             accountId = account.id,
                             categoryId = category.id,
-                            source = "Imported" // --- UPDATED ---
+                            isExcluded = isExcluded,
+                            source = "Imported"
                         )
-                    transactionRepository.insert(transaction)
-                    Log.d("CsvImportDebug", "ViewModel: Inserted transaction for row ${row.lineNumber}: '${transaction.description}'")
+                    // --- UPDATED: Use the repository function that handles tags ---
+                    transactionRepository.insertTransactionWithTags(transaction, tagsToAssociate)
                 } catch (e: Exception) {
                     Log.e("CsvImportDebug", "ViewModel: Failed to parse or insert row ${row.lineNumber}. Data: ${row.rowData}", e)
                 }
             }
-            Log.d("CsvImportDebug", "ViewModel: Finished commitCsvImport.")
         }
     }
 
     fun clearCsvValidationReport() {
         _csvValidationReport.value = null
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/AccountViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/AccountViewModel.kt
+// REASON: UX REFINEMENT - The `addAccount` function now checks if an account
+// with the same name already exists (case-insensitively) before attempting to
+// insert. If a duplicate is found, it sends a message to the UI via the new
+// `uiEvent` channel, providing clear feedback to the user instead of failing
+// silently.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 class AccountViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: AccountRepository
     private val transactionRepository: TransactionRepository
+    private val accountDao: AccountDao // Expose DAO for direct checks
 
-    // This is the data your UI will observe. It now comes directly from the repository.
+    // --- NEW: Channel for sending one-time UI events like snackbars ---
+    private val _uiEvent = Channel<String>()
+    val uiEvent = _uiEvent.receiveAsFlow()
+
     val accountsWithBalance: Flow<List<AccountWithBalance>>
 
     init {
         val db = AppDatabase.getInstance(application)
-        repository = AccountRepository(db.accountDao())
+        accountDao = db.accountDao() // Initialize DAO
+        repository = AccountRepository(accountDao)
         transactionRepository = TransactionRepository(db.transactionDao())
 
         accountsWithBalance = repository.accountsWithBalance
@@ -20049,26 +20123,30 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
 
     fun getAccountById(accountId: Int): Flow<Account?> = repository.getAccountById(accountId)
 
-    // --- FIX: Corrected the balance calculation logic ---
-    // The `map` operator receives a `List<Transaction>`, so `it` inside `sumOf` is a
-    // Transaction object. The properties should be accessed directly on `it`.
     fun getAccountBalance(accountId: Int): Flow<Double> {
         return transactionRepository.getTransactionsForAccount(accountId).map { transactions ->
             transactions.sumOf { if (it.transactionType == "income") it.amount else -it.amount }
         }
     }
 
-    // Pass through for the detail screen to get full transaction details
     fun getTransactionsForAccount(accountId: Int): Flow<List<TransactionDetails>> {
         return transactionRepository.getTransactionsForAccountDetails(accountId)
     }
 
+    // --- UPDATED: Add pre-check and user feedback for duplicates ---
     fun addAccount(
         name: String,
         type: String,
     ) = viewModelScope.launch {
         if (name.isNotBlank() && type.isNotBlank()) {
-            repository.insert(Account(name = name, type = type))
+            // Check if an account with this name already exists
+            val existingAccount = accountDao.findByName(name)
+            if (existingAccount != null) {
+                _uiEvent.send("An account named '$name' already exists.")
+            } else {
+                repository.insert(Account(name = name, type = type))
+                _uiEvent.send("Account '$name' created.")
+            }
         }
     }
 
@@ -20092,8 +20170,7 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.delete(account)
         }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/TransactionTagCrossRef.kt ==================
@@ -20131,6 +20208,12 @@ data class TransactionTagCrossRef(
 
 
 ================== FILE: ./app/src/main/java/PotentialTransaction.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/PotentialTransaction.kt
+// REASON: FEATURE - A new nullable `categoryId` field has been added. This
+// allows the SmsParser to include the ID of a learned category when it creates
+// a potential transaction, enabling automatic categorization.
+// =================================================================================
 package io.pm.finlight
 
 /**
@@ -20142,6 +20225,7 @@ package io.pm.finlight
  * @param merchantName The name of the merchant, if it can be determined.
  * @param originalMessage The original SMS body, for reference and debugging.
  * @param potentialAccount Holds the parsed account name and type, if found.
+ * @param categoryId The ID of a learned category, if a mapping exists for the merchant.
  */
 data class PotentialTransaction(
     val sourceSmsId: Long,
@@ -20150,12 +20234,11 @@ data class PotentialTransaction(
     val transactionType: String,
     val merchantName: String?,
     val originalMessage: String,
-    // --- NEW: Add a field for the automatically parsed account details ---
     val potentialAccount: PotentialAccount? = null,
-    // --- BUG FIX: Add a stable hash to uniquely identify an SMS for de-duplication ---
     val sourceSmsHash: String? = null,
-)
--e 
+    // --- NEW: Add field for learned category ---
+    val categoryId: Int? = null
+)-e 
 
 
 ================== FILE: ./app/src/main/java/TransactionImage.kt ==================
@@ -20228,13 +20311,10 @@ data class IgnoreRule(
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: BUG FIX - All `strftime` date functions have been updated to use the
-// 'localtime' modifier. This ensures that all date-based grouping (daily,
-// weekly, monthly) is performed using the device's local timezone instead of
-// UTC. This corrects the bug where transactions were being assigned to the
-// wrong period, fixing incorrect totals in reports and notifications.
-// REASON: BUG FIX - Restored the searchTransactions function that was
-// accidentally removed in a previous edit.
+// REASON: FEATURE - Added the `getTagsForTransactionSimple` suspend function.
+// This provides a non-Flow, one-shot method to fetch tags for a given
+// transaction, which is necessary for the CSV export process to efficiently
+// gather and append tag data for each row.
 // =================================================================================
 package io.pm.finlight
 
@@ -20250,7 +20330,7 @@ interface TransactionDao {
             C.name as categoryName,
             SUM(T.amount) as totalAmount,
             C.iconKey as iconKey,
-            C.colorKey as colorKey
+            C.colorKey as categoryColorKey
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
@@ -20300,8 +20380,8 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0 -- Keep filter for income summary
-          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND T.isExcluded = 0
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         ORDER BY
@@ -20318,8 +20398,8 @@ interface TransactionDao {
         FROM transactions AS T
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0 -- Keep filter for aggregation
-          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND T.isExcluded = 0
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         GROUP BY C.name
@@ -20334,11 +20414,11 @@ interface TransactionDao {
             COUNT(id) as transactionCount
         FROM transactions
         WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
-          AND isExcluded = 0 -- Keep filter for aggregation
-          AND (:keyword IS NULL OR description LIKE '%' || :keyword || '%' OR notes LIKE '%' || :keyword || '%')
+          AND isExcluded = 0
+          AND (:keyword IS NULL OR LOWER(description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR accountId = :accountId)
           AND (:categoryId IS NULL OR categoryId = :categoryId)
-        GROUP BY description
+        GROUP BY LOWER(description)
         ORDER BY totalAmount DESC
     """)
     fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>>
@@ -20372,7 +20452,8 @@ interface TransactionDao {
     suspend fun updateDate(id: Int, date: Long)
 
 
-    @Query("""
+    @Query(
+        """
         SELECT
             T.*,
             A.name as accountName,
@@ -20386,7 +20467,8 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.id = :id
-    """)
+    """
+    )
     fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?>
 
 
@@ -20429,7 +20511,7 @@ interface TransactionDao {
         LEFT JOIN
             categories AS C ON T.categoryId = C.id
         WHERE T.date BETWEEN :startDate AND :endDate
-          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         ORDER BY
@@ -20495,7 +20577,7 @@ interface TransactionDao {
         INNER JOIN categories AS C ON T.categoryId = C.id
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
           AND T.isExcluded = 0
-          AND (:keyword IS NULL OR T.description LIKE '%' || :keyword || '%' OR T.notes LIKE '%' || :keyword || '%')
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
         GROUP BY C.name
@@ -20564,6 +20646,10 @@ interface TransactionDao {
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
 
+    // --- NEW: Non-flow version for one-shot queries like CSV export ---
+    @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
+    suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag>
+
     @Query("""
         SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
         FROM transactions AS T
@@ -20629,14 +20715,14 @@ interface TransactionDao {
 
     @Query("""
         SELECT COUNT(*) FROM transactions
-        WHERE (:description = description OR :description = originalDescription)
+        WHERE LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description)
         AND isExcluded = 0
     """)
     fun getTransactionCountForMerchant(description: String): Flow<Int>
 
     @Query("""
         SELECT * FROM transactions
-        WHERE (description = :description OR originalDescription = :description)
+        WHERE (LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description))
         AND id != :excludeId
         AND isExcluded = 0
     """)
@@ -20648,14 +20734,13 @@ interface TransactionDao {
     @Query("UPDATE transactions SET description = :newDescription WHERE id IN (:ids)")
     suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String)
 
-    // --- FIX: Restored the missing searchTransactions function ---
     @Query("""
         SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
         FROM transactions t
         LEFT JOIN accounts a ON t.accountId = a.id
         LEFT JOIN categories c ON t.categoryId = c.id
         WHERE
-            (:keyword = '' OR t.description LIKE '%' || :keyword || '%' OR t.notes LIKE '%' || :keyword || '%') AND
+            (:keyword = '' OR LOWER(t.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(t.notes) LIKE '%' || LOWER(:keyword) || '%') AND
             (:accountId IS NULL OR t.accountId = :accountId) AND
             (:categoryId IS NULL OR t.categoryId = :categoryId) AND
             (:transactionType IS NULL OR t.transactionType = :transactionType) AND
@@ -20671,8 +20756,7 @@ interface TransactionDao {
         startDate: Long?,
         endDate: Long?,
     ): List<TransactionDetails>
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/RecurringTransactionViewModel.kt ==================
@@ -20949,8 +21033,9 @@ object CategoryIconHelper {
 ================== FILE: ./app/src/main/java/CategoryDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CategoryDao.kt
-// REASON: Updated the insert function to return the new category's ID (Long) and
-// added a function to get a category by its ID.
+// REASON: REFACTOR - The `findByName` query has been updated to use `COLLATE
+// NOCASE`. This ensures that all direct lookups for a category by its name are
+// case-insensitive, matching the new schema constraint.
 // =================================================================================
 package io.pm.finlight
 
@@ -20968,11 +21053,11 @@ interface CategoryDao {
     @Query("SELECT * FROM categories ORDER BY name ASC")
     fun getAllCategories(): Flow<List<Category>>
 
-    // --- NEW: Function to get a single category by its ID ---
     @Query("SELECT * FROM categories WHERE id = :categoryId")
     suspend fun getCategoryById(categoryId: Int): Category?
 
-    @Query("SELECT * FROM categories WHERE name = :name LIMIT 1")
+    // --- UPDATED: Use COLLATE NOCASE for explicit case-insensitive matching ---
+    @Query("SELECT * FROM categories WHERE name = :name COLLATE NOCASE LIMIT 1")
     suspend fun findByName(name: String): Category?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -20981,7 +21066,6 @@ interface CategoryDao {
     @Query("DELETE FROM categories")
     suspend fun deleteAll()
 
-    // --- UPDATED: Returns the new row ID ---
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(category: Category): Long
 
@@ -20990,8 +21074,7 @@ interface CategoryDao {
 
     @Delete
     suspend fun delete(category: Category)
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/MerchantCategoryMappingRepository.kt ==================
@@ -21315,6 +21398,13 @@ interface AccountDao {
 
 
 ================== FILE: ./app/src/main/java/TagDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TagDao.kt
+// REASON: REFACTOR - Added a new `findByName` function that performs a
+// case-insensitive search. This is essential for the ViewModel to check if a
+// tag already exists before attempting to insert a new one, allowing for
+// proper user feedback on duplicates.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -21327,20 +21417,22 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TagDao {
-    // --- FIX: Modified to return the new row's ID ---
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(tag: Tag): Long
 
     @Query("SELECT * FROM tags ORDER BY name ASC")
     fun getAllTags(): Flow<List<Tag>>
 
+    // --- NEW: Function to find a tag by name, case-insensitively ---
+    @Query("SELECT * FROM tags WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun findByName(name: String): Tag?
+
     @Update
     suspend fun update(tag: Tag)
 
     @Delete
     suspend fun delete(tag: Tag)
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/LoginResponse.kt ==================
@@ -21598,12 +21690,10 @@ data class Transaction(
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: BUG FIX - The receiver now calls the updated
-// `showTransactionNotification` function, passing the newly saved `Transaction`
-// object (with its ID) instead of the old `PotentialTransaction`. This ensures
-// the notification's deep link correctly points to the `TransactionDetailScreen`,
-// resolving the navigation bug.
-// UPDATE: Standardized the transaction source to "Auto-Captured" for clarity.
+// REASON: FEATURE - The receiver now passes the `merchantCategoryMappingDao`
+// to the SmsParser. It then uses the `categoryId` from the resulting
+// `PotentialTransaction` when creating the new `Transaction` object, enabling
+// fully automatic categorization for known merchants.
 // =================================================================================
 package io.pm.finlight
 
@@ -21653,18 +21743,18 @@ class SmsReceiver : BroadcastReceiver() {
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
                         val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
-                        val potentialTxn = SmsParser.parse(smsMessage, existingMappings, db.customSmsRuleDao(), db.merchantRenameRuleDao(), ignoreRuleDao)
+                        // --- UPDATED: Pass the merchantCategoryMappingDao to the parser ---
+                        val potentialTxn = SmsParser.parse(
+                            sms = smsMessage,
+                            mappings = existingMappings,
+                            customSmsRuleDao = db.customSmsRuleDao(),
+                            merchantRenameRuleDao = db.merchantRenameRuleDao(),
+                            ignoreRuleDao = ignoreRuleDao,
+                            merchantCategoryMappingDao = merchantCategoryMappingDao
+                        )
 
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(TAG, "New potential transaction found: $potentialTxn. Saving automatically.")
-
-                            var mappedCategoryId: Int? = null
-                            potentialTxn.merchantName?.let { merchantName ->
-                                mappedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
-                                if (mappedCategoryId != null) {
-                                    Log.d(TAG, "Found learned category ID $mappedCategoryId for merchant '$merchantName'")
-                                }
-                            }
 
                             val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                             val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
@@ -21683,19 +21773,21 @@ class SmsReceiver : BroadcastReceiver() {
                                     amount = potentialTxn.amount,
                                     date = System.currentTimeMillis(),
                                     accountId = account.id,
-                                    categoryId = mappedCategoryId,
+                                    // --- UPDATED: Use the categoryId from the parser result ---
+                                    categoryId = potentialTxn.categoryId,
                                     notes = "",
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                                    source = "Auto-Captured" // --- UPDATED ---
+                                    source = "Auto-Captured"
                                 )
                                 val newTransactionId = transactionDao.insert(newTransaction)
                                 Log.d(TAG, "Transaction saved successfully with ID: $newTransactionId")
 
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                                     val savedTransaction = newTransaction.copy(id = newTransactionId.toInt())
-                                    if (mappedCategoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
+                                    // --- UPDATED: Check if the parser found a category ---
+                                    if (potentialTxn.categoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
                                         NotificationHelper.showTransactionNotification(context, savedTransaction)
                                     } else {
                                         NotificationHelper.showAutoSaveConfirmationNotification(context, savedTransaction)
@@ -21715,8 +21807,7 @@ class SmsReceiver : BroadcastReceiver() {
             }
         }
     }
-}
--e 
+}-e 
 
 
 ================== FILE: ./app/src/main/java/NotificationHelper.kt ==================
@@ -22608,8 +22699,15 @@ class DashboardViewModel(
 
 
 ================== FILE: ./app/src/main/java/MerchantRenameRule.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MerchantRenameRule.kt
+// REASON: REFACTOR - The `originalName` primary key has been updated with
+// `collate = NOCASE`. This makes the rule matching case-insensitive, so a rule
+// for "zomato" will correctly apply to transactions parsed as "Zomato".
+// =================================================================================
 package io.pm.finlight
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -22621,11 +22719,12 @@ import androidx.room.PrimaryKey
  */
 @Entity(tableName = "merchant_rename_rules")
 data class MerchantRenameRule(
+    // --- UPDATED: Make the primary key case-insensitive ---
     @PrimaryKey
+    @ColumnInfo(name = "originalName", collate = ColumnInfo.NOCASE)
     val originalName: String,
     val newName: String
-)
--e 
+)-e 
 
 
 ---------- Instrumented Test Files (UI Tests) ----------
@@ -23228,11 +23327,10 @@ class ExampleUnitTest {
 ================== FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt ==================
 // =================================================================================
 // FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt
-// REASON: FEATURE - Added `mockIgnoreRuleDao` and updated the `setupTest` helper
-// to support the new ignore rule functionality. A new test,
-// `test_ignores_message_with_user_defined_ignore_phrase`, has been added to
-// verify that the parser correctly skips messages containing phrases from the
-// new user-managed ignore list.
+// REASON: BUG FIX - The test setup has been updated to mock the new
+// `MerchantCategoryMappingDao` dependency. All calls to `SmsParser.parse`
+// throughout the test file have been updated to pass this new mock, resolving
+// all compilation errors.
 // =================================================================================
 package io.pm.finlight
 
@@ -23256,7 +23354,11 @@ class SmsParserTest {
     private lateinit var mockMerchantRenameRuleDao: MerchantRenameRuleDao
 
     @Mock
-    private lateinit var mockIgnoreRuleDao: IgnoreRuleDao // --- NEW ---
+    private lateinit var mockIgnoreRuleDao: IgnoreRuleDao
+
+    // --- NEW: Mock for the new dependency ---
+    @Mock
+    private lateinit var mockMerchantCategoryMappingDao: MerchantCategoryMappingDao
 
     private val emptyMappings = emptyMap<String, String>()
 
@@ -23268,11 +23370,12 @@ class SmsParserTest {
     private suspend fun setupTest(
         customRules: List<CustomSmsRule> = emptyList(),
         renameRules: List<MerchantRenameRule> = emptyList(),
-        ignoreRules: List<IgnoreRule> = emptyList() // --- NEW ---
+        ignoreRules: List<IgnoreRule> = emptyList()
     ) {
         `when`(mockCustomSmsRuleDao.getAllRules()).thenReturn(flowOf(customRules))
         `when`(mockMerchantRenameRuleDao.getAllRules()).thenReturn(flowOf(renameRules))
-        `when`(mockIgnoreRuleDao.getAll()).thenReturn(flowOf(ignoreRules)) // --- NEW ---
+        // --- UPDATED: Mock the enabled phrases for the ignore rule dao ---
+        `when`(mockIgnoreRuleDao.getEnabledPhrases()).thenReturn(ignoreRules.filter { it.isEnabled }.map { it.phrase })
     }
 
     @Test
@@ -23281,7 +23384,7 @@ class SmsParserTest {
         val smsBody = "Your account with HDFC Bank has been debited for Rs. 750.50 at Amazon on 22-Jun-2025."
         val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
 
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
 
         assertNotNull("Parser should return a result for a debit message", result)
         assertEquals(750.50, result?.amount)
@@ -23295,7 +23398,7 @@ class SmsParserTest {
         val smsBody = "You have received a credit of INR 5,000.00 from Freelance Client."
         val mockSms = SmsMessage(id = 2L, sender = "DM-SOMEBK", body = smsBody, date = System.currentTimeMillis())
 
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
 
         assertNotNull("Parser should return a result for a credit message", result)
         assertEquals(5000.00, result?.amount)
@@ -23309,7 +23412,7 @@ class SmsParserTest {
         val smsBody = "Hello, just checking in. Are we still on for dinner tomorrow evening?"
         val mockSms = SmsMessage(id = 3L, sender = "+1234567890", body = smsBody, date = System.currentTimeMillis())
 
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
 
         assertNull("Parser should return null for a non-financial message", result)
     }
@@ -23317,9 +23420,9 @@ class SmsParserTest {
     @Test
     fun `test parses SBI Credit Card message`() = runBlocking {
         setupTest()
-        val smsBody = "Rs.267.00 spent on your SBI Credit Card ending with 3201 at HALLI THOTA on 29-06-25 via UPI (Ref No. 1231230123). Trxn. Not done by you? Report at https://sbicards.com/Dispute)"
+        val smsBody = "Rs.267.00 spent on your SBI Credit Card ending with 3201 at HALLI THOTA on 29-06-25 via UPI (Ref No. 1231230123). Trxn. Not done by you? Report at [https://sbicards.com/Dispute](https://sbicards.com/Dispute))"
         val mockSms = SmsMessage(id = 4L, sender = "VM-SBICRD", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
 
         assertNotNull(result)
         assertEquals(267.00, result?.amount)
@@ -23335,7 +23438,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "ICICI Bank Acct XX823 debited for Rs 240.00 on 21-Jun-25; DAKSHIN CAFE credited. UPI: 552200221100. Call 18002661 for dispute."
         val mockSms = SmsMessage(id = 5L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
 
         assertNotNull(result)
         assertEquals(240.00, result?.amount)
@@ -23351,7 +23454,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "[JD-HDFCBK-S] Spent Rs.388.19 On HDFC Bank Card 9922 At ..MC DONALDS_ on2025-06-22:08:01:24.Not You> To Block+Reissue Call 18002323232/SMS BLOCK CC 9922 to 123098123"
         val mockSms = SmsMessage(id = 6L, sender = "JD-HDFCBK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
 
         assertNotNull(result)
         assertEquals(388.19, result?.amount)
@@ -23367,7 +23470,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "Rs. 60.00 spent from Pluxee Meal Card wallet, card no.xx1345 on 30-06-2025 18:41:56 at KITCHEN AFF . Avl bal Rs.1824.65. Not you call 18002106919"
         val mockSms = SmsMessage(id = 7L, sender = "VD-PLUXEE", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
 
         assertNotNull(result)
         assertEquals(60.00, result?.amount)
@@ -23383,7 +23486,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "Dear Customer, Acct XX823 is credited with Rs 6000.00 on 26-Jun-25 from GANGA MANGA. UPI:5577822323232-ICICI Bank"
         val mockSms = SmsMessage(id = 8L, sender = "QP-ICIBNK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
 
         assertNotNull(result)
         assertEquals(6000.00, result?.amount)
@@ -23396,10 +23499,10 @@ class SmsParserTest {
 
     @Test
     fun `test ignores successful payment confirmation`() = runBlocking {
-        setupTest()
+        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "payment of.*is successful", isEnabled = true)))
         val smsBody = "Your payment of Rs.330.80 for A4-108 against Water Charges is successful. Regards NoBrokerHood"
         val mockSms = SmsMessage(id = 10L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
         assertNull("Parser should ignore successful payment confirmations", result)
     }
 
@@ -23408,7 +23511,7 @@ class SmsParserTest {
         setupTest()
         val smsBody = "ICICI Bank Account XX823 credited:Rs. 1,133.00 on 01-Jul-25. Info NEFT-HDFCN5202507024345356218-. Available Balance is Rs. 1,858.35."
         val mockSms = SmsMessage(id = 11L, sender = "VM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
 
         assertNotNull(result)
         assertEquals(1133.00, result?.amount)
@@ -23421,41 +23524,40 @@ class SmsParserTest {
 
     @Test
     fun `test ignores HDFC NEFT credit message`() = runBlocking {
-        setupTest()
+        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "has been credited to", isEnabled = true)))
         val smsBody = "HDFC Bank : NEFT money transfer Txn No HDFCN520253454560344 for Rs INR 1,500.00 has been credited to Manga Penga on 01-07-2025 at 08:05:30"
         val mockSms = SmsMessage(id = 12L, sender = "VM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
         assertNull("Parser should ignore has been credited to messages", result)
     }
 
     @Test
     fun `test ignores credit card payment confirmation`() = runBlocking {
-        setupTest()
+        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "payment of.*has been received towards", isEnabled = true)))
         val smsBody = "Payment of INR 1180.01 has been received towards your SBI card XX1121"
         val mockSms = SmsMessage(id = 13L, sender = "DM-SBICRD", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
         assertNull("Parser should ignore credit card payment confirmations", result)
     }
 
     @Test
     fun `test ignores bharat bill pay confirmation`() = runBlocking {
-        setupTest()
+        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "Payment of.*has been received on your.*Credit Card", isEnabled = true)))
         val smsBody = "Payment of Rs 356.33 has been received on your ICICI Bank Credit Card XX2529 through Bharat Bill Payment System on 03-JUL-25."
         val mockSms = SmsMessage(id = 14L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
         assertNull("Parser should ignore Bharat Bill Pay confirmations", result)
     }
 
     @Test
     fun `test ignores message with user-defined ignore phrase`() = runBlocking {
-        val ignoreRules = listOf(IgnoreRule(id = 1, phrase = "invoice of"))
+        val ignoreRules = listOf(IgnoreRule(id = 1, phrase = "invoice of", isEnabled = true))
         setupTest(ignoreRules = ignoreRules)
         val smsBody = "An Invoice of Rs.330.8 for A4 Block-108 is raised."
         val mockSms = SmsMessage(id = 9L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
-        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao)
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
         assertNull("Parser should ignore messages with user-defined phrases", result)
     }
-}
--e 
+}-e 
 
 
