@@ -1,9 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SearchViewModel.kt
-// REASON: Implemented a dynamic, debounced search mechanism. The ViewModel now
-// automatically triggers a search query 300ms after any filter or keyword
-// changes, removing the need for a manual "Apply" button.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -29,6 +23,7 @@ class SearchViewModel(
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
     private val categoryDao: CategoryDao,
+    private val initialCategoryId: Int? // Accept initial category ID
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -37,7 +32,7 @@ class SearchViewModel(
     val searchResults: StateFlow<List<TransactionDetails>> = _searchResults.asStateFlow()
 
     init {
-        // Load initial filter options (accounts and categories)
+        // Load initial filter options
         viewModelScope.launch {
             accountDao.getAllAccounts().collect { accounts ->
                 _uiState.update { it.copy(accounts = accounts) }
@@ -46,16 +41,21 @@ class SearchViewModel(
         viewModelScope.launch {
             categoryDao.getAllCategories().collect { categories ->
                 _uiState.update { it.copy(categories = categories) }
+                // --- NEW: Pre-select category if an ID was passed ---
+                if (initialCategoryId != null) {
+                    val initialCategory = categories.find { it.id == initialCategoryId }
+                    if (initialCategory != null) {
+                        _uiState.update { it.copy(selectedCategory = initialCategory) }
+                    }
+                }
             }
         }
 
-        // --- NEW: Reactive search logic ---
-        // This flow automatically executes a search whenever the UI state changes,
-        // with a 300ms debounce to prevent excessive queries while typing.
+        // Reactive search logic
         viewModelScope.launch {
             uiState
                 .debounce(300L)
-                .collectLatest { state -> // Use collectLatest to cancel previous searches if a new state arrives
+                .collectLatest { state ->
                     val filtersAreActive = state.selectedAccount != null ||
                             state.selectedCategory != null ||
                             state.transactionType != "All" ||
@@ -74,7 +74,6 @@ class SearchViewModel(
                         )
                         _searchResults.value = results
                     } else {
-                        // Clear results and search status if no filters/keyword are active
                         _searchResults.value = emptyList()
                         _uiState.update { it.copy(hasSearched = false) }
                     }
@@ -111,8 +110,5 @@ class SearchViewModel(
                 accounts = _uiState.value.accounts,
                 categories = _uiState.value.categories,
             )
-        // Results will clear automatically due to the reactive flow
     }
-
-    // The manual executeSearch function is no longer needed.
 }

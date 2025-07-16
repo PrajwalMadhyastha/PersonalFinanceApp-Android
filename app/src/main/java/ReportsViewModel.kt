@@ -55,6 +55,9 @@ data class ReportScreenData(
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
+    private val categoryDao: CategoryDao
+
+    val allCategories: StateFlow<List<Category>>
 
     private val _selectedPeriod = MutableStateFlow(ReportPeriod.MONTH)
     val selectedPeriod: StateFlow<ReportPeriod> = _selectedPeriod.asStateFlow()
@@ -64,6 +67,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     init {
         val db = AppDatabase.getInstance(application)
         transactionRepository = TransactionRepository(db.transactionDao())
+        categoryDao = db.categoryDao()
+
+        allCategories = categoryDao.getAllCategories()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
 
         reportData = _selectedPeriod.flatMapLatest { period ->
             val (currentStartDate, currentEndDate) = calculateDateRange(period)
@@ -78,7 +89,6 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
             val monthlyTrendFlow = transactionRepository.getMonthlyTrends(trendStartDate)
 
-            // Correctly define flows for summary and top category
             val currentSummaryFlow = transactionRepository.getFinancialSummaryForRangeFlow(currentStartDate, currentEndDate)
             val previousSummaryFlow = transactionRepository.getFinancialSummaryForRangeFlow(previousStartDate, previousEndDate)
             val topCategoryFlow = transactionRepository.getTopSpendingCategoriesForRangeFlow(currentStartDate, currentEndDate)
@@ -91,7 +101,10 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 topCategoryFlow
             ) { spendingList, trends, currentSummary, previousSummary, topCategory ->
                 // Create PieData
-                val pieEntries = spendingList.map { PieEntry(it.totalAmount.toFloat(), it.categoryName) }
+                val pieEntries = spendingList.map {
+                    // --- FIX: Add the category name to the 'data' field for the click listener ---
+                    PieEntry(it.totalAmount.toFloat(), it.categoryName, it.categoryName)
+                }
                 val pieColors = spendingList.map {
                     (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
                 }

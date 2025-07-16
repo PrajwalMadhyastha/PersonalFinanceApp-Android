@@ -26,9 +26,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 
 @Composable
 fun TimePickerDialog(
@@ -89,8 +92,11 @@ fun ChartLegend(pieData: PieData?) {
 }
 
 @Composable
-fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
-    val (barData, labels) = trendDataPair
+fun GroupedBarChart(
+    chartData: Pair<BarData, List<String>>,
+    onBarClick: ((Entry) -> Unit)? = null // Add a callback for bar clicks
+) {
+    val (barData, labels) = chartData
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val legendColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
 
@@ -109,6 +115,16 @@ fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
                 axisLeft.setDrawGridLines(true)
 
                 axisRight.isEnabled = false
+
+                // --- NEW: Add click listener ---
+                if (onBarClick != null) {
+                    setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                        override fun onValueSelected(e: Entry?, h: Highlight?) {
+                            e?.let { onBarClick(it) }
+                        }
+                        override fun onNothingSelected() {}
+                    })
+                }
             }
         },
         update = { chart ->

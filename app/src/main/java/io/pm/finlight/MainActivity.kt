@@ -1,11 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The @RequiresApi(Build.VERSION_CODES.TIRAMISU) annotation has
-// been removed from the AppNavHost function. The app's logic already handles
-// notification permissions safely within the NotificationHelper, making this
-// annotation overly restrictive and causing a lint error. This change resolves
-// the "NewApi" error without affecting functionality.
-// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -428,7 +420,6 @@ fun AppNavHost(
         startDestination = "splash_screen",
         modifier = modifier
     ) {
-        // --- FIX: Define transitions inline for each composable to fix type errors ---
         composable("splash_screen") {
             SplashScreen(navController = navController, activity = activity)
         }
@@ -503,12 +494,18 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            "search_screen",
+            "search_screen?categoryId={categoryId}",
+            arguments = listOf(navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 }),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { SearchScreen(navController) }
+        ) { backStackEntry ->
+            val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
+            val factory = SearchViewModelFactory(activity.application, if (categoryId != -1) categoryId else null)
+            val searchViewModel: SearchViewModel = viewModel(factory = factory)
+            SearchScreen(navController, searchViewModel)
+        }
         composable(
             route = "review_sms_screen",
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" }),

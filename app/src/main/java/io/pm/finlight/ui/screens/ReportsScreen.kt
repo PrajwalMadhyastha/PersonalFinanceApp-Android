@@ -40,6 +40,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.PieChart
+import com.github.mikephil.charting.data.Entry
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.ReportInsights
 import io.pm.finlight.ReportPeriod
@@ -48,6 +51,7 @@ import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
+import java.util.Calendar
 import kotlin.math.abs
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -58,6 +62,7 @@ fun ReportsScreen(
 ) {
     val reportData by viewModel.reportData.collectAsState()
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
+    val allCategories by viewModel.allCategories.collectAsState()
     val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     LazyColumn(
@@ -141,6 +146,17 @@ fun ReportsScreen(
                                     setEntryLabelColor(pieChartLabelColor)
                                     setEntryLabelTextSize(12f)
                                     legend.isEnabled = false
+                                    setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                                        override fun onValueSelected(e: Entry?, h: Highlight?) {
+                                            val categoryName = e?.data as? String ?: return
+                                            val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
+                                            category?.let {
+                                                navController.navigate("search_screen?categoryId=${it.id}")
+                                            }
+                                        }
+
+                                        override fun onNothingSelected() {}
+                                    })
                                 }
                             },
                             update = { chart ->
@@ -172,7 +188,22 @@ fun ReportsScreen(
                     Spacer(Modifier.height(16.dp))
                     val trendDataPair = reportData.trendData
                     if (trendDataPair != null && trendDataPair.first.entryCount > 0) {
-                        GroupedBarChart(trendDataPair)
+                        GroupedBarChart(
+                            chartData = trendDataPair,
+                            onBarClick = { entry ->
+                                // Find the month that was clicked
+                                val monthIndex = entry.x.toInt()
+                                val trends = viewModel.reportData.value.trendData?.first?.dataSets?.firstOrNull()?.getEntryForIndex(monthIndex)
+                                if (trends != null) {
+                                    // Calculate the timestamp for the end of the clicked month
+                                    val calendar = Calendar.getInstance()
+                                    calendar.add(Calendar.MONTH, monthIndex - (reportData.trendData?.second?.size?.minus(1) ?: 0))
+                                    calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+                                    val dateMillis = calendar.timeInMillis
+                                    navController.navigate("time_period_report_screen/${TimePeriod.MONTHLY}?date=$dateMillis")
+                                }
+                            }
+                        )
                     } else {
                         Box(
                             modifier = Modifier

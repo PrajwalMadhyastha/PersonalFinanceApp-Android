@@ -1,21 +1,5 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
-// REASON: Modernized the UI by implementing auto-focus for the keyword field
-// and removing the now-obsolete "Apply Filter" button, creating a more
-// dynamic and responsive search experience.
-// UPDATE: Redesigned the layout to hide advanced filters in a collapsible
-// section, providing a cleaner initial view and an indicator for active filters.
-// UPDATE: The filter section has been redesigned to use a GlassPanel, aligning
-// it with the "Project Aurora" aesthetic for a consistent and modern look.
-// FIX: Applied a semi-opaque background to the filter dropdown menus to ensure
-// legibility and consistency with other popups in dark mode.
-// ANIMATION - The filter section is now wrapped in an AnimatedVisibility with
-// a fast, non-fading animation spec (`expandVertically` and `shrinkVertically`).
-// This makes showing/hiding the filters feel much snappier.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.app.Application
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -38,9 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
@@ -52,11 +34,10 @@ import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(navController: NavController) {
-    val context = LocalContext.current
-    val factory = SearchViewModelFactory(context.applicationContext as Application)
-    val viewModel: SearchViewModel = viewModel(factory = factory)
-
+fun SearchScreen(
+    navController: NavController,
+    viewModel: SearchViewModel // Accept the ViewModel as a parameter
+) {
     val searchUiState by viewModel.uiState.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
 
@@ -66,6 +47,13 @@ fun SearchScreen(navController: NavController) {
 
     val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+
+    // --- NEW: Automatically expand filters if a category is pre-selected ---
+    LaunchedEffect(searchUiState.selectedCategory) {
+        if (searchUiState.selectedCategory != null) {
+            showFilters = true
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Search Bar and Filter Section
@@ -82,7 +70,6 @@ fun SearchScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- UPDATE: Filters are now inside a collapsible GlassPanel ---
             GlassPanel {
                 Column {
                     Row(
@@ -288,7 +275,6 @@ fun <T> SearchableDropdown(
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            // --- FIX: Apply a background to the dropdown menu for better legibility ---
             modifier = Modifier.background(
                 if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
             )
