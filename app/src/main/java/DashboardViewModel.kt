@@ -1,10 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FEATURE - The ViewModel now fully manages card visibility. It maintains
-// a separate StateFlow for the visible card set, provides `hideCard` and
-// `showCard` functions to modify it, and exposes a `hiddenCards` flow for the
-// "Add Card" UI. The `exitCustomizationModeAndSave` function now saves both
-// the order and the visibility state.
+// REASON: FIX - Removed the unused import for `java.util.Collections` to resolve
+// the "KotlinUnusedImport" warning.
 // =================================================================================
 package io.pm.finlight
 
@@ -21,7 +18,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Collections
 import java.util.Locale
 
 class DashboardViewModel(
