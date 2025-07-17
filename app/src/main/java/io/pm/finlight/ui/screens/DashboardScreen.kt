@@ -1,12 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FEATURE - The `MonthlyConsistencyCalendarCard` is now passed an
-// `onDayClick` handler. This handler navigates to the search screen with the
-// selected date, making the dashboard calendar card interactive.
-// FIX - Replaced the ambiguous `items` call in `AddCardSheetContent` with
-// `itemsIndexed` to resolve a compiler error where the wrong function overload
-// was being selected. This fixes the chain of "Argument type mismatch" and
-// "Unresolved reference" errors.
+// REASON: FIX - The navigation logic for the "Spending Consistency" card's
+// `onReportClick` handler has been corrected. It now explicitly pops up to the
+// `Dashboard` route, which is the start destination of the bottom navigation
+// graph. This ensures it behaves identically to the bottom navigation bar,
+// fixing the back stack issue and preventing the "overlapping" screen problem.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -217,7 +215,15 @@ private fun DashboardCard(
             DashboardCardType.SPENDING_CONSISTENCY -> MonthlyConsistencyCalendarCard(
                 data = monthlyConsistencyData,
                 stats = consistencyStats,
-                navController = navController,
+                onReportClick = {
+                    navController.navigate(BottomNavItem.Reports.route) {
+                        popUpTo(BottomNavItem.Dashboard.route) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
                 onDayClick = { date ->
                     navController.navigate("search_screen?date=${date.time}")
                 }
@@ -261,8 +267,7 @@ private fun AddCardSheetContent(
             Text("All available cards are already on your dashboard.")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // --- FIX: Use itemsIndexed to resolve compiler ambiguity ---
-                itemsIndexed(hiddenCards, key = { _, cardType -> cardType.name }) { _, cardType ->
+                items(hiddenCards, key = { it.name }) { cardType ->
                     ListItem(
                         headlineContent = { Text(cardType.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) },
                         leadingContent = { Icon(Icons.Default.Add, contentDescription = null) },
