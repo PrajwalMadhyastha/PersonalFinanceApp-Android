@@ -1,11 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
-// REASON: FIX - The call to fetch transactions for the selected period was
-// updated from `getTransactionsForDateRange` to `getTransactionDetailsForRange`.
-// This resolves the "Unresolved reference" compilation error, likely caused by
-// a recent refactoring of the DAO where the original function was replaced with
-// a more generic, filterable version.
-// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -54,7 +46,6 @@ class TimePeriodReportViewModel(
 
     val transactionsForPeriod: StateFlow<List<TransactionDetails>> = _selectedDate.flatMapLatest { calendar ->
         val (start, end) = getPeriodDateRange(calendar)
-        // --- FIX: Changed to getTransactionDetailsForRange and passed null for filters ---
         transactionDao.getTransactionDetailsForRange(start, end, null, null, null)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

@@ -1,23 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
-// REASON: BUG FIX - The duplicated ViewModel and Factory code has been removed
-// from this file to resolve the "Redeclaration" compilation errors. This screen
-// now correctly uses the ViewModel from its dedicated file.
-// REASON: REFACTOR - The `ReportHeader` subtitle is now dynamic and reflects
-// the rolling time period (e.g., "Since Jul 8, 10:00 PM"). This provides a
-// clearer and more accurate description of the data being displayed, matching
-// the user's requirement.
-// REASON: FEATURE - The UI has been enhanced by splitting the header into a
-// "Hero" card and a new "Insights" card. The Hero card now has a more prominent
-// design with a background icon, and the Insights card displays the percentage
-// change and top spending category for the period.
-// REASON: FEATURE - The "Total Spent" amount in the hero card now uses a
-// subtle gradient text effect for added visual flair, completing the
-// implementation of "Idea 3".
-// FEATURE: The hero card has been redesigned to show both "Total Income" and
-// "Total Spent" side-by-side, providing a more comprehensive financial overview
-// for the selected period.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
@@ -146,7 +126,9 @@ fun TimePeriodReportScreen(
                 }
 
                 item {
-                    ReportInsightsCard(insights = insights)
+                    insights?.let {
+                        ReportInsightsCard(insights = it)
+                    }
                 }
 
                 item {
@@ -320,9 +302,7 @@ private fun ReportHeader(totalSpent: Double, totalIncome: Double, timePeriod: Ti
 }
 
 @Composable
-private fun ReportInsightsCard(insights: ReportInsights?) {
-    if (insights == null) return
-
+private fun ReportInsightsCard(insights: ReportInsights) {
     GlassPanel {
         Row(
             modifier = Modifier

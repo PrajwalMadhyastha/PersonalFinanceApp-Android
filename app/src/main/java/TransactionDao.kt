@@ -6,6 +6,10 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
+    // --- NEW: Query to find the timestamp of the very first transaction ---
+    @Query("SELECT MIN(date) FROM transactions")
+    fun getFirstTransactionDate(): Flow<Long?>
+
     // --- NEW: Get all transactions with a signature since a given date ---
     @Query("SELECT * FROM transactions WHERE smsSignature IS NOT NULL AND date >= :sinceDate")
     suspend fun getTransactionsWithSignatureSince(sinceDate: Long): List<Transaction>

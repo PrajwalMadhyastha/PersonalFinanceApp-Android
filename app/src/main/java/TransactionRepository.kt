@@ -14,6 +14,11 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
+    // --- NEW: Expose the DAO function to get the first transaction date ---
+    fun getFirstTransactionDate(): Flow<Long?> {
+        return transactionDao.getFirstTransactionDate()
+    }
+
     fun getFinancialSummaryForRangeFlow(startDate: Long, endDate: Long): Flow<FinancialSummary?> {
         return transactionDao.getFinancialSummaryForRangeFlow(startDate, endDate)
     }
@@ -193,7 +198,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         transactionDao.updateDescriptionForIds(ids, newDescription)
     }
 
-    // --- NEW: Expose the new DAO function ---
     fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>> {
         return transactionDao.getDailySpendingForDateRange(startDate, endDate)
     }

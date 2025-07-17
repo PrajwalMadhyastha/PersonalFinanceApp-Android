@@ -20,34 +20,6 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
-/**
- * Enum to represent the selectable time periods on the Reports screen.
- */
-enum class ReportPeriod(val displayName: String) {
-    WEEK("This Week"),
-    MONTH("This Month"),
-    QUARTER("3 Months"),
-    ALL_TIME("All Time")
-}
-
-/**
- * Data class to hold key insights calculated for the selected period.
- */
-data class ReportInsights(
-    val percentageChange: Int?,
-    val topCategory: CategorySpending?
-)
-
-/**
- * Data class to hold all the computed data for the reports screen.
- */
-data class ReportScreenData(
-    val pieData: PieData?,
-    val trendData: Pair<BarData, List<String>>?,
-    val periodTitle: String,
-    val insights: ReportInsights?
-)
-
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
@@ -168,6 +140,9 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         calendar.add(Calendar.YEAR, -1)
         val startDate = calendar.timeInMillis
 
+        val firstTransactionDate = transactionRepository.getFirstTransactionDate().first()
+        val firstDataCal = firstTransactionDate?.let { Calendar.getInstance().apply { timeInMillis = it } }
+
         val dailyTotals = transactionRepository.getDailySpendingForDateRange(startDate, endDate).first()
         val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
 
@@ -182,6 +157,12 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             val day = dayIterator.get(Calendar.DAY_OF_MONTH)
             val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, day)
             val monthKey = String.format(Locale.ROOT, "%d-%02d", year, month)
+
+            if (firstDataCal != null && dayIterator.before(firstDataCal)) {
+                resultList.add(CalendarDayStatus(dayIterator.time, SpendingStatus.NO_DATA, 0.0, 0.0))
+                dayIterator.add(Calendar.DAY_OF_YEAR, 1)
+                continue
+            }
 
             val safeToSpend = safeToSpendCache.getOrPut(monthKey) {
                 val monthCalendar = Calendar.getInstance().apply {

@@ -137,7 +137,6 @@ private fun String.toMonthIndex(): Int {
 private fun DayCell(dayData: CalendarDayStatus?) {
     val tooltipState = rememberTooltipState(isPersistent = true)
 
-    // --- UPDATED: Dynamic color logic based on spending magnitude ---
     val color = when (dayData?.status) {
         SpendingStatus.NO_SPEND -> Color(0xFF39D353) // A distinct, bright green for zero spending
 
