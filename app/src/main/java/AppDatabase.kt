@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FIX - The redundant 'RoomDatabase' qualifier has been removed from
-// the DatabaseCallback class signature. A direct import for 'Callback' has been
-// added, making the code cleaner and resolving the lint warning.
-// FIX - Removed the unused import for `kotlinx.coroutines.flow.first`.
+// REASON: FEATURE - The database has been updated to include the new
+// `RecurringPattern` entity and its corresponding `RecurringPatternDao`. The
+// database version has been incremented, and new migrations (25 to 26 and 26 to 27)
+// have been added to create the `recurring_patterns` table and add the
+// `smsSignature` column to the `transactions` table.
 // =================================================================================
 package io.pm.finlight
 
@@ -33,9 +34,10 @@ import java.util.Calendar
         MerchantRenameRule::class,
         MerchantCategoryMapping::class,
         IgnoreRule::class,
-        Goal::class
+        Goal::class,
+        RecurringPattern::class // --- NEW: Add the new entity
     ],
-    version = 25, // --- UPDATED: Incremented version number for schema change ---
+    version = 27, // --- UPDATED: Incremented version number
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -51,6 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
     abstract fun ignoreRuleDao(): IgnoreRuleDao
     abstract fun goalDao(): GoalDao
+    abstract fun recurringPatternDao(): RecurringPatternDao // --- NEW: Add the new DAO
 
     companion object {
         @Volatile
@@ -253,10 +256,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to enforce case-insensitive names ---
         val MIGRATION_24_25 = object : Migration(24, 25) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Recreate accounts table with NOCASE
                 db.execSQL("""
                     CREATE TABLE `accounts_new` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
@@ -269,7 +270,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP TABLE `accounts`")
                 db.execSQL("ALTER TABLE `accounts_new` RENAME TO `accounts`")
 
-                // Recreate categories table with NOCASE
                 db.execSQL("""
                     CREATE TABLE `categories_new` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
@@ -283,7 +283,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP TABLE `categories`")
                 db.execSQL("ALTER TABLE `categories_new` RENAME TO `categories`")
 
-                // Recreate merchant_rename_rules table with NOCASE
                 db.execSQL("""
                     CREATE TABLE `merchant_rename_rules_new` (
                         `originalName` TEXT NOT NULL COLLATE NOCASE, 
@@ -297,12 +296,41 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to add the recurring_patterns table ---
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `recurring_patterns` (
+                        `smsSignature` TEXT NOT NULL, 
+                        `description` TEXT NOT NULL, 
+                        `amount` REAL NOT NULL, 
+                        `transactionType` TEXT NOT NULL, 
+                        `accountId` INTEGER NOT NULL, 
+                        `categoryId` INTEGER, 
+                        `occurrences` INTEGER NOT NULL, 
+                        `firstSeen` INTEGER NOT NULL, 
+                        `lastSeen` INTEGER NOT NULL, 
+                        PRIMARY KEY(`smsSignature`)
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_patterns_lastSeen` ON `recurring_patterns` (`lastSeen`)")
+            }
+        }
+
+        // --- NEW: Migration to add the smsSignature column to transactions ---
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `smsSignature` TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_transactions_smsSignature` ON `transactions` (`smsSignature`)")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -310,7 +338,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- FIX: Removed redundant qualifier and added import ---
         private class DatabaseCallback(private val context: Context) : Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
