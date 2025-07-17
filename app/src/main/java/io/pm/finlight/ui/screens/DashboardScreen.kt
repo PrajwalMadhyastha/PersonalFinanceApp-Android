@@ -5,6 +5,10 @@
 // `Dashboard` route, which is the start destination of the bottom navigation
 // graph. This ensures it behaves identically to the bottom navigation bar,
 // fixing the back stack issue and preventing the "overlapping" screen problem.
+// FEATURE - The `SPENDING_CONSISTENCY` card has been replaced with a new card
+// that displays the scrollable yearly heatmap directly on the dashboard.
+// FIX - Corrected the LazyColumn implementation in AddCardSheetContent to use
+// `itemsIndexed`, resolving several compilation errors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -23,7 +27,6 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -58,8 +61,8 @@ fun DashboardScreen(
     val isCustomizationMode by viewModel.isCustomizationMode.collectAsState()
     val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
     val hiddenCards by viewModel.hiddenCards.collectAsState()
-    val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
-    val consistencyStats by viewModel.consistencyStats.collectAsState()
+    // --- NEW: Collect the yearly data for the new heatmap card ---
+    val yearlyConsistencyData by viewModel.yearlyConsistencyData.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
     var overscrollJob by remember { mutableStateOf<Job?>(null) }
@@ -164,8 +167,8 @@ fun DashboardScreen(
                     viewModel = viewModel,
                     isCustomizationMode = isCustomizationMode,
                     onHide = { viewModel.hideCard(cardType) },
-                    monthlyConsistencyData = monthlyConsistencyData,
-                    consistencyStats = consistencyStats
+                    // --- NEW: Pass yearly data to the card ---
+                    yearlyConsistencyData = yearlyConsistencyData
                 )
             }
         }
@@ -179,8 +182,8 @@ private fun DashboardCard(
     viewModel: DashboardViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
-    monthlyConsistencyData: List<CalendarDayStatus>,
-    consistencyStats: ConsistencyStats
+    // --- NEW: Accept yearly data ---
+    yearlyConsistencyData: List<CalendarDayStatus>
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
@@ -212,22 +215,34 @@ private fun DashboardCard(
                 budgetStatus = budgetStatus,
                 navController = navController,
             )
-            DashboardCardType.SPENDING_CONSISTENCY -> MonthlyConsistencyCalendarCard(
-                data = monthlyConsistencyData,
-                stats = consistencyStats,
-                onReportClick = {
-                    navController.navigate(BottomNavItem.Reports.route) {
-                        popUpTo(BottomNavItem.Dashboard.route) {
-                            saveState = true
+            // --- UPDATED: Replaced the old card with the new yearly heatmap card ---
+            DashboardCardType.SPENDING_CONSISTENCY -> {
+                GlassPanel {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            "Yearly Spending Consistency",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (yearlyConsistencyData.isEmpty()) {
+                            CircularProgressIndicator()
+                        } else {
+                            ConsistencyCalendar(
+                                data = yearlyConsistencyData,
+                                onDayClick = { date ->
+                                    navController.navigate("search_screen?date=${date.time}")
+                                }
+                            )
                         }
-                        launchSingleTop = true
-                        restoreState = true
                     }
-                },
-                onDayClick = { date ->
-                    navController.navigate("search_screen?date=${date.time}")
                 }
-            )
+            }
         }
         if (isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET) {
             Row(
@@ -267,7 +282,8 @@ private fun AddCardSheetContent(
             Text("All available cards are already on your dashboard.")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(hiddenCards, key = { it.name }) { cardType ->
+                // --- FIX: Use itemsIndexed to correctly iterate over the list ---
+                itemsIndexed(hiddenCards, key = { _, cardType -> cardType.name }) { _, cardType ->
                     ListItem(
                         headlineContent = { Text(cardType.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) },
                         leadingContent = { Icon(Icons.Default.Add, contentDescription = null) },
