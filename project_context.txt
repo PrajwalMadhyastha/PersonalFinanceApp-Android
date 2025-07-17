@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul 16 13:36:01 IST 2025
+Generated on: Wed Jul 16 18:43:58 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -822,11 +822,6 @@ class TimePeriodReportViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
-
-data class ReportInsights(
-    val percentageChange: Int?,
-    val topCategory: CategorySpending?
-)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimePeriodReportViewModel(
@@ -2249,12 +2244,6 @@ class IncomeViewModel(application: Application) : AndroidViewModel(application) 
 
 
 ================== FILE: ./app/src/main/java/SearchViewModel.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SearchViewModel.kt
-// REASON: Implemented a dynamic, debounced search mechanism. The ViewModel now
-// automatically triggers a search query 300ms after any filter or keyword
-// changes, removing the need for a manual "Apply" button.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -2280,6 +2269,7 @@ class SearchViewModel(
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
     private val categoryDao: CategoryDao,
+    private val initialCategoryId: Int? // Accept initial category ID
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -2288,7 +2278,7 @@ class SearchViewModel(
     val searchResults: StateFlow<List<TransactionDetails>> = _searchResults.asStateFlow()
 
     init {
-        // Load initial filter options (accounts and categories)
+        // Load initial filter options
         viewModelScope.launch {
             accountDao.getAllAccounts().collect { accounts ->
                 _uiState.update { it.copy(accounts = accounts) }
@@ -2297,16 +2287,21 @@ class SearchViewModel(
         viewModelScope.launch {
             categoryDao.getAllCategories().collect { categories ->
                 _uiState.update { it.copy(categories = categories) }
+                // --- NEW: Pre-select category if an ID was passed ---
+                if (initialCategoryId != null) {
+                    val initialCategory = categories.find { it.id == initialCategoryId }
+                    if (initialCategory != null) {
+                        _uiState.update { it.copy(selectedCategory = initialCategory) }
+                    }
+                }
             }
         }
 
-        // --- NEW: Reactive search logic ---
-        // This flow automatically executes a search whenever the UI state changes,
-        // with a 300ms debounce to prevent excessive queries while typing.
+        // Reactive search logic
         viewModelScope.launch {
             uiState
                 .debounce(300L)
-                .collectLatest { state -> // Use collectLatest to cancel previous searches if a new state arrives
+                .collectLatest { state ->
                     val filtersAreActive = state.selectedAccount != null ||
                             state.selectedCategory != null ||
                             state.transactionType != "All" ||
@@ -2325,7 +2320,6 @@ class SearchViewModel(
                         )
                         _searchResults.value = results
                     } else {
-                        // Clear results and search status if no filters/keyword are active
                         _searchResults.value = emptyList()
                         _uiState.update { it.copy(hasSearched = false) }
                     }
@@ -2362,10 +2356,7 @@ class SearchViewModel(
                 accounts = _uiState.value.accounts,
                 categories = _uiState.value.categories,
             )
-        // Results will clear automatically due to the reactive flow
     }
-
-    // The manual executeSearch function is no longer needed.
 }
 -e 
 
@@ -12108,24 +12099,8 @@ private fun RecurringTransactionItem(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
-// REASON: Modernized the UI by implementing auto-focus for the keyword field
-// and removing the now-obsolete "Apply Filter" button, creating a more
-// dynamic and responsive search experience.
-// UPDATE: Redesigned the layout to hide advanced filters in a collapsible
-// section, providing a cleaner initial view and an indicator for active filters.
-// UPDATE: The filter section has been redesigned to use a GlassPanel, aligning
-// it with the "Project Aurora" aesthetic for a consistent and modern look.
-// FIX: Applied a semi-opaque background to the filter dropdown menus to ensure
-// legibility and consistency with other popups in dark mode.
-// ANIMATION - The filter section is now wrapped in an AnimatedVisibility with
-// a fast, non-fading animation spec (`expandVertically` and `shrinkVertically`).
-// This makes showing/hiding the filters feel much snappier.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.app.Application
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -12148,9 +12123,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
@@ -12162,11 +12135,10 @@ import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(navController: NavController) {
-    val context = LocalContext.current
-    val factory = SearchViewModelFactory(context.applicationContext as Application)
-    val viewModel: SearchViewModel = viewModel(factory = factory)
-
+fun SearchScreen(
+    navController: NavController,
+    viewModel: SearchViewModel // Accept the ViewModel as a parameter
+) {
     val searchUiState by viewModel.uiState.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
 
@@ -12176,6 +12148,13 @@ fun SearchScreen(navController: NavController) {
 
     val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+
+    // --- NEW: Automatically expand filters if a category is pre-selected ---
+    LaunchedEffect(searchUiState.selectedCategory) {
+        if (searchUiState.selectedCategory != null) {
+            showFilters = true
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Search Bar and Filter Section
@@ -12192,7 +12171,6 @@ fun SearchScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- UPDATE: Filters are now inside a collapsible GlassPanel ---
             GlassPanel {
                 Column {
                     Row(
@@ -12398,7 +12376,6 @@ fun <T> SearchableDropdown(
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            // --- FIX: Apply a background to the dropdown menu for better legibility ---
             modifier = Modifier.background(
                 if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
             )
@@ -13622,83 +13599,117 @@ private fun SettingsSection(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: REFACTOR - The "Daily Report" navigation card has been removed from
-// this screen. This report is now only accessible via its daily notification,
-// as per the user's request to declutter the main reports interface.
-// =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.PieChart
-import io.pm.finlight.*
+import com.github.mikephil.charting.data.Entry
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
+import io.pm.finlight.CategoryIconHelper
+import io.pm.finlight.ReportInsights
+import io.pm.finlight.ReportPeriod
+import io.pm.finlight.ReportsViewModel
+import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
+import java.util.Calendar
+import kotlin.math.abs
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReportsScreen(
     navController: NavController,
     viewModel: ReportsViewModel = viewModel(),
 ) {
-    val pieData by viewModel.spendingByCategoryPieData.collectAsState(initial = null)
-    val trendDataPair by viewModel.monthlyTrendData.collectAsState(initial = null)
+    val reportData by viewModel.reportData.collectAsState()
+    val selectedPeriod by viewModel.selectedPeriod.collectAsState()
+    val allCategories by viewModel.allCategories.collectAsState()
     val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxSize()
     ) {
         item {
-            Text(
-                "Spending Reports",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        // --- REMOVED: The Daily Report card is no longer shown here. ---
-        item {
-            GlassReportNavigationCard(
-                title = "Weekly Report",
-                subtitle = "Analyze your spending week by week.",
-                icon = Icons.Default.CalendarViewWeek,
-                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.WEEKLY}") }
-            )
-        }
-        item {
-            GlassReportNavigationCard(
-                title = "Monthly Report",
-                subtitle = "Get a high-level overview of your monthly habits.",
-                icon = Icons.Default.CalendarViewMonth,
-                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.MONTHLY}") }
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val periods = ReportPeriod.entries
+                periods.chunked(2).forEach { rowPeriods ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowPeriods.forEach { period ->
+                            FilterChip(
+                                modifier = Modifier.weight(1f),
+                                selected = period == selectedPeriod,
+                                onClick = { viewModel.selectPeriod(period) },
+                                label = { Text(period.displayName) },
+                                leadingIcon = if (period == selectedPeriod) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "Selected",
+                                            modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                        )
+                                    }
+                                } else {
+                                    null
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         item {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Analysis",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            reportData.insights?.let {
+                ReportInsightsCard(insights = it)
+            }
         }
 
         item {
@@ -13708,12 +13719,13 @@ fun ReportsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        "Spending by Category for ${viewModel.monthYear}",
+                        "Spending by Category for ${reportData.periodTitle}",
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    if (pieData == null || pieData?.entryCount == 0) {
+                    Spacer(Modifier.height(16.dp))
+                    val pieData = reportData.pieData
+                    if (pieData == null || pieData.entryCount == 0) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -13721,7 +13733,7 @@ fun ReportsScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "No expense data for this month.",
+                                "No expense data for this period.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -13735,6 +13747,17 @@ fun ReportsScreen(
                                     setEntryLabelColor(pieChartLabelColor)
                                     setEntryLabelTextSize(12f)
                                     legend.isEnabled = false
+                                    setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                                        override fun onValueSelected(e: Entry?, h: Highlight?) {
+                                            val categoryName = e?.data as? String ?: return
+                                            val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
+                                            category?.let {
+                                                navController.navigate("search_screen?categoryId=${it.id}")
+                                            }
+                                        }
+
+                                        override fun onNothingSelected() {}
+                                    })
                                 }
                             },
                             update = { chart ->
@@ -13763,9 +13786,25 @@ fun ReportsScreen(
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    if (trendDataPair != null && trendDataPair!!.first.entryCount > 0) {
-                        GroupedBarChart(trendDataPair!!)
+                    Spacer(Modifier.height(16.dp))
+                    val trendDataPair = reportData.trendData
+                    if (trendDataPair != null && trendDataPair.first.entryCount > 0) {
+                        GroupedBarChart(
+                            chartData = trendDataPair,
+                            onBarClick = { entry ->
+                                // Find the month that was clicked
+                                val monthIndex = entry.x.toInt()
+                                val trends = viewModel.reportData.value.trendData?.first?.dataSets?.firstOrNull()?.getEntryForIndex(monthIndex)
+                                if (trends != null) {
+                                    // Calculate the timestamp for the end of the clicked month
+                                    val calendar = Calendar.getInstance()
+                                    calendar.add(Calendar.MONTH, monthIndex - (reportData.trendData?.second?.size?.minus(1) ?: 0))
+                                    calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+                                    val dateMillis = calendar.timeInMillis
+                                    navController.navigate("time_period_report_screen/${TimePeriod.MONTHLY}?date=$dateMillis")
+                                }
+                            }
+                        )
                     } else {
                         Box(
                             modifier = Modifier
@@ -13779,6 +13818,76 @@ fun ReportsScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Detailed Reports",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        item {
+            GlassReportNavigationCard(
+                title = "Weekly Report",
+                subtitle = "Analyze your spending week by week.",
+                icon = Icons.Default.CalendarViewWeek,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.WEEKLY}") }
+            )
+        }
+        item {
+            GlassReportNavigationCard(
+                title = "Monthly Report",
+                subtitle = "Get a high-level overview of your monthly habits.",
+                icon = Icons.Default.CalendarViewMonth,
+                onClick = { navController.navigate("time_period_report_screen/${TimePeriod.MONTHLY}") }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReportInsightsCard(insights: ReportInsights) {
+    GlassPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Change", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val (text, color) = when {
+                    insights.percentageChange == null -> "--" to MaterialTheme.colorScheme.onSurface
+                    insights.percentageChange > 0 -> "↑ ${insights.percentageChange}%" to MaterialTheme.colorScheme.error
+                    insights.percentageChange < 0 -> "↓ ${abs(insights.percentageChange)}%" to MaterialTheme.colorScheme.primary
+                    else -> "No Change" to MaterialTheme.colorScheme.onSurface
+                }
+                Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = color)
+                Text("vs. previous period", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Top Spend", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (insights.topCategory != null) {
+                    Icon(
+                        imageVector = CategoryIconHelper.getIcon(insights.topCategory.iconKey ?: "category"),
+                        contentDescription = insights.topCategory.categoryName,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(CategoryIconHelper.getIconBackgroundColor(insights.topCategory.colorKey ?: "gray_light"))
+                            .padding(8.dp),
+                        tint = Color.Black
+                    )
+                    Text(insights.topCategory.categoryName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text("--", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 }
             }
         }
@@ -14656,9 +14765,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 
 @Composable
 fun TimePickerDialog(
@@ -14719,8 +14831,11 @@ fun ChartLegend(pieData: PieData?) {
 }
 
 @Composable
-fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
-    val (barData, labels) = trendDataPair
+fun GroupedBarChart(
+    chartData: Pair<BarData, List<String>>,
+    onBarClick: ((Entry) -> Unit)? = null // Add a callback for bar clicks
+) {
+    val (barData, labels) = chartData
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val legendColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
 
@@ -14739,6 +14854,16 @@ fun GroupedBarChart(trendDataPair: Pair<BarData, List<String>>) {
                 axisLeft.setDrawGridLines(true)
 
                 axisRight.isEnabled = false
+
+                // --- NEW: Add click listener ---
+                if (onBarClick != null) {
+                    setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                        override fun onValueSelected(e: Entry?, h: Highlight?) {
+                            e?.let { onBarClick(it) }
+                        }
+                        override fun onNothingSelected() {}
+                    })
+                }
             }
         },
         update = { chart ->
@@ -16269,14 +16394,6 @@ val Typography = Typography(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The @RequiresApi(Build.VERSION_CODES.TIRAMISU) annotation has
-// been removed from the AppNavHost function. The app's logic already handles
-// notification permissions safely within the NotificationHelper, making this
-// annotation overly restrictive and causing a lint error. This change resolves
-// the "NewApi" error without affecting functionality.
-// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -16699,7 +16816,6 @@ fun AppNavHost(
         startDestination = "splash_screen",
         modifier = modifier
     ) {
-        // --- FIX: Define transitions inline for each composable to fix type errors ---
         composable("splash_screen") {
             SplashScreen(navController = navController, activity = activity)
         }
@@ -16774,12 +16890,18 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            "search_screen",
+            "search_screen?categoryId={categoryId}",
+            arguments = listOf(navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 }),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { SearchScreen(navController) }
+        ) { backStackEntry ->
+            val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
+            val factory = SearchViewModelFactory(activity.application, if (categoryId != -1) categoryId else null)
+            val searchViewModel: SearchViewModel = viewModel(factory = factory)
+            SearchScreen(navController, searchViewModel)
+        }
         composable(
             route = "review_sms_screen",
             deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" }),
@@ -19166,7 +19288,10 @@ import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 
-class SearchViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+class SearchViewModelFactory(
+    private val application: Application,
+    private val initialCategoryId: Int? // Add initial category ID
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SearchViewModel::class.java)) {
             val database = AppDatabase.getInstance(application)
@@ -19175,6 +19300,7 @@ class SearchViewModelFactory(private val application: Application) : ViewModelPr
                 transactionDao = database.transactionDao(),
                 accountDao = database.accountDao(),
                 categoryDao = database.categoryDao(),
+                initialCategoryId = initialCategoryId // Pass it to the ViewModel
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
@@ -19189,72 +19315,201 @@ package io.pm.finlight
 import android.app.Application
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.AndroidViewModel
-import com.github.mikephil.charting.data.*
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import androidx.lifecycle.viewModelScope
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
+import com.github.mikephil.charting.data.PieData
+import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.data.PieEntry
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
+/**
+ * Enum to represent the selectable time periods on the Reports screen.
+ */
+enum class ReportPeriod(val displayName: String) {
+    WEEK("This Week"),
+    MONTH("This Month"),
+    QUARTER("3 Months"),
+    ALL_TIME("All Time")
+}
+
+/**
+ * Data class to hold key insights calculated for the selected period.
+ */
+data class ReportInsights(
+    val percentageChange: Int?,
+    val topCategory: CategorySpending?
+)
+
+/**
+ * Data class to hold all the computed data for the reports screen.
+ */
+data class ReportScreenData(
+    val pieData: PieData?,
+    val trendData: Pair<BarData, List<String>>?,
+    val periodTitle: String,
+    val insights: ReportInsights?
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
-    val spendingByCategoryPieData: Flow<PieData>
-    val monthYear: String
-    val monthlyTrendData: Flow<Pair<BarData, List<String>>>
+    private val categoryDao: CategoryDao
+
+    val allCategories: StateFlow<List<Category>>
+
+    private val _selectedPeriod = MutableStateFlow(ReportPeriod.MONTH)
+    val selectedPeriod: StateFlow<ReportPeriod> = _selectedPeriod.asStateFlow()
+
+    val reportData: StateFlow<ReportScreenData>
 
     init {
         val db = AppDatabase.getInstance(application)
         transactionRepository = TransactionRepository(db.transactionDao())
+        categoryDao = db.categoryDao()
 
-        val calendar = Calendar.getInstance()
-        // --- FIX: Corrected the invalid date format pattern ---
-        monthYear = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(calendar.time)
+        allCategories = categoryDao.getAllCategories()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
 
-        val monthStart = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0) }.timeInMillis
-        val monthEnd = Calendar.getInstance().apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23) }.timeInMillis
+        reportData = _selectedPeriod.flatMapLatest { period ->
+            val (currentStartDate, currentEndDate) = calculateDateRange(period)
+            val (previousStartDate, previousEndDate) = calculatePreviousDateRange(period)
+            val trendStartDate = calculateTrendStartDate(period)
 
-        spendingByCategoryPieData =
-            transactionRepository.getSpendingByCategoryForMonth(
-                startDate = monthStart,
-                endDate = monthEnd,
-                keyword = null,
-                accountId = null,
-                categoryId = null
-            ).map { spendingList ->
-                val entries = spendingList.map { PieEntry(it.totalAmount.toFloat(), it.categoryName) }
-                val colors = spendingList.map {
+            val categorySpendingFlow = transactionRepository.getSpendingByCategoryForMonth(
+                startDate = currentStartDate,
+                endDate = currentEndDate,
+                keyword = null, accountId = null, categoryId = null
+            )
+
+            val monthlyTrendFlow = transactionRepository.getMonthlyTrends(trendStartDate)
+
+            val currentSummaryFlow = transactionRepository.getFinancialSummaryForRangeFlow(currentStartDate, currentEndDate)
+            val previousSummaryFlow = transactionRepository.getFinancialSummaryForRangeFlow(previousStartDate, previousEndDate)
+            val topCategoryFlow = transactionRepository.getTopSpendingCategoriesForRangeFlow(currentStartDate, currentEndDate)
+
+            combine(
+                categorySpendingFlow,
+                monthlyTrendFlow,
+                currentSummaryFlow,
+                previousSummaryFlow,
+                topCategoryFlow
+            ) { spendingList, trends, currentSummary, previousSummary, topCategory ->
+                // Create PieData
+                val pieEntries = spendingList.map {
+                    // --- FIX: Add the category name to the 'data' field for the click listener ---
+                    PieEntry(it.totalAmount.toFloat(), it.categoryName, it.categoryName)
+                }
+                val pieColors = spendingList.map {
                     (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
                 }
-                val dataSet =
-                    PieDataSet(entries, "Spending by Category").apply {
-                        this.colors = colors
-                        valueTextSize = 12f
-                    }
-                PieData(dataSet)
-            }
-
-        val sixMonthsAgo = Calendar.getInstance().apply { add(Calendar.MONTH, -6) }.timeInMillis
-        monthlyTrendData =
-            transactionRepository.getMonthlyTrends(sixMonthsAgo)
-                .map { trends ->
-                    val incomeEntries = ArrayList<BarEntry>()
-                    val expenseEntries = ArrayList<BarEntry>()
-                    val labels = ArrayList<String>()
-
-                    trends.forEachIndexed { index, trend ->
-                        incomeEntries.add(BarEntry(index.toFloat(), trend.totalIncome.toFloat()))
-                        expenseEntries.add(BarEntry(index.toFloat(), trend.totalExpenses.toFloat()))
-                        val date = SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(trend.monthYear)
-                        labels.add(SimpleDateFormat("MMM", Locale.getDefault()).format(date ?: Date()))
-                    }
-
-                    val incomeDataSet = BarDataSet(incomeEntries, "Income").apply { color = android.graphics.Color.rgb(102, 187, 106) }
-                    val expenseDataSet = BarDataSet(expenseEntries, "Expense").apply { color = android.graphics.Color.rgb(239, 83, 80) }
-
-                    val barData = BarData(incomeDataSet, expenseDataSet)
-                    Pair(barData, labels)
+                val pieDataSet = PieDataSet(pieEntries, "Spending by Category").apply {
+                    this.colors = pieColors
+                    valueTextSize = 12f
                 }
+                val finalPieData = if (pieEntries.isEmpty()) null else PieData(pieDataSet)
+
+                // Create BarData for trends
+                val incomeEntries = ArrayList<BarEntry>()
+                val expenseEntries = ArrayList<BarEntry>()
+                val labels = ArrayList<String>()
+                trends.forEachIndexed { index, trend ->
+                    incomeEntries.add(BarEntry(index.toFloat(), trend.totalIncome.toFloat()))
+                    expenseEntries.add(BarEntry(index.toFloat(), trend.totalExpenses.toFloat()))
+                    val date = SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(trend.monthYear)
+                    labels.add(SimpleDateFormat("MMM", Locale.getDefault()).format(date ?: Date()))
+                }
+                val incomeDataSet = BarDataSet(incomeEntries, "Income").apply { color = android.graphics.Color.rgb(102, 187, 106) }
+                val expenseDataSet = BarDataSet(expenseEntries, "Expense").apply { color = android.graphics.Color.rgb(239, 83, 80) }
+                val finalTrendData = if (trends.isEmpty()) null else Pair(BarData(incomeDataSet, expenseDataSet), labels)
+
+                // Calculate insights
+                val percentageChange = if (previousSummary?.totalExpenses != null && previousSummary.totalExpenses > 0) {
+                    val currentExpenses = currentSummary?.totalExpenses ?: 0.0
+                    ((currentExpenses - previousSummary.totalExpenses) / previousSummary.totalExpenses * 100).roundToInt()
+                } else {
+                    null
+                }
+                val insights = ReportInsights(percentageChange, topCategory)
+
+                val periodTitle = when (period) {
+                    ReportPeriod.WEEK -> "This Week"
+                    ReportPeriod.MONTH -> "This Month"
+                    ReportPeriod.QUARTER -> "Last 3 Months"
+                    ReportPeriod.ALL_TIME -> "All Time"
+                }
+
+                ReportScreenData(finalPieData, finalTrendData, periodTitle, insights)
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ReportScreenData(null, null, "This Month", null)
+        )
+    }
+
+    fun selectPeriod(period: ReportPeriod) {
+        _selectedPeriod.value = period
+    }
+
+    private fun calculateDateRange(period: ReportPeriod): Pair<Long, Long> {
+        val calendar = Calendar.getInstance()
+        val endDate = calendar.timeInMillis
+        val startDate = when (period) {
+            ReportPeriod.WEEK -> (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -7) }.timeInMillis
+            ReportPeriod.MONTH -> (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0) }.timeInMillis
+            ReportPeriod.QUARTER -> (calendar.clone() as Calendar).apply { add(Calendar.MONTH, -3) }.timeInMillis
+            ReportPeriod.ALL_TIME -> 0L
+        }
+        return Pair(startDate, endDate)
+    }
+
+    private fun calculatePreviousDateRange(period: ReportPeriod): Pair<Long, Long> {
+        val calendar = Calendar.getInstance()
+        return when (period) {
+            ReportPeriod.WEEK -> {
+                val endDate = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -7) }.timeInMillis
+                val startDate = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -14) }.timeInMillis
+                Pair(startDate, endDate)
+            }
+            ReportPeriod.MONTH -> {
+                val endDate = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1) }.timeInMillis
+                val startDate = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, -1); set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
+                Pair(startDate, endDate)
+            }
+            ReportPeriod.QUARTER -> {
+                val endDate = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, -3) }.timeInMillis
+                val startDate = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, -6) }.timeInMillis
+                Pair(startDate, endDate)
+            }
+            ReportPeriod.ALL_TIME -> Pair(0L, 0L) // No previous period for "All Time"
+        }
+    }
+
+    private fun calculateTrendStartDate(period: ReportPeriod): Long {
+        val calendar = Calendar.getInstance()
+        return when (period) {
+            ReportPeriod.WEEK, ReportPeriod.MONTH -> (calendar.clone() as Calendar).apply { add(Calendar.MONTH, -6) }.timeInMillis
+            ReportPeriod.QUARTER -> (calendar.clone() as Calendar).apply { add(Calendar.MONTH, -6) }.timeInMillis
+            ReportPeriod.ALL_TIME -> 0L
+        }
     }
 }
 -e 
@@ -20049,13 +20304,6 @@ data class IgnoreRule(
 
 
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE - Added the `getTagsForTransactionSimple` suspend function.
-// This provides a non-Flow, one-shot method to fetch tags for a given
-// transaction, which is necessary for the CSV export process to efficiently
-// gather and append tag data for each row.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -20081,6 +20329,24 @@ interface TransactionDao {
     """
     )
     suspend fun getTopSpendingCategoriesForRange(startDate: Long, endDate: Long): List<CategorySpending>
+
+    @Query(
+        """
+        SELECT
+            C.name as categoryName,
+            SUM(T.amount) as totalAmount,
+            C.iconKey as iconKey,
+            C.colorKey as categoryColorKey
+        FROM transactions AS T
+        INNER JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
+          AND T.isExcluded = 0
+        GROUP BY C.name
+        ORDER BY totalAmount DESC
+        LIMIT 1
+    """
+    )
+    fun getTopSpendingCategoriesForRangeFlow(startDate: Long, endDate: Long): Flow<CategorySpending?>
 
 
     @Query("UPDATE transactions SET isExcluded = :isExcluded WHERE id = :id")
@@ -20361,6 +20627,15 @@ interface TransactionDao {
     """)
     suspend fun getFinancialSummaryForRange(startDate: Long, endDate: Long): FinancialSummary?
 
+    @Query("""
+        SELECT
+            SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
+            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
+        FROM transactions
+        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+    """)
+    fun getFinancialSummaryForRangeFlow(startDate: Long, endDate: Long): Flow<FinancialSummary?>
+
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(transactions: List<Transaction>)
@@ -20386,7 +20661,6 @@ interface TransactionDao {
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
 
-    // --- NEW: Non-flow version for one-shot queries like CSV export ---
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag>
 
@@ -20496,7 +20770,8 @@ interface TransactionDao {
         startDate: Long?,
         endDate: Long?,
     ): List<TransactionDetails>
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/RecurringTransactionViewModel.kt ==================
@@ -21917,13 +22192,6 @@ class RecurringTransactionWorker(
 
 
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: FIX - Several unused functions (`getAllTransactionsSimple`,
-// `getSpendingForCategory`, `insert`, `update`, and `findLinkableTransactions`)
-// have been removed to resolve the "UnusedSymbol" warnings and clean up the
-// repository's public API.
-// =================================================================================
 package io.pm.finlight
 
 import android.util.Log
@@ -21939,6 +22207,14 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                     "Repository Flow Emitted. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}",
                 )
             }
+
+    fun getFinancialSummaryForRangeFlow(startDate: Long, endDate: Long): Flow<FinancialSummary?> {
+        return transactionDao.getFinancialSummaryForRangeFlow(startDate, endDate)
+    }
+
+    fun getTopSpendingCategoriesForRangeFlow(startDate: Long, endDate: Long): Flow<CategorySpending?> {
+        return transactionDao.getTopSpendingCategoriesForRangeFlow(startDate, endDate)
+    }
 
     fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>> {
         return transactionDao.getIncomeTransactionsForRange(startDate, endDate, keyword, accountId, categoryId)
@@ -22099,17 +22375,14 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         return transactionDao.getTransactionCountForMerchant(description)
     }
 
-    // --- NEW: Expose DAO function for finding similar transactions ---
     suspend fun findSimilarTransactions(description: String, excludeId: Int): List<Transaction> {
         return transactionDao.findSimilarTransactions(description, excludeId)
     }
 
-    // --- NEW: Expose DAO function for batch updating category ---
     suspend fun updateCategoryForIds(ids: List<Int>, categoryId: Int) {
         transactionDao.updateCategoryForIds(ids, categoryId)
     }
 
-    // --- NEW: Expose DAO function for batch updating description ---
     suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String) {
         transactionDao.updateDescriptionForIds(ids, newDescription)
     }
