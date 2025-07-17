@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -49,6 +50,7 @@ import io.pm.finlight.ReportPeriod
 import io.pm.finlight.ReportsViewModel
 import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
+import io.pm.finlight.ui.components.ConsistencyCalendar
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
 import java.util.Calendar
@@ -64,6 +66,7 @@ fun ReportsScreen(
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
     val allCategories by viewModel.allCategories.collectAsState()
     val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val calendarData by viewModel.consistencyCalendarData.collectAsState()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -110,6 +113,28 @@ fun ReportsScreen(
                 ReportInsightsCard(insights = it)
             }
         }
+
+        item {
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Spending Consistency",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    if (calendarData.isEmpty()) {
+                        CircularProgressIndicator()
+                    } else {
+                        ConsistencyCalendar(data = calendarData)
+                    }
+                }
+            }
+        }
+
 
         item {
             GlassPanel(modifier = Modifier.fillMaxWidth()) {

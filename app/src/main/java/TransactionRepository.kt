@@ -192,4 +192,9 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String) {
         transactionDao.updateDescriptionForIds(ids, newDescription)
     }
+
+    // --- NEW: Expose the new DAO function ---
+    fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>> {
+        return transactionDao.getDailySpendingForDateRange(startDate, endDate)
+    }
 }

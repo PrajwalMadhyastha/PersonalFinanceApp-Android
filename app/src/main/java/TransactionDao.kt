@@ -1,10 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE - Added `getTransactionsWithSignatureSince` and
-// `getTransactionsBySignature` queries. These are essential for the new
-// `RecurringPatternWorker` to fetch the data it needs to analyze potential
-// recurring transactions.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*

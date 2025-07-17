@@ -1,15 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: FIX - All instances of `prefs.edit()...apply()` have been replaced
-// with the more idiomatic and safer `prefs.edit { ... }` KTX extension function.
-// This resolves all "AndroidLintUseKtx" warnings in this file and makes the
-// code more concise.
-// FIX - Replaced the deprecated `Enum.values()` call with the modern and more
-// performant `Enum.entries` property to resolve the "EnumValuesSoftDeprecate"
-// warning.
-// FIX - The `getBudgetKey` function now uses `String.format(Locale.ROOT, ...)`
-// to prevent potential bugs related to default locale formatting.
-// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -55,6 +43,46 @@ class SettingsRepository(context: Context) {
         private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
         private const val KEY_SELECTED_THEME = "selected_app_theme"
     }
+
+    // --- NEW: Blocking function to get a historical monthly budget ---
+    /**
+     * Retrieves the overall budget for a specific month synchronously.
+     * If no budget is set for the given month, it looks backward up to 12 months
+     * to find the most recently set budget and carries it forward.
+     *
+     * @param year The year of the budget to retrieve.
+     * @param month The month (1-12) of the budget to retrieve.
+     * @return The budget amount as a Float, or 0f if no budget was found.
+     */
+    fun getOverallBudgetForMonthBlocking(year: Int, month: Int): Float {
+        val currentMonthKey = getBudgetKey(year, month)
+
+        // If a budget is set for the specific month, use it.
+        if (prefs.contains(currentMonthKey)) {
+            return prefs.getFloat(currentMonthKey, 0f)
+        }
+
+        // Otherwise, try to find the most recent budget set before this month.
+        val searchCal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month - 1) // Calendar month is 0-indexed
+        }
+
+        // Look back up to 12 months for a set budget.
+        for (i in 0..11) {
+            searchCal.add(Calendar.MONTH, -1)
+            val prevYear = searchCal.get(Calendar.YEAR)
+            val prevMonth = searchCal.get(Calendar.MONTH) + 1
+            val prevKey = getBudgetKey(prevYear, prevMonth)
+            if (prefs.contains(prevKey)) {
+                return prefs.getFloat(prevKey, 0f)
+            }
+        }
+
+        // If no budget is found in the last year, return 0.
+        return 0f
+    }
+
 
     fun saveSelectedTheme(theme: AppTheme) {
         prefs.edit {
@@ -138,7 +166,6 @@ class SettingsRepository(context: Context) {
             val names: Set<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }.toSet()
         } else {
-            // --- FIX: Use modern and more performant .entries property ---
             DashboardCardType.entries.toSet()
         }
     }
@@ -425,7 +452,6 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // --- FIX: Changed default day to Sunday ---
             trySend(Triple(
                 prefs.getInt(KEY_WEEKLY_REPORT_DAY, Calendar.SUNDAY),
                 prefs.getInt(KEY_WEEKLY_REPORT_HOUR, 9),

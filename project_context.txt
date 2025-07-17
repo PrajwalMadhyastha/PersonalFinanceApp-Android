@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Thu Jul 17 14:28:43 IST 2025
+Generated on: Thu Jul 17 17:25:30 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -12318,24 +12318,23 @@ fun DateTextField(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditGoalScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditGoalScreen.kt
-// REASON: FIX - The DatePickerDialog is now provided with an explicit container
-// color derived from the current theme. This is the same implementation used
-// in other working dialogs and resolves the issue where the dialog was inheriting
-// a transparent background from the screen, making it invisible.
+// REASON: FIX - Integrated the user-provided, working solution for the
+// DatePickerDialog. The dialog is now explicitly given a solid, theme-aware
+// background color, which prevents it from inheriting the screen's transparency
+// and ensures it is always visible.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
@@ -12346,58 +12345,70 @@ import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
-// Helper function to determine if a color is 'dark' based on luminance.
-private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+// Helper to detect perceived luminance.
+private fun Color.isDark() =
+    (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddEditGoalScreen(
     navController: NavController,
-    goalId: Int?,
-    goalViewModel: GoalViewModel = viewModel(),
-    transactionViewModel: TransactionViewModel = viewModel()
+    goalId: Int? = null
 ) {
+    /* View-models */
+    val goalViewModel: GoalViewModel = viewModel()
+    val txnViewModel: TransactionViewModel = viewModel()
+
+    /* Screen mode */
     val isEditMode = goalId != null
-    val titleText = if (isEditMode) "Edit Savings Goal" else "New Savings Goal"
+    val screenTitle = if (isEditMode) "Edit Savings Goal" else "New Savings Goal"
 
-    val accounts by transactionViewModel.allAccounts.collectAsState()
-    val goalToEdit by if (isEditMode) goalViewModel.getGoalById(goalId!!).collectAsState(initial = null) else remember { mutableStateOf(null) }
+    /* Live data */
+    val accounts by txnViewModel.allAccounts.collectAsState(initial = emptyList())
 
-    var goalName by remember { mutableStateOf("") }
+    /* Local UI state */
+    var name by remember { mutableStateOf("") }
     var targetAmount by remember { mutableStateOf("") }
     var savedAmount by remember { mutableStateOf("") }
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
-    var targetDate by remember { mutableStateOf<Long?>(null) }
-    var accountExpanded by remember { mutableStateOf(false) }
+    var targetDateMillis by remember { mutableStateOf<Long?>(null) }
+
     var showDatePicker by remember { mutableStateOf(false) }
+    var accountExpanded by remember { mutableStateOf(false) }
+
+    /* Pre-populate when editing */
+    val goalToEdit by if (isEditMode) {
+        goalViewModel.getGoalById(goalId!!).collectAsState(initial = null)
+    } else {
+        remember { mutableStateOf(null) }
+    }
 
     LaunchedEffect(goalToEdit, accounts) {
-        if (isEditMode) {
-            goalToEdit?.let { goal ->
-                goalName = goal.name
-                targetAmount = goal.targetAmount.toString()
-                savedAmount = goal.savedAmount.toString()
-                selectedAccount = accounts.find { it.id == goal.accountId }
-                targetDate = goal.targetDate
-            }
-        } else {
-            // Default to the first account when creating a new goal
-            if (accounts.isNotEmpty()) {
-                selectedAccount = accounts.first()
-            }
+        goalToEdit?.let { goal ->
+            name = goal.name
+            targetAmount = NumberFormat.getNumberInstance().format(goal.targetAmount)
+            savedAmount = NumberFormat.getNumberInstance().format(goal.savedAmount)
+            targetDateMillis = goal.targetDate
+            selectedAccount = accounts.find { it.id == goal.accountId }
         }
     }
+
+    /* Theme-aware popup background for dialogs (transparency fix) */
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor =
+        if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(titleText) },
+                title = { Text(screenTitle) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -12408,51 +12419,75 @@ fun AddEditGoalScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
+                .padding(innerPadding)
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            /* ------------ Goal Basics ------------ */
             item {
                 GlassPanel {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         OutlinedTextField(
-                            value = goalName,
-                            onValueChange = { goalName = it },
-                            label = { Text("Goal Name (e.g., New Phone)") },
-                            modifier = Modifier.fillMaxWidth()
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Goal Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = auroraTextFieldColors()
                         )
                         OutlinedTextField(
                             value = targetAmount,
-                            onValueChange = { targetAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                            onValueChange = { targetAmount = it.filter { ch -> ch.isDigit() || ch == '.' } },
                             label = { Text("Target Amount") },
+                            singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             leadingIcon = { Text("₹") },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = auroraTextFieldColors()
                         )
                         OutlinedTextField(
                             value = savedAmount,
-                            onValueChange = { savedAmount = it.filter { c -> c.isDigit() || c == '.' } },
-                            label = { Text("Already Saved (Optional)") },
+                            onValueChange = { savedAmount = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                            label = { Text("Already Saved") },
+                            singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             leadingIcon = { Text("₹") },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = auroraTextFieldColors()
                         )
+                    }
+                }
+            }
 
-                        ExposedDropdownMenuBox(expanded = accountExpanded, onExpandedChange = { accountExpanded = !accountExpanded }) {
+            /* ------------ Account Picker ------------ */
+            item {
+                GlassPanel {
+                    Column(Modifier.padding(16.dp)) {
+                        ExposedDropdownMenuBox(
+                            expanded = accountExpanded,
+                            onExpandedChange = { accountExpanded = !accountExpanded }
+                        ) {
                             OutlinedTextField(
                                 value = selectedAccount?.name ?: "Select Account",
                                 onValueChange = {},
                                 readOnly = true,
-                                label = { Text("Link to Account") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountExpanded) },
+                                label = { Text("Allocate To Account") },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(
+                                        expanded = accountExpanded
+                                    )
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .menuAnchor()
+                                    .menuAnchor(),
+                                colors = auroraTextFieldColors()
                             )
                             ExposedDropdownMenu(
                                 expanded = accountExpanded,
                                 onDismissRequest = { accountExpanded = false },
-                                modifier = Modifier.background(if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight)
+                                modifier = Modifier.background(
+                                    if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+                                )
                             ) {
                                 accounts.forEach { account ->
                                     DropdownMenuItem(
@@ -12465,71 +12500,116 @@ fun AddEditGoalScreen(
                                 }
                             }
                         }
-
-                        val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
-                        OutlinedTextField(
-                            value = targetDate?.let { dateFormat.format(Date(it)) } ?: "",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Target Date (Optional)") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showDatePicker = true },
-                            trailingIcon = { Icon(Icons.Default.DateRange, "Select Date") }
-                        )
                     }
                 }
             }
+
+            /* ------------ Target Date ------------ */
+            item {
+                GlassPanel {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Target Date",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        val dateDisplay = targetDateMillis?.let {
+                            SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(it))
+                        } ?: "Select"
+                        TextButton(onClick = { showDatePicker = true }) {
+                            Text(dateDisplay)
+                        }
+                    }
+                }
+            }
+
+            /* ------------ Save / Cancel Buttons ------------ */
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
-                        Text("Cancel")
-                    }
+                    OutlinedButton(
+                        onClick = { navController.popBackStack() },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Cancel") }
+
+                    val saveEnabled = name.isNotBlank()
+                            && targetAmount.toDoubleOrNull() != null
+                            && selectedAccount != null
+
                     Button(
                         onClick = {
-                            val target = targetAmount.toDoubleOrNull()
-                            val saved = savedAmount.toDoubleOrNull() ?: 0.0
-                            if (goalName.isNotBlank() && target != null && selectedAccount != null) {
-                                goalViewModel.saveGoal(goalId, goalName, target, saved, targetDate, selectedAccount!!.id)
-                                navController.popBackStack()
-                            }
+                            val tgtAmt = targetAmount.toDouble()
+                            val svdAmt = savedAmount.toDoubleOrNull() ?: 0.0
+
+                            goalViewModel.saveGoal(
+                                id = goalId,
+                                name = name.trim(),
+                                targetAmount = tgtAmt,
+                                savedAmount = svdAmt,
+                                targetDate = targetDateMillis,
+                                accountId = selectedAccount!!.id
+                            )
+                            navController.popBackStack()
                         },
-                        modifier = Modifier.weight(1f),
-                        enabled = goalName.isNotBlank() && targetAmount.isNotBlank() && selectedAccount != null
-                    ) {
-                        Text(if (isEditMode) "Save Changes" else "Create Goal")
-                    }
+                        enabled = saveEnabled,
+                        modifier = Modifier.weight(1f)
+                    ) { Text(if (isEditMode) "Update" else "Save") }
                 }
             }
         }
     }
 
+    /* ---------- Date Picker Dialog (with transparency fix) ---------- */
     if (showDatePicker) {
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = targetDate ?: System.currentTimeMillis())
-        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
-        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
-
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = targetDateMillis ?: System.currentTimeMillis()
+        )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    targetDate = datePickerState.selectedDateMillis
+                    targetDateMillis = datePickerState.selectedDateMillis
                     showDatePicker = false
                 }) { Text("OK") }
             },
             dismissButton = {
                 TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
             },
-            // --- FIX: Explicitly set the container color ---
+            /* FIX: Explicit containerColor so the dialog is not transparent */
             colors = DatePickerDefaults.colors(containerColor = popupContainerColor)
         ) {
             DatePicker(state = datePickerState)
         }
     }
 }
+
+/* ---------- Re-usable Aurora-style TextField colors ---------- */
+@Composable
+private fun auroraTextFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = MaterialTheme.colorScheme.primary,
+    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+    focusedLabelColor = MaterialTheme.colorScheme.primary,
+    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    cursorColor = MaterialTheme.colorScheme.primary,
+    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+    focusedContainerColor = Color.Transparent,
+    unfocusedContainerColor = Color.Transparent,
+    focusedLeadingIconColor = MaterialTheme.colorScheme.primary,
+    unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    focusedTrailingIconColor = MaterialTheme.colorScheme.primary,
+    unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+)
 -e 
 
 
@@ -17282,7 +17362,7 @@ fun AppNavHost(
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) {
-            AddEditGoalScreen(navController = navController, goalId = null, goalViewModel = goalViewModel, transactionViewModel = transactionViewModel)
+            AddEditGoalScreen(navController = navController, goalId = null)
         }
         composable(
             "add_edit_goal/{goalId}",
@@ -17293,7 +17373,7 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val goalId = backStackEntry.arguments?.getInt("goalId")
-            AddEditGoalScreen(navController = navController, goalId = goalId, goalViewModel = goalViewModel, transactionViewModel = transactionViewModel)
+            AddEditGoalScreen(navController = navController, goalId = goalId)
         }
 
 

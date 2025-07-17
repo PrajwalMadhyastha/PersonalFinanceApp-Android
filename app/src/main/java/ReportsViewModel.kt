@@ -10,14 +10,10 @@ import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -56,6 +52,7 @@ data class ReportScreenData(
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
     private val categoryDao: CategoryDao
+    private val settingsRepository: SettingsRepository
 
     val allCategories: StateFlow<List<Category>>
 
@@ -64,10 +61,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
     val reportData: StateFlow<ReportScreenData>
 
+    val consistencyCalendarData: StateFlow<List<CalendarDayStatus>>
+
     init {
         val db = AppDatabase.getInstance(application)
         transactionRepository = TransactionRepository(db.transactionDao())
         categoryDao = db.categoryDao()
+        settingsRepository = SettingsRepository(application)
+
 
         allCategories = categoryDao.getAllCategories()
             .stateIn(
@@ -102,7 +103,6 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             ) { spendingList, trends, currentSummary, previousSummary, topCategory ->
                 // Create PieData
                 val pieEntries = spendingList.map {
-                    // --- FIX: Add the category name to the 'data' field for the click listener ---
                     PieEntry(it.totalAmount.toFloat(), it.categoryName, it.categoryName)
                 }
                 val pieColors = spendingList.map {
@@ -151,7 +151,63 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = ReportScreenData(null, null, "This Month", null)
         )
+
+        consistencyCalendarData = flow {
+            emit(generateConsistencyCalendarData())
+        }.flowOn(Dispatchers.Default)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
     }
+
+    private suspend fun generateConsistencyCalendarData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
+        val calendar = Calendar.getInstance()
+        val endDate = calendar.timeInMillis
+        calendar.add(Calendar.YEAR, -1)
+        val startDate = calendar.timeInMillis
+
+        val dailyTotals = transactionRepository.getDailySpendingForDateRange(startDate, endDate).first()
+        val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
+
+        val safeToSpendCache = mutableMapOf<String, Double>()
+        val resultList = mutableListOf<CalendarDayStatus>()
+        val dayIterator = Calendar.getInstance().apply { timeInMillis = startDate }
+        val today = Calendar.getInstance()
+
+        while (!dayIterator.after(today)) {
+            val year = dayIterator.get(Calendar.YEAR)
+            val month = dayIterator.get(Calendar.MONTH) + 1
+            val day = dayIterator.get(Calendar.DAY_OF_MONTH)
+            val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, day)
+            val monthKey = String.format(Locale.ROOT, "%d-%02d", year, month)
+
+            val safeToSpend = safeToSpendCache.getOrPut(monthKey) {
+                val monthCalendar = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month - 1)
+                }
+                val daysInMonth = monthCalendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+                val budget = settingsRepository.getOverallBudgetForMonthBlocking(year, month)
+
+                if (budget > 0) (budget.toDouble() / daysInMonth) else 0.0
+            }
+
+            val amountSpent = spendingMap[dateKey] ?: 0.0
+
+            val status = when {
+                amountSpent == 0.0 -> SpendingStatus.NO_SPEND
+                safeToSpend > 0 && amountSpent > safeToSpend -> SpendingStatus.OVER_LIMIT
+                else -> SpendingStatus.WITHIN_LIMIT
+            }
+
+            resultList.add(CalendarDayStatus(dayIterator.time, status, amountSpent, safeToSpend))
+            dayIterator.add(Calendar.DAY_OF_YEAR, 1)
+        }
+        resultList
+    }
+
 
     fun selectPeriod(period: ReportPeriod) {
         _selectedPeriod.value = period
