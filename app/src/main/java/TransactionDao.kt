@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
+// REASON: FEATURE - Added `getTransactionsWithSignatureSince` and
+// `getTransactionsBySignature` queries. These are essential for the new
+// `RecurringPatternWorker` to fetch the data it needs to analyze potential
+// recurring transactions.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -5,6 +12,15 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
+
+    // --- NEW: Get all transactions with a signature since a given date ---
+    @Query("SELECT * FROM transactions WHERE smsSignature IS NOT NULL AND date >= :sinceDate")
+    suspend fun getTransactionsWithSignatureSince(sinceDate: Long): List<Transaction>
+
+    // --- NEW: Get all transactions that match a specific signature ---
+    @Query("SELECT * FROM transactions WHERE smsSignature = :signature ORDER BY date ASC")
+    suspend fun getTransactionsBySignature(signature: String): List<Transaction>
+
 
     @Query(
         """
@@ -357,16 +373,6 @@ interface TransactionDao {
 
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag>
-
-    @Query("""
-        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
-        FROM transactions AS T
-        LEFT JOIN accounts AS A ON T.accountId = A.id
-        LEFT JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.date BETWEEN :startDate AND :endDate
-        ORDER BY T.date DESC
-    """)
-    fun getTransactionsForDateRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
 
     @Query("""
         SELECT
