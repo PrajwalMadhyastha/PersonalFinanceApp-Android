@@ -1,3 +1,13 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
+// REASON: FEATURE - The `MonthlyConsistencyCalendarCard` is now passed an
+// `onDayClick` handler. This handler navigates to the search screen with the
+// selected date, making the dashboard calendar card interactive.
+// FIX - Replaced the ambiguous `items` call in `AddCardSheetContent` with
+// `itemsIndexed` to resolve a compiler error where the wrong function overload
+// was being selected. This fixes the chain of "Argument type mismatch" and
+// "Unresolved reference" errors.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
@@ -38,6 +48,7 @@ import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.util.Date
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -50,7 +61,6 @@ fun DashboardScreen(
     val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
     val hiddenCards by viewModel.hiddenCards.collectAsState()
     val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
-    // --- NEW: Collect the stats ---
     val consistencyStats by viewModel.consistencyStats.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
@@ -157,7 +167,6 @@ fun DashboardScreen(
                     isCustomizationMode = isCustomizationMode,
                     onHide = { viewModel.hideCard(cardType) },
                     monthlyConsistencyData = monthlyConsistencyData,
-                    // --- NEW: Pass stats down to the card ---
                     consistencyStats = consistencyStats
                 )
             }
@@ -173,7 +182,6 @@ private fun DashboardCard(
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
     monthlyConsistencyData: List<CalendarDayStatus>,
-    // --- NEW: Accept stats as a parameter ---
     consistencyStats: ConsistencyStats
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
@@ -208,9 +216,11 @@ private fun DashboardCard(
             )
             DashboardCardType.SPENDING_CONSISTENCY -> MonthlyConsistencyCalendarCard(
                 data = monthlyConsistencyData,
-                // --- NEW: Pass stats to the card component ---
                 stats = consistencyStats,
-                navController = navController
+                navController = navController,
+                onDayClick = { date ->
+                    navController.navigate("search_screen?date=${date.time}")
+                }
             )
         }
         if (isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET) {
@@ -251,7 +261,8 @@ private fun AddCardSheetContent(
             Text("All available cards are already on your dashboard.")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(hiddenCards, key = { it.name }) { cardType ->
+                // --- FIX: Use itemsIndexed to resolve compiler ambiguity ---
+                itemsIndexed(hiddenCards, key = { _, cardType -> cardType.name }) { _, cardType ->
                     ListItem(
                         headlineContent = { Text(cardType.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) },
                         leadingContent = { Icon(Icons.Default.Add, contentDescription = null) },

@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - Added the new routes for `add_edit_goal` (for creating a
-// new goal) and `add_edit_goal/{goalId}` (for editing an existing one). This
-// integrates the new dedicated screen into the app's navigation graph.
+// REASON: FEATURE - The route for `search_screen` has been updated to accept an
+// optional `date` argument. This allows other screens, like the new Spending
+// Consistency Calendar, to navigate to the search results pre-filtered for a
+// specific day.
 // =================================================================================
 package io.pm.finlight
 
@@ -235,7 +236,7 @@ fun MainAppScreen() {
         "automation_settings",
         "notification_settings",
         "data_settings",
-        "add_edit_goal" // --- NEW: Add new route to this set
+        "add_edit_goal"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -247,7 +248,8 @@ fun MainAppScreen() {
 
     val fabRoutes = setOf(
         "account_list",
-        "recurring_transactions"
+        "recurring_transactions",
+        "goals_screen" // Add goals_screen to show FAB
     )
     val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
 
@@ -374,15 +376,12 @@ fun MainAppScreen() {
                 if (showFab) {
                     FloatingActionButton(onClick = {
                         when (baseCurrentRoute) {
-                            "account_list" -> {
-                                navController.navigate("add_account")
-                            }
-                            "recurring_transactions" -> {
-                                navController.navigate("add_recurring_transaction")
-                            }
+                            "account_list" -> navController.navigate("add_account")
+                            "recurring_transactions" -> navController.navigate("add_recurring_transaction")
+                            "goals_screen" -> navController.navigate("add_edit_goal")
                         }
                     }) {
-                        Icon(Icons.Filled.Add, contentDescription = "Add Transaction or Account")
+                        Icon(Icons.Filled.Add, contentDescription = "Add")
                     }
                 }
             },
@@ -501,15 +500,25 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            "search_screen?categoryId={categoryId}",
-            arguments = listOf(navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 }),
+            // --- UPDATED: Add optional 'date' argument ---
+            route = "search_screen?categoryId={categoryId}&date={date}",
+            arguments = listOf(
+                navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 },
+                navArgument("date") { type = NavType.LongType; defaultValue = -1L }
+            ),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
-            val factory = SearchViewModelFactory(activity.application, if (categoryId != -1) categoryId else null)
+            // --- UPDATED: Get date argument ---
+            val date = backStackEntry.arguments?.getLong("date") ?: -1L
+            val factory = SearchViewModelFactory(
+                activity.application,
+                if (categoryId != -1) categoryId else null,
+                if (date != -1L) date else null
+            )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
             SearchScreen(navController, searchViewModel)
         }
@@ -767,7 +776,6 @@ fun AppNavHost(
             GoalScreen(navController = navController, goalViewModel = goalViewModel)
         }
 
-        // --- NEW: Routes for the new dedicated goal screen ---
         composable(
             "add_edit_goal",
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },

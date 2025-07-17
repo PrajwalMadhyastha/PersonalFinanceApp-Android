@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - The unused properties `allTransactions` and `safeToSpendPerDay`,
-// along with the unused functions `getTransactionById` and `updateTransaction`,
-// have been removed to resolve the "UnusedSymbol" warnings.
-// FIX - The unused parameter 'e' in the catch block of `approveSmsTransaction`
-// is now used for logging the exception, resolving the warning.
+// REASON: FIX - The logic for the `monthlySummaries` flow has been updated.
+// Instead of showing a rolling 12-month view, it now correctly displays all
+// 12 months of the current calendar year, restoring the original, preferred
+// behavior for the month scroller component.
 // =================================================================================
 package io.pm.finlight
 
@@ -159,23 +158,38 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
-        val twelveMonthsAgo = Calendar.getInstance().apply { add(Calendar.YEAR, -1) }.timeInMillis
-        monthlySummaries = transactionRepository.getMonthlyTrends(twelveMonthsAgo)
+
+        // --- UPDATED: Logic to get all months of the current year ---
+        val currentYear = Calendar.getInstance().get(Calendar.YEAR)
+        val startOfYear = Calendar.getInstance().apply {
+            set(Calendar.YEAR, currentYear)
+            set(Calendar.MONTH, Calendar.JANUARY)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+
+        monthlySummaries = transactionRepository.getMonthlyTrends(startOfYear)
             .map { trends ->
                 val dateFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-                val monthMap = trends.associate {
-                    val cal = Calendar.getInstance().apply {
-                        time = dateFormat.parse(it.monthYear) ?: Date()
+                val monthMap = trends.filter {
+                    // Ensure we only process trends for the current year
+                    (dateFormat.parse(it.monthYear) ?: Date()).let { date ->
+                        val cal = Calendar.getInstance().apply { time = date }
+                        cal.get(Calendar.YEAR) == currentYear
                     }
+                }.associate {
+                    val cal = Calendar.getInstance().apply { time = dateFormat.parse(it.monthYear) ?: Date() }
                     (cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)) to it.totalExpenses
                 }
 
-                (0..11).map { i ->
-                    val cal = Calendar.getInstance().apply { add(Calendar.MONTH, -i) }
+                (0..11).map { monthIndex ->
+                    val cal = Calendar.getInstance().apply {
+                        set(Calendar.YEAR, currentYear)
+                        set(Calendar.MONTH, monthIndex)
+                    }
                     val key = cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)
                     val spent = monthMap[key] ?: 0.0
                     MonthlySummaryItem(calendar = cal, totalSpent = spent)
-                }.reversed()
+                }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -319,7 +333,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            // --- FIX: Pass the missing merchantCategoryMappingDao argument ---
             val potentialTxn = SmsParser.parse(
                 smsMessage,
                 emptyMap(),
@@ -657,7 +670,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
                 true
             } catch (e: Exception) {
-                // --- FIX: Log the exception to fix the unused parameter warning ---
                 Log.e(TAG, "Failed to approve SMS transaction", e)
                 false
             }

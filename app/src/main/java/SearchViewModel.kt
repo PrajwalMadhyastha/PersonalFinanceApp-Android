@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SearchViewModel.kt
+// REASON: FEATURE - The ViewModel now accepts an `initialDateMillis` parameter.
+// In its `init` block, it checks for this date and, if present, automatically
+// sets the start and end date filters to span that single day. This allows the
+// UI to display pre-filtered search results when navigated to from the calendar.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -5,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 data class SearchUiState(
     val keyword: String = "",
@@ -23,7 +31,8 @@ class SearchViewModel(
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
     private val categoryDao: CategoryDao,
-    private val initialCategoryId: Int? // Accept initial category ID
+    private val initialCategoryId: Int?,
+    private val initialDateMillis: Long? // --- NEW: Accept initial date
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -41,7 +50,6 @@ class SearchViewModel(
         viewModelScope.launch {
             categoryDao.getAllCategories().collect { categories ->
                 _uiState.update { it.copy(categories = categories) }
-                // --- NEW: Pre-select category if an ID was passed ---
                 if (initialCategoryId != null) {
                     val initialCategory = categories.find { it.id == initialCategoryId }
                     if (initialCategory != null) {
@@ -50,6 +58,23 @@ class SearchViewModel(
                 }
             }
         }
+
+        // --- NEW: Pre-select date range if an initial date was passed ---
+        if (initialDateMillis != null && initialDateMillis != -1L) {
+            val cal = Calendar.getInstance().apply { timeInMillis = initialDateMillis }
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            val start = cal.timeInMillis
+
+            cal.set(Calendar.HOUR_OF_DAY, 23)
+            cal.set(Calendar.MINUTE, 59)
+            cal.set(Calendar.SECOND, 59)
+            val end = cal.timeInMillis
+
+            onDateChange(start, end)
+        }
+
 
         // Reactive search logic
         viewModelScope.launch {

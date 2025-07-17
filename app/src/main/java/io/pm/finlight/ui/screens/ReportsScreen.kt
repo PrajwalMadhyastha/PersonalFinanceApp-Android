@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
+// REASON: FIX - The title for the "Spending Consistency" card has been corrected
+// to remove the "(Last Year)" text, restoring the original, more general title.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.background
@@ -5,7 +10,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,7 +60,6 @@ import io.pm.finlight.ui.components.GroupedBarChart
 import java.util.Calendar
 import kotlin.math.abs
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReportsScreen(
     navController: NavController,
@@ -129,7 +132,12 @@ fun ReportsScreen(
                     if (calendarData.isEmpty()) {
                         CircularProgressIndicator()
                     } else {
-                        ConsistencyCalendar(data = calendarData)
+                        ConsistencyCalendar(
+                            data = calendarData,
+                            onDayClick = { date ->
+                                navController.navigate("search_screen?date=${date.time}")
+                            }
+                        )
                     }
                 }
             }
@@ -216,11 +224,9 @@ fun ReportsScreen(
                         GroupedBarChart(
                             chartData = trendDataPair,
                             onBarClick = { entry ->
-                                // Find the month that was clicked
                                 val monthIndex = entry.x.toInt()
                                 val trends = viewModel.reportData.value.trendData?.first?.dataSets?.firstOrNull()?.getEntryForIndex(monthIndex)
                                 if (trends != null) {
-                                    // Calculate the timestamp for the end of the clicked month
                                     val calendar = Calendar.getInstance()
                                     calendar.add(Calendar.MONTH, monthIndex - (reportData.trendData?.second?.size?.minus(1) ?: 0))
                                     calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
@@ -275,7 +281,7 @@ fun ReportsScreen(
 }
 
 @Composable
-private fun ReportInsightsCard(insights: ReportInsights) {
+fun ReportInsightsCard(insights: ReportInsights) {
     GlassPanel {
         Row(
             modifier = Modifier
@@ -319,7 +325,7 @@ private fun ReportInsightsCard(insights: ReportInsights) {
 }
 
 @Composable
-private fun GlassReportNavigationCard(
+fun GlassReportNavigationCard(
     title: String,
     subtitle: String,
     icon: ImageVector,

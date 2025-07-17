@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
+// REASON: FIX - The logic for generating the list of months has been corrected.
+// Instead of creating a rolling 12-month view, it now correctly generates a
+// list of all 12 months for the current calendar year (Jan-Dec), restoring the
+// intended behavior. The initial scroll position is also fixed.
+// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
@@ -20,8 +27,6 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.navOptions
 import io.pm.finlight.CalendarDayStatus
 import io.pm.finlight.ConsistencyStats
 import io.pm.finlight.SpendingStatus
@@ -31,29 +36,20 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.min
 
-// --- UPDATED: Increased day size for better visibility on the dashboard ---
-private val DAY_SIZE = 22.dp
-private val DAY_SPACING = 4.dp
+private val DAY_SIZE = 14.dp
+private val DAY_SPACING = 3.dp
 
 @Composable
 fun MonthlyConsistencyCalendarCard(
     data: List<CalendarDayStatus>,
     stats: ConsistencyStats,
-    navController: NavController
+    navController: NavController,
+    onDayClick: (Date) -> Unit
 ) {
-    // --- FIX: Correct navigation options to prevent back stack issues ---
-    val navOptions = navOptions {
-        popUpTo(navController.graph.findStartDestination().id) {
-            saveState = true
-        }
-        launchSingleTop = true
-        restoreState = true
-    }
-
     GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { navController.navigate("reports_screen", navOptions) }
+            .clickable { navController.navigate("reports_screen") }
     ) {
         Column(
             modifier = Modifier.padding(24.dp),
@@ -83,14 +79,18 @@ fun MonthlyConsistencyCalendarCard(
                     CircularProgressIndicator()
                 }
             } else {
+                val currentMonthData = data.filter {
+                    val cal = Calendar.getInstance()
+                    val currentMonth = cal.get(Calendar.MONTH)
+                    cal.time = it.date
+                    cal.get(Calendar.MONTH) == currentMonth
+                }
                 MonthColumn(
                     monthData = MonthData.fromCalendar(Calendar.getInstance()),
                     year = Calendar.getInstance().get(Calendar.YEAR),
                     today = Calendar.getInstance(),
-                    dataMap = data.associateBy {
-                        val cal = Calendar.getInstance().apply { time = it.date }
-                        cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
-                    }
+                    dataMap = currentMonthData.associateByDate(),
+                    onDayClick = onDayClick
                 )
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
@@ -128,28 +128,30 @@ private fun StatItem(count: Int, label: String) {
 @Composable
 fun ConsistencyCalendar(
     data: List<CalendarDayStatus>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDayClick: (Date) -> Unit
 ) {
     if (data.isEmpty()) return
 
-    val dataMap = remember(data) {
-        data.associateBy {
-            val cal = Calendar.getInstance()
-            cal.time = it.date
-            cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
-        }
-    }
+    val dataMap = remember(data) { data.associateByDate() }
 
     val today = remember { Calendar.getInstance() }
     val year = today.get(Calendar.YEAR)
 
+    // --- FIX: Generate months for the current calendar year ---
     val months = (0..11).map { monthIndex ->
-        MonthData.fromCalendar(Calendar.getInstance().apply { set(year, monthIndex, 1) })
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, monthIndex)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }
+        MonthData.fromCalendar(cal)
     }
 
     val lazyListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
+    // --- FIX: Correctly calculate the initial scroll index ---
     LaunchedEffect(key1 = data) {
         if (data.isNotEmpty()) {
             val currentMonthIndex = today.get(Calendar.MONTH)
@@ -170,7 +172,8 @@ fun ConsistencyCalendar(
                 monthData = monthData,
                 year = year,
                 today = today,
-                dataMap = dataMap
+                dataMap = dataMap,
+                onDayClick = onDayClick
             )
         }
     }
@@ -198,7 +201,8 @@ private fun MonthColumn(
     monthData: MonthData,
     year: Int,
     today: Calendar,
-    dataMap: Map<Pair<Int, Int>, CalendarDayStatus>
+    dataMap: Map<Pair<Int, Int>, CalendarDayStatus>,
+    onDayClick: (Date) -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
@@ -224,9 +228,9 @@ private fun MonthColumn(
 
                             if (!currentDayCal.after(today)) {
                                 val dayData = dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to year]
-                                DayCell(dayData)
+                                DayCell(dayData, onClick = { onDayClick(currentDayCal.time) })
                             } else {
-                                DayCell(null) // Future day
+                                DayCell(null, onClick = {}) // Future day
                             }
                         } else {
                             // Empty cell for padding
@@ -241,12 +245,11 @@ private fun MonthColumn(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DayCell(dayData: CalendarDayStatus?) {
+private fun DayCell(dayData: CalendarDayStatus?, onClick: () -> Unit) {
     val tooltipState = rememberTooltipState(isPersistent = true)
 
     val color = when (dayData?.status) {
         SpendingStatus.NO_SPEND -> Color(0xFF39D353)
-
         SpendingStatus.WITHIN_LIMIT -> {
             val fraction = if (dayData.safeToSpend > 0) {
                 (dayData.amountSpent / dayData.safeToSpend).toFloat()
@@ -255,7 +258,6 @@ private fun DayCell(dayData: CalendarDayStatus?) {
             }
             lerp(Color(0xFFACD5F2), Color(0xFF006DAB), fraction.coerceIn(0f, 1f))
         }
-
         SpendingStatus.OVER_LIMIT -> {
             val fraction = if (dayData.safeToSpend > 0) {
                 min((dayData.amountSpent / dayData.safeToSpend).toFloat(), 2f) - 1f
@@ -264,10 +266,10 @@ private fun DayCell(dayData: CalendarDayStatus?) {
             }
             lerp(Color(0xFFF87171), Color(0xFFB91C1C), fraction.coerceIn(0f, 1f))
         }
-
         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     }
 
+    val isClickable = dayData?.status != SpendingStatus.NO_DATA
 
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -297,7 +299,15 @@ private fun DayCell(dayData: CalendarDayStatus?) {
                 .clip(RoundedCornerShape(2.dp))
                 .background(color)
                 .border(0.5.dp, Color.Black.copy(alpha = 0.1f), RoundedCornerShape(2.dp))
-                .clickable { /* Could be used for long-press tooltips if needed */ }
+                .clickable(enabled = isClickable, onClick = onClick)
         )
+    }
+}
+
+private fun List<CalendarDayStatus>.associateByDate(): Map<Pair<Int, Int>, CalendarDayStatus> {
+    return this.associateBy {
+        val cal = Calendar.getInstance()
+        cal.time = it.date
+        cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
     }
 }

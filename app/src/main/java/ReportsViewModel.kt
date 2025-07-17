@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
+// REASON: FIX - The data generation logic for `consistencyCalendarData` has been
+// corrected. Instead of fetching data for the last 365 days, it now correctly
+// fetches all transactions from January 1st of the current year. This ensures
+// the heatmap displays a proper calendar year (Jan-Dec) as intended.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -137,7 +144,8 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun generateConsistencyCalendarData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
         val calendar = Calendar.getInstance()
         val endDate = calendar.timeInMillis
-        calendar.add(Calendar.YEAR, -1)
+        // --- FIX: Set start date to January 1st of the current year ---
+        calendar.set(Calendar.DAY_OF_YEAR, 1)
         val startDate = calendar.timeInMillis
 
         val firstTransactionDate = transactionRepository.getFirstTransactionDate().first()

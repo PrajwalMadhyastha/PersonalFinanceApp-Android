@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
+// REASON: FIX - The duplicate, private definition of `ReportInsightsCard` has
+// been removed. This resolves the "Conflicting overloads" and "Overload
+// resolution ambiguity" compilation errors by ensuring that only the public
+// version from `ReportsScreen.kt` is used.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
@@ -37,7 +44,6 @@ import io.pm.finlight.ui.components.TransactionItem
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -300,51 +306,6 @@ private fun ReportHeader(totalSpent: Double, totalIncome: Double, timePeriod: Ti
         }
     }
 }
-
-@Composable
-private fun ReportInsightsCard(insights: ReportInsights) {
-    GlassPanel {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Change", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val (text, color) = when {
-                    insights.percentageChange == null -> "--" to MaterialTheme.colorScheme.onSurface
-                    insights.percentageChange > 0 -> "↑ ${insights.percentageChange}%" to MaterialTheme.colorScheme.error
-                    insights.percentageChange < 0 -> "↓ ${abs(insights.percentageChange)}%" to MaterialTheme.colorScheme.primary
-                    else -> "No Change" to MaterialTheme.colorScheme.onSurface
-                }
-                Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = color)
-                Text("vs. previous period", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Top Spend", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (insights.topCategory != null) {
-                    Icon(
-                        imageVector = CategoryIconHelper.getIcon(insights.topCategory.iconKey ?: "category"),
-                        contentDescription = insights.topCategory.categoryName,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(CategoryIconHelper.getIconBackgroundColor(insights.topCategory.colorKey ?: "gray_light"))
-                            .padding(8.dp),
-                        tint = Color.Black
-                    )
-                    Text(insights.topCategory.categoryName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    Text("--", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                }
-            }
-        }
-    }
-}
-
 
 @Composable
 private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
