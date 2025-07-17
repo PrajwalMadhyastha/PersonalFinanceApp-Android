@@ -1,7 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FIX - The title for the "Spending Consistency" card has been corrected
-// to remove the "(Last Year)" text, restoring the original, more general title.
+// REASON: FEATURE - The yearly "Spending Consistency" card now includes a summary
+// statistics section below the heatmap. This provides a complete overview of
+// spending habits for the year, mirroring the detail available on the dashboard.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -70,6 +72,7 @@ fun ReportsScreen(
     val allCategories by viewModel.allCategories.collectAsState()
     val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val calendarData by viewModel.consistencyCalendarData.collectAsState()
+    val consistencyStats by viewModel.consistencyStats.collectAsState()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -138,6 +141,19 @@ fun ReportsScreen(
                                 navController.navigate("search_screen?date=${date.time}")
                             }
                         )
+                    }
+                    // --- NEW: Add stats section below the calendar ---
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround
+                    ) {
+                        StatItem(consistencyStats.noSpendDays, "No Spend")
+                        StatItem(consistencyStats.goodDays, "Good Days")
+                        StatItem(consistencyStats.badDays, "Over Budget")
+                        StatItem(consistencyStats.noDataDays, "No Data")
                     }
                 }
             }
@@ -360,5 +376,22 @@ fun GlassReportNavigationCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun StatItem(count: Int, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "$count",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

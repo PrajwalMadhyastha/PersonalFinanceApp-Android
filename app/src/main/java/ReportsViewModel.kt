@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
-// REASON: FIX - The data generation logic for `consistencyCalendarData` has been
-// corrected. Instead of fetching data for the last 365 days, it now correctly
-// fetches all transactions from January 1st of the current year. This ensures
-// the heatmap displays a proper calendar year (Jan-Dec) as intended.
+// REASON: FEATURE - The ViewModel now calculates and exposes `consistencyStats`
+// for the entire year's worth of calendar data. This provides the necessary
+// summary metrics (Good Days, Bad Days, etc.) for display on the main reports screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -41,6 +40,8 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     val reportData: StateFlow<ReportScreenData>
 
     val consistencyCalendarData: StateFlow<List<CalendarDayStatus>>
+    // --- NEW: StateFlow for the yearly consistency stats ---
+    val consistencyStats: StateFlow<ConsistencyStats>
 
     init {
         val db = AppDatabase.getInstance(application)
@@ -139,12 +140,24 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
+
+        // --- NEW: Derive stats from the full year's calendar data ---
+        consistencyStats = consistencyCalendarData.map { data ->
+            val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
+            val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
+            val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
+            val noDataDays = data.count { it.status == SpendingStatus.NO_DATA }
+            ConsistencyStats(goodDays, badDays, noSpendDays, noDataDays)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ConsistencyStats(0, 0, 0, 0)
+        )
     }
 
     private suspend fun generateConsistencyCalendarData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
         val calendar = Calendar.getInstance()
         val endDate = calendar.timeInMillis
-        // --- FIX: Set start date to January 1st of the current year ---
         calendar.set(Calendar.DAY_OF_YEAR, 1)
         val startDate = calendar.timeInMillis
 
