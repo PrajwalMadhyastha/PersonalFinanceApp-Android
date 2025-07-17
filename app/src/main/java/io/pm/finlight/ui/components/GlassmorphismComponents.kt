@@ -1,18 +1,3 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FIX - Corrected a @Composable invocation error inside the `Canvas`
-// of the `CategoryBudgetGauge`. The primary color is now read from the
-// `MaterialTheme` and stored in a variable *before* the Canvas is drawn,
-// resolving the issue where a composable function was being called from a
-// non-composable context.
-// ANIMATION - The duration of the `tween` animations for the hero card stats
-// and budget gauges has been reduced from 1500ms to a much snappier 400ms.
-// This makes the dashboard data visualizations feel more responsive.
-// FIX (Navigation) - Updated the onClick handlers in the AuroraQuickActionsCard
-// to use the proper NavOptions (popUpTo, launchSingleTop, restoreState). This
-// prevents the back stack from growing when navigating from the dashboard to
-// other top-level destinations, fixing a major navigation bug.
-// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.EaseOutCubic
@@ -452,7 +437,6 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
     )
     val remaining = budget.budget.amount - budget.spent
 
-    // --- FIX: Read the color from the theme outside the Canvas scope ---
     val primaryColor = MaterialTheme.colorScheme.primary
 
     Column(
@@ -474,7 +458,7 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
                     style = Stroke(width = strokeWidth)
                 )
                 drawArc(
-                    color = primaryColor, // Use the variable here
+                    color = primaryColor,
                     startAngle = -90f,
                     sweepAngle = 360 * animatedProgress,
                     useCenter = false,

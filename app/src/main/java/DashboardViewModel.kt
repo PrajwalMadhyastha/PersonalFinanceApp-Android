@@ -1,21 +1,11 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FIX - Removed the unused import for `java.util.Collections` to resolve
-// the "KotlinUnusedImport" warning.
-// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -38,7 +28,6 @@ class DashboardViewModel(
     val amountRemaining: StateFlow<Float>
     val safeToSpendPerDay: StateFlow<Float>
     val accountsSummary: StateFlow<List<AccountWithBalance>>
-    // --- NEW: Expose the current month's name ---
     val monthYear: String
 
     val visibleCards: StateFlow<List<DashboardCardType>>
@@ -49,13 +38,13 @@ class DashboardViewModel(
     private val _cardOrder = MutableStateFlow<List<DashboardCardType>>(emptyList())
     private val _visibleCardsSet = MutableStateFlow<Set<DashboardCardType>>(emptySet())
 
-    // --- NEW: Expose hidden cards for the "Add Card" sheet ---
     val hiddenCards: StateFlow<List<DashboardCardType>>
 
-    // --- NEW: State to control the "Add Card" bottom sheet ---
     private val _showAddCardSheet = MutableStateFlow(false)
     val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
 
+    // --- NEW: StateFlow for the dashboard consistency calendar data ---
+    val monthlyConsistencyData: StateFlow<List<CalendarDayStatus>>
 
     init {
         userName = settingsRepository.getUserName()
@@ -74,12 +63,22 @@ class DashboardViewModel(
 
         viewModelScope.launch {
             settingsRepository.getDashboardCardOrder().collect {
-                _cardOrder.value = it
+                // --- FIX: Ensure the new card is added to the layout if it doesn't exist ---
+                if (it.contains(DashboardCardType.SPENDING_CONSISTENCY)) {
+                    _cardOrder.value = it
+                } else {
+                    _cardOrder.value = it + DashboardCardType.SPENDING_CONSISTENCY
+                }
             }
         }
         viewModelScope.launch {
             settingsRepository.getDashboardVisibleCards().collect {
-                _visibleCardsSet.value = it
+                // --- FIX: Ensure the new card is visible by default ---
+                if (it.contains(DashboardCardType.SPENDING_CONSISTENCY)) {
+                    _visibleCardsSet.value = it
+                } else {
+                    _visibleCardsSet.value = it + DashboardCardType.SPENDING_CONSISTENCY
+                }
             }
         }
 
@@ -94,12 +93,11 @@ class DashboardViewModel(
             _cardOrder,
             _visibleCardsSet
         ) { order, visible ->
-            order.filterNot { it in visible }
+            DashboardCardType.entries.filterNot { it in visible }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
 
         val calendar = Calendar.getInstance()
-        // --- NEW: Get the full month name ---
         monthYear = SimpleDateFormat("MMMM", Locale.getDefault()).format(calendar.time)
 
         val monthStart =
@@ -184,7 +182,67 @@ class DashboardViewModel(
                     started = SharingStarted.WhileSubscribed(5000),
                     initialValue = emptyList(),
                 )
+
+        // --- NEW: Initialization logic for the dashboard calendar data ---
+        monthlyConsistencyData = flow {
+            emit(generateCurrentMonthConsistencyData())
+        }.flowOn(Dispatchers.Default)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
     }
+
+    // --- NEW: Logic to generate data for the current month's calendar ---
+    private suspend fun generateCurrentMonthConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
+        val today = Calendar.getInstance()
+        val year = today.get(Calendar.YEAR)
+        val month = today.get(Calendar.MONTH) + 1
+
+        val monthStartCal = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+        }
+        val monthEndCal = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, 23)
+        }
+
+        val firstTransactionDate = transactionRepository.getFirstTransactionDate().first()
+        val firstDataCal = firstTransactionDate?.let { Calendar.getInstance().apply { timeInMillis = it } }
+
+        val dailyTotals = transactionRepository.getDailySpendingForDateRange(monthStartCal.timeInMillis, monthEndCal.timeInMillis).first()
+        val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
+
+        val daysInMonth = today.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val budget = settingsRepository.getOverallBudgetForMonthBlocking(year, month)
+        val safeToSpend = if (budget > 0) (budget.toDouble() / daysInMonth) else 0.0
+
+        val resultList = mutableListOf<CalendarDayStatus>()
+        val dayIterator = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
+
+        for (i in 1..daysInMonth) {
+            dayIterator.set(Calendar.DAY_OF_MONTH, i)
+            val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, i)
+
+            if (firstDataCal != null && dayIterator.before(firstDataCal)) {
+                resultList.add(CalendarDayStatus(dayIterator.time, SpendingStatus.NO_DATA, 0.0, 0.0))
+                continue
+            }
+
+            val amountSpent = spendingMap[dateKey] ?: 0.0
+            val status = when {
+                dayIterator.after(today) -> SpendingStatus.NO_DATA
+                amountSpent == 0.0 -> SpendingStatus.NO_SPEND
+                safeToSpend > 0 && amountSpent > safeToSpend -> SpendingStatus.OVER_LIMIT
+                else -> SpendingStatus.WITHIN_LIMIT
+            }
+            resultList.add(CalendarDayStatus(dayIterator.time, status, amountSpent, safeToSpend))
+        }
+        return@withContext resultList
+    }
+
 
     fun enterCustomizationMode() {
         _isCustomizationMode.value = true
@@ -192,7 +250,6 @@ class DashboardViewModel(
 
     fun exitCustomizationModeAndSave() {
         viewModelScope.launch {
-            // --- UPDATED: Save both order and visibility ---
             settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
             _isCustomizationMode.value = false
         }
@@ -206,7 +263,6 @@ class DashboardViewModel(
         }
     }
 
-    // --- NEW: Functions to manage card visibility ---
     fun hideCard(cardType: DashboardCardType) {
         _visibleCardsSet.update { it - cardType }
     }

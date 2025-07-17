@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import io.pm.finlight.CalendarDayStatus
 import io.pm.finlight.DashboardCardType
 import io.pm.finlight.DashboardViewModel
 import io.pm.finlight.DashboardViewModelFactory
@@ -51,6 +52,7 @@ fun DashboardScreen(
     val isCustomizationMode by viewModel.isCustomizationMode.collectAsState()
     val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
     val hiddenCards by viewModel.hiddenCards.collectAsState()
+    val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
     var overscrollJob by remember { mutableStateOf<Job?>(null) }
@@ -82,7 +84,6 @@ fun DashboardScreen(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier
-            // --- FIX: Add a testTag to make the LazyColumn findable in tests ---
             .testTag("dashboard_lazy_column")
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(
@@ -145,7 +146,6 @@ fun DashboardScreen(
                 modifier = Modifier
                     .animateItemPlacement()
                     .graphicsLayer {
-                        // --- UPDATED: Use the new calculated translationY for smooth dragging ---
                         translationY = if (isBeingDragged) dragDropState.draggingItemTranslationY else 0f
                         rotationZ = finalRotation
                     }
@@ -156,7 +156,8 @@ fun DashboardScreen(
                     navController = navController,
                     viewModel = viewModel,
                     isCustomizationMode = isCustomizationMode,
-                    onHide = { viewModel.hideCard(cardType) }
+                    onHide = { viewModel.hideCard(cardType) },
+                    monthlyConsistencyData = monthlyConsistencyData
                 )
             }
         }
@@ -169,7 +170,8 @@ private fun DashboardCard(
     navController: NavController,
     viewModel: DashboardViewModel,
     isCustomizationMode: Boolean,
-    onHide: () -> Unit
+    onHide: () -> Unit,
+    monthlyConsistencyData: List<CalendarDayStatus>
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
@@ -179,9 +181,7 @@ private fun DashboardCard(
     val accountsSummary by viewModel.accountsSummary.collectAsState()
     val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
     val budgetStatus by viewModel.budgetStatus.collectAsState()
-    // --- NEW: Collect the remaining amount state ---
     val amountRemaining by viewModel.amountRemaining.collectAsState()
-    // --- NEW: Get the month name from the ViewModel ---
     val monthYear = viewModel.monthYear
 
     Box {
@@ -193,7 +193,6 @@ private fun DashboardCard(
                 income = monthlyIncome.toFloat(),
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,
-                // --- NEW: Pass the month name to the hero card ---
                 monthYear = monthYear
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
@@ -203,6 +202,10 @@ private fun DashboardCard(
             DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
                 budgetStatus = budgetStatus,
                 navController = navController,
+            )
+            DashboardCardType.SPENDING_CONSISTENCY -> MonthlyConsistencyCalendarCard(
+                data = monthlyConsistencyData,
+                navController = navController
             )
         }
         if (isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET) {
@@ -243,7 +246,8 @@ private fun AddCardSheetContent(
             Text("All available cards are already on your dashboard.")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(hiddenCards) { cardType ->
+                // --- FIX: Use items(list) which is the correct overload ---
+                items(hiddenCards, key = { it.name }) { cardType ->
                     ListItem(
                         headlineContent = { Text(cardType.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) },
                         leadingContent = { Icon(Icons.Default.Add, contentDescription = null) },

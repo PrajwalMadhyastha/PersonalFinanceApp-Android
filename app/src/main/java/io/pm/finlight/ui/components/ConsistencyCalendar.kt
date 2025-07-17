@@ -6,7 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,8 +19,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import io.pm.finlight.CalendarDayStatus
 import io.pm.finlight.SpendingStatus
+import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -25,6 +30,60 @@ import kotlin.math.min
 
 private val DAY_SIZE = 16.dp
 private val DAY_SPACING = 4.dp
+
+// --- NEW: Dashboard Card Composable ---
+@Composable
+fun MonthlyConsistencyCalendarCard(
+    data: List<CalendarDayStatus>,
+    navController: NavController
+) {
+    GlassPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { navController.navigate("reports_screen") }
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Spending Consistency",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "View Full Report",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "View Full Report",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            if (data.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                MonthColumn(
+                    monthData = MonthData.fromCalendar(Calendar.getInstance()),
+                    year = Calendar.getInstance().get(Calendar.YEAR),
+                    today = Calendar.getInstance(),
+                    dataMap = data.associateBy {
+                        val cal = Calendar.getInstance().apply { time = it.date }
+                        cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
+                    }
+                )
+            }
+        }
+    }
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,18 +106,26 @@ fun ConsistencyCalendar(
 
     // Group days by month for proper layout
     val months = (0..11).map { monthIndex ->
-        val monthCal = Calendar.getInstance().apply { set(year, monthIndex, 1) }
-        val monthName = monthCal.getDisplayName(Calendar.MONTH, Calendar.SHORT, Locale.getDefault()) ?: ""
-        val daysInMonth = monthCal.getActualMaximum(Calendar.DAY_OF_MONTH)
-        val firstDayOfWeek = monthCal.get(Calendar.DAY_OF_WEEK) // 1=Sun, 2=Mon...
-        val startOffset = (firstDayOfWeek - Calendar.SUNDAY + 7) % 7
+        MonthData.fromCalendar(Calendar.getInstance().apply { set(year, monthIndex, 1) })
+    }
 
-        MonthData(monthName, daysInMonth, startOffset)
+    val lazyListState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(key1 = data) {
+        if (data.isNotEmpty()) {
+            val currentMonthIndex = today.get(Calendar.MONTH)
+            val scrollIndex = (currentMonthIndex - 2).coerceAtLeast(0)
+            coroutineScope.launch {
+                lazyListState.animateScrollToItem(scrollIndex)
+            }
+        }
     }
 
     LazyRow(
+        state = lazyListState,
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DAY_SPACING * 2) // Space between months
+        horizontalArrangement = Arrangement.spacedBy(DAY_SPACING * 2)
     ) {
         items(months) { monthData ->
             MonthColumn(
@@ -74,8 +141,19 @@ fun ConsistencyCalendar(
 private data class MonthData(
     val name: String,
     val dayCount: Int,
-    val startOffset: Int
-)
+    val startOffset: Int,
+    val monthIndex: Int
+) {
+    companion object {
+        fun fromCalendar(cal: Calendar): MonthData {
+            val monthName = cal.getDisplayName(Calendar.MONTH, Calendar.SHORT, Locale.getDefault()) ?: ""
+            val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            val firstDayOfWeek = cal.apply { set(Calendar.DAY_OF_MONTH, 1) }.get(Calendar.DAY_OF_WEEK)
+            val startOffset = (firstDayOfWeek - Calendar.SUNDAY + 7) % 7
+            return MonthData(monthName, daysInMonth, startOffset, cal.get(Calendar.MONTH))
+        }
+    }
+}
 
 @Composable
 private fun MonthColumn(
@@ -103,7 +181,7 @@ private fun MonthColumn(
                         if (cellIndex >= monthData.startOffset && cellIndex < totalCells) {
                             val dayOfMonth = cellIndex - monthData.startOffset + 1
                             val currentDayCal = Calendar.getInstance().apply {
-                                set(year, monthData.name.toMonthIndex(), dayOfMonth)
+                                set(year, monthData.monthIndex, dayOfMonth)
                             }
 
                             if (!currentDayCal.after(today)) {
@@ -123,15 +201,6 @@ private fun MonthColumn(
     }
 }
 
-private fun String.toMonthIndex(): Int {
-    val cal = Calendar.getInstance()
-    val months = (0..11).map {
-        cal.set(Calendar.MONTH, it)
-        cal.getDisplayName(Calendar.MONTH, Calendar.SHORT, Locale.getDefault())
-    }
-    return months.indexOf(this)
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DayCell(dayData: CalendarDayStatus?) {
@@ -146,18 +215,15 @@ private fun DayCell(dayData: CalendarDayStatus?) {
             } else {
                 0f
             }
-            // Interpolate from a light green to a darker green
             lerp(Color(0xFFACD5F2), Color(0xFF006DAB), fraction.coerceIn(0f, 1f))
         }
 
         SpendingStatus.OVER_LIMIT -> {
             val fraction = if (dayData.safeToSpend > 0) {
-                // How much over budget are we? Cap at 2x for visual consistency.
                 min((dayData.amountSpent / dayData.safeToSpend).toFloat(), 2f) - 1f
             } else {
-                1f // Max intensity if budget was zero
+                1f
             }
-            // Interpolate from a light red to a brighter red
             lerp(Color(0xFFF87171), Color(0xFFB91C1C), fraction.coerceIn(0f, 1f))
         }
 
