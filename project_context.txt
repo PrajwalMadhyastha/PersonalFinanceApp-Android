@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Thu Jul 17 19:48:07 IST 2025
+Generated on: Thu Jul 17 21:36:56 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -294,6 +294,43 @@ dependencies {
 
 
 ---------- Main Source Files ----------
+================== FILE: ./app/src/main/java/TimePeriodReportViewModelFactory.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModelFactory.kt
+// REASON: REFACTOR - The factory has been updated to accept and provide the
+// SettingsRepository. This is a necessary dependency for the ViewModel to
+// calculate the daily budget required for the new Spending Consistency card.
+// =================================================================================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+
+class TimePeriodReportViewModelFactory(
+    private val application: Application,
+    private val timePeriod: TimePeriod,
+    private val initialDateMillis: Long?
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(TimePeriodReportViewModel::class.java)) {
+            val db = AppDatabase.getInstance(application)
+            // --- NEW: Add SettingsRepository dependency ---
+            val settingsRepository = SettingsRepository(application)
+            @Suppress("UNCHECKED_CAST")
+            return TimePeriodReportViewModel(
+                transactionDao = db.transactionDao(),
+                settingsRepository = settingsRepository, // Pass repository
+                timePeriod = timePeriod,
+                initialDateMillis = initialDateMillis
+            ) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/RuleCreationViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
@@ -778,6 +815,14 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 
 
 ================== FILE: ./app/src/main/java/TimePeriodReportViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
+// REASON: FEATURE - The ViewModel now includes logic to generate data for the
+// Spending Consistency card. It fetches daily spending for the selected month,
+// calculates the status of each day against the budget, and exposes both the
+// raw calendar data and the summary statistics (e.g., "Good Days") as StateFlows
+// for the UI to consume.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -787,30 +832,19 @@ import androidx.lifecycle.viewModelScope
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 import kotlin.math.roundToInt
-
-class TimePeriodReportViewModelFactory(
-    private val application: Application,
-    private val timePeriod: TimePeriod,
-    private val initialDateMillis: Long?
-) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(TimePeriodReportViewModel::class.java)) {
-            val db = AppDatabase.getInstance(application)
-            @Suppress("UNCHECKED_CAST")
-            return TimePeriodReportViewModel(db.transactionDao(), timePeriod, initialDateMillis) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
-    }
-}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimePeriodReportViewModel(
     private val transactionDao: TransactionDao,
+    private val settingsRepository: SettingsRepository, // --- NEW: Add dependency
     private val timePeriod: TimePeriod,
     initialDateMillis: Long?
 ) : ViewModel() {
@@ -842,7 +876,7 @@ class TimePeriodReportViewModel(
 
             val previousPeriodEndCal = (calendar.clone() as Calendar).apply {
                 when (timePeriod) {
-                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24) // Compare with previous 24-hour window
+                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
                     TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
                     TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
                 }
@@ -971,6 +1005,22 @@ class TimePeriodReportViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    // --- NEW: Flow for monthly consistency data ---
+    val monthlyConsistencyData: StateFlow<List<CalendarDayStatus>> = _selectedDate.flatMapLatest { calendar ->
+        flow {
+            emit(generateMonthConsistencyData(calendar))
+        }.flowOn(Dispatchers.Default)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- NEW: Flow for consistency stats ---
+    val consistencyStats: StateFlow<ConsistencyStats> = monthlyConsistencyData.map { data ->
+        val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
+        val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
+        val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
+        val noDataDays = data.count { it.status == SpendingStatus.NO_DATA }
+        ConsistencyStats(goodDays, badDays, noSpendDays, noDataDays)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ConsistencyStats(0, 0, 0, 0))
+
 
     fun selectPreviousPeriod() {
         _selectedDate.update {
@@ -1011,6 +1061,44 @@ class TimePeriodReportViewModel(
         }
 
         return Pair(startCal.timeInMillis, endCal.timeInMillis)
+    }
+
+    // --- NEW: Function to generate consistency data for a specific month ---
+    private suspend fun generateMonthConsistencyData(calendar: Calendar): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
+        val year = calendar.get(Calendar.YEAR)
+        val month = calendar.get(Calendar.MONTH) + 1
+
+        val monthStartCal = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+        }
+        val monthEndCal = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, 23)
+        }
+
+        val dailyTotals = transactionDao.getDailySpendingForDateRange(monthStartCal.timeInMillis, monthEndCal.timeInMillis).first()
+        val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
+
+        val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val budget = settingsRepository.getOverallBudgetForMonthBlocking(year, month)
+        val safeToSpend = if (budget > 0) (budget.toDouble() / daysInMonth) else 0.0
+
+        val resultList = mutableListOf<CalendarDayStatus>()
+        val dayIterator = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1) }
+
+        for (i in 1..daysInMonth) {
+            dayIterator.set(Calendar.DAY_OF_MONTH, i)
+            val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, i)
+            val amountSpent = spendingMap[dateKey] ?: 0.0
+            val status = when {
+                amountSpent == 0.0 -> SpendingStatus.NO_SPEND
+                safeToSpend > 0 && amountSpent > safeToSpend -> SpendingStatus.OVER_LIMIT
+                else -> SpendingStatus.WITHIN_LIMIT
+            }
+            resultList.add(CalendarDayStatus(dayIterator.time, status, amountSpent, safeToSpend))
+        }
+        return@withContext resultList
     }
 }
 -e 
@@ -1081,11 +1169,10 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - The unused properties `allTransactions` and `safeToSpendPerDay`,
-// along with the unused functions `getTransactionById` and `updateTransaction`,
-// have been removed to resolve the "UnusedSymbol" warnings.
-// FIX - The unused parameter 'e' in the catch block of `approveSmsTransaction`
-// is now used for logging the exception, resolving the warning.
+// REASON: FIX - The logic for the `monthlySummaries` flow has been updated.
+// Instead of showing a rolling 12-month view, it now correctly displays all
+// 12 months of the current calendar year, restoring the original, preferred
+// behavior for the month scroller component.
 // =================================================================================
 package io.pm.finlight
 
@@ -1240,23 +1327,38 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
-        val twelveMonthsAgo = Calendar.getInstance().apply { add(Calendar.YEAR, -1) }.timeInMillis
-        monthlySummaries = transactionRepository.getMonthlyTrends(twelveMonthsAgo)
+
+        // --- UPDATED: Logic to get all months of the current year ---
+        val currentYear = Calendar.getInstance().get(Calendar.YEAR)
+        val startOfYear = Calendar.getInstance().apply {
+            set(Calendar.YEAR, currentYear)
+            set(Calendar.MONTH, Calendar.JANUARY)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+
+        monthlySummaries = transactionRepository.getMonthlyTrends(startOfYear)
             .map { trends ->
                 val dateFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-                val monthMap = trends.associate {
-                    val cal = Calendar.getInstance().apply {
-                        time = dateFormat.parse(it.monthYear) ?: Date()
+                val monthMap = trends.filter {
+                    // Ensure we only process trends for the current year
+                    (dateFormat.parse(it.monthYear) ?: Date()).let { date ->
+                        val cal = Calendar.getInstance().apply { time = date }
+                        cal.get(Calendar.YEAR) == currentYear
                     }
+                }.associate {
+                    val cal = Calendar.getInstance().apply { time = dateFormat.parse(it.monthYear) ?: Date() }
                     (cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)) to it.totalExpenses
                 }
 
-                (0..11).map { i ->
-                    val cal = Calendar.getInstance().apply { add(Calendar.MONTH, -i) }
+                (0..11).map { monthIndex ->
+                    val cal = Calendar.getInstance().apply {
+                        set(Calendar.YEAR, currentYear)
+                        set(Calendar.MONTH, monthIndex)
+                    }
                     val key = cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)
                     val spent = monthMap[key] ?: 0.0
                     MonthlySummaryItem(calendar = cal, totalSpent = spent)
-                }.reversed()
+                }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -1400,7 +1502,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
-            // --- FIX: Pass the missing merchantCategoryMappingDao argument ---
             val potentialTxn = SmsParser.parse(
                 smsMessage,
                 emptyMap(),
@@ -1738,7 +1839,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
                 true
             } catch (e: Exception) {
-                // --- FIX: Log the exception to fix the unused parameter warning ---
                 Log.e(TAG, "Failed to approve SMS transaction", e)
                 false
             }
@@ -2198,11 +2298,10 @@ class WeeklySummaryWorker(
 ================== FILE: ./app/src/main/java/IncomeViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/IncomeViewModel.kt
-// REASON: Added state management for filters and refactored data flows to be
-// reactive to filter changes, enabling a dynamic filtering experience.
-// BUG FIX: The ViewModel now correctly exposes its own lists of accounts and
-// categories, making it self-sufficient and removing the dependency on
-// TransactionViewModel from the UI layer.
+// REASON: FIX - The logic for the `monthlySummaries` flow has been updated.
+// Instead of showing a rolling 12-month view, it now correctly displays all
+// 12 months of the current calendar year, restoring the original, preferred
+// behavior for the month scroller component.
 // =================================================================================
 package io.pm.finlight
 
@@ -2220,7 +2319,6 @@ import java.util.Locale
 class IncomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val transactionRepository: TransactionRepository
-    // --- NEW: Add repositories for accounts and categories ---
     val accountRepository: AccountRepository
     val categoryRepository: CategoryRepository
 
@@ -2235,7 +2333,6 @@ class IncomeViewModel(application: Application) : AndroidViewModel(application) 
             Pair(month, filters)
         }
 
-    // --- NEW: Expose account and category flows ---
     val allAccounts: StateFlow<List<Account>>
     val allCategories: Flow<List<Category>>
 
@@ -2270,23 +2367,35 @@ class IncomeViewModel(application: Application) : AndroidViewModel(application) 
         )
         allCategories = categoryRepository.allCategories
 
-        val twelveMonthsAgo = Calendar.getInstance().apply { add(Calendar.YEAR, -1) }.timeInMillis
-        monthlySummaries = transactionRepository.getMonthlyTrends(twelveMonthsAgo)
+        val currentYear = Calendar.getInstance().get(Calendar.YEAR)
+        val startOfYear = Calendar.getInstance().apply {
+            set(Calendar.YEAR, currentYear)
+            set(Calendar.MONTH, Calendar.JANUARY)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+
+        monthlySummaries = transactionRepository.getMonthlyTrends(startOfYear)
             .map { trends ->
                 val dateFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-                val monthMap = trends.associate {
-                    val cal = Calendar.getInstance().apply {
-                        time = dateFormat.parse(it.monthYear) ?: Date()
+                val monthMap = trends.filter {
+                    (dateFormat.parse(it.monthYear) ?: Date()).let { date ->
+                        val cal = Calendar.getInstance().apply { time = date }
+                        cal.get(Calendar.YEAR) == currentYear
                     }
+                }.associate {
+                    val cal = Calendar.getInstance().apply { time = dateFormat.parse(it.monthYear) ?: Date() }
                     (cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)) to it.totalIncome
                 }
 
-                (0..11).map { i ->
-                    val cal = Calendar.getInstance().apply { add(Calendar.MONTH, -i) }
+                (0..11).map { monthIndex ->
+                    val cal = Calendar.getInstance().apply {
+                        set(Calendar.YEAR, currentYear)
+                        set(Calendar.MONTH, monthIndex)
+                    }
                     val key = cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)
                     val income = monthMap[key] ?: 0.0
                     MonthlySummaryItem(calendar = cal, totalSpent = income)
-                }.reversed()
+                }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     }
@@ -2315,6 +2424,13 @@ class IncomeViewModel(application: Application) : AndroidViewModel(application) 
 
 
 ================== FILE: ./app/src/main/java/SearchViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SearchViewModel.kt
+// REASON: FEATURE - The ViewModel now accepts an `initialDateMillis` parameter.
+// In its `init` block, it checks for this date and, if present, automatically
+// sets the start and end date filters to span that single day. This allows the
+// UI to display pre-filtered search results when navigated to from the calendar.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -2322,6 +2438,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 data class SearchUiState(
     val keyword: String = "",
@@ -2340,7 +2457,8 @@ class SearchViewModel(
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
     private val categoryDao: CategoryDao,
-    private val initialCategoryId: Int? // Accept initial category ID
+    private val initialCategoryId: Int?,
+    private val initialDateMillis: Long? // --- NEW: Accept initial date
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -2358,7 +2476,6 @@ class SearchViewModel(
         viewModelScope.launch {
             categoryDao.getAllCategories().collect { categories ->
                 _uiState.update { it.copy(categories = categories) }
-                // --- NEW: Pre-select category if an ID was passed ---
                 if (initialCategoryId != null) {
                     val initialCategory = categories.find { it.id == initialCategoryId }
                     if (initialCategory != null) {
@@ -2367,6 +2484,23 @@ class SearchViewModel(
                 }
             }
         }
+
+        // --- NEW: Pre-select date range if an initial date was passed ---
+        if (initialDateMillis != null && initialDateMillis != -1L) {
+            val cal = Calendar.getInstance().apply { timeInMillis = initialDateMillis }
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            val start = cal.timeInMillis
+
+            cal.set(Calendar.HOUR_OF_DAY, 23)
+            cal.set(Calendar.MINUTE, 59)
+            cal.set(Calendar.SECOND, 59)
+            val end = cal.timeInMillis
+
+            onDateChange(start, end)
+        }
+
 
         // Reactive search logic
         viewModelScope.launch {
@@ -6039,16 +6173,21 @@ private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
+// REASON: FEATURE - The screen now conditionally displays the new
+// `MonthlyConsistencyCalendarCard` when the user is viewing a Monthly report.
+// The card is passed the relevant data and click handlers from the ViewModel,
+// making it fully interactive within the report screen.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
 import android.graphics.Typeface
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -6056,7 +6195,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -6067,6 +6205,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
@@ -6074,18 +6213,18 @@ import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.components.MonthlyConsistencyCalendarCard
 import io.pm.finlight.ui.components.TransactionItem
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimePeriodReportScreen(
     navController: NavController,
     timePeriod: TimePeriod,
-    initialDateMillis: Long? = null // Allow null for default
+    initialDateMillis: Long? = null
 ) {
     val application = LocalContext.current.applicationContext as Application
     val factory = TimePeriodReportViewModelFactory(application, timePeriod, initialDateMillis)
@@ -6095,6 +6234,9 @@ fun TimePeriodReportScreen(
     val transactions by viewModel.transactionsForPeriod.collectAsState()
     val chartDataPair by viewModel.chartData.collectAsState()
     val insights by viewModel.insights.collectAsState()
+    // --- NEW: Collect consistency data and stats ---
+    val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
+    val consistencyStats by viewModel.consistencyStats.collectAsState()
 
     val totalSpent = transactions.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
     val totalIncome by viewModel.totalIncome.collectAsState()
@@ -6126,7 +6268,7 @@ fun TimePeriodReportScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
-        containerColor = Color.Transparent // Make scaffold background transparent
+        containerColor = Color.Transparent
     ) { innerPadding ->
         var dragAmount by remember { mutableStateOf(0f) }
 
@@ -6138,9 +6280,9 @@ fun TimePeriodReportScreen(
                     detectHorizontalDragGestures(
                         onDragStart = { },
                         onDragEnd = {
-                            if (dragAmount > 150) { // Swipe Right
+                            if (dragAmount > 150) {
                                 viewModel.selectPreviousPeriod()
-                            } else if (dragAmount < -150) { // Swipe Left
+                            } else if (dragAmount < -150) {
                                 viewModel.selectNextPeriod()
                             }
                             dragAmount = 0f
@@ -6171,6 +6313,25 @@ fun TimePeriodReportScreen(
                         ReportInsightsCard(insights = it)
                     }
                 }
+
+                // --- NEW: Conditionally show the consistency card for monthly reports ---
+                if (timePeriod == TimePeriod.MONTHLY) {
+                    item {
+                        MonthlyConsistencyCalendarCard(
+                            data = monthlyConsistencyData,
+                            stats = consistencyStats,
+                            onReportClick = {
+                                navController.navigate(BottomNavItem.Reports.route) {
+                                    popUpTo(navController.graph.findStartDestination().id)
+                                }
+                            },
+                            onDayClick = { date ->
+                                navController.navigate("search_screen?date=${date.time}")
+                            }
+                        )
+                    }
+                }
+
 
                 item {
                     GlassPanel {
@@ -6267,12 +6428,14 @@ private fun ReportHeader(totalSpent: Double, totalIncome: Double, timePeriod: Ti
             "Since ${format.format(startCal.time)}"
         }
         TimePeriod.MONTHLY -> {
-            val format = SimpleDateFormat("MMM d", Locale.getDefault())
-            val startCal = Calendar.getInstance().apply {
-                time = selectedDate
-                add(Calendar.DAY_OF_YEAR, -30)
+            val format = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+            val startCal = (selectedDate.clone() as Date).apply {
+                val cal = Calendar.getInstance()
+                cal.time = this
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                time = cal.timeInMillis
             }
-            "Since ${format.format(startCal.time)}"
+            "For ${SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(selectedDate)}"
         }
     }
 
@@ -6286,13 +6449,13 @@ private fun ReportHeader(totalSpent: Double, totalIncome: Double, timePeriod: Ti
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(240.dp), // Increased height
+                .height(240.dp),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = backgroundIcon,
                 contentDescription = null,
-                modifier = Modifier.size(180.dp), // Slightly larger icon
+                modifier = Modifier.size(180.dp),
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
             )
             Column(
@@ -6343,51 +6506,6 @@ private fun ReportHeader(totalSpent: Double, totalIncome: Double, timePeriod: Ti
 }
 
 @Composable
-private fun ReportInsightsCard(insights: ReportInsights) {
-    GlassPanel {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Change", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val (text, color) = when {
-                    insights.percentageChange == null -> "--" to MaterialTheme.colorScheme.onSurface
-                    insights.percentageChange > 0 -> "↑ ${insights.percentageChange}%" to MaterialTheme.colorScheme.error
-                    insights.percentageChange < 0 -> "↓ ${abs(insights.percentageChange)}%" to MaterialTheme.colorScheme.primary
-                    else -> "No Change" to MaterialTheme.colorScheme.onSurface
-                }
-                Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = color)
-                Text("vs. previous period", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Top Spend", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (insights.topCategory != null) {
-                    Icon(
-                        imageVector = CategoryIconHelper.getIcon(insights.topCategory.iconKey ?: "category"),
-                        contentDescription = insights.topCategory.categoryName,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(CategoryIconHelper.getIconBackgroundColor(insights.topCategory.colorKey ?: "gray_light"))
-                            .padding(8.dp),
-                        tint = Color.Black
-                    )
-                    Text(insights.topCategory.categoryName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    Text("--", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                }
-            }
-        }
-    }
-}
-
-
-@Composable
 private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
     val (barData, labels) = chartData
     val selectedIndex = labels.size - 1
@@ -6421,7 +6539,7 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
                 }
                 axisLeft.apply {
                     setDrawGridLines(true)
-                    gridColor = axisTextColor and 0x22FFFFFF // Transparent grid lines
+                    gridColor = axisTextColor and 0x22FFFFFF
                     setDrawLabels(false)
                     setDrawAxisLine(false)
                     axisMinimum = 0f
@@ -11378,6 +11496,14 @@ private fun AccountDetailTransactionItem(transactionDetails: TransactionDetails)
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
+// REASON: FIX - The navigation logic for the "Spending Consistency" card's
+// `onReportClick` handler has been corrected. It now explicitly pops up to the
+// `Dashboard` route, which is the start destination of the bottom navigation
+// graph. This ensures it behaves identically to the bottom navigation bar,
+// fixing the back stack issue and preventing the "overlapping" screen problem.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
@@ -11418,6 +11544,7 @@ import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.util.Date
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -11430,7 +11557,6 @@ fun DashboardScreen(
     val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
     val hiddenCards by viewModel.hiddenCards.collectAsState()
     val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
-    // --- NEW: Collect the stats ---
     val consistencyStats by viewModel.consistencyStats.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
@@ -11537,7 +11663,6 @@ fun DashboardScreen(
                     isCustomizationMode = isCustomizationMode,
                     onHide = { viewModel.hideCard(cardType) },
                     monthlyConsistencyData = monthlyConsistencyData,
-                    // --- NEW: Pass stats down to the card ---
                     consistencyStats = consistencyStats
                 )
             }
@@ -11553,7 +11678,6 @@ private fun DashboardCard(
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
     monthlyConsistencyData: List<CalendarDayStatus>,
-    // --- NEW: Accept stats as a parameter ---
     consistencyStats: ConsistencyStats
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
@@ -11588,9 +11712,19 @@ private fun DashboardCard(
             )
             DashboardCardType.SPENDING_CONSISTENCY -> MonthlyConsistencyCalendarCard(
                 data = monthlyConsistencyData,
-                // --- NEW: Pass stats to the card component ---
                 stats = consistencyStats,
-                navController = navController
+                onReportClick = {
+                    navController.navigate(BottomNavItem.Reports.route) {
+                        popUpTo(BottomNavItem.Dashboard.route) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onDayClick = { date ->
+                    navController.navigate("search_screen?date=${date.time}")
+                }
             )
         }
         if (isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET) {
@@ -13837,6 +13971,12 @@ private fun SettingsSection(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
+// REASON: FEATURE - The yearly "Spending Consistency" card now includes a summary
+// statistics section below the heatmap. This provides a complete overview of
+// spending habits for the year, mirroring the detail available on the dashboard.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.background
@@ -13844,7 +13984,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13862,6 +14001,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -13895,7 +14035,6 @@ import io.pm.finlight.ui.components.GroupedBarChart
 import java.util.Calendar
 import kotlin.math.abs
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReportsScreen(
     navController: NavController,
@@ -13906,6 +14045,7 @@ fun ReportsScreen(
     val allCategories by viewModel.allCategories.collectAsState()
     val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val calendarData by viewModel.consistencyCalendarData.collectAsState()
+    val consistencyStats by viewModel.consistencyStats.collectAsState()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -13968,7 +14108,25 @@ fun ReportsScreen(
                     if (calendarData.isEmpty()) {
                         CircularProgressIndicator()
                     } else {
-                        ConsistencyCalendar(data = calendarData)
+                        ConsistencyCalendar(
+                            data = calendarData,
+                            onDayClick = { date ->
+                                navController.navigate("search_screen?date=${date.time}")
+                            }
+                        )
+                    }
+                    // --- NEW: Add stats section below the calendar ---
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround
+                    ) {
+                        StatItem(consistencyStats.noSpendDays, "No Spend")
+                        StatItem(consistencyStats.goodDays, "Good Days")
+                        StatItem(consistencyStats.badDays, "Over Budget")
+                        StatItem(consistencyStats.noDataDays, "No Data")
                     }
                 }
             }
@@ -14055,11 +14213,9 @@ fun ReportsScreen(
                         GroupedBarChart(
                             chartData = trendDataPair,
                             onBarClick = { entry ->
-                                // Find the month that was clicked
                                 val monthIndex = entry.x.toInt()
                                 val trends = viewModel.reportData.value.trendData?.first?.dataSets?.firstOrNull()?.getEntryForIndex(monthIndex)
                                 if (trends != null) {
-                                    // Calculate the timestamp for the end of the clicked month
                                     val calendar = Calendar.getInstance()
                                     calendar.add(Calendar.MONTH, monthIndex - (reportData.trendData?.second?.size?.minus(1) ?: 0))
                                     calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
@@ -14114,7 +14270,7 @@ fun ReportsScreen(
 }
 
 @Composable
-private fun ReportInsightsCard(insights: ReportInsights) {
+fun ReportInsightsCard(insights: ReportInsights) {
     GlassPanel {
         Row(
             modifier = Modifier
@@ -14158,7 +14314,7 @@ private fun ReportInsightsCard(insights: ReportInsights) {
 }
 
 @Composable
-private fun GlassReportNavigationCard(
+fun GlassReportNavigationCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
@@ -14193,6 +14349,23 @@ private fun GlassReportNavigationCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun StatItem(count: Int, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "$count",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 -e 
@@ -15389,6 +15562,13 @@ fun TransactionList(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
+// REASON: REFACTOR - The `MonthlyConsistencyCalendarCard` layout has been refined
+// by wrapping the heatmap in a Row and adding a Spacer. This pushes the heatmap
+// slightly away from the left edge, creating a more centered and balanced look
+// within the card as requested by the user.
+// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
@@ -15410,9 +15590,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.navOptions
 import io.pm.finlight.CalendarDayStatus
 import io.pm.finlight.ConsistencyStats
 import io.pm.finlight.SpendingStatus
@@ -15422,29 +15599,20 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.min
 
-// --- UPDATED: Increased day size for better visibility on the dashboard ---
-private val DAY_SIZE = 22.dp
+private val DAY_SIZE = 16.dp
 private val DAY_SPACING = 4.dp
 
 @Composable
 fun MonthlyConsistencyCalendarCard(
     data: List<CalendarDayStatus>,
     stats: ConsistencyStats,
-    navController: NavController
+    onReportClick: () -> Unit,
+    onDayClick: (Date) -> Unit
 ) {
-    // --- FIX: Correct navigation options to prevent back stack issues ---
-    val navOptions = navOptions {
-        popUpTo(navController.graph.findStartDestination().id) {
-            saveState = true
-        }
-        launchSingleTop = true
-        restoreState = true
-    }
-
     GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { navController.navigate("reports_screen", navOptions) }
+            .clickable(onClick = onReportClick)
     ) {
         Column(
             modifier = Modifier.padding(24.dp),
@@ -15469,29 +15637,62 @@ fun MonthlyConsistencyCalendarCard(
                     modifier = Modifier.size(18.dp)
                 )
             }
-            if (data.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else {
-                MonthColumn(
-                    monthData = MonthData.fromCalendar(Calendar.getInstance()),
-                    year = Calendar.getInstance().get(Calendar.YEAR),
-                    today = Calendar.getInstance(),
-                    dataMap = data.associateBy {
-                        val cal = Calendar.getInstance().apply { time = it.date }
-                        cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
-                    }
-                )
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                StatItem(stats.noSpendDays, "No Spend")
-                StatItem(stats.goodDays, "Good Days")
-                StatItem(stats.badDays, "Over Budget")
+                // Heatmap Container
+                Box(
+                    modifier = Modifier.weight(1.7f) // Give more weight to the calendar
+                ) {
+                    if (data.isEmpty()) {
+                        Box(modifier = Modifier.height(150.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    } else {
+                        val currentMonthData = data.filter {
+                            val cal = Calendar.getInstance()
+                            val currentMonth = cal.get(Calendar.MONTH)
+                            cal.time = it.date
+                            cal.get(Calendar.MONTH) == currentMonth
+                        }
+                        // --- UPDATED: Wrap in a Row with a Spacer to add an offset ---
+                        Row {
+                            Spacer(Modifier.width(16.dp))
+                            MonthColumn(
+                                monthData = MonthData.fromCalendar(Calendar.getInstance()),
+                                year = Calendar.getInstance().get(Calendar.YEAR),
+                                today = Calendar.getInstance(),
+                                dataMap = currentMonthData.associateByDate(),
+                                onDayClick = onDayClick
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.width(16.dp))
+
+                // Stats Container (2x2 Grid)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        StatItem(stats.noSpendDays, "No Spend")
+                        StatItem(stats.goodDays, "Good Days")
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        StatItem(stats.badDays, "Over Budget")
+                        StatItem(stats.noDataDays, "No Data")
+                    }
+                }
             }
         }
     }
@@ -15499,7 +15700,7 @@ fun MonthlyConsistencyCalendarCard(
 
 @Composable
 private fun StatItem(count: Int, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(horizontalAlignment = Alignment.Start) {
         Text(
             text = "$count",
             style = MaterialTheme.typography.titleLarge,
@@ -15519,23 +15720,23 @@ private fun StatItem(count: Int, label: String) {
 @Composable
 fun ConsistencyCalendar(
     data: List<CalendarDayStatus>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDayClick: (Date) -> Unit
 ) {
     if (data.isEmpty()) return
 
-    val dataMap = remember(data) {
-        data.associateBy {
-            val cal = Calendar.getInstance()
-            cal.time = it.date
-            cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
-        }
-    }
+    val dataMap = remember(data) { data.associateByDate() }
 
     val today = remember { Calendar.getInstance() }
     val year = today.get(Calendar.YEAR)
 
     val months = (0..11).map { monthIndex ->
-        MonthData.fromCalendar(Calendar.getInstance().apply { set(year, monthIndex, 1) })
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, monthIndex)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }
+        MonthData.fromCalendar(cal)
     }
 
     val lazyListState = rememberLazyListState()
@@ -15561,7 +15762,8 @@ fun ConsistencyCalendar(
                 monthData = monthData,
                 year = year,
                 today = today,
-                dataMap = dataMap
+                dataMap = dataMap,
+                onDayClick = onDayClick
             )
         }
     }
@@ -15589,7 +15791,8 @@ private fun MonthColumn(
     monthData: MonthData,
     year: Int,
     today: Calendar,
-    dataMap: Map<Pair<Int, Int>, CalendarDayStatus>
+    dataMap: Map<Pair<Int, Int>, CalendarDayStatus>,
+    onDayClick: (Date) -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
@@ -15615,9 +15818,9 @@ private fun MonthColumn(
 
                             if (!currentDayCal.after(today)) {
                                 val dayData = dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to year]
-                                DayCell(dayData)
+                                DayCell(dayData, onClick = { onDayClick(currentDayCal.time) })
                             } else {
-                                DayCell(null) // Future day
+                                DayCell(null, onClick = {}) // Future day
                             }
                         } else {
                             // Empty cell for padding
@@ -15632,12 +15835,11 @@ private fun MonthColumn(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DayCell(dayData: CalendarDayStatus?) {
+private fun DayCell(dayData: CalendarDayStatus?, onClick: () -> Unit) {
     val tooltipState = rememberTooltipState(isPersistent = true)
 
     val color = when (dayData?.status) {
         SpendingStatus.NO_SPEND -> Color(0xFF39D353)
-
         SpendingStatus.WITHIN_LIMIT -> {
             val fraction = if (dayData.safeToSpend > 0) {
                 (dayData.amountSpent / dayData.safeToSpend).toFloat()
@@ -15646,7 +15848,6 @@ private fun DayCell(dayData: CalendarDayStatus?) {
             }
             lerp(Color(0xFFACD5F2), Color(0xFF006DAB), fraction.coerceIn(0f, 1f))
         }
-
         SpendingStatus.OVER_LIMIT -> {
             val fraction = if (dayData.safeToSpend > 0) {
                 min((dayData.amountSpent / dayData.safeToSpend).toFloat(), 2f) - 1f
@@ -15655,10 +15856,10 @@ private fun DayCell(dayData: CalendarDayStatus?) {
             }
             lerp(Color(0xFFF87171), Color(0xFFB91C1C), fraction.coerceIn(0f, 1f))
         }
-
         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     }
 
+    val isClickable = dayData?.status != SpendingStatus.NO_DATA
 
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -15688,8 +15889,16 @@ private fun DayCell(dayData: CalendarDayStatus?) {
                 .clip(RoundedCornerShape(2.dp))
                 .background(color)
                 .border(0.5.dp, Color.Black.copy(alpha = 0.1f), RoundedCornerShape(2.dp))
-                .clickable { /* Could be used for long-press tooltips if needed */ }
+                .clickable(enabled = isClickable, onClick = onClick)
         )
+    }
+}
+
+private fun List<CalendarDayStatus>.associateByDate(): Map<Pair<Int, Int>, CalendarDayStatus> {
+    return this.associateBy {
+        val cal = Calendar.getInstance()
+        cal.time = it.date
+        cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
     }
 }
 -e 
@@ -16950,9 +17159,10 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - Added the new routes for `add_edit_goal` (for creating a
-// new goal) and `add_edit_goal/{goalId}` (for editing an existing one). This
-// integrates the new dedicated screen into the app's navigation graph.
+// REASON: FEATURE - The route for `search_screen` has been updated to accept an
+// optional `date` argument. This allows other screens, like the new Spending
+// Consistency Calendar, to navigate to the search results pre-filtered for a
+// specific day.
 // =================================================================================
 package io.pm.finlight
 
@@ -17185,7 +17395,7 @@ fun MainAppScreen() {
         "automation_settings",
         "notification_settings",
         "data_settings",
-        "add_edit_goal" // --- NEW: Add new route to this set
+        "add_edit_goal"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -17197,7 +17407,8 @@ fun MainAppScreen() {
 
     val fabRoutes = setOf(
         "account_list",
-        "recurring_transactions"
+        "recurring_transactions",
+        "goals_screen" // Add goals_screen to show FAB
     )
     val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
 
@@ -17324,15 +17535,12 @@ fun MainAppScreen() {
                 if (showFab) {
                     FloatingActionButton(onClick = {
                         when (baseCurrentRoute) {
-                            "account_list" -> {
-                                navController.navigate("add_account")
-                            }
-                            "recurring_transactions" -> {
-                                navController.navigate("add_recurring_transaction")
-                            }
+                            "account_list" -> navController.navigate("add_account")
+                            "recurring_transactions" -> navController.navigate("add_recurring_transaction")
+                            "goals_screen" -> navController.navigate("add_edit_goal")
                         }
                     }) {
-                        Icon(Icons.Filled.Add, contentDescription = "Add Transaction or Account")
+                        Icon(Icons.Filled.Add, contentDescription = "Add")
                     }
                 }
             },
@@ -17451,15 +17659,25 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            "search_screen?categoryId={categoryId}",
-            arguments = listOf(navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 }),
+            // --- UPDATED: Add optional 'date' argument ---
+            route = "search_screen?categoryId={categoryId}&date={date}",
+            arguments = listOf(
+                navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 },
+                navArgument("date") { type = NavType.LongType; defaultValue = -1L }
+            ),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
-            val factory = SearchViewModelFactory(activity.application, if (categoryId != -1) categoryId else null)
+            // --- UPDATED: Get date argument ---
+            val date = backStackEntry.arguments?.getLong("date") ?: -1L
+            val factory = SearchViewModelFactory(
+                activity.application,
+                if (categoryId != -1) categoryId else null,
+                if (date != -1L) date else null
+            )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
             SearchScreen(navController, searchViewModel)
         }
@@ -17717,7 +17935,6 @@ fun AppNavHost(
             GoalScreen(navController = navController, goalViewModel = goalViewModel)
         }
 
-        // --- NEW: Routes for the new dedicated goal screen ---
         composable(
             "add_edit_goal",
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
@@ -19969,6 +20186,13 @@ class SettingsRepository(context: Context) {
 
 
 ================== FILE: ./app/src/main/java/SearchViewModelFactory.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SearchViewModelFactory.kt
+// REASON: FEATURE - The factory now accepts an optional `initialDateMillis`
+// parameter. This allows it to create a SearchViewModel that is pre-configured
+// to filter for a specific date, which is essential for the new clickable
+// calendar feature.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -19977,7 +20201,8 @@ import androidx.lifecycle.ViewModelProvider
 
 class SearchViewModelFactory(
     private val application: Application,
-    private val initialCategoryId: Int? // Add initial category ID
+    private val initialCategoryId: Int?,
+    private val initialDateMillis: Long? // --- NEW: Add initial date
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SearchViewModel::class.java)) {
@@ -19987,7 +20212,8 @@ class SearchViewModelFactory(
                 transactionDao = database.transactionDao(),
                 accountDao = database.accountDao(),
                 categoryDao = database.categoryDao(),
-                initialCategoryId = initialCategoryId // Pass it to the ViewModel
+                initialCategoryId = initialCategoryId,
+                initialDateMillis = initialDateMillis // --- NEW: Pass date to ViewModel
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
@@ -19997,6 +20223,12 @@ class SearchViewModelFactory(
 
 
 ================== FILE: ./app/src/main/java/ReportsViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
+// REASON: FEATURE - The ViewModel now calculates and exposes `consistencyStats`
+// for the entire year's worth of calendar data. This provides the necessary
+// summary metrics (Good Days, Bad Days, etc.) for display on the main reports screen.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -20033,6 +20265,8 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     val reportData: StateFlow<ReportScreenData>
 
     val consistencyCalendarData: StateFlow<List<CalendarDayStatus>>
+    // --- NEW: StateFlow for the yearly consistency stats ---
+    val consistencyStats: StateFlow<ConsistencyStats>
 
     init {
         val db = AppDatabase.getInstance(application)
@@ -20131,12 +20365,25 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
+
+        // --- NEW: Derive stats from the full year's calendar data ---
+        consistencyStats = consistencyCalendarData.map { data ->
+            val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
+            val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
+            val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
+            val noDataDays = data.count { it.status == SpendingStatus.NO_DATA }
+            ConsistencyStats(goodDays, badDays, noSpendDays, noDataDays)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ConsistencyStats(0, 0, 0, 0)
+        )
     }
 
     private suspend fun generateConsistencyCalendarData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
         val calendar = Calendar.getInstance()
         val endDate = calendar.timeInMillis
-        calendar.add(Calendar.YEAR, -1)
+        calendar.set(Calendar.DAY_OF_YEAR, 1)
         val startDate = calendar.timeInMillis
 
         val firstTransactionDate = transactionRepository.getFirstTransactionDate().first()
@@ -23327,6 +23574,12 @@ data class DailyTotal(
 
 
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
+// REASON: REFACTOR - The `ConsistencyStats` data class and its corresponding
+// calculation logic have been updated to include a new `noDataDays` metric.
+// This provides a more complete summary for the dashboard card.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -23339,8 +23592,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-// --- NEW: Data class to hold the calculated stats for the calendar ---
-data class ConsistencyStats(val goodDays: Int, val badDays: Int, val noSpendDays: Int)
+// --- UPDATED: Added noDataDays to the data class ---
+data class ConsistencyStats(val goodDays: Int, val badDays: Int, val noSpendDays: Int, val noDataDays: Int)
 
 class DashboardViewModel(
     private val transactionRepository: TransactionRepository,
@@ -23376,7 +23629,6 @@ class DashboardViewModel(
     val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
 
     val monthlyConsistencyData: StateFlow<List<CalendarDayStatus>>
-    // --- NEW: StateFlow for the new consistency stats ---
     val consistencyStats: StateFlow<ConsistencyStats>
 
     init {
@@ -23523,16 +23775,17 @@ class DashboardViewModel(
                 initialValue = emptyList()
             )
 
-        // --- NEW: Derive stats from the consistency data ---
+        // --- UPDATED: Calculate all four stats ---
         consistencyStats = monthlyConsistencyData.map { data ->
             val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
             val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
             val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
-            ConsistencyStats(goodDays, badDays, noSpendDays)
+            val noDataDays = data.count { it.status == SpendingStatus.NO_DATA }
+            ConsistencyStats(goodDays, badDays, noSpendDays, noDataDays)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = ConsistencyStats(0, 0, 0)
+            initialValue = ConsistencyStats(0, 0, 0, 0)
         )
     }
 

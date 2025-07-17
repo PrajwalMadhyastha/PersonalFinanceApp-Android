@@ -1,9 +1,12 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
-// REASON: REFACTOR - The `MonthlyConsistencyCalendarCard` layout has been refined
-// by wrapping the heatmap in a Row and adding a Spacer. This pushes the heatmap
-// slightly away from the left edge, creating a more centered and balanced look
-// within the card as requested by the user.
+// REASON: REFACTOR - This file has been updated to include a new composable,
+// `DetailedMonthlyCalendar`, which displays a traditional, interactive calendar
+// for a single month. The existing `ConsistencyCalendar` (yearly heatmap)
+// remains, and both are now available for use in the Reports screen to support
+// the new view toggle feature.
+// FIX - The size of the DetailedMonthlyCalendar has been reduced to better match
+// the yearly heatmap, preventing layout shifts when toggling.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -14,8 +17,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.CalendarDayStatus
 import io.pm.finlight.ConsistencyStats
@@ -93,7 +99,6 @@ fun MonthlyConsistencyCalendarCard(
                             cal.time = it.date
                             cal.get(Calendar.MONTH) == currentMonth
                         }
-                        // --- UPDATED: Wrap in a Row with a Spacer to add an offset ---
                         Row {
                             Spacer(Modifier.width(16.dp))
                             MonthColumn(
@@ -204,6 +209,131 @@ fun ConsistencyCalendar(
         }
     }
 }
+
+@Composable
+fun DetailedMonthlyCalendar(
+    modifier: Modifier = Modifier,
+    data: List<CalendarDayStatus>,
+    selectedMonth: Calendar,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onDayClick: (Date) -> Unit
+) {
+    val monthData = MonthData.fromCalendar(selectedMonth)
+    val dataMap = data.associateByDate()
+    val monthYearFormat = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
+    val dayOfWeekFormat = remember { SimpleDateFormat("EE", Locale.getDefault()) }
+    val weekDays = (Calendar.SUNDAY..Calendar.SATURDAY).map {
+        dayOfWeekFormat.format(Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, it) }.time)
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // Header with month name and navigation
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(onClick = onPreviousMonth) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous Month")
+            }
+            Text(
+                text = monthYearFormat.format(selectedMonth.time),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            IconButton(onClick = onNextMonth) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next Month")
+            }
+        }
+
+        // Day of week headers
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            weekDays.forEach { day ->
+                Text(
+                    text = day.take(1),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(28.dp), // --- FIX: Reduced width
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        // Calendar grid
+        val totalCells = monthData.startOffset + monthData.dayCount
+        val rowCount = (totalCells + 6) / 7
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) { // --- FIX: Reduced spacing
+            for (week in 0 until rowCount) {
+                Row(horizontalArrangement = Arrangement.SpaceAround, modifier = Modifier.fillMaxWidth()) {
+                    for (dayOfWeek in 0..6) {
+                        val cellIndex = week * 7 + dayOfWeek
+                        if (cellIndex >= monthData.startOffset && cellIndex < totalCells) {
+                            val dayOfMonth = cellIndex - monthData.startOffset + 1
+                            val currentDayCal = (selectedMonth.clone() as Calendar).apply {
+                                set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                            }
+                            val dayData = dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to currentDayCal.get(Calendar.YEAR)]
+                            DetailedDayCell(
+                                day = dayOfMonth,
+                                data = dayData,
+                                isToday = isSameDay(currentDayCal, Calendar.getInstance()),
+                                onClick = { onDayClick(currentDayCal.time) }
+                            )
+                        } else {
+                            Spacer(Modifier.size(26.dp)) // --- FIX: Reduced size
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailedDayCell(
+    day: Int,
+    data: CalendarDayStatus?,
+    isToday: Boolean,
+    onClick: () -> Unit
+) {
+    val color = when (data?.status) {
+        SpendingStatus.NO_SPEND -> Color(0xFF39D353)
+        SpendingStatus.WITHIN_LIMIT -> lerp(Color(0xFFACD5F2), Color(0xFF006DAB), (data.amountSpent / data.safeToSpend).toFloat().coerceIn(0f, 1f))
+        SpendingStatus.OVER_LIMIT -> lerp(Color(0xFFF87171), Color(0xFFB91C1C), (min((data.amountSpent / data.safeToSpend).toFloat(), 2f) - 1f).coerceIn(0f, 1f))
+        else -> Color.Transparent
+    }
+
+    val textColor = if (data?.status == SpendingStatus.NO_DATA) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
+    Box(
+        modifier = Modifier
+            .size(26.dp) // --- FIX: Reduced size
+            .clip(CircleShape)
+            .background(color)
+            .then(if (isToday) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier)
+            .clickable(enabled = data?.status != SpendingStatus.NO_DATA, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = day.toString(),
+            color = textColor,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
+        )
+    }
+}
+
 
 private data class MonthData(
     val name: String,
@@ -336,4 +466,9 @@ private fun List<CalendarDayStatus>.associateByDate(): Map<Pair<Int, Int>, Calen
         cal.time = it.date
         cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
     }
+}
+
+private fun isSameDay(cal1: Calendar, cal2: Calendar): Boolean {
+    return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+            cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
 }

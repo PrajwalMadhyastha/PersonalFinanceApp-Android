@@ -1,8 +1,12 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
-// REASON: FEATURE - The ViewModel now calculates and exposes `consistencyStats`
-// for the entire year's worth of calendar data. This provides the necessary
-// summary metrics (Good Days, Bad Days, etc.) for display on the main reports screen.
+// REASON: FEATURE - The ViewModel is updated to support the new Yearly/Monthly
+// view toggle on the Reports screen. It now manages the state for the selected
+// view, the currently displayed month, and fetches the corresponding data for
+// the detailed monthly calendar view.
+// FIX - The logic for consistency stats is now combined into a single flow
+// that updates based on the selected view (Yearly/Monthly), ensuring the
+// correct stats are always displayed.
 // =================================================================================
 package io.pm.finlight
 
@@ -26,6 +30,14 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
+/**
+ * Enum to manage the state of the view toggle on the reports screen.
+ */
+enum class ReportViewType {
+    YEARLY,
+    MONTHLY
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
@@ -37,11 +49,20 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedPeriod = MutableStateFlow(ReportPeriod.MONTH)
     val selectedPeriod: StateFlow<ReportPeriod> = _selectedPeriod.asStateFlow()
 
+    private val _reportViewType = MutableStateFlow(ReportViewType.YEARLY)
+    val reportViewType: StateFlow<ReportViewType> = _reportViewType.asStateFlow()
+
+    private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
+    val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
+
     val reportData: StateFlow<ReportScreenData>
 
     val consistencyCalendarData: StateFlow<List<CalendarDayStatus>>
-    // --- NEW: StateFlow for the yearly consistency stats ---
-    val consistencyStats: StateFlow<ConsistencyStats>
+
+    val detailedMonthData: StateFlow<List<CalendarDayStatus>>
+
+    // --- UPDATED: A single flow for stats that reacts to the view type ---
+    val displayedConsistencyStats: StateFlow<ConsistencyStats>
 
     init {
         val db = AppDatabase.getInstance(application)
@@ -141,12 +162,23 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 initialValue = emptyList()
             )
 
-        // --- NEW: Derive stats from the full year's calendar data ---
-        consistencyStats = consistencyCalendarData.map { data ->
-            val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
-            val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
-            val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
-            val noDataDays = data.count { it.status == SpendingStatus.NO_DATA }
+        detailedMonthData = _selectedMonth.flatMapLatest { monthCal ->
+            flow {
+                emit(generateConsistencyDataForMonth(monthCal))
+            }.flowOn(Dispatchers.Default)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        // --- UPDATED: This flow now calculates stats based on the current view type ---
+        displayedConsistencyStats = combine(
+            reportViewType,
+            consistencyCalendarData,
+            detailedMonthData
+        ) { viewType, yearlyData, monthlyData ->
+            val dataToProcess = if (viewType == ReportViewType.YEARLY) yearlyData else monthlyData
+            val goodDays = dataToProcess.count { it.status == SpendingStatus.WITHIN_LIMIT }
+            val badDays = dataToProcess.count { it.status == SpendingStatus.OVER_LIMIT }
+            val noSpendDays = dataToProcess.count { it.status == SpendingStatus.NO_SPEND }
+            val noDataDays = dataToProcess.count { it.status == SpendingStatus.NO_DATA }
             ConsistencyStats(goodDays, badDays, noSpendDays, noDataDays)
         }.stateIn(
             scope = viewModelScope,
@@ -210,10 +242,69 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         resultList
     }
 
+    private suspend fun generateConsistencyDataForMonth(calendar: Calendar): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
+        val year = calendar.get(Calendar.YEAR)
+        val month = calendar.get(Calendar.MONTH) + 1
+
+        val monthStartCal = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0) }
+        val monthEndCal = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH)); set(Calendar.HOUR_OF_DAY, 23) }
+
+        val firstTransactionDate = transactionRepository.getFirstTransactionDate().first()
+        val firstDataCal = firstTransactionDate?.let { Calendar.getInstance().apply { timeInMillis = it } }
+
+        val dailyTotals = transactionRepository.getDailySpendingForDateRange(monthStartCal.timeInMillis, monthEndCal.timeInMillis).first()
+        val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
+
+        val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val budget = settingsRepository.getOverallBudgetForMonthBlocking(year, month)
+        val safeToSpend = if (budget > 0) (budget.toDouble() / daysInMonth) else 0.0
+
+        val resultList = mutableListOf<CalendarDayStatus>()
+        val dayIterator = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1) }
+        val today = Calendar.getInstance()
+
+        for (i in 1..daysInMonth) {
+            dayIterator.set(Calendar.DAY_OF_MONTH, i)
+            val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, i)
+
+            if (firstDataCal != null && dayIterator.before(firstDataCal)) {
+                resultList.add(CalendarDayStatus(dayIterator.time, SpendingStatus.NO_DATA, 0.0, 0.0))
+                continue
+            }
+
+            val amountSpent = spendingMap[dateKey] ?: 0.0
+            val status = when {
+                dayIterator.after(today) -> SpendingStatus.NO_DATA
+                amountSpent == 0.0 -> SpendingStatus.NO_SPEND
+                safeToSpend > 0 && amountSpent > safeToSpend -> SpendingStatus.OVER_LIMIT
+                else -> SpendingStatus.WITHIN_LIMIT
+            }
+            resultList.add(CalendarDayStatus(dayIterator.time, status, amountSpent, safeToSpend))
+        }
+        resultList
+    }
+
 
     fun selectPeriod(period: ReportPeriod) {
         _selectedPeriod.value = period
     }
+
+    fun setReportView(viewType: ReportViewType) {
+        _reportViewType.value = viewType
+    }
+
+    fun selectPreviousMonth() {
+        _selectedMonth.update {
+            (it.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
+        }
+    }
+
+    fun selectNextMonth() {
+        _selectedMonth.update {
+            (it.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+        }
+    }
+
 
     private fun calculateDateRange(period: ReportPeriod): Pair<Long, Long> {
         val calendar = Calendar.getInstance()

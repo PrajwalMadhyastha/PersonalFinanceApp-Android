@@ -1,8 +1,13 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FEATURE - The yearly "Spending Consistency" card now includes a summary
-// statistics section below the heatmap. This provides a complete overview of
-// spending habits for the year, mirroring the detail available on the dashboard.
+// REASON: FEATURE - The "Spending Consistency" card has been updated with a
+// SegmentedButton to toggle between "Yearly" and "Monthly" views. It now
+// conditionally displays either the yearly heatmap or the new detailed monthly
+// calendar, using the new state and data flows from the ViewModel.
+// FIX - Corrected the usage of the experimental SegmentedButton API to resolve
+// compilation errors.
+// FIX - Wrapped the calendar views in a Box with a fixed height to prevent
+// layout shifts when toggling between the yearly and monthly views.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -26,11 +31,15 @@ import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -53,15 +62,18 @@ import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.ReportInsights
 import io.pm.finlight.ReportPeriod
+import io.pm.finlight.ReportViewType
 import io.pm.finlight.ReportsViewModel
 import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.ConsistencyCalendar
+import io.pm.finlight.ui.components.DetailedMonthlyCalendar
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
 import java.util.Calendar
 import kotlin.math.abs
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportsScreen(
     navController: NavController,
@@ -71,8 +83,12 @@ fun ReportsScreen(
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
     val allCategories by viewModel.allCategories.collectAsState()
     val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
-    val calendarData by viewModel.consistencyCalendarData.collectAsState()
-    val consistencyStats by viewModel.consistencyStats.collectAsState()
+
+    val reportViewType by viewModel.reportViewType.collectAsState()
+    val yearlyCalendarData by viewModel.consistencyCalendarData.collectAsState()
+    val detailedMonthData by viewModel.detailedMonthData.collectAsState()
+    val selectedMonth by viewModel.selectedMonth.collectAsState()
+    val consistencyStats by viewModel.displayedConsistencyStats.collectAsState()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -132,17 +148,63 @@ fun ReportsScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(16.dp))
-                    if (calendarData.isEmpty()) {
-                        CircularProgressIndicator()
-                    } else {
-                        ConsistencyCalendar(
-                            data = calendarData,
-                            onDayClick = { date ->
-                                navController.navigate("search_screen?date=${date.time}")
-                            }
-                        )
+
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = reportViewType == ReportViewType.MONTHLY,
+                            onClick = { viewModel.setReportView(ReportViewType.MONTHLY) },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) {
+                            Text("Monthly")
+                        }
+                        SegmentedButton(
+                            selected = reportViewType == ReportViewType.YEARLY,
+                            onClick = { viewModel.setReportView(ReportViewType.YEARLY) },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) {
+                            Text("Yearly")
+                        }
                     }
-                    // --- NEW: Add stats section below the calendar ---
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp), // --- FIX: Adjusted height
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when (reportViewType) {
+                            ReportViewType.YEARLY -> {
+                                if (yearlyCalendarData.isEmpty()) {
+                                    CircularProgressIndicator()
+                                } else {
+                                    ConsistencyCalendar(
+                                        data = yearlyCalendarData,
+                                        onDayClick = { date ->
+                                            navController.navigate("search_screen?date=${date.time}")
+                                        }
+                                    )
+                                }
+                            }
+                            ReportViewType.MONTHLY -> {
+                                if (detailedMonthData.isEmpty()) {
+                                    CircularProgressIndicator()
+                                } else {
+                                    DetailedMonthlyCalendar(
+                                        data = detailedMonthData,
+                                        selectedMonth = selectedMonth,
+                                        onPreviousMonth = viewModel::selectPreviousMonth,
+                                        onNextMonth = viewModel::selectNextMonth,
+                                        onDayClick = { date ->
+                                            navController.navigate("search_screen?date=${date.time}")
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                     Spacer(Modifier.height(16.dp))
