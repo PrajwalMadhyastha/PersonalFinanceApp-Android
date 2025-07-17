@@ -1,3 +1,9 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
+// REASON: REFACTOR - The `ConsistencyStats` data class and its corresponding
+// calculation logic have been updated to include a new `noDataDays` metric.
+// This provides a more complete summary for the dashboard card.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -10,8 +16,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-// --- NEW: Data class to hold the calculated stats for the calendar ---
-data class ConsistencyStats(val goodDays: Int, val badDays: Int, val noSpendDays: Int)
+// --- UPDATED: Added noDataDays to the data class ---
+data class ConsistencyStats(val goodDays: Int, val badDays: Int, val noSpendDays: Int, val noDataDays: Int)
 
 class DashboardViewModel(
     private val transactionRepository: TransactionRepository,
@@ -47,7 +53,6 @@ class DashboardViewModel(
     val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
 
     val monthlyConsistencyData: StateFlow<List<CalendarDayStatus>>
-    // --- NEW: StateFlow for the new consistency stats ---
     val consistencyStats: StateFlow<ConsistencyStats>
 
     init {
@@ -194,16 +199,17 @@ class DashboardViewModel(
                 initialValue = emptyList()
             )
 
-        // --- NEW: Derive stats from the consistency data ---
+        // --- UPDATED: Calculate all four stats ---
         consistencyStats = monthlyConsistencyData.map { data ->
             val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
             val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
             val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
-            ConsistencyStats(goodDays, badDays, noSpendDays)
+            val noDataDays = data.count { it.status == SpendingStatus.NO_DATA }
+            ConsistencyStats(goodDays, badDays, noSpendDays, noDataDays)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = ConsistencyStats(0, 0, 0)
+            initialValue = ConsistencyStats(0, 0, 0, 0)
         )
     }
 

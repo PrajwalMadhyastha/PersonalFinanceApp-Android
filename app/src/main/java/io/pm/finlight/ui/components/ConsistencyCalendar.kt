@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
-// REASON: REFACTOR - The layout of the `MonthlyConsistencyCalendarCard` has been
-// updated to better utilize space. The summary stats now appear to the right
-// of the heatmap instead of below it, matching the user's request.
-// FIX - The `clickable` modifier on the card now uses the `onReportClick`
-// lambda, which contains the corrected navigation logic, fixing the back stack issue.
+// REASON: REFACTOR - The `MonthlyConsistencyCalendarCard` layout has been refined
+// by wrapping the heatmap in a Row and adding a Spacer. This pushes the heatmap
+// slightly away from the left edge, creating a more centered and balanced look
+// within the card as requested by the user.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -36,8 +35,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.min
 
-private val DAY_SIZE = 14.dp
-private val DAY_SPACING = 3.dp
+private val DAY_SIZE = 16.dp
+private val DAY_SPACING = 4.dp
 
 @Composable
 fun MonthlyConsistencyCalendarCard(
@@ -74,39 +73,61 @@ fun MonthlyConsistencyCalendarCard(
                     modifier = Modifier.size(18.dp)
                 )
             }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (data.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                } else {
-                    val currentMonthData = data.filter {
-                        val cal = Calendar.getInstance()
-                        val currentMonth = cal.get(Calendar.MONTH)
-                        cal.time = it.date
-                        cal.get(Calendar.MONTH) == currentMonth
-                    }
-                    MonthColumn(
-                        monthData = MonthData.fromCalendar(Calendar.getInstance()),
-                        year = Calendar.getInstance().get(Calendar.YEAR),
-                        today = Calendar.getInstance(),
-                        dataMap = currentMonthData.associateByDate(),
-                        onDayClick = onDayClick
-                    )
-                }
-                Spacer(Modifier.width(16.dp))
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceAround,
-                    modifier = Modifier.height(120.dp) // Match height of calendar
+                // Heatmap Container
+                Box(
+                    modifier = Modifier.weight(1.7f) // Give more weight to the calendar
                 ) {
-                    StatItem(stats.noSpendDays, "No Spend")
-                    StatItem(stats.goodDays, "Good Days")
-                    StatItem(stats.badDays, "Over Budget")
+                    if (data.isEmpty()) {
+                        Box(modifier = Modifier.height(150.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    } else {
+                        val currentMonthData = data.filter {
+                            val cal = Calendar.getInstance()
+                            val currentMonth = cal.get(Calendar.MONTH)
+                            cal.time = it.date
+                            cal.get(Calendar.MONTH) == currentMonth
+                        }
+                        // --- UPDATED: Wrap in a Row with a Spacer to add an offset ---
+                        Row {
+                            Spacer(Modifier.width(16.dp))
+                            MonthColumn(
+                                monthData = MonthData.fromCalendar(Calendar.getInstance()),
+                                year = Calendar.getInstance().get(Calendar.YEAR),
+                                today = Calendar.getInstance(),
+                                dataMap = currentMonthData.associateByDate(),
+                                onDayClick = onDayClick
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.width(16.dp))
+
+                // Stats Container (2x2 Grid)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        StatItem(stats.noSpendDays, "No Spend")
+                        StatItem(stats.goodDays, "Good Days")
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        StatItem(stats.badDays, "Over Budget")
+                        StatItem(stats.noDataDays, "No Data")
+                    }
                 }
             }
         }
@@ -115,7 +136,7 @@ fun MonthlyConsistencyCalendarCard(
 
 @Composable
 private fun StatItem(count: Int, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(horizontalAlignment = Alignment.Start) {
         Text(
             text = "$count",
             style = MaterialTheme.typography.titleLarge,
