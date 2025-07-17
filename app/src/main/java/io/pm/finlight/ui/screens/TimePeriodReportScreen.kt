@@ -1,20 +1,18 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
-// REASON: FIX - The duplicate, private definition of `ReportInsightsCard` has
-// been removed. This resolves the "Conflicting overloads" and "Overload
-// resolution ambiguity" compilation errors by ensuring that only the public
-// version from `ReportsScreen.kt` is used.
+// REASON: FEATURE - The screen now conditionally displays the new
+// `MonthlyConsistencyCalendarCard` when the user is viewing a Monthly report.
+// The card is passed the relevant data and click handlers from the ViewModel,
+// making it fully interactive within the report screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
 import android.graphics.Typeface
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -22,7 +20,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -33,6 +30,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
@@ -40,6 +38,7 @@ import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.components.MonthlyConsistencyCalendarCard
 import io.pm.finlight.ui.components.TransactionItem
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -50,7 +49,7 @@ import java.util.*
 fun TimePeriodReportScreen(
     navController: NavController,
     timePeriod: TimePeriod,
-    initialDateMillis: Long? = null // Allow null for default
+    initialDateMillis: Long? = null
 ) {
     val application = LocalContext.current.applicationContext as Application
     val factory = TimePeriodReportViewModelFactory(application, timePeriod, initialDateMillis)
@@ -60,6 +59,9 @@ fun TimePeriodReportScreen(
     val transactions by viewModel.transactionsForPeriod.collectAsState()
     val chartDataPair by viewModel.chartData.collectAsState()
     val insights by viewModel.insights.collectAsState()
+    // --- NEW: Collect consistency data and stats ---
+    val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
+    val consistencyStats by viewModel.consistencyStats.collectAsState()
 
     val totalSpent = transactions.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
     val totalIncome by viewModel.totalIncome.collectAsState()
@@ -91,7 +93,7 @@ fun TimePeriodReportScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
-        containerColor = Color.Transparent // Make scaffold background transparent
+        containerColor = Color.Transparent
     ) { innerPadding ->
         var dragAmount by remember { mutableStateOf(0f) }
 
@@ -103,9 +105,9 @@ fun TimePeriodReportScreen(
                     detectHorizontalDragGestures(
                         onDragStart = { },
                         onDragEnd = {
-                            if (dragAmount > 150) { // Swipe Right
+                            if (dragAmount > 150) {
                                 viewModel.selectPreviousPeriod()
-                            } else if (dragAmount < -150) { // Swipe Left
+                            } else if (dragAmount < -150) {
                                 viewModel.selectNextPeriod()
                             }
                             dragAmount = 0f
@@ -136,6 +138,25 @@ fun TimePeriodReportScreen(
                         ReportInsightsCard(insights = it)
                     }
                 }
+
+                // --- NEW: Conditionally show the consistency card for monthly reports ---
+                if (timePeriod == TimePeriod.MONTHLY) {
+                    item {
+                        MonthlyConsistencyCalendarCard(
+                            data = monthlyConsistencyData,
+                            stats = consistencyStats,
+                            onReportClick = {
+                                navController.navigate(BottomNavItem.Reports.route) {
+                                    popUpTo(navController.graph.findStartDestination().id)
+                                }
+                            },
+                            onDayClick = { date ->
+                                navController.navigate("search_screen?date=${date.time}")
+                            }
+                        )
+                    }
+                }
+
 
                 item {
                     GlassPanel {
@@ -232,12 +253,14 @@ private fun ReportHeader(totalSpent: Double, totalIncome: Double, timePeriod: Ti
             "Since ${format.format(startCal.time)}"
         }
         TimePeriod.MONTHLY -> {
-            val format = SimpleDateFormat("MMM d", Locale.getDefault())
-            val startCal = Calendar.getInstance().apply {
-                time = selectedDate
-                add(Calendar.DAY_OF_YEAR, -30)
+            val format = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+            val startCal = (selectedDate.clone() as Date).apply {
+                val cal = Calendar.getInstance()
+                cal.time = this
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                time = cal.timeInMillis
             }
-            "Since ${format.format(startCal.time)}"
+            "For ${SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(selectedDate)}"
         }
     }
 
@@ -251,13 +274,13 @@ private fun ReportHeader(totalSpent: Double, totalIncome: Double, timePeriod: Ti
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(240.dp), // Increased height
+                .height(240.dp),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = backgroundIcon,
                 contentDescription = null,
-                modifier = Modifier.size(180.dp), // Slightly larger icon
+                modifier = Modifier.size(180.dp),
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
             )
             Column(
@@ -341,7 +364,7 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
                 }
                 axisLeft.apply {
                     setDrawGridLines(true)
-                    gridColor = axisTextColor and 0x22FFFFFF // Transparent grid lines
+                    gridColor = axisTextColor and 0x22FFFFFF
                     setDrawLabels(false)
                     setDrawAxisLine(false)
                     axisMinimum = 0f

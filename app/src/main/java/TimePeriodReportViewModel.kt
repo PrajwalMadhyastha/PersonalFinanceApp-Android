@@ -1,3 +1,11 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
+// REASON: FEATURE - The ViewModel now includes logic to generate data for the
+// Spending Consistency card. It fetches daily spending for the selected month,
+// calculates the status of each day against the budget, and exposes both the
+// raw calendar data and the summary statistics (e.g., "Good Days") as StateFlows
+// for the UI to consume.
+// =================================================================================
 package io.pm.finlight
 
 import android.app.Application
@@ -7,30 +15,19 @@ import androidx.lifecycle.viewModelScope
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 import kotlin.math.roundToInt
-
-class TimePeriodReportViewModelFactory(
-    private val application: Application,
-    private val timePeriod: TimePeriod,
-    private val initialDateMillis: Long?
-) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(TimePeriodReportViewModel::class.java)) {
-            val db = AppDatabase.getInstance(application)
-            @Suppress("UNCHECKED_CAST")
-            return TimePeriodReportViewModel(db.transactionDao(), timePeriod, initialDateMillis) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
-    }
-}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimePeriodReportViewModel(
     private val transactionDao: TransactionDao,
+    private val settingsRepository: SettingsRepository, // --- NEW: Add dependency
     private val timePeriod: TimePeriod,
     initialDateMillis: Long?
 ) : ViewModel() {
@@ -62,7 +59,7 @@ class TimePeriodReportViewModel(
 
             val previousPeriodEndCal = (calendar.clone() as Calendar).apply {
                 when (timePeriod) {
-                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24) // Compare with previous 24-hour window
+                    TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
                     TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
                     TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
                 }
@@ -191,6 +188,22 @@ class TimePeriodReportViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    // --- NEW: Flow for monthly consistency data ---
+    val monthlyConsistencyData: StateFlow<List<CalendarDayStatus>> = _selectedDate.flatMapLatest { calendar ->
+        flow {
+            emit(generateMonthConsistencyData(calendar))
+        }.flowOn(Dispatchers.Default)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- NEW: Flow for consistency stats ---
+    val consistencyStats: StateFlow<ConsistencyStats> = monthlyConsistencyData.map { data ->
+        val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
+        val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
+        val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
+        val noDataDays = data.count { it.status == SpendingStatus.NO_DATA }
+        ConsistencyStats(goodDays, badDays, noSpendDays, noDataDays)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ConsistencyStats(0, 0, 0, 0))
+
 
     fun selectPreviousPeriod() {
         _selectedDate.update {
@@ -231,5 +244,43 @@ class TimePeriodReportViewModel(
         }
 
         return Pair(startCal.timeInMillis, endCal.timeInMillis)
+    }
+
+    // --- NEW: Function to generate consistency data for a specific month ---
+    private suspend fun generateMonthConsistencyData(calendar: Calendar): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
+        val year = calendar.get(Calendar.YEAR)
+        val month = calendar.get(Calendar.MONTH) + 1
+
+        val monthStartCal = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+        }
+        val monthEndCal = (calendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, 23)
+        }
+
+        val dailyTotals = transactionDao.getDailySpendingForDateRange(monthStartCal.timeInMillis, monthEndCal.timeInMillis).first()
+        val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
+
+        val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val budget = settingsRepository.getOverallBudgetForMonthBlocking(year, month)
+        val safeToSpend = if (budget > 0) (budget.toDouble() / daysInMonth) else 0.0
+
+        val resultList = mutableListOf<CalendarDayStatus>()
+        val dayIterator = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1) }
+
+        for (i in 1..daysInMonth) {
+            dayIterator.set(Calendar.DAY_OF_MONTH, i)
+            val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, i)
+            val amountSpent = spendingMap[dateKey] ?: 0.0
+            val status = when {
+                amountSpent == 0.0 -> SpendingStatus.NO_SPEND
+                safeToSpend > 0 && amountSpent > safeToSpend -> SpendingStatus.OVER_LIMIT
+                else -> SpendingStatus.WITHIN_LIMIT
+            }
+            resultList.add(CalendarDayStatus(dayIterator.time, status, amountSpent, safeToSpend))
+        }
+        return@withContext resultList
     }
 }
