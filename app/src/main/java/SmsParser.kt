@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - The parser now accepts a `MerchantCategoryMappingDao` and
-// uses it to look up a learned category for the parsed merchant name. If a
-// mapping is found, the category ID is included in the returned
-// `PotentialTransaction`, enabling automatic categorization of new SMS messages.
+// REASON: FEATURE - The parser now generates a "signature" for each SMS. This
+// is done by removing volatile data (amounts, dates, times, ref numbers) to
+// create a stable template of the message. This signature is the key to the new
+// proactive recurring transaction detection feature. It is now included in the
+// returned PotentialTransaction object.
 // =================================================================================
 package io.pm.finlight
 
@@ -42,6 +43,31 @@ object SmsParser {
             "Info:?\\s*([A-Za-z0-9\\s.&'-]+?)(?:\\.|$)".toRegex(RegexOption.IGNORE_CASE)
         )
 
+    // --- NEW: Regex to find and remove volatile parts of an SMS for signature generation ---
+    private val VOLATILE_DATA_REGEX = listOf(
+        "\\b(?:rs|inr)[\\s.]*\\d[\\d,.]*".toRegex(RegexOption.IGNORE_CASE), // Amounts (e.g., Rs. 1,234.56)
+        "\\d{1,2}[-/]\\d{1,2}[-/]\\d{2,4}".toRegex(), // Dates (e.g., 31-12-2024)
+        "\\d{1,2}-\\w{3}-\\d{2,4}".toRegex(RegexOption.IGNORE_CASE), // Dates (e.g., 31-Dec-2024)
+        "\\d{2,}:\\d{2,}(?::\\d{2,})?".toRegex(), // Times (e.g., 14:30:55)
+        "\\b(?:ref no|txn id|upi ref|transaction id|ref id)\\s*[:.]?\\s*\\w*\\d+\\w*".toRegex(RegexOption.IGNORE_CASE), // Ref numbers
+        "a/c no\\. \\S+".toRegex(RegexOption.IGNORE_CASE), // A/c numbers
+        "avl bal[:]?[\\s.]*rs[\\s.]*\\d[\\d,.]*".toRegex(RegexOption.IGNORE_CASE), // Available balance
+        "\\b\\d{4,}\\b".toRegex() // Any number with 4 or more digits (likely IDs, etc.)
+    )
+
+    /**
+     * Generates a stable "signature" from an SMS body by removing volatile data.
+     */
+    private fun generateSmsSignature(body: String): String {
+        var signature = body.lowercase()
+        VOLATILE_DATA_REGEX.forEach { regex ->
+            signature = regex.replace(signature, "")
+        }
+        // Normalize whitespace and hash the result for a clean, unique key
+        return signature.replace(Regex("\\s+"), " ").trim().hashCode().toString()
+    }
+
+
     private fun parseAccount(smsBody: String, sender: String): PotentialAccount? {
         for (pattern in ACCOUNT_PATTERNS) {
             val match = pattern.find(smsBody)
@@ -74,7 +100,6 @@ object SmsParser {
         customSmsRuleDao: CustomSmsRuleDao,
         merchantRenameRuleDao: MerchantRenameRuleDao,
         ignoreRuleDao: IgnoreRuleDao,
-        // --- NEW: Add DAO for learned category mappings ---
         merchantCategoryMappingDao: MerchantCategoryMappingDao
     ): PotentialTransaction? {
         val messageBody = sms.body
@@ -174,7 +199,6 @@ object SmsParser {
             Log.d("SmsParser", "Applied rename rule: '$originalName' -> '$merchantName'")
         }
 
-        // --- NEW: Look up the learned category ID ---
         var learnedCategoryId: Int? = null
         if (merchantName != null) {
             learnedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
@@ -187,6 +211,9 @@ object SmsParser {
         val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
         val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
         val smsHash = (normalizedSender + normalizedBody).hashCode().toString()
+        // --- NEW: Generate and include the signature ---
+        val smsSignature = generateSmsSignature(sms.body)
+
 
         return PotentialTransaction(
             sourceSmsId = sms.id,
@@ -197,8 +224,8 @@ object SmsParser {
             originalMessage = messageBody,
             potentialAccount = potentialAccount,
             sourceSmsHash = smsHash,
-            // --- NEW: Pass the learned category ID ---
-            categoryId = learnedCategoryId
+            categoryId = learnedCategoryId,
+            smsSignature = smsSignature // --- NEW
         )
     }
 }
