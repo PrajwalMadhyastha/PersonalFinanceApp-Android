@@ -1,11 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: FEATURE - Added showRecurringTransactionDueNotification. This new
-// function creates a specific notification for due recurring payments, with a
-// deep link to the new LinkTransactionScreen. This is a core component of the
-// new user-driven recurring transaction workflow.
-// FIX - Removed the unused `percentageChange` parameter from the internal
-// `createEnhancedSummaryNotification` function to resolve the "unused" warning.
+// REASON: FEATURE - Added `showRecurringPatternDetectedNotification`. This
+// function creates a specific notification to inform the user that the app has
+// automatically identified a new recurring transaction. It includes a deep link
+// to the "Add/Edit Recurring Rule" screen, pre-filled with the detected data,
+// allowing the user to review, modify, or confirm the new rule.
 // =================================================================================
 package io.pm.finlight
 
@@ -29,11 +28,52 @@ import kotlin.math.abs
 object NotificationHelper {
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
     private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
-    // --- NEW: Deep link for the new recurring transaction flow ---
     private const val DEEP_LINK_URI_LINK_RECURRING = "app://finlight.pm.io/link_recurring"
+    // --- NEW: Deep link for the new pattern detection flow ---
+    private const val DEEP_LINK_URI_ADD_RECURRING = "app://finlight.pm.io/add_recurring_transaction"
 
 
-    // --- NEW: Notification for when a recurring transaction is due ---
+    // --- NEW: Notification for when a recurring pattern is detected ---
+    fun showRecurringPatternDetectedNotification(
+        context: Context,
+        rule: RecurringTransaction
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        // The deep link will navigate to the add/edit screen with the new rule's ID
+        val deepLinkUri = "$DEEP_LINK_URI_ADD_RECURRING?ruleId=${rule.id}".toUri()
+
+        val intent = Intent(Intent.ACTION_VIEW, deepLinkUri).apply {
+            `package` = context.packageName
+        }
+
+        // Use the rule's ID for a unique notification ID
+        val notificationId = "pattern_${rule.id}".hashCode()
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(intent)
+            getPendingIntent(notificationId, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        val contentText = "We noticed a recurring ${rule.transactionType} for '${rule.description}'. We've created a rule for you. Tap to review."
+
+        val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("New Recurring Transaction Found")
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .addAction(0, "Review Rule", pendingIntent)
+
+        with(NotificationManagerCompat.from(context)) {
+            notify(notificationId, builder.build())
+        }
+    }
+
+
     fun showRecurringTransactionDueNotification(
         context: Context,
         potentialTxn: PotentialTransaction
