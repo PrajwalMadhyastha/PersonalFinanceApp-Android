@@ -1,11 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionDao.kt
-// REASON: FEATURE - Added the `updateLastRunDate` function, which the worker will
-// call after successfully creating a transaction from a rule. Also renamed `getAll`
-// to `getAllRules` for clarity and consistency with the worker's implementation.
-// REASON: FIX - Added a new suspend function `getAllRulesList()` for the worker to
-// fetch a one-time list, resolving compilation errors. The original Flow-based
-// function was renamed to `getAllRulesFlow()` for clarity.
+// REASON: FIX - The `insert` function now returns a `Long` representing the
+// row ID of the newly inserted rule. This is required by the
+// RecurringPatternWorker to get the ID for the notification deep link and
+// resolves the `Unresolved reference 'toInt'` compilation error.
 // =================================================================================
 package io.pm.finlight
 
@@ -20,7 +18,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface RecurringTransactionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(recurringTransaction: RecurringTransaction)
+    suspend fun insert(recurringTransaction: RecurringTransaction): Long // --- FIX: Added Long return type
 
     @Update
     suspend fun update(recurringTransaction: RecurringTransaction)

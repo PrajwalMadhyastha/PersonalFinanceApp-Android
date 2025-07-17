@@ -1,17 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
-// REASON: REFACTOR - The date range calculation for the Daily report has been
-// restored to a rolling 24-hour window. This ensures that when a user clicks
-// the daily report notification, they see data from the 24 hours preceding the
-// notification's generation time, as intended.
-// BUG FIX: The logic for generating the 7-day bar chart on the daily report
-// screen has been corrected. It now correctly calculates the date for each bar
-// based on the start of the 7-day period, not the selected date. This ensures
-// the chart accurately reflects the spending for the week leading up to the
-// report date, regardless of which day the user is viewing.
-// BUG FIX: The ViewModel now correctly initializes its selectedDate with the
-// initialDateMillis provided from the notification deep link, ensuring the
-// report displays data for the correct 24-hour period.
+// REASON: FIX - The call to fetch transactions for the selected period was
+// updated from `getTransactionsForDateRange` to `getTransactionDetailsForRange`.
+// This resolves the "Unresolved reference" compilation error, likely caused by
+// a recent refactoring of the DAO where the original function was replaced with
+// a more generic, filterable version.
 // =================================================================================
 package io.pm.finlight
 
@@ -52,7 +45,6 @@ class TimePeriodReportViewModel(
 
     private val _selectedDate = MutableStateFlow(
         Calendar.getInstance().apply {
-            // --- FIX: Use the provided initialDateMillis from the notification ---
             if (initialDateMillis != null && initialDateMillis != -1L) {
                 timeInMillis = initialDateMillis
             }
@@ -62,7 +54,8 @@ class TimePeriodReportViewModel(
 
     val transactionsForPeriod: StateFlow<List<TransactionDetails>> = _selectedDate.flatMapLatest { calendar ->
         val (start, end) = getPeriodDateRange(calendar)
-        transactionDao.getTransactionsForDateRange(start, end)
+        // --- FIX: Changed to getTransactionDetailsForRange and passed null for filters ---
+        transactionDao.getTransactionDetailsForRange(start, end, null, null, null)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val totalIncome: StateFlow<Double> = transactionsForPeriod.map { transactions ->

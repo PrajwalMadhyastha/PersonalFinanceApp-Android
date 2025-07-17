@@ -1,11 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringPatternWorker.kt
-// REASON: NEW FILE - This worker is the brain of the proactive recurring
-// transaction feature. It runs periodically to:
-// 1. Fetch recent SMS-based transactions.
-// 2. Update a running tally of how often each SMS "signature" appears.
-// 3. Analyze the timestamps for each signature to detect weekly or monthly patterns.
-// 4. Create a recurring rule and notify the user if a pattern is found.
+// REASON: FIX - The call to `recurringTransactionDao.insert()` now correctly
+// returns a Long, so the `.toInt()` conversion works as expected, resolving
+// the compilation error.
 // =================================================================================
 package io.pm.finlight
 

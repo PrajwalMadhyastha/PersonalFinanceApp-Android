@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/PotentialTransaction.kt
-// REASON: FEATURE - A new nullable `categoryId` field has been added. This
-// allows the SmsParser to include the ID of a learned category when it creates
-// a potential transaction, enabling automatic categorization.
+// REASON: FIX - Added the missing `smsSignature` field. This resolves the
+// compilation error in the SmsParser and allows the generated signature to be
+// passed along to the next stage of processing.
 // =================================================================================
 package io.pm.finlight
 
@@ -16,6 +16,7 @@ package io.pm.finlight
  * @param originalMessage The original SMS body, for reference and debugging.
  * @param potentialAccount Holds the parsed account name and type, if found.
  * @param categoryId The ID of a learned category, if a mapping exists for the merchant.
+ * @param smsSignature A stable hash of the SMS body used for pattern detection.
  */
 data class PotentialTransaction(
     val sourceSmsId: Long,
@@ -26,6 +27,7 @@ data class PotentialTransaction(
     val originalMessage: String,
     val potentialAccount: PotentialAccount? = null,
     val sourceSmsHash: String? = null,
-    // --- NEW: Add field for learned category ---
-    val categoryId: Int? = null
+    val categoryId: Int? = null,
+    // --- NEW: Add field for the pattern detection signature ---
+    val smsSignature: String? = null
 )
