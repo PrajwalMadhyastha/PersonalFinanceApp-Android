@@ -4,6 +4,9 @@
 // optional `date` argument. This allows other screens, like the new Spending
 // Consistency Calendar, to navigate to the search results pre-filtered for a
 // specific day.
+// UX REFINEMENT - Added a `focusSearch` argument to the `search_screen` route
+// to conditionally control whether the search bar receives initial focus,
+// preventing the keyboard from appearing automatically when not desired.
 // =================================================================================
 package io.pm.finlight
 
@@ -500,11 +503,12 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            // --- UPDATED: Add optional 'date' argument ---
-            route = "search_screen?categoryId={categoryId}&date={date}",
+            // --- UPDATED: Add focusSearch argument ---
+            route = "search_screen?categoryId={categoryId}&date={date}&focusSearch={focusSearch}",
             arguments = listOf(
                 navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 },
-                navArgument("date") { type = NavType.LongType; defaultValue = -1L }
+                navArgument("date") { type = NavType.LongType; defaultValue = -1L },
+                navArgument("focusSearch") { type = NavType.BoolType; defaultValue = true }
             ),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
@@ -512,15 +516,18 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
-            // --- UPDATED: Get date argument ---
             val date = backStackEntry.arguments?.getLong("date") ?: -1L
+            // --- UPDATED: Get the new argument ---
+            val focusSearch = backStackEntry.arguments?.getBoolean("focusSearch") ?: true
+
             val factory = SearchViewModelFactory(
                 activity.application,
                 if (categoryId != -1) categoryId else null,
                 if (date != -1L) date else null
             )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
-            SearchScreen(navController, searchViewModel)
+            // --- UPDATED: Pass the argument to the screen ---
+            SearchScreen(navController, searchViewModel, focusSearch)
         }
         composable(
             route = "review_sms_screen",

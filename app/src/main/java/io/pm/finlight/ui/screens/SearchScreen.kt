@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
+// REASON: UX REFINEMENT - The screen now accepts a `focusSearch` parameter.
+// The initial focus request on the search text field is now conditional based
+// on this parameter, preventing the keyboard from appearing automatically when
+// navigating from a non-search-focused context (like the calendar).
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -36,7 +43,8 @@ import java.util.*
 @Composable
 fun SearchScreen(
     navController: NavController,
-    viewModel: SearchViewModel // Accept the ViewModel as a parameter
+    viewModel: SearchViewModel,
+    focusSearch: Boolean // --- NEW: Parameter to control initial focus ---
 ) {
     val searchUiState by viewModel.uiState.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
@@ -48,7 +56,6 @@ fun SearchScreen(
     val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
-    // --- NEW: Automatically expand filters if a category is pre-selected ---
     LaunchedEffect(searchUiState.selectedCategory) {
         if (searchUiState.selectedCategory != null) {
             showFilters = true
@@ -196,8 +203,11 @@ fun SearchScreen(
         }
     }
 
+    // --- UPDATED: Conditionally request focus ---
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        if (focusSearch) {
+            focusRequester.requestFocus()
+        }
     }
 
     if (showStartDatePicker) {

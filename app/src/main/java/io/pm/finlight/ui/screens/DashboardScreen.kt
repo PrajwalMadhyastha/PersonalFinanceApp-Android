@@ -9,6 +9,8 @@
 // that displays the scrollable yearly heatmap directly on the dashboard.
 // FIX - Corrected the LazyColumn implementation in AddCardSheetContent to use
 // `itemsIndexed`, resolving several compilation errors.
+// UX REFINEMENT - Updated the navigation call from the consistency calendar to
+// prevent the keyboard from automatically showing on the search screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -61,7 +63,6 @@ fun DashboardScreen(
     val isCustomizationMode by viewModel.isCustomizationMode.collectAsState()
     val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
     val hiddenCards by viewModel.hiddenCards.collectAsState()
-    // --- NEW: Collect the yearly data for the new heatmap card ---
     val yearlyConsistencyData by viewModel.yearlyConsistencyData.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
@@ -167,7 +168,6 @@ fun DashboardScreen(
                     viewModel = viewModel,
                     isCustomizationMode = isCustomizationMode,
                     onHide = { viewModel.hideCard(cardType) },
-                    // --- NEW: Pass yearly data to the card ---
                     yearlyConsistencyData = yearlyConsistencyData
                 )
             }
@@ -182,7 +182,6 @@ private fun DashboardCard(
     viewModel: DashboardViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
-    // --- NEW: Accept yearly data ---
     yearlyConsistencyData: List<CalendarDayStatus>
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
@@ -215,7 +214,6 @@ private fun DashboardCard(
                 budgetStatus = budgetStatus,
                 navController = navController,
             )
-            // --- UPDATED: Replaced the old card with the new yearly heatmap card ---
             DashboardCardType.SPENDING_CONSISTENCY -> {
                 GlassPanel {
                     Column(
@@ -236,7 +234,8 @@ private fun DashboardCard(
                             ConsistencyCalendar(
                                 data = yearlyConsistencyData,
                                 onDayClick = { date ->
-                                    navController.navigate("search_screen?date=${date.time}")
+                                    // --- UPDATED: Pass focusSearch=false to prevent keyboard ---
+                                    navController.navigate("search_screen?date=${date.time}&focusSearch=false")
                                 }
                             )
                         }
@@ -282,7 +281,6 @@ private fun AddCardSheetContent(
             Text("All available cards are already on your dashboard.")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // --- FIX: Use itemsIndexed to correctly iterate over the list ---
                 itemsIndexed(hiddenCards, key = { _, cardType -> cardType.name }) { _, cardType ->
                     ListItem(
                         headlineContent = { Text(cardType.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) },
