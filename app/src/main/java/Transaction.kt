@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/Transaction.kt
-// REASON: FEATURE - Added a new Boolean field, `isExcluded`, with a default value
-// of false. This field will be used to mark transactions that should be
-// ignored in all financial calculations (e.g., summaries, budgets, net worth).
+// REASON: FEATURE - Added a new nullable `smsSignature` field. This will store
+// the normalized hash of the original SMS message, which is the key to identifying
+// potential recurring transactions automatically. An index is added for efficient lookups.
 // =================================================================================
 package io.pm.finlight
 
@@ -18,6 +18,7 @@ import kotlinx.serialization.Serializable
     indices = [
         Index(value = ["categoryId"]),
         Index(value = ["accountId"]),
+        Index(value = ["smsSignature"]) // --- NEW: Index for faster lookups
     ],
     foreignKeys = [
         ForeignKey(
@@ -48,5 +49,7 @@ data class Transaction(
     val sourceSmsHash: String? = null,
     val source: String = "Manual Entry",
     val originalDescription: String? = null,
-    val isExcluded: Boolean = false
+    val isExcluded: Boolean = false,
+    // --- NEW: Field to store the SMS signature for pattern detection ---
+    val smsSignature: String? = null
 )
