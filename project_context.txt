@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul 16 18:43:58 IST 2025
+Generated on: Thu Jul 17 14:28:43 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -780,18 +780,11 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
 ================== FILE: ./app/src/main/java/TimePeriodReportViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
-// REASON: REFACTOR - The date range calculation for the Daily report has been
-// restored to a rolling 24-hour window. This ensures that when a user clicks
-// the daily report notification, they see data from the 24 hours preceding the
-// notification's generation time, as intended.
-// BUG FIX: The logic for generating the 7-day bar chart on the daily report
-// screen has been corrected. It now correctly calculates the date for each bar
-// based on the start of the 7-day period, not the selected date. This ensures
-// the chart accurately reflects the spending for the week leading up to the
-// report date, regardless of which day the user is viewing.
-// BUG FIX: The ViewModel now correctly initializes its selectedDate with the
-// initialDateMillis provided from the notification deep link, ensuring the
-// report displays data for the correct 24-hour period.
+// REASON: FIX - The call to fetch transactions for the selected period was
+// updated from `getTransactionsForDateRange` to `getTransactionDetailsForRange`.
+// This resolves the "Unresolved reference" compilation error, likely caused by
+// a recent refactoring of the DAO where the original function was replaced with
+// a more generic, filterable version.
 // =================================================================================
 package io.pm.finlight
 
@@ -832,7 +825,6 @@ class TimePeriodReportViewModel(
 
     private val _selectedDate = MutableStateFlow(
         Calendar.getInstance().apply {
-            // --- FIX: Use the provided initialDateMillis from the notification ---
             if (initialDateMillis != null && initialDateMillis != -1L) {
                 timeInMillis = initialDateMillis
             }
@@ -842,7 +834,8 @@ class TimePeriodReportViewModel(
 
     val transactionsForPeriod: StateFlow<List<TransactionDetails>> = _selectedDate.flatMapLatest { calendar ->
         val (start, end) = getPeriodDateRange(calendar)
-        transactionDao.getTransactionsForDateRange(start, end)
+        // --- FIX: Changed to getTransactionDetailsForRange and passed null for filters ---
+        transactionDao.getTransactionDetailsForRange(start, end, null, null, null)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val totalIncome: StateFlow<Double> = transactionsForPeriod.map { transactions ->
@@ -1879,6 +1872,58 @@ data class CsvValidationReport(
 -e 
 
 
+================== FILE: ./app/src/main/java/RecurringPatternDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RecurringPatternDao.kt
+// REASON: NEW FILE - This DAO provides the database interface for the
+// RecurringPattern entity. It includes methods for inserting, updating,
+// retrieving, and deleting patterns, which will be used by the new
+// RecurringPatternWorker to track and analyze potential recurring transactions.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+
+@Dao
+interface RecurringPatternDao {
+
+    /**
+     * Inserts a new pattern. If a pattern with the same signature already exists, it is replaced.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(pattern: RecurringPattern)
+
+    /**
+     * Updates an existing pattern.
+     */
+    @Update
+    suspend fun update(pattern: RecurringPattern)
+
+    /**
+     * Retrieves a pattern by its unique SMS signature.
+     */
+    @Query("SELECT * FROM recurring_patterns WHERE smsSignature = :signature")
+    suspend fun getPatternBySignature(signature: String): RecurringPattern?
+
+    /**
+     * Retrieves all patterns from the database for analysis.
+     */
+    @Query("SELECT * FROM recurring_patterns")
+    suspend fun getAllPatterns(): List<RecurringPattern>
+
+    /**
+     * Deletes a pattern by its signature, typically after a recurring rule has been created from it.
+     */
+    @Query("DELETE FROM recurring_patterns WHERE smsSignature = :signature")
+    suspend fun deleteBySignature(signature: String)
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/MerchantCategoryMappingDao.kt ==================
 package io.pm.finlight
 
@@ -1982,10 +2027,10 @@ class MonthlySummaryWorker(
 ================== FILE: ./app/src/main/java/NavItems.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added a new entry for "goals_screen" to the screenTitles
-// map, ensuring the new Savings Goals screen will have the correct title in
-// the app's top bar.
-// UPDATE: Added new entries for the reorganized settings screens.
+// REASON: FEATURE - Added new entries for "add_edit_goal" and
+// "add_edit_goal/{goalId}" to the screenTitles map. This ensures the new
+// dedicated screen for managing savings goals will have the correct title
+// ("New Savings Goal" or "Edit Savings Goal") in the app's top bar.
 // =================================================================================
 package io.pm.finlight
 
@@ -2036,7 +2081,10 @@ val screenTitles = mapOf(
     "appearance_settings" to "Theme & Appearance",
     "automation_settings" to "Automation & AI",
     "notification_settings" to "Notifications",
-    "data_settings" to "Security & Data"
+    "data_settings" to "Security & Data",
+    // --- NEW: Titles for the dedicated goal screen ---
+    "add_edit_goal" to "New Savings Goal",
+    "add_edit_goal/{goalId}" to "Edit Savings Goal"
 )
 -e 
 
@@ -2493,15 +2541,59 @@ class ManageIgnoreRulesViewModel(application: Application) : AndroidViewModel(ap
 -e 
 
 
+================== FILE: ./app/src/main/java/RecurringPattern.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RecurringPattern.kt
+// REASON: NEW FILE - This entity is the cornerstone of the proactive recurring
+// transaction detection feature. It will store a "signature" for each type of
+// SMS-based transaction, along with metadata like occurrence count and timestamps,
+// allowing the new worker to analyze patterns over time.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+/**
+ * Represents a potential recurring transaction pattern identified from SMS messages.
+ *
+ * @param smsSignature A unique, normalized hash representing the non-volatile parts of an SMS message body. This acts as the primary key.
+ * @param description The common description or merchant name associated with this pattern.
+ * @param amount The most recent amount for this transaction pattern.
+ * @param transactionType The type of transaction ("income" or "expense").
+ * @param accountId The ID of the account most recently associated with this pattern.
+ * @param categoryId The ID of the category most recently associated with this pattern.
+ * @param occurrences The number of times this signature has been seen.
+ * @param firstSeen The timestamp of the first time this pattern was recorded.
+ * @param lastSeen The timestamp of the most recent occurrence.
+ */
+@Entity(
+    tableName = "recurring_patterns",
+    indices = [Index(value = ["lastSeen"])]
+)
+data class RecurringPattern(
+    @PrimaryKey
+    val smsSignature: String,
+    val description: String,
+    val amount: Double,
+    val transactionType: String,
+    val accountId: Int,
+    val categoryId: Int?,
+    var occurrences: Int,
+    val firstSeen: Long,
+    var lastSeen: Long
+)
+-e 
+
+
 ================== FILE: ./app/src/main/java/RecurringTransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionDao.kt
-// REASON: FEATURE - Added the `updateLastRunDate` function, which the worker will
-// call after successfully creating a transaction from a rule. Also renamed `getAll`
-// to `getAllRules` for clarity and consistency with the worker's implementation.
-// REASON: FIX - Added a new suspend function `getAllRulesList()` for the worker to
-// fetch a one-time list, resolving compilation errors. The original Flow-based
-// function was renamed to `getAllRulesFlow()` for clarity.
+// REASON: FIX - The `insert` function now returns a `Long` representing the
+// row ID of the newly inserted rule. This is required by the
+// RecurringPatternWorker to get the ID for the notification deep link and
+// resolves the `Unresolved reference 'toInt'` compilation error.
 // =================================================================================
 package io.pm.finlight
 
@@ -2516,7 +2608,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface RecurringTransactionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(recurringTransaction: RecurringTransaction)
+    suspend fun insert(recurringTransaction: RecurringTransaction): Long // --- FIX: Added Long return type
 
     @Update
     suspend fun update(recurringTransaction: RecurringTransaction)
@@ -2624,14 +2716,16 @@ data class SmsMessage(
 ================== FILE: ./app/src/main/java/GoalViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/GoalViewModel.kt
-// REASON: FIX - The unused `getGoalById` function has been removed to resolve
-// the "UnusedSymbol" warning, cleaning up the ViewModel's public API.
+// REASON: FIX - Re-added the `getGoalById` function. This function is essential
+// for the new dedicated `AddEditGoalScreen` to fetch an existing goal's data
+// when operating in "edit mode". Its absence was causing the compilation errors.
 // =================================================================================
 package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -2651,6 +2745,11 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
+    }
+
+    // --- NEW: Function to get a single goal by its ID ---
+    fun getGoalById(id: Int): Flow<Goal?> {
+        return goalRepository.getGoalById(id)
     }
 
     fun saveGoal(
@@ -2987,11 +3086,9 @@ data class Category(
 ================== FILE: ./app/src/main/java/ReminderManager.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReminderManager.kt
-// REASON: Added the cancelMonthlySummary function to allow disabling of the
-// monthly report worker, completing the scheduling lifecycle.
-// REASON: FEATURE - Added `scheduleRecurringTransactionWorker` to schedule the new
-// worker to run daily. This is the core scheduling component for the automated
-// recurring transactions feature.
+// REASON: FEATURE - Added `scheduleRecurringPatternWorker` to schedule the new
+// worker to run daily. This is the core scheduling component for the proactive
+// recurring transaction detection feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -3005,9 +3102,37 @@ object ReminderManager {
     private const val DAILY_EXPENSE_REPORT_WORK_TAG = "daily_expense_report_work"
     private const val WEEKLY_SUMMARY_WORK_TAG = "weekly_summary_work"
     private const val MONTHLY_SUMMARY_WORK_TAG = "monthly_summary_work"
-    private const val RECURRING_TRANSACTION_WORK_TAG = "recurring_transaction_work" // --- NEW
+    private const val RECURRING_TRANSACTION_WORK_TAG = "recurring_transaction_work"
+    // --- NEW: A unique tag for our new pattern detection worker ---
+    private const val RECURRING_PATTERN_WORK_TAG = "recurring_pattern_work"
 
-    // --- NEW: Function to schedule the recurring transaction worker ---
+
+    // --- NEW: Function to schedule the pattern detection worker ---
+    fun scheduleRecurringPatternWorker(context: Context) {
+        val now = Calendar.getInstance()
+        val nextRun = Calendar.getInstance().apply {
+            // Schedule to run early in the morning, e.g., 3 AM
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 3)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }
+
+        val initialDelay = nextRun.timeInMillis - now.timeInMillis
+
+        val recurringRequest = OneTimeWorkRequestBuilder<RecurringPatternWorker>()
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            RECURRING_PATTERN_WORK_TAG,
+            ExistingWorkPolicy.REPLACE,
+            recurringRequest
+        )
+        Log.d("ReminderManager", "Recurring pattern worker scheduled for ${nextRun.time}")
+    }
+
+
     fun scheduleRecurringTransactionWorker(context: Context) {
         val now = Calendar.getInstance()
         val nextRun = Calendar.getInstance().apply {
@@ -3133,11 +3258,11 @@ object ReminderManager {
         Log.d("ReminderManager", "Monthly summary scheduled for ${nextRun.time}")
     }
 
-    // --- NEW: Function to cancel the monthly summary worker ---
     fun cancelMonthlySummary(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(MONTHLY_SUMMARY_WORK_TAG)
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/Tag.kt ==================
@@ -4684,17 +4809,10 @@ fun DeleteCategoryDialog(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/GoalScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/GoalScreen.kt
-// REASON: NEW FILE - Implements the UI for the Savings Goals feature. It follows
-// the "Project Aurora" design system, using GlassPanel components to display
-// each goal with a progress bar and summary details. It includes dialogs for
-// adding, editing, and deleting goals.
-// FIX: Refactored the dialog management to be sequential. The main screen now
-// controls the visibility of the Add/Edit dialog and the Date Picker dialog
-// separately to prevent window conflicts, ensuring the Date Picker appears correctly.
-// ANIMATION - Added `animateItemPlacement()` to the GoalItem in the LazyColumn.
-// This makes the list fluidly animate changes when goals are added or removed.
-// ANIMATION - The duration of the `tween` animation for the goal progress bar
-// has been reduced from 1000ms to a much snappier 400ms.
+// REASON: REFACTOR - The screen has been simplified to only display the list of
+// goals. All dialog management logic has been removed. The FAB and edit buttons
+// now navigate to the new dedicated `AddEditGoalScreen`, which resolves the
+// DatePickerDialog bug and improves the app's architecture.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -4709,11 +4827,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
@@ -4724,10 +4839,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
@@ -4745,48 +4858,14 @@ private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 @Composable
 fun GoalScreen(
     navController: NavController,
-    goalViewModel: GoalViewModel = viewModel(),
-    transactionViewModel: TransactionViewModel = viewModel()
+    goalViewModel: GoalViewModel = viewModel()
 ) {
     val goals by goalViewModel.allGoals.collectAsState()
-    val accounts by transactionViewModel.allAccounts.collectAsState()
-
-    var showAddEditDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showDatePicker by remember { mutableStateOf(false) }
-
-    // --- STATE HOISTING: All state for the dialog is now managed here ---
-    var goalToEdit by remember { mutableStateOf<GoalWithAccountName?>(null) }
-    var goalName by remember { mutableStateOf("") }
-    var targetAmount by remember { mutableStateOf("") }
-    var savedAmount by remember { mutableStateOf("") }
-    var selectedAccount by remember { mutableStateOf<Account?>(null) }
-    var targetDate by remember { mutableStateOf<Long?>(null) }
-    // --- END STATE HOISTING ---
-
-    fun openDialogForNew() {
-        goalToEdit = null
-        goalName = ""
-        targetAmount = ""
-        savedAmount = ""
-        selectedAccount = accounts.firstOrNull()
-        targetDate = null
-        showAddEditDialog = true
-    }
-
-    fun openDialogForEdit(goal: GoalWithAccountName) {
-        goalToEdit = goal
-        goalName = goal.name
-        targetAmount = goal.targetAmount.toString()
-        savedAmount = goal.savedAmount.toString()
-        selectedAccount = accounts.find { it.id == goal.accountId }
-        targetDate = goal.targetDate
-        showAddEditDialog = true
-    }
+    var goalToDelete by remember { mutableStateOf<Goal?>(null) }
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = { openDialogForNew() }) {
+            FloatingActionButton(onClick = { navController.navigate("add_edit_goal") }) {
                 Icon(Icons.Default.Add, contentDescription = "Add Goal")
             }
         },
@@ -4794,7 +4873,9 @@ fun GoalScreen(
     ) { innerPadding ->
         if (goals.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -4813,10 +4894,16 @@ fun GoalScreen(
                     GoalItem(
                         modifier = Modifier.animateItemPlacement(),
                         goal = goal,
-                        onEdit = { openDialogForEdit(goal) },
+                        onEdit = { navController.navigate("add_edit_goal/${goal.id}") },
                         onDelete = {
-                            goalToEdit = goal
-                            showDeleteDialog = true
+                            goalToDelete = Goal(
+                                id = goal.id,
+                                name = goal.name,
+                                targetAmount = goal.targetAmount,
+                                savedAmount = goal.savedAmount,
+                                targetDate = goal.targetDate,
+                                accountId = goal.accountId
+                            )
                         }
                     )
                 }
@@ -4824,65 +4911,13 @@ fun GoalScreen(
         }
     }
 
-    if (showAddEditDialog) {
-        AddEditGoalDialog(
-            goalName = goalName,
-            onGoalNameChange = { goalName = it },
-            targetAmount = targetAmount,
-            onTargetAmountChange = { targetAmount = it },
-            savedAmount = savedAmount,
-            onSavedAmountChange = { savedAmount = it },
-            selectedAccount = selectedAccount,
-            onAccountSelected = { selectedAccount = it },
-            accounts = accounts,
-            targetDate = targetDate,
-            onDismiss = { showAddEditDialog = false },
-            onConfirm = {
-                val target = targetAmount.toDoubleOrNull()
-                val saved = savedAmount.toDoubleOrNull() ?: 0.0
-                if (goalName.isNotBlank() && target != null && selectedAccount != null) {
-                    goalViewModel.saveGoal(goalToEdit?.id, goalName, target, saved, targetDate, selectedAccount!!.id)
-                    showAddEditDialog = false
-                }
-            },
-            onLaunchDatePicker = {
-                showAddEditDialog = false
-                showDatePicker = true
-            }
-        )
-    }
-
-    if (showDatePicker) {
-        GoalDatePickerDialog(
-            initialDate = targetDate,
-            onDismiss = {
-                showDatePicker = false
-                showAddEditDialog = true // Re-show the goal dialog
-            },
-            onDateSelected = { newDate ->
-                targetDate = newDate
-                showDatePicker = false
-                showAddEditDialog = true // Re-show the goal dialog
-            }
-        )
-    }
-
-    if (showDeleteDialog && goalToEdit != null) {
+    goalToDelete?.let { goal ->
         DeleteGoalDialog(
-            goalName = goalToEdit!!.name,
-            onDismiss = { showDeleteDialog = false },
+            goalName = goal.name,
+            onDismiss = { goalToDelete = null },
             onConfirm = {
-                goalViewModel.deleteGoal(
-                    Goal(
-                        id = goalToEdit!!.id,
-                        name = goalToEdit!!.name,
-                        targetAmount = goalToEdit!!.targetAmount,
-                        savedAmount = goalToEdit!!.savedAmount,
-                        targetDate = goalToEdit!!.targetDate,
-                        accountId = goalToEdit!!.accountId
-                    )
-                )
-                showDeleteDialog = false
+                goalViewModel.deleteGoal(goal)
+                goalToDelete = null
             }
         )
     }
@@ -4929,7 +4964,10 @@ private fun GoalItem(
             Spacer(Modifier.height(16.dp))
             LinearProgressIndicator(
                 progress = { animatedProgress },
-                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(CircleShape),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                 strokeCap = StrokeCap.Round
@@ -4962,151 +5000,6 @@ private fun GoalItem(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AddEditGoalDialog(
-    goalName: String,
-    onGoalNameChange: (String) -> Unit,
-    targetAmount: String,
-    onTargetAmountChange: (String) -> Unit,
-    savedAmount: String,
-    onSavedAmountChange: (String) -> Unit,
-    selectedAccount: Account?,
-    onAccountSelected: (Account) -> Unit,
-    accounts: List<Account>,
-    targetDate: Long?,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-    onLaunchDatePicker: () -> Unit
-) {
-    var accountExpanded by remember { mutableStateOf(false) }
-    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
-    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
-    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = popupContainerColor,
-            tonalElevation = 6.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-            ) {
-                Text(
-                    text = if (goalName.isBlank()) "New Savings Goal" else "Edit Savings Goal",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                Box(modifier = Modifier.heightIn(max = 400.dp)) {
-                    LazyColumn {
-                        item {
-                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                OutlinedTextField(
-                                    value = goalName,
-                                    onValueChange = onGoalNameChange,
-                                    label = { Text("Goal Name (e.g., New Phone)") },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                OutlinedTextField(
-                                    value = targetAmount,
-                                    onValueChange = { onTargetAmountChange(it.filter { c -> c.isDigit() || c == '.' }) },
-                                    label = { Text("Target Amount") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    leadingIcon = { Text("₹") },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                OutlinedTextField(
-                                    value = savedAmount,
-                                    onValueChange = { onSavedAmountChange(it.filter { c -> c.isDigit() || c == '.' }) },
-                                    label = { Text("Already Saved (Optional)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    leadingIcon = { Text("₹") },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-
-                                ExposedDropdownMenuBox(expanded = accountExpanded, onExpandedChange = { accountExpanded = !accountExpanded }) {
-                                    OutlinedTextField(
-                                        value = selectedAccount?.name ?: "Select Account",
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        label = { Text("Link to Account") },
-                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountExpanded) },
-                                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                                    )
-                                    ExposedDropdownMenu(
-                                        expanded = accountExpanded,
-                                        onDismissRequest = { accountExpanded = false },
-                                        modifier = Modifier.background(if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight)
-                                    ) {
-                                        accounts.forEach { account ->
-                                            DropdownMenuItem(
-                                                text = { Text(account.name) },
-                                                onClick = {
-                                                    onAccountSelected(account)
-                                                    accountExpanded = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-
-                                OutlinedTextField(
-                                    value = targetDate?.let { dateFormat.format(Date(it)) } ?: "",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Target Date (Optional)") },
-                                    modifier = Modifier.fillMaxWidth().clickable { onLaunchDatePicker() },
-                                    trailingIcon = { Icon(Icons.Default.DateRange, "Select Date") }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(24.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = onConfirm,
-                        enabled = goalName.isNotBlank() && targetAmount.isNotBlank() && selectedAccount != null
-                    ) { Text(if (goalName.isBlank()) "Create" else "Save") }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun GoalDatePickerDialog(
-    initialDate: Long?,
-    onDismiss: () -> Unit,
-    onDateSelected: (Long?) -> Unit
-) {
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialDate ?: System.currentTimeMillis())
-    DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = {
-                onDateSelected(datePickerState.selectedDateMillis)
-            }) { Text("OK") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    ) {
-        DatePicker(state = datePickerState)
-    }
-}
-
 
 @Composable
 private fun DeleteGoalDialog(
@@ -12422,6 +12315,224 @@ fun DateTextField(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditGoalScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditGoalScreen.kt
+// REASON: FIX - The DatePickerDialog is now provided with an explicit container
+// color derived from the current theme. This is the same implementation used
+// in other working dialogs and resolves the issue where the dialog was inheriting
+// a transparent background from the screen, making it invisible.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import io.pm.finlight.*
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
+import java.text.SimpleDateFormat
+import java.util.*
+
+// Helper function to determine if a color is 'dark' based on luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddEditGoalScreen(
+    navController: NavController,
+    goalId: Int?,
+    goalViewModel: GoalViewModel = viewModel(),
+    transactionViewModel: TransactionViewModel = viewModel()
+) {
+    val isEditMode = goalId != null
+    val titleText = if (isEditMode) "Edit Savings Goal" else "New Savings Goal"
+
+    val accounts by transactionViewModel.allAccounts.collectAsState()
+    val goalToEdit by if (isEditMode) goalViewModel.getGoalById(goalId!!).collectAsState(initial = null) else remember { mutableStateOf(null) }
+
+    var goalName by remember { mutableStateOf("") }
+    var targetAmount by remember { mutableStateOf("") }
+    var savedAmount by remember { mutableStateOf("") }
+    var selectedAccount by remember { mutableStateOf<Account?>(null) }
+    var targetDate by remember { mutableStateOf<Long?>(null) }
+    var accountExpanded by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    LaunchedEffect(goalToEdit, accounts) {
+        if (isEditMode) {
+            goalToEdit?.let { goal ->
+                goalName = goal.name
+                targetAmount = goal.targetAmount.toString()
+                savedAmount = goal.savedAmount.toString()
+                selectedAccount = accounts.find { it.id == goal.accountId }
+                targetDate = goal.targetDate
+            }
+        } else {
+            // Default to the first account when creating a new goal
+            if (accounts.isNotEmpty()) {
+                selectedAccount = accounts.first()
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(titleText) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                GlassPanel {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        OutlinedTextField(
+                            value = goalName,
+                            onValueChange = { goalName = it },
+                            label = { Text("Goal Name (e.g., New Phone)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = targetAmount,
+                            onValueChange = { targetAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = { Text("Target Amount") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            leadingIcon = { Text("₹") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = savedAmount,
+                            onValueChange = { savedAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = { Text("Already Saved (Optional)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            leadingIcon = { Text("₹") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        ExposedDropdownMenuBox(expanded = accountExpanded, onExpandedChange = { accountExpanded = !accountExpanded }) {
+                            OutlinedTextField(
+                                value = selectedAccount?.name ?: "Select Account",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Link to Account") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountExpanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = accountExpanded,
+                                onDismissRequest = { accountExpanded = false },
+                                modifier = Modifier.background(if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight)
+                            ) {
+                                accounts.forEach { account ->
+                                    DropdownMenuItem(
+                                        text = { Text(account.name) },
+                                        onClick = {
+                                            selectedAccount = account
+                                            accountExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
+                        OutlinedTextField(
+                            value = targetDate?.let { dateFormat.format(Date(it)) } ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Target Date (Optional)") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showDatePicker = true },
+                            trailingIcon = { Icon(Icons.Default.DateRange, "Select Date") }
+                        )
+                    }
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            val target = targetAmount.toDoubleOrNull()
+                            val saved = savedAmount.toDoubleOrNull() ?: 0.0
+                            if (goalName.isNotBlank() && target != null && selectedAccount != null) {
+                                goalViewModel.saveGoal(goalId, goalName, target, saved, targetDate, selectedAccount!!.id)
+                                navController.popBackStack()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = goalName.isNotBlank() && targetAmount.isNotBlank() && selectedAccount != null
+                    ) {
+                        Text(if (isEditMode) "Save Changes" else "Create Goal")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = targetDate ?: System.currentTimeMillis())
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    targetDate = datePickerState.selectedDateMillis
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            },
+            // --- FIX: Explicitly set the container color ---
+            colors = DatePickerDefaults.colors(containerColor = popupContainerColor)
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CsvValidationScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CsvValidationScreen.kt
@@ -16394,6 +16505,12 @@ val Typography = Typography(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
+// REASON: FEATURE - Added the new routes for `add_edit_goal` (for creating a
+// new goal) and `add_edit_goal/{goalId}` (for editing an existing one). This
+// integrates the new dedicated screen into the app's navigation graph.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -16624,7 +16741,8 @@ fun MainAppScreen() {
         "appearance_settings",
         "automation_settings",
         "notification_settings",
-        "data_settings"
+        "data_settings",
+        "add_edit_goal" // --- NEW: Add new route to this set
     )
 
     val currentTitle = if (showBottomBar) {
@@ -17155,6 +17273,29 @@ fun AppNavHost(
         ) {
             GoalScreen(navController = navController, goalViewModel = goalViewModel)
         }
+
+        // --- NEW: Routes for the new dedicated goal screen ---
+        composable(
+            "add_edit_goal",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
+            AddEditGoalScreen(navController = navController, goalId = null, goalViewModel = goalViewModel, transactionViewModel = transactionViewModel)
+        }
+        composable(
+            "add_edit_goal/{goalId}",
+            arguments = listOf(navArgument("goalId") { type = NavType.IntType }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { backStackEntry ->
+            val goalId = backStackEntry.arguments?.getInt("goalId")
+            AddEditGoalScreen(navController = navController, goalId = goalId, goalViewModel = goalViewModel, transactionViewModel = transactionViewModel)
+        }
+
 
         composable(
             "appearance_settings",
@@ -18164,10 +18305,11 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FIX - The redundant 'RoomDatabase' qualifier has been removed from
-// the DatabaseCallback class signature. A direct import for 'Callback' has been
-// added, making the code cleaner and resolving the lint warning.
-// FIX - Removed the unused import for `kotlinx.coroutines.flow.first`.
+// REASON: FEATURE - The database has been updated to include the new
+// `RecurringPattern` entity and its corresponding `RecurringPatternDao`. The
+// database version has been incremented, and new migrations (25 to 26 and 26 to 27)
+// have been added to create the `recurring_patterns` table and add the
+// `smsSignature` column to the `transactions` table.
 // =================================================================================
 package io.pm.finlight
 
@@ -18197,9 +18339,10 @@ import java.util.Calendar
         MerchantRenameRule::class,
         MerchantCategoryMapping::class,
         IgnoreRule::class,
-        Goal::class
+        Goal::class,
+        RecurringPattern::class // --- NEW: Add the new entity
     ],
-    version = 25, // --- UPDATED: Incremented version number for schema change ---
+    version = 27, // --- UPDATED: Incremented version number
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -18215,6 +18358,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
     abstract fun ignoreRuleDao(): IgnoreRuleDao
     abstract fun goalDao(): GoalDao
+    abstract fun recurringPatternDao(): RecurringPatternDao // --- NEW: Add the new DAO
 
     companion object {
         @Volatile
@@ -18417,10 +18561,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to enforce case-insensitive names ---
         val MIGRATION_24_25 = object : Migration(24, 25) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Recreate accounts table with NOCASE
                 db.execSQL("""
                     CREATE TABLE `accounts_new` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
@@ -18433,7 +18575,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP TABLE `accounts`")
                 db.execSQL("ALTER TABLE `accounts_new` RENAME TO `accounts`")
 
-                // Recreate categories table with NOCASE
                 db.execSQL("""
                     CREATE TABLE `categories_new` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
@@ -18447,7 +18588,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP TABLE `categories`")
                 db.execSQL("ALTER TABLE `categories_new` RENAME TO `categories`")
 
-                // Recreate merchant_rename_rules table with NOCASE
                 db.execSQL("""
                     CREATE TABLE `merchant_rename_rules_new` (
                         `originalName` TEXT NOT NULL COLLATE NOCASE, 
@@ -18461,12 +18601,41 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration to add the recurring_patterns table ---
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `recurring_patterns` (
+                        `smsSignature` TEXT NOT NULL, 
+                        `description` TEXT NOT NULL, 
+                        `amount` REAL NOT NULL, 
+                        `transactionType` TEXT NOT NULL, 
+                        `accountId` INTEGER NOT NULL, 
+                        `categoryId` INTEGER, 
+                        `occurrences` INTEGER NOT NULL, 
+                        `firstSeen` INTEGER NOT NULL, 
+                        `lastSeen` INTEGER NOT NULL, 
+                        PRIMARY KEY(`smsSignature`)
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_patterns_lastSeen` ON `recurring_patterns` (`lastSeen`)")
+            }
+        }
+
+        // --- NEW: Migration to add the smsSignature column to transactions ---
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `smsSignature` TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_transactions_smsSignature` ON `transactions` (`smsSignature`)")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -18474,7 +18643,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- FIX: Removed redundant qualifier and added import ---
         private class DatabaseCallback(private val context: Context) : Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
@@ -18566,10 +18734,11 @@ abstract class AppDatabase : RoomDatabase() {
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - The parser now accepts a `MerchantCategoryMappingDao` and
-// uses it to look up a learned category for the parsed merchant name. If a
-// mapping is found, the category ID is included in the returned
-// `PotentialTransaction`, enabling automatic categorization of new SMS messages.
+// REASON: FEATURE - The parser now generates a "signature" for each SMS. This
+// is done by removing volatile data (amounts, dates, times, ref numbers) to
+// create a stable template of the message. This signature is the key to the new
+// proactive recurring transaction detection feature. It is now included in the
+// returned PotentialTransaction object.
 // =================================================================================
 package io.pm.finlight
 
@@ -18608,6 +18777,31 @@ object SmsParser {
             "Info:?\\s*([A-Za-z0-9\\s.&'-]+?)(?:\\.|$)".toRegex(RegexOption.IGNORE_CASE)
         )
 
+    // --- NEW: Regex to find and remove volatile parts of an SMS for signature generation ---
+    private val VOLATILE_DATA_REGEX = listOf(
+        "\\b(?:rs|inr)[\\s.]*\\d[\\d,.]*".toRegex(RegexOption.IGNORE_CASE), // Amounts (e.g., Rs. 1,234.56)
+        "\\d{1,2}[-/]\\d{1,2}[-/]\\d{2,4}".toRegex(), // Dates (e.g., 31-12-2024)
+        "\\d{1,2}-\\w{3}-\\d{2,4}".toRegex(RegexOption.IGNORE_CASE), // Dates (e.g., 31-Dec-2024)
+        "\\d{2,}:\\d{2,}(?::\\d{2,})?".toRegex(), // Times (e.g., 14:30:55)
+        "\\b(?:ref no|txn id|upi ref|transaction id|ref id)\\s*[:.]?\\s*\\w*\\d+\\w*".toRegex(RegexOption.IGNORE_CASE), // Ref numbers
+        "a/c no\\. \\S+".toRegex(RegexOption.IGNORE_CASE), // A/c numbers
+        "avl bal[:]?[\\s.]*rs[\\s.]*\\d[\\d,.]*".toRegex(RegexOption.IGNORE_CASE), // Available balance
+        "\\b\\d{4,}\\b".toRegex() // Any number with 4 or more digits (likely IDs, etc.)
+    )
+
+    /**
+     * Generates a stable "signature" from an SMS body by removing volatile data.
+     */
+    private fun generateSmsSignature(body: String): String {
+        var signature = body.lowercase()
+        VOLATILE_DATA_REGEX.forEach { regex ->
+            signature = regex.replace(signature, "")
+        }
+        // Normalize whitespace and hash the result for a clean, unique key
+        return signature.replace(Regex("\\s+"), " ").trim().hashCode().toString()
+    }
+
+
     private fun parseAccount(smsBody: String, sender: String): PotentialAccount? {
         for (pattern in ACCOUNT_PATTERNS) {
             val match = pattern.find(smsBody)
@@ -18640,7 +18834,6 @@ object SmsParser {
         customSmsRuleDao: CustomSmsRuleDao,
         merchantRenameRuleDao: MerchantRenameRuleDao,
         ignoreRuleDao: IgnoreRuleDao,
-        // --- NEW: Add DAO for learned category mappings ---
         merchantCategoryMappingDao: MerchantCategoryMappingDao
     ): PotentialTransaction? {
         val messageBody = sms.body
@@ -18740,7 +18933,6 @@ object SmsParser {
             Log.d("SmsParser", "Applied rename rule: '$originalName' -> '$merchantName'")
         }
 
-        // --- NEW: Look up the learned category ID ---
         var learnedCategoryId: Int? = null
         if (merchantName != null) {
             learnedCategoryId = merchantCategoryMappingDao.getCategoryIdForMerchant(merchantName)
@@ -18753,6 +18945,9 @@ object SmsParser {
         val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
         val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
         val smsHash = (normalizedSender + normalizedBody).hashCode().toString()
+        // --- NEW: Generate and include the signature ---
+        val smsSignature = generateSmsSignature(sms.body)
+
 
         return PotentialTransaction(
             sourceSmsId = sms.id,
@@ -18763,11 +18958,12 @@ object SmsParser {
             originalMessage = messageBody,
             potentialAccount = potentialAccount,
             sourceSmsHash = smsHash,
-            // --- NEW: Pass the learned category ID ---
-            categoryId = learnedCategoryId
+            categoryId = learnedCategoryId,
+            smsSignature = smsSignature // --- NEW
         )
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/PeriodTotal.kt ==================
@@ -20205,9 +20401,9 @@ data class TransactionTagCrossRef(
 ================== FILE: ./app/src/main/java/PotentialTransaction.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/PotentialTransaction.kt
-// REASON: FEATURE - A new nullable `categoryId` field has been added. This
-// allows the SmsParser to include the ID of a learned category when it creates
-// a potential transaction, enabling automatic categorization.
+// REASON: FIX - Added the missing `smsSignature` field. This resolves the
+// compilation error in the SmsParser and allows the generated signature to be
+// passed along to the next stage of processing.
 // =================================================================================
 package io.pm.finlight
 
@@ -20221,6 +20417,7 @@ package io.pm.finlight
  * @param originalMessage The original SMS body, for reference and debugging.
  * @param potentialAccount Holds the parsed account name and type, if found.
  * @param categoryId The ID of a learned category, if a mapping exists for the merchant.
+ * @param smsSignature A stable hash of the SMS body used for pattern detection.
  */
 data class PotentialTransaction(
     val sourceSmsId: Long,
@@ -20231,9 +20428,11 @@ data class PotentialTransaction(
     val originalMessage: String,
     val potentialAccount: PotentialAccount? = null,
     val sourceSmsHash: String? = null,
-    // --- NEW: Add field for learned category ---
-    val categoryId: Int? = null
-)-e 
+    val categoryId: Int? = null,
+    // --- NEW: Add field for the pattern detection signature ---
+    val smsSignature: String? = null
+)
+-e 
 
 
 ================== FILE: ./app/src/main/java/TransactionImage.kt ==================
@@ -20263,6 +20462,146 @@ data class TransactionImage(
     val transactionId: Int,
     val imageUri: String // Stores the URI of the image in the app's internal storage
 )
+-e 
+
+
+================== FILE: ./app/src/main/java/RecurringPatternWorker.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/RecurringPatternWorker.kt
+// REASON: FIX - The call to `recurringTransactionDao.insert()` now correctly
+// returns a Long, so the `.toInt()` conversion works as expected, resolving
+// the compilation error.
+// =================================================================================
+package io.pm.finlight
+
+import android.content.Context
+import android.util.Log
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
+import kotlin.math.abs
+
+class RecurringPatternWorker(
+    private val context: Context,
+    workerParams: WorkerParameters
+) : CoroutineWorker(context, workerParams) {
+
+    private val transactionDao = AppDatabase.getInstance(context).transactionDao()
+    private val patternDao = AppDatabase.getInstance(context).recurringPatternDao()
+    private val recurringTransactionDao = AppDatabase.getInstance(context).recurringTransactionDao()
+
+    companion object {
+        // The time window to look back for transactions to analyze. 90 days is a good balance.
+        private val ANALYSIS_WINDOW_DAYS = 90L
+        // The minimum number of times a transaction must occur to be considered a pattern.
+        private const val MIN_OCCURRENCES_FOR_PATTERN = 3
+        // The tolerance for interval matching (in days).
+        private const val WEEKLY_TOLERANCE_DAYS = 1
+        private const val MONTHLY_TOLERANCE_DAYS = 3
+    }
+
+    override suspend fun doWork(): Result {
+        Log.d("RecurringPatternWorker", "Worker starting...")
+        return withContext(Dispatchers.IO) {
+            try {
+                // 1. Fetch recent transactions that have an SMS signature.
+                val recentTransactions = transactionDao.getTransactionsWithSignatureSince(
+                    System.currentTimeMillis() - TimeUnit.DAYS.toMillis(ANALYSIS_WINDOW_DAYS)
+                )
+
+                // 2. Update the pattern database with these transactions.
+                for (transaction in recentTransactions) {
+                    val signature = transaction.smsSignature ?: continue
+                    val existingPattern = patternDao.getPatternBySignature(signature)
+
+                    if (existingPattern == null) {
+                        // First time seeing this signature, create a new pattern entry.
+                        patternDao.insert(
+                            RecurringPattern(
+                                smsSignature = signature,
+                                description = transaction.description,
+                                amount = transaction.amount,
+                                transactionType = transaction.transactionType,
+                                accountId = transaction.accountId,
+                                categoryId = transaction.categoryId,
+                                occurrences = 1,
+                                firstSeen = transaction.date,
+                                lastSeen = transaction.date
+                            )
+                        )
+                    } else {
+                        // We've seen this before, update the existing pattern.
+                        existingPattern.occurrences += 1
+                        existingPattern.lastSeen = transaction.date
+                        patternDao.update(existingPattern)
+                    }
+                }
+
+                // 3. Analyze all patterns that have occurred enough times.
+                val allPatterns = patternDao.getAllPatterns()
+                for (pattern in allPatterns) {
+                    if (pattern.occurrences >= MIN_OCCURRENCES_FOR_PATTERN) {
+                        analyzeAndCreateRuleIfNeeded(pattern)
+                    }
+                }
+
+                // 4. Reschedule the worker for the next run.
+                ReminderManager.scheduleRecurringPatternWorker(context)
+                Log.d("RecurringPatternWorker", "Worker finished successfully.")
+                Result.success()
+            } catch (e: Exception) {
+                Log.e("RecurringPatternWorker", "Worker failed", e)
+                Result.retry()
+            }
+        }
+    }
+
+    private suspend fun analyzeAndCreateRuleIfNeeded(pattern: RecurringPattern) {
+        val transactions = transactionDao.getTransactionsBySignature(pattern.smsSignature)
+        if (transactions.size < MIN_OCCURRENCES_FOR_PATTERN) return
+
+        val timestamps = transactions.map { it.date }.sorted()
+        val intervals = timestamps.zipWithNext { a, b -> TimeUnit.MILLISECONDS.toDays(b - a) }
+
+        // Check for weekly pattern
+        val isWeekly = intervals.all { abs(it - 7) <= WEEKLY_TOLERANCE_DAYS }
+        if (isWeekly) {
+            createRuleAndNotify(pattern, "Weekly")
+            return
+        }
+
+        // Check for monthly pattern
+        val isMonthly = intervals.all { abs(it - 30) <= MONTHLY_TOLERANCE_DAYS }
+        if (isMonthly) {
+            createRuleAndNotify(pattern, "Monthly")
+            return
+        }
+    }
+
+    private suspend fun createRuleAndNotify(pattern: RecurringPattern, interval: String) {
+        // Create the recurring transaction rule
+        val newRule = RecurringTransaction(
+            description = pattern.description,
+            amount = pattern.amount,
+            transactionType = pattern.transactionType,
+            recurrenceInterval = interval,
+            startDate = pattern.lastSeen,
+            accountId = pattern.accountId,
+            categoryId = pattern.categoryId,
+            lastRunDate = pattern.lastSeen
+        )
+        val newRuleId = recurringTransactionDao.insert(newRule).toInt()
+
+        // Notify the user
+        NotificationHelper.showRecurringPatternDetectedNotification(context, newRule.copy(id = newRuleId))
+
+        // Clean up the pattern from the analysis table to prevent re-detection
+        patternDao.deleteBySignature(pattern.smsSignature)
+        Log.d("RecurringPatternWorker", "Created a new '$interval' rule for '${pattern.description}' and sent notification.")
+    }
+}
 -e 
 
 
@@ -20304,6 +20643,13 @@ data class IgnoreRule(
 
 
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
+// REASON: FEATURE - Added `getTransactionsWithSignatureSince` and
+// `getTransactionsBySignature` queries. These are essential for the new
+// `RecurringPatternWorker` to fetch the data it needs to analyze potential
+// recurring transactions.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -20311,6 +20657,15 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
+
+    // --- NEW: Get all transactions with a signature since a given date ---
+    @Query("SELECT * FROM transactions WHERE smsSignature IS NOT NULL AND date >= :sinceDate")
+    suspend fun getTransactionsWithSignatureSince(sinceDate: Long): List<Transaction>
+
+    // --- NEW: Get all transactions that match a specific signature ---
+    @Query("SELECT * FROM transactions WHERE smsSignature = :signature ORDER BY date ASC")
+    suspend fun getTransactionsBySignature(signature: String): List<Transaction>
+
 
     @Query(
         """
@@ -20663,16 +21018,6 @@ interface TransactionDao {
 
     @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
     suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag>
-
-    @Query("""
-        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
-        FROM transactions AS T
-        LEFT JOIN accounts AS A ON T.accountId = A.id
-        LEFT JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.date BETWEEN :startDate AND :endDate
-        ORDER BY T.date DESC
-    """)
-    fun getTransactionsForDateRange(startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
 
     @Query("""
         SELECT
@@ -21624,9 +21969,9 @@ data class Budget(
 ================== FILE: ./app/src/main/java/Transaction.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/Transaction.kt
-// REASON: FEATURE - Added a new Boolean field, `isExcluded`, with a default value
-// of false. This field will be used to mark transactions that should be
-// ignored in all financial calculations (e.g., summaries, budgets, net worth).
+// REASON: FEATURE - Added a new nullable `smsSignature` field. This will store
+// the normalized hash of the original SMS message, which is the key to identifying
+// potential recurring transactions automatically. An index is added for efficient lookups.
 // =================================================================================
 package io.pm.finlight
 
@@ -21642,6 +21987,7 @@ import kotlinx.serialization.Serializable
     indices = [
         Index(value = ["categoryId"]),
         Index(value = ["accountId"]),
+        Index(value = ["smsSignature"]) // --- NEW: Index for faster lookups
     ],
     foreignKeys = [
         ForeignKey(
@@ -21672,16 +22018,20 @@ data class Transaction(
     val sourceSmsHash: String? = null,
     val source: String = "Manual Entry",
     val originalDescription: String? = null,
-    val isExcluded: Boolean = false
-)-e 
+    val isExcluded: Boolean = false,
+    // --- NEW: Field to store the SMS signature for pattern detection ---
+    val smsSignature: String? = null
+)
+-e 
 
 
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: FIX - The private property 'TAG' has been renamed to 'tag' to comply
-// with Kotlin's naming conventions for private constants. Its usage has been
-// updated accordingly throughout the file.
+// REASON: FEATURE - The receiver now retrieves the `smsSignature` generated by
+// the parser and includes it when creating the new `Transaction` object. This
+// is a critical step, as it saves the signature to the database, making it
+// available for the pattern detection worker.
 // =================================================================================
 package io.pm.finlight
 
@@ -21699,7 +22049,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class SmsReceiver : BroadcastReceiver() {
-    // --- FIX: Renamed TAG to tag for Kotlin conventions ---
     private val tag = "SmsReceiver"
 
     override fun onReceive(
@@ -21731,7 +22080,6 @@ class SmsReceiver : BroadcastReceiver() {
                         val existingSmsHashes = transactionDao.getAllSmsHashes().first().toSet()
 
                         val smsMessage = SmsMessage(id = smsId, sender = sender, body = fullBody, date = smsId)
-                        // --- UPDATED: Pass the merchantCategoryMappingDao to the parser ---
                         val potentialTxn = SmsParser.parse(
                             sms = smsMessage,
                             mappings = existingMappings,
@@ -21761,20 +22109,20 @@ class SmsReceiver : BroadcastReceiver() {
                                     amount = potentialTxn.amount,
                                     date = System.currentTimeMillis(),
                                     accountId = account.id,
-                                    // --- UPDATED: Use the categoryId from the parser result ---
                                     categoryId = potentialTxn.categoryId,
                                     notes = "",
                                     transactionType = potentialTxn.transactionType,
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,
-                                    source = "Auto-Captured"
+                                    source = "Auto-Captured",
+                                    // --- NEW: Pass the signature to the transaction object ---
+                                    smsSignature = potentialTxn.smsSignature
                                 )
                                 val newTransactionId = transactionDao.insert(newTransaction)
                                 Log.d(tag, "Transaction saved successfully with ID: $newTransactionId")
 
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                                     val savedTransaction = newTransaction.copy(id = newTransactionId.toInt())
-                                    // --- UPDATED: Check if the parser found a category ---
                                     if (potentialTxn.categoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
                                         NotificationHelper.showTransactionNotification(context, savedTransaction)
                                     } else {
@@ -21802,12 +22150,11 @@ class SmsReceiver : BroadcastReceiver() {
 ================== FILE: ./app/src/main/java/NotificationHelper.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: FEATURE - Added showRecurringTransactionDueNotification. This new
-// function creates a specific notification for due recurring payments, with a
-// deep link to the new LinkTransactionScreen. This is a core component of the
-// new user-driven recurring transaction workflow.
-// FIX - Removed the unused `percentageChange` parameter from the internal
-// `createEnhancedSummaryNotification` function to resolve the "unused" warning.
+// REASON: FEATURE - Added `showRecurringPatternDetectedNotification`. This
+// function creates a specific notification to inform the user that the app has
+// automatically identified a new recurring transaction. It includes a deep link
+// to the "Add/Edit Recurring Rule" screen, pre-filled with the detected data,
+// allowing the user to review, modify, or confirm the new rule.
 // =================================================================================
 package io.pm.finlight
 
@@ -21831,11 +22178,52 @@ import kotlin.math.abs
 object NotificationHelper {
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
     private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
-    // --- NEW: Deep link for the new recurring transaction flow ---
     private const val DEEP_LINK_URI_LINK_RECURRING = "app://finlight.pm.io/link_recurring"
+    // --- NEW: Deep link for the new pattern detection flow ---
+    private const val DEEP_LINK_URI_ADD_RECURRING = "app://finlight.pm.io/add_recurring_transaction"
 
 
-    // --- NEW: Notification for when a recurring transaction is due ---
+    // --- NEW: Notification for when a recurring pattern is detected ---
+    fun showRecurringPatternDetectedNotification(
+        context: Context,
+        rule: RecurringTransaction
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        // The deep link will navigate to the add/edit screen with the new rule's ID
+        val deepLinkUri = "$DEEP_LINK_URI_ADD_RECURRING?ruleId=${rule.id}".toUri()
+
+        val intent = Intent(Intent.ACTION_VIEW, deepLinkUri).apply {
+            `package` = context.packageName
+        }
+
+        // Use the rule's ID for a unique notification ID
+        val notificationId = "pattern_${rule.id}".hashCode()
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(intent)
+            getPendingIntent(notificationId, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        val contentText = "We noticed a recurring ${rule.transactionType} for '${rule.description}'. We've created a rule for you. Tap to review."
+
+        val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("New Recurring Transaction Found")
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .addAction(0, "Review Rule", pendingIntent)
+
+        with(NotificationManagerCompat.from(context)) {
+            notify(notificationId, builder.build())
+        }
+    }
+
+
     fun showRecurringTransactionDueNotification(
         context: Context,
         potentialTxn: PotentialTransaction

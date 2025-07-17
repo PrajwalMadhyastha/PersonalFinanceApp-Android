@@ -1,13 +1,15 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/GoalViewModel.kt
-// REASON: FIX - The unused `getGoalById` function has been removed to resolve
-// the "UnusedSymbol" warning, cleaning up the ViewModel's public API.
+// REASON: FIX - Re-added the `getGoalById` function. This function is essential
+// for the new dedicated `AddEditGoalScreen` to fetch an existing goal's data
+// when operating in "edit mode". Its absence was causing the compilation errors.
 // =================================================================================
 package io.pm.finlight
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -27,6 +29,11 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
+    }
+
+    // --- NEW: Function to get a single goal by its ID ---
+    fun getGoalById(id: Int): Flow<Goal?> {
+        return goalRepository.getGoalById(id)
     }
 
     fun saveGoal(

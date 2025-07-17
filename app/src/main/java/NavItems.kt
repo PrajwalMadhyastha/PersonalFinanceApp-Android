@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added a new entry for "goals_screen" to the screenTitles
-// map, ensuring the new Savings Goals screen will have the correct title in
-// the app's top bar.
-// UPDATE: Added new entries for the reorganized settings screens.
+// REASON: FEATURE - Added new entries for "add_edit_goal" and
+// "add_edit_goal/{goalId}" to the screenTitles map. This ensures the new
+// dedicated screen for managing savings goals will have the correct title
+// ("New Savings Goal" or "Edit Savings Goal") in the app's top bar.
 // =================================================================================
 package io.pm.finlight
 
@@ -54,5 +54,8 @@ val screenTitles = mapOf(
     "appearance_settings" to "Theme & Appearance",
     "automation_settings" to "Automation & AI",
     "notification_settings" to "Notifications",
-    "data_settings" to "Security & Data"
+    "data_settings" to "Security & Data",
+    // --- NEW: Titles for the dedicated goal screen ---
+    "add_edit_goal" to "New Savings Goal",
+    "add_edit_goal/{goalId}" to "Edit Savings Goal"
 )

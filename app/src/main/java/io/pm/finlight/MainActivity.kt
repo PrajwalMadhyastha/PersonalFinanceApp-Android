@@ -1,3 +1,9 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
+// REASON: FEATURE - Added the new routes for `add_edit_goal` (for creating a
+// new goal) and `add_edit_goal/{goalId}` (for editing an existing one). This
+// integrates the new dedicated screen into the app's navigation graph.
+// =================================================================================
 package io.pm.finlight
 
 import android.Manifest
@@ -228,7 +234,8 @@ fun MainAppScreen() {
         "appearance_settings",
         "automation_settings",
         "notification_settings",
-        "data_settings"
+        "data_settings",
+        "add_edit_goal" // --- NEW: Add new route to this set
     )
 
     val currentTitle = if (showBottomBar) {
@@ -759,6 +766,29 @@ fun AppNavHost(
         ) {
             GoalScreen(navController = navController, goalViewModel = goalViewModel)
         }
+
+        // --- NEW: Routes for the new dedicated goal screen ---
+        composable(
+            "add_edit_goal",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
+            AddEditGoalScreen(navController = navController, goalId = null)
+        }
+        composable(
+            "add_edit_goal/{goalId}",
+            arguments = listOf(navArgument("goalId") { type = NavType.IntType }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { backStackEntry ->
+            val goalId = backStackEntry.arguments?.getInt("goalId")
+            AddEditGoalScreen(navController = navController, goalId = goalId)
+        }
+
 
         composable(
             "appearance_settings",
