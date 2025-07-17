@@ -1,10 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReminderManager.kt
-// REASON: Added the cancelMonthlySummary function to allow disabling of the
-// monthly report worker, completing the scheduling lifecycle.
-// REASON: FEATURE - Added `scheduleRecurringTransactionWorker` to schedule the new
-// worker to run daily. This is the core scheduling component for the automated
-// recurring transactions feature.
+// REASON: FEATURE - Added `scheduleRecurringPatternWorker` to schedule the new
+// worker to run daily. This is the core scheduling component for the proactive
+// recurring transaction detection feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -18,9 +16,37 @@ object ReminderManager {
     private const val DAILY_EXPENSE_REPORT_WORK_TAG = "daily_expense_report_work"
     private const val WEEKLY_SUMMARY_WORK_TAG = "weekly_summary_work"
     private const val MONTHLY_SUMMARY_WORK_TAG = "monthly_summary_work"
-    private const val RECURRING_TRANSACTION_WORK_TAG = "recurring_transaction_work" // --- NEW
+    private const val RECURRING_TRANSACTION_WORK_TAG = "recurring_transaction_work"
+    // --- NEW: A unique tag for our new pattern detection worker ---
+    private const val RECURRING_PATTERN_WORK_TAG = "recurring_pattern_work"
 
-    // --- NEW: Function to schedule the recurring transaction worker ---
+
+    // --- NEW: Function to schedule the pattern detection worker ---
+    fun scheduleRecurringPatternWorker(context: Context) {
+        val now = Calendar.getInstance()
+        val nextRun = Calendar.getInstance().apply {
+            // Schedule to run early in the morning, e.g., 3 AM
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 3)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }
+
+        val initialDelay = nextRun.timeInMillis - now.timeInMillis
+
+        val recurringRequest = OneTimeWorkRequestBuilder<RecurringPatternWorker>()
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            RECURRING_PATTERN_WORK_TAG,
+            ExistingWorkPolicy.REPLACE,
+            recurringRequest
+        )
+        Log.d("ReminderManager", "Recurring pattern worker scheduled for ${nextRun.time}")
+    }
+
+
     fun scheduleRecurringTransactionWorker(context: Context) {
         val now = Calendar.getInstance()
         val nextRun = Calendar.getInstance().apply {
@@ -146,7 +172,6 @@ object ReminderManager {
         Log.d("ReminderManager", "Monthly summary scheduled for ${nextRun.time}")
     }
 
-    // --- NEW: Function to cancel the monthly summary worker ---
     fun cancelMonthlySummary(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(MONTHLY_SUMMARY_WORK_TAG)
     }
