@@ -10,6 +10,9 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
+// --- NEW: Data class to hold the calculated stats for the calendar ---
+data class ConsistencyStats(val goodDays: Int, val badDays: Int, val noSpendDays: Int)
+
 class DashboardViewModel(
     private val transactionRepository: TransactionRepository,
     private val accountRepository: AccountRepository,
@@ -43,8 +46,9 @@ class DashboardViewModel(
     private val _showAddCardSheet = MutableStateFlow(false)
     val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
 
-    // --- NEW: StateFlow for the dashboard consistency calendar data ---
     val monthlyConsistencyData: StateFlow<List<CalendarDayStatus>>
+    // --- NEW: StateFlow for the new consistency stats ---
+    val consistencyStats: StateFlow<ConsistencyStats>
 
     init {
         userName = settingsRepository.getUserName()
@@ -63,7 +67,6 @@ class DashboardViewModel(
 
         viewModelScope.launch {
             settingsRepository.getDashboardCardOrder().collect {
-                // --- FIX: Ensure the new card is added to the layout if it doesn't exist ---
                 if (it.contains(DashboardCardType.SPENDING_CONSISTENCY)) {
                     _cardOrder.value = it
                 } else {
@@ -73,7 +76,6 @@ class DashboardViewModel(
         }
         viewModelScope.launch {
             settingsRepository.getDashboardVisibleCards().collect {
-                // --- FIX: Ensure the new card is visible by default ---
                 if (it.contains(DashboardCardType.SPENDING_CONSISTENCY)) {
                     _visibleCardsSet.value = it
                 } else {
@@ -183,7 +185,6 @@ class DashboardViewModel(
                     initialValue = emptyList(),
                 )
 
-        // --- NEW: Initialization logic for the dashboard calendar data ---
         monthlyConsistencyData = flow {
             emit(generateCurrentMonthConsistencyData())
         }.flowOn(Dispatchers.Default)
@@ -192,9 +193,20 @@ class DashboardViewModel(
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
+
+        // --- NEW: Derive stats from the consistency data ---
+        consistencyStats = monthlyConsistencyData.map { data ->
+            val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
+            val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
+            val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
+            ConsistencyStats(goodDays, badDays, noSpendDays)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ConsistencyStats(0, 0, 0)
+        )
     }
 
-    // --- NEW: Logic to generate data for the current month's calendar ---
     private suspend fun generateCurrentMonthConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
         val today = Calendar.getInstance()
         val year = today.get(Calendar.YEAR)

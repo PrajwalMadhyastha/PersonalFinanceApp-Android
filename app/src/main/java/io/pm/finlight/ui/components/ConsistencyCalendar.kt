@@ -20,7 +20,10 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.navOptions
 import io.pm.finlight.CalendarDayStatus
+import io.pm.finlight.ConsistencyStats
 import io.pm.finlight.SpendingStatus
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -28,19 +31,29 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.min
 
-private val DAY_SIZE = 16.dp
+// --- UPDATED: Increased day size for better visibility on the dashboard ---
+private val DAY_SIZE = 22.dp
 private val DAY_SPACING = 4.dp
 
-// --- NEW: Dashboard Card Composable ---
 @Composable
 fun MonthlyConsistencyCalendarCard(
     data: List<CalendarDayStatus>,
+    stats: ConsistencyStats,
     navController: NavController
 ) {
+    // --- FIX: Correct navigation options to prevent back stack issues ---
+    val navOptions = navOptions {
+        popUpTo(navController.graph.findStartDestination().id) {
+            saveState = true
+        }
+        launchSingleTop = true
+        restoreState = true
+    }
+
     GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { navController.navigate("reports_screen") }
+            .clickable { navController.navigate("reports_screen", navOptions) }
     ) {
         Column(
             modifier = Modifier.padding(24.dp),
@@ -66,7 +79,7 @@ fun MonthlyConsistencyCalendarCard(
                 )
             }
             if (data.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             } else {
@@ -80,7 +93,33 @@ fun MonthlyConsistencyCalendarCard(
                     }
                 )
             }
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                StatItem(stats.noSpendDays, "No Spend")
+                StatItem(stats.goodDays, "Good Days")
+                StatItem(stats.badDays, "Over Budget")
+            }
         }
+    }
+}
+
+@Composable
+private fun StatItem(count: Int, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "$count",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -104,7 +143,6 @@ fun ConsistencyCalendar(
     val today = remember { Calendar.getInstance() }
     val year = today.get(Calendar.YEAR)
 
-    // Group days by month for proper layout
     val months = (0..11).map { monthIndex ->
         MonthData.fromCalendar(Calendar.getInstance().apply { set(year, monthIndex, 1) })
     }
@@ -207,7 +245,7 @@ private fun DayCell(dayData: CalendarDayStatus?) {
     val tooltipState = rememberTooltipState(isPersistent = true)
 
     val color = when (dayData?.status) {
-        SpendingStatus.NO_SPEND -> Color(0xFF39D353) // A distinct, bright green for zero spending
+        SpendingStatus.NO_SPEND -> Color(0xFF39D353)
 
         SpendingStatus.WITHIN_LIMIT -> {
             val fraction = if (dayData.safeToSpend > 0) {
@@ -227,7 +265,7 @@ private fun DayCell(dayData: CalendarDayStatus?) {
             lerp(Color(0xFFF87171), Color(0xFFB91C1C), fraction.coerceIn(0f, 1f))
         }
 
-        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f) // Default for no data
+        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     }
 
 

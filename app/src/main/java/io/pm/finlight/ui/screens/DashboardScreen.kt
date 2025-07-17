@@ -34,10 +34,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import io.pm.finlight.CalendarDayStatus
-import io.pm.finlight.DashboardCardType
-import io.pm.finlight.DashboardViewModel
-import io.pm.finlight.DashboardViewModelFactory
+import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -53,6 +50,8 @@ fun DashboardScreen(
     val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
     val hiddenCards by viewModel.hiddenCards.collectAsState()
     val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
+    // --- NEW: Collect the stats ---
+    val consistencyStats by viewModel.consistencyStats.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
     var overscrollJob by remember { mutableStateOf<Job?>(null) }
@@ -157,7 +156,9 @@ fun DashboardScreen(
                     viewModel = viewModel,
                     isCustomizationMode = isCustomizationMode,
                     onHide = { viewModel.hideCard(cardType) },
-                    monthlyConsistencyData = monthlyConsistencyData
+                    monthlyConsistencyData = monthlyConsistencyData,
+                    // --- NEW: Pass stats down to the card ---
+                    consistencyStats = consistencyStats
                 )
             }
         }
@@ -171,7 +172,9 @@ private fun DashboardCard(
     viewModel: DashboardViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
-    monthlyConsistencyData: List<CalendarDayStatus>
+    monthlyConsistencyData: List<CalendarDayStatus>,
+    // --- NEW: Accept stats as a parameter ---
+    consistencyStats: ConsistencyStats
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
@@ -205,6 +208,8 @@ private fun DashboardCard(
             )
             DashboardCardType.SPENDING_CONSISTENCY -> MonthlyConsistencyCalendarCard(
                 data = monthlyConsistencyData,
+                // --- NEW: Pass stats to the card component ---
+                stats = consistencyStats,
                 navController = navController
             )
         }
@@ -246,7 +251,6 @@ private fun AddCardSheetContent(
             Text("All available cards are already on your dashboard.")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // --- FIX: Use items(list) which is the correct overload ---
                 items(hiddenCards, key = { it.name }) { cardType ->
                     ListItem(
                         headlineContent = { Text(cardType.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) },
