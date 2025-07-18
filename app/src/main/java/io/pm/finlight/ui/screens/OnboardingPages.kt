@@ -1,10 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
-// REASON: MAJOR REFACTOR - The entire onboarding flow has been redesigned to
-// align with the "Project Aurora" vision. All form elements and action buttons
-// are now contained within `GlassPanel` components, and all text colors are
-// theme-aware, ensuring a cohesive, high-contrast, and modern user experience
-// from the moment the app is first launched.
+// REASON: IMPROVEMENT - The text on the WelcomePage has been updated to
+// explicitly state that the app requires no login, phone number, or email. This
+// immediately highlights the app's privacy-first approach to new users.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -81,7 +79,11 @@ fun WelcomePage() {
                     withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
                         append("ONLY ON YOUR DEVICE")
                     }
-                    append(". Let's get you set up.")
+                    append(".\n\nThere is ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("NO LOGIN")
+                    }
+                    append(" needed. We will never ask for your phone number or email. Let's get you set up.")
                 }
             },
             style = MaterialTheme.typography.bodyLarge,
