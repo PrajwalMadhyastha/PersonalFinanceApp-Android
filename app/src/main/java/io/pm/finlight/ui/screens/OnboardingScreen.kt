@@ -1,9 +1,8 @@
 // =================================================================================
-// FILE: app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt
-// REASON: BUG FIX - The PagerState is now passed down to the individual page
-// composables (`UserNamePage`, `BudgetSetupPage`). This allows each page to
-// know when it is the `currentPage` and request focus only when it is active,
-// preventing focus from being stolen by off-screen pages.
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt
+// REASON: FEATURE - The onboarding flow has been expanded to include the new
+// `CurrencySetupPage`. The pager's page count is increased, and the new page is
+// added to the sequence, ensuring users confirm their home currency during setup.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -31,7 +30,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    val pagerState = rememberPagerState { 7 }
+    val pagerState = rememberPagerState { 8 } // --- UPDATED: Increased page count ---
     val scope = rememberCoroutineScope()
 
     val onNextClicked: () -> Unit = {
@@ -62,13 +61,14 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
         ) { page ->
             when (page) {
                 0 -> WelcomePage()
-                // --- FIX: Pass pagerState to pages that need to manage focus ---
                 1 -> UserNamePage(viewModel = viewModel, pagerState = pagerState)
                 2 -> BudgetSetupPage(viewModel = viewModel, pagerState = pagerState)
-                3 -> SmsPermissionPage(onPermissionResult = onNextClicked)
-                4 -> SmsScanningInfoPage()
-                5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
-                6 -> CompletionPage()
+                // --- NEW: Added currency setup page ---
+                3 -> CurrencySetupPage(viewModel = viewModel)
+                4 -> SmsPermissionPage(onPermissionResult = onNextClicked)
+                5 -> SmsScanningInfoPage()
+                6 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
+                7 -> CompletionPage()
             }
         }
     }
@@ -95,8 +95,8 @@ fun OnboardingBottomBar(
             PageIndicator(pageCount = pagerState.pageCount, currentPage = pagerState.currentPage)
 
             val isNextButtonVisible = pagerState.currentPage < pagerState.pageCount - 1 &&
-                    pagerState.currentPage != 3 && // Hide on SMS Permission Page
-                    pagerState.currentPage != 5    // Hide on Notification Permission Page
+                    pagerState.currentPage != 4 && // Hide on SMS Permission Page
+                    pagerState.currentPage != 6    // Hide on Notification Permission Page
 
             val isNextEnabled = if (pagerState.currentPage == 1) {
                 userName.isNotBlank()
