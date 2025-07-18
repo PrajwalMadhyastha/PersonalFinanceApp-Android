@@ -8,6 +8,8 @@
 // compilation errors.
 // FIX - Wrapped the calendar views in a Box with a fixed height to prevent
 // layout shifts when toggling between the yearly and monthly views.
+// UX REFINEMENT - Updated the navigation calls from both the yearly and monthly
+// calendars to prevent the keyboard from automatically showing on the search screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -171,7 +173,7 @@ fun ReportsScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp), // --- FIX: Adjusted height
+                            .height(200.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         when (reportViewType) {
@@ -182,7 +184,7 @@ fun ReportsScreen(
                                     ConsistencyCalendar(
                                         data = yearlyCalendarData,
                                         onDayClick = { date ->
-                                            navController.navigate("search_screen?date=${date.time}")
+                                            navController.navigate("search_screen?date=${date.time}&focusSearch=false")
                                         }
                                     )
                                 }
@@ -197,7 +199,7 @@ fun ReportsScreen(
                                         onPreviousMonth = viewModel::selectPreviousMonth,
                                         onNextMonth = viewModel::selectNextMonth,
                                         onDayClick = { date ->
-                                            navController.navigate("search_screen?date=${date.time}")
+                                            navController.navigate("search_screen?date=${date.time}&focusSearch=false")
                                         }
                                     )
                                 }

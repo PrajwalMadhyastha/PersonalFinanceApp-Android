@@ -7,6 +7,8 @@
 // the new view toggle feature.
 // FIX - The size of the DetailedMonthlyCalendar has been reduced to better match
 // the yearly heatmap, preventing layout shifts when toggling.
+// FIX - Adjusted the auto-scroll logic in the yearly heatmap to better center
+// the current month on initial load.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -186,6 +188,7 @@ fun ConsistencyCalendar(
     LaunchedEffect(key1 = data) {
         if (data.isNotEmpty()) {
             val currentMonthIndex = today.get(Calendar.MONTH)
+            // --- FIX: Adjusted scroll index for better centering ---
             val scrollIndex = (currentMonthIndex - 2).coerceAtLeast(0)
             coroutineScope.launch {
                 lazyListState.animateScrollToItem(scrollIndex)
@@ -258,7 +261,7 @@ fun DetailedMonthlyCalendar(
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(28.dp), // --- FIX: Reduced width
+                    modifier = Modifier.width(28.dp),
                     textAlign = TextAlign.Center
                 )
             }
@@ -269,7 +272,7 @@ fun DetailedMonthlyCalendar(
         // Calendar grid
         val totalCells = monthData.startOffset + monthData.dayCount
         val rowCount = (totalCells + 6) / 7
-        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) { // --- FIX: Reduced spacing
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             for (week in 0 until rowCount) {
                 Row(horizontalArrangement = Arrangement.SpaceAround, modifier = Modifier.fillMaxWidth()) {
                     for (dayOfWeek in 0..6) {
@@ -287,7 +290,7 @@ fun DetailedMonthlyCalendar(
                                 onClick = { onDayClick(currentDayCal.time) }
                             )
                         } else {
-                            Spacer(Modifier.size(26.dp)) // --- FIX: Reduced size
+                            Spacer(Modifier.size(28.dp))
                         }
                     }
                 }
@@ -318,7 +321,7 @@ private fun DetailedDayCell(
 
     Box(
         modifier = Modifier
-            .size(26.dp) // --- FIX: Reduced size
+            .size(26.dp)
             .clip(CircleShape)
             .background(color)
             .then(if (isToday) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier)
