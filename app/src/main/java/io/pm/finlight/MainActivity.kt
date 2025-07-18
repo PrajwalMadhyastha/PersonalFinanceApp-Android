@@ -1,12 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - The route for `search_screen` has been updated to accept an
-// optional `date` argument. This allows other screens, like the new Spending
-// Consistency Calendar, to navigate to the search results pre-filtered for a
-// specific day.
-// UX REFINEMENT - Added a `focusSearch` argument to the `search_screen` route
-// to conditionally control whether the search bar receives initial focus,
-// preventing the keyboard from appearing automatically when not desired.
+// REASON: FEATURE - Added the route for the new "currency_travel_settings"
+// screen to the AppNavHost, making it accessible from the Profile screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -239,7 +234,8 @@ fun MainAppScreen() {
         "automation_settings",
         "notification_settings",
         "data_settings",
-        "add_edit_goal"
+        "add_edit_goal",
+        "currency_travel_settings" // --- NEW: Add new screen to hide main top bar
     )
 
     val currentTitle = if (showBottomBar) {
@@ -840,6 +836,16 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) {
             DataSettingsScreen(navController, settingsViewModel)
+        }
+        // --- NEW: Add route for the new screen ---
+        composable(
+            "currency_travel_settings",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
+            CurrencyTravelScreen(navController)
         }
     }
 }
