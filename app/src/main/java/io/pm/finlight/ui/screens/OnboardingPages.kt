@@ -83,7 +83,7 @@ fun WelcomePage() {
                     withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
                         append("NO LOGIN")
                     }
-                    append(" needed. We will never ask for your phone number or email. Let's get you set up.")
+                    append(" needed. We will never ask for your phone number or email.\n\nTo keep your data safe, automatic backups to your personal Google Drive are enabled by default. This backup is encrypted and you can disable this at any time in the settings. Let's get you set up.")
                 }
             },
             style = MaterialTheme.typography.bodyLarge,
