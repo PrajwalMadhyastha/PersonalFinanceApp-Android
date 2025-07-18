@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
+// REASON: FEATURE - The screen now includes a conditional
+// `CurrencyConversionInfoCard`. This card appears only for transactions made in
+// a foreign currency, displaying the original amount, the conversion rate used,
+// and the final converted amount, making the process transparent to the user.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.net.Uri
@@ -66,6 +73,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLEncoder
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import io.pm.finlight.R
@@ -260,7 +268,6 @@ fun TransactionDetailScreen(
                         contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
                         item {
-                            // --- MODIFIED: Wrap header in a padded Box for a card-like appearance ---
                             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 TransactionSpotlightHeader(
                                     details = details,
@@ -270,6 +277,15 @@ fun TransactionDetailScreen(
                                     onCategoryClick = { activeSheetContent = SheetContent.Category },
                                     onDateTimeClick = { showDatePicker = true }
                                 )
+                            }
+                        }
+
+                        // --- NEW: Conditionally display currency conversion info ---
+                        if (details.transaction.originalAmount != null) {
+                            item {
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    CurrencyConversionInfoCard(transaction = details.transaction)
+                                }
                             }
                         }
 
@@ -534,8 +550,64 @@ fun TransactionDetailScreen(
 }
 
 @Composable
+private fun CurrencyConversionInfoCard(transaction: Transaction) {
+    val homeCurrencySymbol = "₹" // Assuming home is INR for now
+    val foreignCurrencySymbol = CurrencyHelper.getCurrencySymbol(transaction.currencyCode)
+    val numberFormat = remember { NumberFormat.getNumberInstance(Locale("en", "IN")).apply { maximumFractionDigits = 2 } }
+
+    GlassPanel {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "Currency Conversion",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Original Amount:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "${foreignCurrencySymbol}${numberFormat.format(transaction.originalAmount)}",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Conversion Rate:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "1 ${transaction.currencyCode} = $homeCurrencySymbol${numberFormat.format(transaction.conversionRate)}",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Converted Amount:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "$homeCurrencySymbol${numberFormat.format(transaction.amount)}",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DynamicCategoryBackground(category: Category) {
-    // --- UPDATED: Show '?' for Uncategorized, otherwise the first letter ---
     val letter = if (category.name == "Uncategorized") "?" else category.name.firstOrNull()?.uppercase() ?: "?"
     val color = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
 
@@ -580,7 +652,6 @@ private fun TransactionSpotlightHeader(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            // --- UPDATED: Conditional background logic ---
             val isPredefined = CategoryIconHelper.getCategoryBackground(category.iconKey) != R.drawable.bg_cat_general
             if (isPredefined) {
                 Image(
