@@ -1,10 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: FEATURE - Added a new "Savings Goals" item to the "General" settings
-// section, providing a navigation entry point to the new GoalScreen.
-// UPDATE: Reorganized the screen to be more minimalistic. The "General" section
-// is now displayed directly, while other sections are moved to separate screens
-// accessible via navigation items.
+// REASON: FEATURE - Added a new "Currency & Travel" item to the "Preferences"
+// section, providing a navigation entry point to the new screen for managing
+// the multi-currency feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -143,6 +141,14 @@ fun ProfileScreen(
                     subtitle = "Manage SMS parsing and rules",
                     icon = Icons.Default.AutoAwesome,
                     onClick = { navController.navigate("automation_settings") }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                // --- NEW: Add navigation item for Currency & Travel ---
+                SettingsActionItem(
+                    text = "Currency & Travel",
+                    subtitle = "Manage home currency and travel mode",
+                    icon = Icons.Default.Flight,
+                    onClick = { navController.navigate("currency_travel_settings") }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                 SettingsActionItem(

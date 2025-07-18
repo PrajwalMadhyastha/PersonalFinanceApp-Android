@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added new entries for "add_edit_goal" and
-// "add_edit_goal/{goalId}" to the screenTitles map. This ensures the new
-// dedicated screen for managing savings goals will have the correct title
-// ("New Savings Goal" or "Edit Savings Goal") in the app's top bar.
+// REASON: FEATURE - Added a new entry for "currency_travel_settings" to the
+// screenTitles map. This provides the title for the new screen where users will
+// manage the multi-currency "Travel Mode" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -55,6 +54,8 @@ val screenTitles = mapOf(
     "automation_settings" to "Automation & AI",
     "notification_settings" to "Notifications",
     "data_settings" to "Security & Data",
+    // --- NEW: Title for the new currency screen ---
+    "currency_travel_settings" to "Currency & Travel",
     // --- NEW: Titles for the dedicated goal screen ---
     "add_edit_goal" to "New Savings Goal",
     "add_edit_goal/{goalId}" to "Edit Savings Goal"
