@@ -1,12 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: FEATURE - Added a segmented button to allow toggling between "Expense"
-// and "Income" transaction types, completing the core functionality of the
-// Transaction Composer. The control is styled to match the "Project Aurora"
-// glassmorphism aesthetic.
-// BUG FIX - Replaced direct use of `GlassPanelFill` with the `GlassPanel`
-// composable to ensure the component is theme-aware and to resolve the
-// "Unresolved reference" build error.
+// REASON: FEATURE - The screen now observes the TravelModeSettings. If travel
+// mode is active, it updates the currency symbol in the UI and displays a
+// real-time conversion helper text. The save action is updated to pass the
+// foreign currency amount to the ViewModel for conversion.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -67,6 +64,7 @@ import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -108,6 +106,7 @@ fun AddTransactionScreen(
     val selectedTags by viewModel.selectedTags.collectAsState()
     val defaultAccount by viewModel.defaultAccount.collectAsState()
     val validationError by viewModel.validationError.collectAsState()
+    val travelModeSettings by viewModel.travelModeSettings.collectAsState()
 
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
@@ -184,6 +183,15 @@ fun AddTransactionScreen(
         label = "CategoryColorAnimation"
     )
 
+    // --- NEW: Determine if travel mode is active for the selected date ---
+    val isTravelModeActive = remember(travelModeSettings, selectedDateTime) {
+        travelModeSettings?.let {
+            it.isEnabled &&
+                    selectedDateTime.timeInMillis >= it.startDate &&
+                    selectedDateTime.timeInMillis <= it.endDate
+        } ?: false
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         SpotlightBackground(color = animatedCategoryColor)
 
@@ -212,7 +220,9 @@ fun AddTransactionScreen(
                 AmountComposer(
                     amount = amount,
                     description = description,
-                    onDescriptionClick = { activeSheet = ComposerSheet.Description }
+                    onDescriptionClick = { activeSheet = ComposerSheet.Description },
+                    isTravelMode = isTravelModeActive,
+                    travelModeSettings = travelModeSettings
                 )
                 Spacer(Modifier.height(24.dp))
 
@@ -414,8 +424,16 @@ private fun SpotlightBackground(color: Color) {
 private fun AmountComposer(
     amount: String,
     description: String,
-    onDescriptionClick: () -> Unit
+    onDescriptionClick: () -> Unit,
+    isTravelMode: Boolean,
+    travelModeSettings: TravelModeSettings?
 ) {
+    val currencySymbol = if (isTravelMode) {
+        CurrencyHelper.getCurrencySymbol(travelModeSettings?.currencyCode)
+    } else {
+        "₹" // Default to home currency symbol
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.clickable(onClick = onDescriptionClick)
@@ -430,7 +448,7 @@ private fun AmountComposer(
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "₹",
+                text = currencySymbol,
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.Top)
@@ -441,6 +459,17 @@ private fun AmountComposer(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1
+            )
+        }
+        // --- NEW: Conversion helper text ---
+        if (isTravelMode && travelModeSettings != null) {
+            val enteredAmount = amount.toDoubleOrNull() ?: 0.0
+            val convertedAmount = enteredAmount * travelModeSettings.conversionRate
+            val homeSymbol = "₹" // Assuming home is INR for now
+            Text(
+                text = "≈ $homeSymbol${NumberFormat.getInstance().format(convertedAmount)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

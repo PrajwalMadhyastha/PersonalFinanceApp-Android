@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - The logic for the `monthlySummaries` flow has been updated.
-// Instead of showing a rolling 12-month view, it now correctly displays all
-// 12 months of the current calendar year, restoring the original, preferred
-// behavior for the month scroller component.
+// REASON: FEATURE - The ViewModel now observes TravelModeSettings. The
+// `addTransaction` function is updated to accept an optional originalAmount and
+// performs the currency conversion before saving if Travel Mode is active.
 // =================================================================================
 package io.pm.finlight
 
@@ -103,6 +102,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _retroUpdateSheetState = MutableStateFlow<RetroUpdateSheetState?>(null)
     val retroUpdateSheetState = _retroUpdateSheetState.asStateFlow()
 
+    // --- NEW: Expose Travel Mode settings ---
+    val travelModeSettings: StateFlow<TravelModeSettings?>
+
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
@@ -112,6 +114,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
+
+        // --- NEW: Initialize travel mode settings flow ---
+        travelModeSettings = settingsRepository.getTravelModeSettings()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = null
+            )
 
         merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
             .map { it.mapKeys { (key, _) -> key.lowercase(Locale.getDefault()) } }
@@ -159,7 +169,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             initialValue = emptyList()
         )
 
-        // --- UPDATED: Logic to get all months of the current year ---
         val currentYear = Calendar.getInstance().get(Calendar.YEAR)
         val startOfYear = Calendar.getInstance().apply {
             set(Calendar.YEAR, currentYear)
@@ -171,7 +180,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             .map { trends ->
                 val dateFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
                 val monthMap = trends.filter {
-                    // Ensure we only process trends for the current year
                     (dateFormat.parse(it.monthYear) ?: Date()).let { date ->
                         val cal = Calendar.getInstance().apply { time = date }
                         cal.get(Calendar.YEAR) == currentYear
@@ -225,6 +233,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // --- UPDATED: Function now handles currency conversion ---
     suspend fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -241,8 +250,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             _validationError.value = "Description cannot be empty."
             return false
         }
-        val amount = amountStr.toDoubleOrNull()
-        if (amount == null || amount <= 0.0) {
+        val enteredAmount = amountStr.toDoubleOrNull()
+        if (enteredAmount == null || enteredAmount <= 0.0) {
             _validationError.value = "Please enter a valid, positive amount."
             return false
         }
@@ -251,30 +260,53 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             return false
         }
 
+        val travelSettings = travelModeSettings.value
+        val isTravelMode = travelSettings?.isEnabled == true &&
+                date >= travelSettings.startDate &&
+                date <= travelSettings.endDate
+
+        val transactionToSave = if (isTravelMode) {
+            Transaction(
+                description = description,
+                originalDescription = description,
+                categoryId = categoryId,
+                amount = enteredAmount * travelSettings!!.conversionRate, // Converted amount
+                date = date,
+                accountId = accountId,
+                notes = notes,
+                transactionType = transactionType,
+                isExcluded = false,
+                sourceSmsId = null,
+                sourceSmsHash = null,
+                source = "Added Manually",
+                originalAmount = enteredAmount, // Original foreign amount
+                currencyCode = travelSettings.currencyCode,
+                conversionRate = travelSettings.conversionRate.toDouble()
+            )
+        } else {
+            Transaction(
+                description = description,
+                originalDescription = description,
+                categoryId = categoryId,
+                amount = enteredAmount, // Home currency amount
+                date = date,
+                accountId = accountId,
+                notes = notes,
+                transactionType = transactionType,
+                isExcluded = false,
+                sourceSmsId = null,
+                sourceSmsHash = null,
+                source = "Added Manually"
+            )
+        }
 
         return try {
             withContext(Dispatchers.IO) {
                 val savedImagePaths = imageUris.mapNotNull { uri ->
                     saveImageToInternalStorage(uri)
                 }
-                val newTransaction =
-                    Transaction(
-                        description = description,
-                        originalDescription = description,
-                        categoryId = categoryId,
-                        amount = amount,
-                        date = date,
-                        accountId = accountId,
-                        notes = notes,
-                        transactionType = transactionType,
-                        isExcluded = false,
-                        sourceSmsId = null,
-                        sourceSmsHash = null,
-                        source = "Added Manually"
-                    )
-
                 transactionRepository.insertTransactionWithTagsAndImages(
-                    newTransaction,
+                    transactionToSave,
                     _selectedTags.value,
                     savedImagePaths
                 )
