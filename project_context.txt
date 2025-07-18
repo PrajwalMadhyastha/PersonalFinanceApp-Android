@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Thu Jul 17 21:36:56 IST 2025
+Generated on: Fri Jul 18 11:42:59 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -11503,6 +11503,12 @@ private fun AccountDetailTransactionItem(transactionDetails: TransactionDetails)
 // `Dashboard` route, which is the start destination of the bottom navigation
 // graph. This ensures it behaves identically to the bottom navigation bar,
 // fixing the back stack issue and preventing the "overlapping" screen problem.
+// FEATURE - The `SPENDING_CONSISTENCY` card has been replaced with a new card
+// that displays the scrollable yearly heatmap directly on the dashboard.
+// FIX - Corrected the LazyColumn implementation in AddCardSheetContent to use
+// `itemsIndexed`, resolving several compilation errors.
+// UX REFINEMENT - Updated the navigation call from the consistency calendar to
+// prevent the keyboard from automatically showing on the search screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -11521,7 +11527,6 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -11556,8 +11561,7 @@ fun DashboardScreen(
     val isCustomizationMode by viewModel.isCustomizationMode.collectAsState()
     val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
     val hiddenCards by viewModel.hiddenCards.collectAsState()
-    val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
-    val consistencyStats by viewModel.consistencyStats.collectAsState()
+    val yearlyConsistencyData by viewModel.yearlyConsistencyData.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
     var overscrollJob by remember { mutableStateOf<Job?>(null) }
@@ -11662,8 +11666,7 @@ fun DashboardScreen(
                     viewModel = viewModel,
                     isCustomizationMode = isCustomizationMode,
                     onHide = { viewModel.hideCard(cardType) },
-                    monthlyConsistencyData = monthlyConsistencyData,
-                    consistencyStats = consistencyStats
+                    yearlyConsistencyData = yearlyConsistencyData
                 )
             }
         }
@@ -11677,8 +11680,7 @@ private fun DashboardCard(
     viewModel: DashboardViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
-    monthlyConsistencyData: List<CalendarDayStatus>,
-    consistencyStats: ConsistencyStats
+    yearlyConsistencyData: List<CalendarDayStatus>
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
@@ -11710,22 +11712,34 @@ private fun DashboardCard(
                 budgetStatus = budgetStatus,
                 navController = navController,
             )
-            DashboardCardType.SPENDING_CONSISTENCY -> MonthlyConsistencyCalendarCard(
-                data = monthlyConsistencyData,
-                stats = consistencyStats,
-                onReportClick = {
-                    navController.navigate(BottomNavItem.Reports.route) {
-                        popUpTo(BottomNavItem.Dashboard.route) {
-                            saveState = true
+            DashboardCardType.SPENDING_CONSISTENCY -> {
+                GlassPanel {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            "Yearly Spending Consistency",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (yearlyConsistencyData.isEmpty()) {
+                            CircularProgressIndicator()
+                        } else {
+                            ConsistencyCalendar(
+                                data = yearlyConsistencyData,
+                                onDayClick = { date ->
+                                    // --- UPDATED: Pass focusSearch=false to prevent keyboard ---
+                                    navController.navigate("search_screen?date=${date.time}&focusSearch=false")
+                                }
+                            )
                         }
-                        launchSingleTop = true
-                        restoreState = true
                     }
-                },
-                onDayClick = { date ->
-                    navController.navigate("search_screen?date=${date.time}")
                 }
-            )
+            }
         }
         if (isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET) {
             Row(
@@ -11765,7 +11779,7 @@ private fun AddCardSheetContent(
             Text("All available cards are already on your dashboard.")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(hiddenCards, key = { it.name }) { cardType ->
+                itemsIndexed(hiddenCards, key = { _, cardType -> cardType.name }) { _, cardType ->
                     ListItem(
                         headlineContent = { Text(cardType.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) },
                         leadingContent = { Icon(Icons.Default.Add, contentDescription = null) },
@@ -12173,6 +12187,13 @@ private fun RecurringTransactionItem(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
+// REASON: UX REFINEMENT - The screen now accepts a `focusSearch` parameter.
+// The initial focus request on the search text field is now conditional based
+// on this parameter, preventing the keyboard from appearing automatically when
+// navigating from a non-search-focused context (like the calendar).
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -12211,7 +12232,8 @@ import java.util.*
 @Composable
 fun SearchScreen(
     navController: NavController,
-    viewModel: SearchViewModel // Accept the ViewModel as a parameter
+    viewModel: SearchViewModel,
+    focusSearch: Boolean // --- NEW: Parameter to control initial focus ---
 ) {
     val searchUiState by viewModel.uiState.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
@@ -12223,7 +12245,6 @@ fun SearchScreen(
     val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
-    // --- NEW: Automatically expand filters if a category is pre-selected ---
     LaunchedEffect(searchUiState.selectedCategory) {
         if (searchUiState.selectedCategory != null) {
             showFilters = true
@@ -12371,8 +12392,11 @@ fun SearchScreen(
         }
     }
 
+    // --- UPDATED: Conditionally request focus ---
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        if (focusSearch) {
+            focusRequester.requestFocus()
+        }
     }
 
     if (showStartDatePicker) {
@@ -13973,9 +13997,16 @@ private fun SettingsSection(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FEATURE - The yearly "Spending Consistency" card now includes a summary
-// statistics section below the heatmap. This provides a complete overview of
-// spending habits for the year, mirroring the detail available on the dashboard.
+// REASON: FEATURE - The "Spending Consistency" card has been updated with a
+// SegmentedButton to toggle between "Yearly" and "Monthly" views. It now
+// conditionally displays either the yearly heatmap or the new detailed monthly
+// calendar, using the new state and data flows from the ViewModel.
+// FIX - Corrected the usage of the experimental SegmentedButton API to resolve
+// compilation errors.
+// FIX - Wrapped the calendar views in a Box with a fixed height to prevent
+// layout shifts when toggling between the yearly and monthly views.
+// UX REFINEMENT - Updated the navigation calls from both the yearly and monthly
+// calendars to prevent the keyboard from automatically showing on the search screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -13999,11 +14030,15 @@ import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -14026,15 +14061,18 @@ import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.ReportInsights
 import io.pm.finlight.ReportPeriod
+import io.pm.finlight.ReportViewType
 import io.pm.finlight.ReportsViewModel
 import io.pm.finlight.TimePeriod
 import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.ConsistencyCalendar
+import io.pm.finlight.ui.components.DetailedMonthlyCalendar
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
 import java.util.Calendar
 import kotlin.math.abs
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportsScreen(
     navController: NavController,
@@ -14044,8 +14082,12 @@ fun ReportsScreen(
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
     val allCategories by viewModel.allCategories.collectAsState()
     val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
-    val calendarData by viewModel.consistencyCalendarData.collectAsState()
-    val consistencyStats by viewModel.consistencyStats.collectAsState()
+
+    val reportViewType by viewModel.reportViewType.collectAsState()
+    val yearlyCalendarData by viewModel.consistencyCalendarData.collectAsState()
+    val detailedMonthData by viewModel.detailedMonthData.collectAsState()
+    val selectedMonth by viewModel.selectedMonth.collectAsState()
+    val consistencyStats by viewModel.displayedConsistencyStats.collectAsState()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -14105,17 +14147,63 @@ fun ReportsScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(16.dp))
-                    if (calendarData.isEmpty()) {
-                        CircularProgressIndicator()
-                    } else {
-                        ConsistencyCalendar(
-                            data = calendarData,
-                            onDayClick = { date ->
-                                navController.navigate("search_screen?date=${date.time}")
-                            }
-                        )
+
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = reportViewType == ReportViewType.MONTHLY,
+                            onClick = { viewModel.setReportView(ReportViewType.MONTHLY) },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) {
+                            Text("Monthly")
+                        }
+                        SegmentedButton(
+                            selected = reportViewType == ReportViewType.YEARLY,
+                            onClick = { viewModel.setReportView(ReportViewType.YEARLY) },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) {
+                            Text("Yearly")
+                        }
                     }
-                    // --- NEW: Add stats section below the calendar ---
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when (reportViewType) {
+                            ReportViewType.YEARLY -> {
+                                if (yearlyCalendarData.isEmpty()) {
+                                    CircularProgressIndicator()
+                                } else {
+                                    ConsistencyCalendar(
+                                        data = yearlyCalendarData,
+                                        onDayClick = { date ->
+                                            navController.navigate("search_screen?date=${date.time}&focusSearch=false")
+                                        }
+                                    )
+                                }
+                            }
+                            ReportViewType.MONTHLY -> {
+                                if (detailedMonthData.isEmpty()) {
+                                    CircularProgressIndicator()
+                                } else {
+                                    DetailedMonthlyCalendar(
+                                        data = detailedMonthData,
+                                        selectedMonth = selectedMonth,
+                                        onPreviousMonth = viewModel::selectPreviousMonth,
+                                        onNextMonth = viewModel::selectNextMonth,
+                                        onDayClick = { date ->
+                                            navController.navigate("search_screen?date=${date.time}&focusSearch=false")
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                     Spacer(Modifier.height(16.dp))
@@ -15564,39 +15652,61 @@ fun TransactionList(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
-// REASON: REFACTOR - The `MonthlyConsistencyCalendarCard` layout has been refined
-// by wrapping the heatmap in a Row and adding a Spacer. This pushes the heatmap
-// slightly away from the left edge, creating a more centered and balanced look
-// within the card as requested by the user.
+// REASON: REFACTOR - This file has been updated to include a new composable,
+// `DetailedMonthlyCalendar`, which displays a traditional, interactive calendar
+// for a single month. The existing `ConsistencyCalendar` (yearly heatmap)
+// remains, and both are now available for use in the Reports screen to support
+// the new view toggle feature.
+// FIX - The size of the DetailedMonthlyCalendar has been reduced to better match
+// the yearly heatmap, preventing layout shifts when toggling.
+// FIX - Reverted the auto-scroll logic in the yearly heatmap to its previous
+// state to ensure the current month is visible but not perfectly centered.
+// PERFORMANCE - The yearly heatmap (`MonthColumn` and `DayCell`) has been
+// completely rewritten to draw directly onto a Canvas. This drastically reduces
+// the number of composables, fixing the laggy scrolling issue on the dashboard
+// and reports screens.
+// FIX - Resolved a compilation error by reading the MaterialTheme color outside
+// of the non-composable Canvas draw scope.
 // =================================================================================
 package io.pm.finlight.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.CalendarDayStatus
 import io.pm.finlight.ConsistencyStats
 import io.pm.finlight.SpendingStatus
 import kotlinx.coroutines.launch
-import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.floor
 import kotlin.math.min
 
 private val DAY_SIZE = 16.dp
@@ -15657,7 +15767,6 @@ fun MonthlyConsistencyCalendarCard(
                             cal.time = it.date
                             cal.get(Calendar.MONTH) == currentMonth
                         }
-                        // --- UPDATED: Wrap in a Row with a Spacer to add an offset ---
                         Row {
                             Spacer(Modifier.width(16.dp))
                             MonthColumn(
@@ -15716,7 +15825,6 @@ private fun StatItem(count: Int, label: String) {
 }
 
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConsistencyCalendar(
     data: List<CalendarDayStatus>,
@@ -15769,6 +15877,131 @@ fun ConsistencyCalendar(
     }
 }
 
+@Composable
+fun DetailedMonthlyCalendar(
+    modifier: Modifier = Modifier,
+    data: List<CalendarDayStatus>,
+    selectedMonth: Calendar,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onDayClick: (Date) -> Unit
+) {
+    val monthData = MonthData.fromCalendar(selectedMonth)
+    val dataMap = data.associateByDate()
+    val monthYearFormat = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
+    val dayOfWeekFormat = remember { SimpleDateFormat("EE", Locale.getDefault()) }
+    val weekDays = (Calendar.SUNDAY..Calendar.SATURDAY).map {
+        dayOfWeekFormat.format(Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, it) }.time)
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // Header with month name and navigation
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(onClick = onPreviousMonth) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous Month")
+            }
+            Text(
+                text = monthYearFormat.format(selectedMonth.time),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            IconButton(onClick = onNextMonth) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next Month")
+            }
+        }
+
+        // Day of week headers
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            weekDays.forEach { day ->
+                Text(
+                    text = day.take(1),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(28.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        // Calendar grid
+        val totalCells = monthData.startOffset + monthData.dayCount
+        val rowCount = (totalCells + 6) / 7
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            for (week in 0 until rowCount) {
+                Row(horizontalArrangement = Arrangement.SpaceAround, modifier = Modifier.fillMaxWidth()) {
+                    for (dayOfWeek in 0..6) {
+                        val cellIndex = week * 7 + dayOfWeek
+                        if (cellIndex >= monthData.startOffset && cellIndex < totalCells) {
+                            val dayOfMonth = cellIndex - monthData.startOffset + 1
+                            val currentDayCal = (selectedMonth.clone() as Calendar).apply {
+                                set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                            }
+                            val dayData = dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to currentDayCal.get(Calendar.YEAR)]
+                            DetailedDayCell(
+                                day = dayOfMonth,
+                                data = dayData,
+                                isToday = isSameDay(currentDayCal, Calendar.getInstance()),
+                                onClick = { onDayClick(currentDayCal.time) }
+                            )
+                        } else {
+                            Spacer(Modifier.size(28.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailedDayCell(
+    day: Int,
+    data: CalendarDayStatus?,
+    isToday: Boolean,
+    onClick: () -> Unit
+) {
+    val color = when (data?.status) {
+        SpendingStatus.NO_SPEND -> Color(0xFF39D353)
+        SpendingStatus.WITHIN_LIMIT -> lerp(Color(0xFFACD5F2), Color(0xFF006DAB), (data.amountSpent / data.safeToSpend).toFloat().coerceIn(0f, 1f))
+        SpendingStatus.OVER_LIMIT -> lerp(Color(0xFFF87171), Color(0xFFB91C1C), (min((data.amountSpent / data.safeToSpend).toFloat(), 2f) - 1f).coerceIn(0f, 1f))
+        else -> Color.Transparent
+    }
+
+    val textColor = if (data?.status == SpendingStatus.NO_DATA) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
+    Box(
+        modifier = Modifier
+            .size(26.dp)
+            .clip(CircleShape)
+            .background(color)
+            .then(if (isToday) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier)
+            .clickable(enabled = data?.status != SpendingStatus.NO_DATA, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = day.toString(),
+            color = textColor,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
+        )
+    }
+}
+
+
 private data class MonthData(
     val name: String,
     val dayCount: Int,
@@ -15786,6 +16019,7 @@ private data class MonthData(
     }
 }
 
+@OptIn(ExperimentalTextApi::class)
 @Composable
 private fun MonthColumn(
     monthData: MonthData,
@@ -15794,103 +16028,107 @@ private fun MonthColumn(
     dataMap: Map<Pair<Int, Int>, CalendarDayStatus>,
     onDayClick: (Date) -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = monthData.name,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
+    val textMeasurer = rememberTextMeasurer()
+    val monthNameStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val textLayoutResult = remember(monthData.name) {
+        textMeasurer.measure(monthData.name, monthNameStyle)
+    }
 
-        val totalCells = monthData.startOffset + monthData.dayCount
-        val weekCount = (totalCells + 6) / 7
+    val daySizePx = with(LocalDensity.current) { DAY_SIZE.toPx() }
+    val daySpacingPx = with(LocalDensity.current) { DAY_SPACING.toPx() }
+    val additionalSpacingPx = with(LocalDensity.current) { 4.dp.toPx() }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(DAY_SPACING)) {
-            for (week in 0 until weekCount) {
-                Column(verticalArrangement = Arrangement.spacedBy(DAY_SPACING)) {
-                    for (day in 0..6) {
-                        val cellIndex = week * 7 + day
-                        if (cellIndex >= monthData.startOffset && cellIndex < totalCells) {
-                            val dayOfMonth = cellIndex - monthData.startOffset + 1
-                            val currentDayCal = Calendar.getInstance().apply {
+    val totalCellSize = daySizePx + daySpacingPx
+
+    val totalCells = monthData.startOffset + monthData.dayCount
+    val weekCount = (totalCells + 6) / 7
+
+    val canvasWidth = weekCount * totalCellSize - daySpacingPx
+    val canvasHeight = 7 * totalCellSize - daySpacingPx + textLayoutResult.size.height + additionalSpacingPx
+
+    val canvasWidthDp = with(LocalDensity.current) { canvasWidth.toDp() }
+    val canvasHeightDp = with(LocalDensity.current) { canvasHeight.toDp() }
+
+    // --- FIX: Read color from theme outside the Canvas scope ---
+    val noDataColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+
+    Canvas(
+        modifier = Modifier
+            .width(canvasWidthDp)
+            .height(canvasHeightDp)
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val week = floor(offset.x / totalCellSize).toInt()
+                    val dayOfWeek = floor((offset.y - (textLayoutResult.size.height + additionalSpacingPx)) / totalCellSize).toInt()
+
+                    val cellIndex = week * 7 + dayOfWeek
+                    if (cellIndex >= monthData.startOffset && cellIndex < totalCells) {
+                        val dayOfMonth = cellIndex - monthData.startOffset + 1
+                        val currentDayCal = Calendar
+                            .getInstance()
+                            .apply {
                                 set(year, monthData.monthIndex, dayOfMonth)
                             }
-
-                            if (!currentDayCal.after(today)) {
-                                val dayData = dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to year]
-                                DayCell(dayData, onClick = { onDayClick(currentDayCal.time) })
-                            } else {
-                                DayCell(null, onClick = {}) // Future day
-                            }
-                        } else {
-                            // Empty cell for padding
-                            Spacer(modifier = Modifier.size(DAY_SIZE))
+                        if (!currentDayCal.after(today)) {
+                            onDayClick(currentDayCal.time)
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DayCell(dayData: CalendarDayStatus?, onClick: () -> Unit) {
-    val tooltipState = rememberTooltipState(isPersistent = true)
-
-    val color = when (dayData?.status) {
-        SpendingStatus.NO_SPEND -> Color(0xFF39D353)
-        SpendingStatus.WITHIN_LIMIT -> {
-            val fraction = if (dayData.safeToSpend > 0) {
-                (dayData.amountSpent / dayData.safeToSpend).toFloat()
-            } else {
-                0f
-            }
-            lerp(Color(0xFFACD5F2), Color(0xFF006DAB), fraction.coerceIn(0f, 1f))
-        }
-        SpendingStatus.OVER_LIMIT -> {
-            val fraction = if (dayData.safeToSpend > 0) {
-                min((dayData.amountSpent / dayData.safeToSpend).toFloat(), 2f) - 1f
-            } else {
-                1f
-            }
-            lerp(Color(0xFFF87171), Color(0xFFB91C1C), fraction.coerceIn(0f, 1f))
-        }
-        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    }
-
-    val isClickable = dayData?.status != SpendingStatus.NO_DATA
-
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = {
-            if (dayData != null) {
-                val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
-                val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
-                PlainTooltip {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        Text(
-                            text = dateFormat.format(dayData.date),
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(text = "Spent: ${currencyFormat.format(dayData.amountSpent)}")
-                        if (dayData.safeToSpend > 0) {
-                            Text(text = "Budget: ${currencyFormat.format(dayData.safeToSpend)}")
-                        }
-                    }
-                }
-            }
-        },
-        state = tooltipState
     ) {
-        Box(
-            modifier = Modifier
-                .size(DAY_SIZE)
-                .clip(RoundedCornerShape(2.dp))
-                .background(color)
-                .border(0.5.dp, Color.Black.copy(alpha = 0.1f), RoundedCornerShape(2.dp))
-                .clickable(enabled = isClickable, onClick = onClick)
+        // Draw month name
+        drawText(
+            textLayoutResult = textLayoutResult,
+            topLeft = Offset(x = (size.width - textLayoutResult.size.width) / 2, y = 0f)
         )
+
+        val yOffset = textLayoutResult.size.height + additionalSpacingPx
+
+        for (week in 0 until weekCount) {
+            for (day in 0..6) {
+                val cellIndex = week * 7 + day
+                if (cellIndex >= monthData.startOffset && cellIndex < totalCells) {
+                    val dayOfMonth = cellIndex - monthData.startOffset + 1
+                    val currentDayCal = Calendar.getInstance().apply {
+                        set(year, monthData.monthIndex, dayOfMonth)
+                    }
+
+                    val dayData = if (!currentDayCal.after(today)) {
+                        dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to year]
+                    } else {
+                        null
+                    }
+
+                    val color = when (dayData?.status) {
+                        SpendingStatus.NO_SPEND -> Color(0xFF39D353)
+                        SpendingStatus.WITHIN_LIMIT -> {
+                            val fraction = if (dayData.safeToSpend > 0) {
+                                (dayData.amountSpent / dayData.safeToSpend).toFloat()
+                            } else {
+                                0f
+                            }
+                            lerp(Color(0xFFACD5F2), Color(0xFF006DAB), fraction.coerceIn(0f, 1f))
+                        }
+                        SpendingStatus.OVER_LIMIT -> {
+                            val fraction = if (dayData.safeToSpend > 0) {
+                                min((dayData.amountSpent / dayData.safeToSpend).toFloat(), 2f) - 1f
+                            } else {
+                                1f
+                            }
+                            lerp(Color(0xFFF87171), Color(0xFFB91C1C), fraction.coerceIn(0f, 1f))
+                        }
+                        else -> noDataColor // --- FIX: Use the variable here ---
+                    }
+
+                    drawRoundRect(
+                        color = color,
+                        topLeft = Offset(x = week * totalCellSize, y = day * totalCellSize + yOffset),
+                        size = Size(daySizePx, daySizePx),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx())
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -15900,6 +16138,11 @@ private fun List<CalendarDayStatus>.associateByDate(): Map<Pair<Int, Int>, Calen
         cal.time = it.date
         cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
     }
+}
+
+private fun isSameDay(cal1: Calendar, cal2: Calendar): Boolean {
+    return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+            cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
 }
 -e 
 
@@ -17163,6 +17406,9 @@ val Typography = Typography(
 // optional `date` argument. This allows other screens, like the new Spending
 // Consistency Calendar, to navigate to the search results pre-filtered for a
 // specific day.
+// UX REFINEMENT - Added a `focusSearch` argument to the `search_screen` route
+// to conditionally control whether the search bar receives initial focus,
+// preventing the keyboard from appearing automatically when not desired.
 // =================================================================================
 package io.pm.finlight
 
@@ -17659,11 +17905,12 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            // --- UPDATED: Add optional 'date' argument ---
-            route = "search_screen?categoryId={categoryId}&date={date}",
+            // --- UPDATED: Add focusSearch argument ---
+            route = "search_screen?categoryId={categoryId}&date={date}&focusSearch={focusSearch}",
             arguments = listOf(
                 navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 },
-                navArgument("date") { type = NavType.LongType; defaultValue = -1L }
+                navArgument("date") { type = NavType.LongType; defaultValue = -1L },
+                navArgument("focusSearch") { type = NavType.BoolType; defaultValue = true }
             ),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
@@ -17671,15 +17918,18 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
             val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
-            // --- UPDATED: Get date argument ---
             val date = backStackEntry.arguments?.getLong("date") ?: -1L
+            // --- UPDATED: Get the new argument ---
+            val focusSearch = backStackEntry.arguments?.getBoolean("focusSearch") ?: true
+
             val factory = SearchViewModelFactory(
                 activity.application,
                 if (categoryId != -1) categoryId else null,
                 if (date != -1L) date else null
             )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
-            SearchScreen(navController, searchViewModel)
+            // --- UPDATED: Pass the argument to the screen ---
+            SearchScreen(navController, searchViewModel, focusSearch)
         }
         composable(
             route = "review_sms_screen",
@@ -20225,9 +20475,13 @@ class SearchViewModelFactory(
 ================== FILE: ./app/src/main/java/ReportsViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
-// REASON: FEATURE - The ViewModel now calculates and exposes `consistencyStats`
-// for the entire year's worth of calendar data. This provides the necessary
-// summary metrics (Good Days, Bad Days, etc.) for display on the main reports screen.
+// REASON: FEATURE - The ViewModel is updated to support the new Yearly/Monthly
+// view toggle on the Reports screen. It now manages the state for the selected
+// view, the currently displayed month, and fetches the corresponding data for
+// the detailed monthly calendar view.
+// FIX - The logic for consistency stats is now combined into a single flow
+// that updates based on the selected view (Yearly/Monthly), ensuring the
+// correct stats are always displayed.
 // =================================================================================
 package io.pm.finlight
 
@@ -20251,6 +20505,14 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
+/**
+ * Enum to manage the state of the view toggle on the reports screen.
+ */
+enum class ReportViewType {
+    YEARLY,
+    MONTHLY
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
     private val transactionRepository: TransactionRepository
@@ -20262,11 +20524,20 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedPeriod = MutableStateFlow(ReportPeriod.MONTH)
     val selectedPeriod: StateFlow<ReportPeriod> = _selectedPeriod.asStateFlow()
 
+    private val _reportViewType = MutableStateFlow(ReportViewType.YEARLY)
+    val reportViewType: StateFlow<ReportViewType> = _reportViewType.asStateFlow()
+
+    private val _selectedMonth = MutableStateFlow(Calendar.getInstance())
+    val selectedMonth: StateFlow<Calendar> = _selectedMonth.asStateFlow()
+
     val reportData: StateFlow<ReportScreenData>
 
     val consistencyCalendarData: StateFlow<List<CalendarDayStatus>>
-    // --- NEW: StateFlow for the yearly consistency stats ---
-    val consistencyStats: StateFlow<ConsistencyStats>
+
+    val detailedMonthData: StateFlow<List<CalendarDayStatus>>
+
+    // --- UPDATED: A single flow for stats that reacts to the view type ---
+    val displayedConsistencyStats: StateFlow<ConsistencyStats>
 
     init {
         val db = AppDatabase.getInstance(application)
@@ -20366,12 +20637,23 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 initialValue = emptyList()
             )
 
-        // --- NEW: Derive stats from the full year's calendar data ---
-        consistencyStats = consistencyCalendarData.map { data ->
-            val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
-            val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
-            val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
-            val noDataDays = data.count { it.status == SpendingStatus.NO_DATA }
+        detailedMonthData = _selectedMonth.flatMapLatest { monthCal ->
+            flow {
+                emit(generateConsistencyDataForMonth(monthCal))
+            }.flowOn(Dispatchers.Default)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        // --- UPDATED: This flow now calculates stats based on the current view type ---
+        displayedConsistencyStats = combine(
+            reportViewType,
+            consistencyCalendarData,
+            detailedMonthData
+        ) { viewType, yearlyData, monthlyData ->
+            val dataToProcess = if (viewType == ReportViewType.YEARLY) yearlyData else monthlyData
+            val goodDays = dataToProcess.count { it.status == SpendingStatus.WITHIN_LIMIT }
+            val badDays = dataToProcess.count { it.status == SpendingStatus.OVER_LIMIT }
+            val noSpendDays = dataToProcess.count { it.status == SpendingStatus.NO_SPEND }
+            val noDataDays = dataToProcess.count { it.status == SpendingStatus.NO_DATA }
             ConsistencyStats(goodDays, badDays, noSpendDays, noDataDays)
         }.stateIn(
             scope = viewModelScope,
@@ -20435,10 +20717,69 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         resultList
     }
 
+    private suspend fun generateConsistencyDataForMonth(calendar: Calendar): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
+        val year = calendar.get(Calendar.YEAR)
+        val month = calendar.get(Calendar.MONTH) + 1
+
+        val monthStartCal = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0) }
+        val monthEndCal = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH)); set(Calendar.HOUR_OF_DAY, 23) }
+
+        val firstTransactionDate = transactionRepository.getFirstTransactionDate().first()
+        val firstDataCal = firstTransactionDate?.let { Calendar.getInstance().apply { timeInMillis = it } }
+
+        val dailyTotals = transactionRepository.getDailySpendingForDateRange(monthStartCal.timeInMillis, monthEndCal.timeInMillis).first()
+        val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
+
+        val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val budget = settingsRepository.getOverallBudgetForMonthBlocking(year, month)
+        val safeToSpend = if (budget > 0) (budget.toDouble() / daysInMonth) else 0.0
+
+        val resultList = mutableListOf<CalendarDayStatus>()
+        val dayIterator = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1) }
+        val today = Calendar.getInstance()
+
+        for (i in 1..daysInMonth) {
+            dayIterator.set(Calendar.DAY_OF_MONTH, i)
+            val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, i)
+
+            if (firstDataCal != null && dayIterator.before(firstDataCal)) {
+                resultList.add(CalendarDayStatus(dayIterator.time, SpendingStatus.NO_DATA, 0.0, 0.0))
+                continue
+            }
+
+            val amountSpent = spendingMap[dateKey] ?: 0.0
+            val status = when {
+                dayIterator.after(today) -> SpendingStatus.NO_DATA
+                amountSpent == 0.0 -> SpendingStatus.NO_SPEND
+                safeToSpend > 0 && amountSpent > safeToSpend -> SpendingStatus.OVER_LIMIT
+                else -> SpendingStatus.WITHIN_LIMIT
+            }
+            resultList.add(CalendarDayStatus(dayIterator.time, status, amountSpent, safeToSpend))
+        }
+        resultList
+    }
+
 
     fun selectPeriod(period: ReportPeriod) {
         _selectedPeriod.value = period
     }
+
+    fun setReportView(viewType: ReportViewType) {
+        _reportViewType.value = viewType
+    }
+
+    fun selectPreviousMonth() {
+        _selectedMonth.update {
+            (it.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
+        }
+    }
+
+    fun selectNextMonth() {
+        _selectedMonth.update {
+            (it.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+        }
+    }
+
 
     private fun calculateDateRange(period: ReportPeriod): Pair<Long, Long> {
         val calendar = Calendar.getInstance()
@@ -23579,6 +23920,8 @@ data class DailyTotal(
 // REASON: REFACTOR - The `ConsistencyStats` data class and its corresponding
 // calculation logic have been updated to include a new `noDataDays` metric.
 // This provides a more complete summary for the dashboard card.
+// FEATURE - Added `yearlyConsistencyData` flow to fetch the full year's
+// heatmap data for the new dashboard card, replacing the old monthly-only logic.
 // =================================================================================
 package io.pm.finlight
 
@@ -23592,7 +23935,6 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-// --- UPDATED: Added noDataDays to the data class ---
 data class ConsistencyStats(val goodDays: Int, val badDays: Int, val noSpendDays: Int, val noDataDays: Int)
 
 class DashboardViewModel(
@@ -23628,8 +23970,8 @@ class DashboardViewModel(
     private val _showAddCardSheet = MutableStateFlow(false)
     val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
 
-    val monthlyConsistencyData: StateFlow<List<CalendarDayStatus>>
-    val consistencyStats: StateFlow<ConsistencyStats>
+    // --- NEW: Flow for the full yearly heatmap data ---
+    val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
 
     init {
         userName = settingsRepository.getUserName()
@@ -23766,75 +24108,71 @@ class DashboardViewModel(
                     initialValue = emptyList(),
                 )
 
-        monthlyConsistencyData = flow {
-            emit(generateCurrentMonthConsistencyData())
+        // --- NEW: Initialize the yearly data flow ---
+        yearlyConsistencyData = flow {
+            emit(generateYearlyConsistencyData())
         }.flowOn(Dispatchers.Default)
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
-
-        // --- UPDATED: Calculate all four stats ---
-        consistencyStats = monthlyConsistencyData.map { data ->
-            val goodDays = data.count { it.status == SpendingStatus.WITHIN_LIMIT }
-            val badDays = data.count { it.status == SpendingStatus.OVER_LIMIT }
-            val noSpendDays = data.count { it.status == SpendingStatus.NO_SPEND }
-            val noDataDays = data.count { it.status == SpendingStatus.NO_DATA }
-            ConsistencyStats(goodDays, badDays, noSpendDays, noDataDays)
-        }.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = ConsistencyStats(0, 0, 0, 0)
-        )
     }
 
-    private suspend fun generateCurrentMonthConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
-        val today = Calendar.getInstance()
-        val year = today.get(Calendar.YEAR)
-        val month = today.get(Calendar.MONTH) + 1
-
-        val monthStartCal = Calendar.getInstance().apply {
-            set(Calendar.DAY_OF_MONTH, 1)
-            set(Calendar.HOUR_OF_DAY, 0)
-        }
-        val monthEndCal = Calendar.getInstance().apply {
-            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
-            set(Calendar.HOUR_OF_DAY, 23)
-        }
+    // --- NEW: Function to generate data for the full year heatmap ---
+    private suspend fun generateYearlyConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
+        val calendar = Calendar.getInstance()
+        val endDate = calendar.timeInMillis
+        calendar.set(Calendar.DAY_OF_YEAR, 1)
+        val startDate = calendar.timeInMillis
 
         val firstTransactionDate = transactionRepository.getFirstTransactionDate().first()
         val firstDataCal = firstTransactionDate?.let { Calendar.getInstance().apply { timeInMillis = it } }
 
-        val dailyTotals = transactionRepository.getDailySpendingForDateRange(monthStartCal.timeInMillis, monthEndCal.timeInMillis).first()
+        val dailyTotals = transactionRepository.getDailySpendingForDateRange(startDate, endDate).first()
         val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
 
-        val daysInMonth = today.getActualMaximum(Calendar.DAY_OF_MONTH)
-        val budget = settingsRepository.getOverallBudgetForMonthBlocking(year, month)
-        val safeToSpend = if (budget > 0) (budget.toDouble() / daysInMonth) else 0.0
-
+        val safeToSpendCache = mutableMapOf<String, Double>()
         val resultList = mutableListOf<CalendarDayStatus>()
-        val dayIterator = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
+        val dayIterator = Calendar.getInstance().apply { timeInMillis = startDate }
+        val today = Calendar.getInstance()
 
-        for (i in 1..daysInMonth) {
-            dayIterator.set(Calendar.DAY_OF_MONTH, i)
-            val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, i)
+        while (!dayIterator.after(today)) {
+            val year = dayIterator.get(Calendar.YEAR)
+            val month = dayIterator.get(Calendar.MONTH) + 1
+            val day = dayIterator.get(Calendar.DAY_OF_MONTH)
+            val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, day)
+            val monthKey = String.format(Locale.ROOT, "%d-%02d", year, month)
 
             if (firstDataCal != null && dayIterator.before(firstDataCal)) {
                 resultList.add(CalendarDayStatus(dayIterator.time, SpendingStatus.NO_DATA, 0.0, 0.0))
+                dayIterator.add(Calendar.DAY_OF_YEAR, 1)
                 continue
             }
 
+            val safeToSpend = safeToSpendCache.getOrPut(monthKey) {
+                val monthCalendar = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month - 1)
+                }
+                val daysInMonth = monthCalendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+                val budget = settingsRepository.getOverallBudgetForMonthBlocking(year, month)
+
+                if (budget > 0) (budget.toDouble() / daysInMonth) else 0.0
+            }
+
             val amountSpent = spendingMap[dateKey] ?: 0.0
+
             val status = when {
-                dayIterator.after(today) -> SpendingStatus.NO_DATA
                 amountSpent == 0.0 -> SpendingStatus.NO_SPEND
                 safeToSpend > 0 && amountSpent > safeToSpend -> SpendingStatus.OVER_LIMIT
                 else -> SpendingStatus.WITHIN_LIMIT
             }
+
             resultList.add(CalendarDayStatus(dayIterator.time, status, amountSpent, safeToSpend))
+            dayIterator.add(Calendar.DAY_OF_YEAR, 1)
         }
-        return@withContext resultList
+        resultList
     }
 
 

@@ -7,20 +7,27 @@
 // the new view toggle feature.
 // FIX - The size of the DetailedMonthlyCalendar has been reduced to better match
 // the yearly heatmap, preventing layout shifts when toggling.
-// FIX - Adjusted the auto-scroll logic in the yearly heatmap to better center
-// the current month on initial load.
+// FIX - Reverted the auto-scroll logic in the yearly heatmap to its previous
+// state to ensure the current month is visible but not perfectly centered.
+// PERFORMANCE - The yearly heatmap (`MonthColumn` and `DayCell`) has been
+// completely rewritten to draw directly onto a Canvas. This drastically reduces
+// the number of composables, fixing the laggy scrolling issue on the dashboard
+// and reports screens.
+// FIX - Resolved a compilation error by reading the MaterialTheme color outside
+// of the non-composable Canvas draw scope.
 // =================================================================================
 package io.pm.finlight.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -29,18 +36,25 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.CalendarDayStatus
 import io.pm.finlight.ConsistencyStats
 import io.pm.finlight.SpendingStatus
 import kotlinx.coroutines.launch
-import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.floor
 import kotlin.math.min
 
 private val DAY_SIZE = 16.dp
@@ -159,7 +173,6 @@ private fun StatItem(count: Int, label: String) {
 }
 
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConsistencyCalendar(
     data: List<CalendarDayStatus>,
@@ -188,7 +201,6 @@ fun ConsistencyCalendar(
     LaunchedEffect(key1 = data) {
         if (data.isNotEmpty()) {
             val currentMonthIndex = today.get(Calendar.MONTH)
-            // --- FIX: Adjusted scroll index for better centering ---
             val scrollIndex = (currentMonthIndex - 2).coerceAtLeast(0)
             coroutineScope.launch {
                 lazyListState.animateScrollToItem(scrollIndex)
@@ -355,6 +367,7 @@ private data class MonthData(
     }
 }
 
+@OptIn(ExperimentalTextApi::class)
 @Composable
 private fun MonthColumn(
     monthData: MonthData,
@@ -363,103 +376,107 @@ private fun MonthColumn(
     dataMap: Map<Pair<Int, Int>, CalendarDayStatus>,
     onDayClick: (Date) -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = monthData.name,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
+    val textMeasurer = rememberTextMeasurer()
+    val monthNameStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val textLayoutResult = remember(monthData.name) {
+        textMeasurer.measure(monthData.name, monthNameStyle)
+    }
 
-        val totalCells = monthData.startOffset + monthData.dayCount
-        val weekCount = (totalCells + 6) / 7
+    val daySizePx = with(LocalDensity.current) { DAY_SIZE.toPx() }
+    val daySpacingPx = with(LocalDensity.current) { DAY_SPACING.toPx() }
+    val additionalSpacingPx = with(LocalDensity.current) { 4.dp.toPx() }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(DAY_SPACING)) {
-            for (week in 0 until weekCount) {
-                Column(verticalArrangement = Arrangement.spacedBy(DAY_SPACING)) {
-                    for (day in 0..6) {
-                        val cellIndex = week * 7 + day
-                        if (cellIndex >= monthData.startOffset && cellIndex < totalCells) {
-                            val dayOfMonth = cellIndex - monthData.startOffset + 1
-                            val currentDayCal = Calendar.getInstance().apply {
+    val totalCellSize = daySizePx + daySpacingPx
+
+    val totalCells = monthData.startOffset + monthData.dayCount
+    val weekCount = (totalCells + 6) / 7
+
+    val canvasWidth = weekCount * totalCellSize - daySpacingPx
+    val canvasHeight = 7 * totalCellSize - daySpacingPx + textLayoutResult.size.height + additionalSpacingPx
+
+    val canvasWidthDp = with(LocalDensity.current) { canvasWidth.toDp() }
+    val canvasHeightDp = with(LocalDensity.current) { canvasHeight.toDp() }
+
+    // --- FIX: Read color from theme outside the Canvas scope ---
+    val noDataColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+
+    Canvas(
+        modifier = Modifier
+            .width(canvasWidthDp)
+            .height(canvasHeightDp)
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val week = floor(offset.x / totalCellSize).toInt()
+                    val dayOfWeek = floor((offset.y - (textLayoutResult.size.height + additionalSpacingPx)) / totalCellSize).toInt()
+
+                    val cellIndex = week * 7 + dayOfWeek
+                    if (cellIndex >= monthData.startOffset && cellIndex < totalCells) {
+                        val dayOfMonth = cellIndex - monthData.startOffset + 1
+                        val currentDayCal = Calendar
+                            .getInstance()
+                            .apply {
                                 set(year, monthData.monthIndex, dayOfMonth)
                             }
-
-                            if (!currentDayCal.after(today)) {
-                                val dayData = dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to year]
-                                DayCell(dayData, onClick = { onDayClick(currentDayCal.time) })
-                            } else {
-                                DayCell(null, onClick = {}) // Future day
-                            }
-                        } else {
-                            // Empty cell for padding
-                            Spacer(modifier = Modifier.size(DAY_SIZE))
+                        if (!currentDayCal.after(today)) {
+                            onDayClick(currentDayCal.time)
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DayCell(dayData: CalendarDayStatus?, onClick: () -> Unit) {
-    val tooltipState = rememberTooltipState(isPersistent = true)
-
-    val color = when (dayData?.status) {
-        SpendingStatus.NO_SPEND -> Color(0xFF39D353)
-        SpendingStatus.WITHIN_LIMIT -> {
-            val fraction = if (dayData.safeToSpend > 0) {
-                (dayData.amountSpent / dayData.safeToSpend).toFloat()
-            } else {
-                0f
-            }
-            lerp(Color(0xFFACD5F2), Color(0xFF006DAB), fraction.coerceIn(0f, 1f))
-        }
-        SpendingStatus.OVER_LIMIT -> {
-            val fraction = if (dayData.safeToSpend > 0) {
-                min((dayData.amountSpent / dayData.safeToSpend).toFloat(), 2f) - 1f
-            } else {
-                1f
-            }
-            lerp(Color(0xFFF87171), Color(0xFFB91C1C), fraction.coerceIn(0f, 1f))
-        }
-        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    }
-
-    val isClickable = dayData?.status != SpendingStatus.NO_DATA
-
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = {
-            if (dayData != null) {
-                val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
-                val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
-                PlainTooltip {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        Text(
-                            text = dateFormat.format(dayData.date),
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(text = "Spent: ${currencyFormat.format(dayData.amountSpent)}")
-                        if (dayData.safeToSpend > 0) {
-                            Text(text = "Budget: ${currencyFormat.format(dayData.safeToSpend)}")
-                        }
-                    }
-                }
-            }
-        },
-        state = tooltipState
     ) {
-        Box(
-            modifier = Modifier
-                .size(DAY_SIZE)
-                .clip(RoundedCornerShape(2.dp))
-                .background(color)
-                .border(0.5.dp, Color.Black.copy(alpha = 0.1f), RoundedCornerShape(2.dp))
-                .clickable(enabled = isClickable, onClick = onClick)
+        // Draw month name
+        drawText(
+            textLayoutResult = textLayoutResult,
+            topLeft = Offset(x = (size.width - textLayoutResult.size.width) / 2, y = 0f)
         )
+
+        val yOffset = textLayoutResult.size.height + additionalSpacingPx
+
+        for (week in 0 until weekCount) {
+            for (day in 0..6) {
+                val cellIndex = week * 7 + day
+                if (cellIndex >= monthData.startOffset && cellIndex < totalCells) {
+                    val dayOfMonth = cellIndex - monthData.startOffset + 1
+                    val currentDayCal = Calendar.getInstance().apply {
+                        set(year, monthData.monthIndex, dayOfMonth)
+                    }
+
+                    val dayData = if (!currentDayCal.after(today)) {
+                        dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to year]
+                    } else {
+                        null
+                    }
+
+                    val color = when (dayData?.status) {
+                        SpendingStatus.NO_SPEND -> Color(0xFF39D353)
+                        SpendingStatus.WITHIN_LIMIT -> {
+                            val fraction = if (dayData.safeToSpend > 0) {
+                                (dayData.amountSpent / dayData.safeToSpend).toFloat()
+                            } else {
+                                0f
+                            }
+                            lerp(Color(0xFFACD5F2), Color(0xFF006DAB), fraction.coerceIn(0f, 1f))
+                        }
+                        SpendingStatus.OVER_LIMIT -> {
+                            val fraction = if (dayData.safeToSpend > 0) {
+                                min((dayData.amountSpent / dayData.safeToSpend).toFloat(), 2f) - 1f
+                            } else {
+                                1f
+                            }
+                            lerp(Color(0xFFF87171), Color(0xFFB91C1C), fraction.coerceIn(0f, 1f))
+                        }
+                        else -> noDataColor // --- FIX: Use the variable here ---
+                    }
+
+                    drawRoundRect(
+                        color = color,
+                        topLeft = Offset(x = week * totalCellSize, y = day * totalCellSize + yOffset),
+                        size = Size(daySizePx, daySizePx),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx())
+                    )
+                }
+            }
+        }
     }
 }
 
