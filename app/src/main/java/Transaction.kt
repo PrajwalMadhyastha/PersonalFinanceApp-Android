@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/Transaction.kt
-// REASON: FEATURE - Added a new nullable `smsSignature` field. This will store
-// the normalized hash of the original SMS message, which is the key to identifying
-// potential recurring transactions automatically. An index is added for efficient lookups.
+// REASON: FEATURE - Added new nullable fields `originalAmount`, `currencyCode`,
+// and `conversionRate` to support multi-currency transactions. The existing
+// `amount` field will always store the value converted to the home currency.
 // =================================================================================
 package io.pm.finlight
 
@@ -40,7 +40,7 @@ data class Transaction(
     val id: Int = 0,
     val description: String,
     val categoryId: Int?,
-    val amount: Double,
+    val amount: Double, // ALWAYS in home currency
     val date: Long,
     val accountId: Int,
     val notes: String?,
@@ -50,6 +50,9 @@ data class Transaction(
     val source: String = "Manual Entry",
     val originalDescription: String? = null,
     val isExcluded: Boolean = false,
-    // --- NEW: Field to store the SMS signature for pattern detection ---
-    val smsSignature: String? = null
+    val smsSignature: String? = null,
+    // --- NEW: Fields for multi-currency support ---
+    val originalAmount: Double? = null, // Amount in foreign currency
+    val currencyCode: String? = null, // e.g., "USD", "EUR"
+    val conversionRate: Double? = null // Rate to convert originalAmount to home currency
 )
