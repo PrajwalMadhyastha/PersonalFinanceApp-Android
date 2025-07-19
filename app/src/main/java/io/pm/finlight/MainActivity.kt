@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE (Splitting) - Added the route for the new
-// `split_transaction/{transactionId}` screen to the AppNavHost, making it
-// accessible from the Transaction Detail screen.
+// REASON: FEATURE - The MainAppScreen now observes the `transactionForCategoryChange`
+// state from the TransactionViewModel. When a transaction is selected, it displays
+// a ModalBottomSheet with a CategoryPickerSheet, allowing users to change the
+// category of a transaction in-place without navigating to a new screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -26,8 +27,13 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -40,7 +46,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -57,6 +66,8 @@ import io.pm.finlight.ui.components.DaybreakAnimatedBackground
 import io.pm.finlight.ui.screens.*
 import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.net.URLDecoder
 import java.util.concurrent.Executor
 
@@ -210,6 +221,9 @@ fun MainAppScreen() {
     val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
     val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
 
+    // --- NEW: Observe state for category change sheet ---
+    val transactionForCategoryChange by transactionViewModel.transactionForCategoryChange.collectAsState()
+
 
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
@@ -237,7 +251,7 @@ fun MainAppScreen() {
         "data_settings",
         "add_edit_goal",
         "currency_travel_settings",
-        "split_transaction" // --- NEW: Add new screen to hide main top bar
+        "split_transaction"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -403,6 +417,32 @@ fun MainAppScreen() {
                 goalViewModel = goalViewModel
             )
         }
+
+        // --- NEW: Modal Bottom Sheet for changing category ---
+        if (transactionForCategoryChange != null) {
+            val transaction = transactionForCategoryChange!!
+            val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
+            val isThemeDark = isSystemInDarkTheme()
+            val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+            ModalBottomSheet(
+                onDismissRequest = { transactionViewModel.cancelCategoryChange() },
+                containerColor = popupContainerColor
+            ) {
+                CategoryPickerSheet(
+                    title = "Change Category",
+                    items = categories,
+                    onItemSelected = { newCategory ->
+                        transactionViewModel.updateTransactionCategory(transaction.transaction.id, newCategory.id)
+                        transactionViewModel.cancelCategoryChange()
+                    },
+                    onAddNew = {
+                        // For simplicity, we won't allow creating a new category from this quick sheet.
+                        // The user can use the full edit screen for that.
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -431,7 +471,6 @@ fun AppNavHost(
             SplashScreen(navController = navController, activity = activity)
         }
 
-        // --- NEW: Add route for the split transaction screen ---
         composable(
             "split_transaction/{transactionId}",
             arguments = listOf(navArgument("transactionId") { type = NavType.IntType }),
@@ -883,5 +922,111 @@ fun SplashScreen(navController: NavHostController, activity: Activity) {
         contentAlignment = Alignment.Center
     ) {
         CircularProgressIndicator()
+    }
+}
+
+// --- NEW: Copied from TransactionDetailScreen for reusability ---
+@Composable
+private fun CategoryPickerSheet(
+    title: String,
+    items: List<Category>,
+    onItemSelected: (Category) -> Unit,
+    onAddNew: (() -> Unit)? = null
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 100.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(items) { category ->
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            onItemSelected(category)
+                        }
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CategoryIconDisplay(category)
+                    Text(
+                        category.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+            if (onAddNew != null) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(onClick = onAddNew)
+                            .padding(vertical = 12.dp)
+                            .height(80.dp), // Match height of other items
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.AddCircleOutline,
+                            contentDescription = "Create New",
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "New",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+// --- NEW: Copied from TransactionDetailScreen for reusability ---
+@Composable
+private fun CategoryIconDisplay(category: Category) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (category.name == "Uncategorized") {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon("help_outline"),
+                contentDescription = category.name,
+                tint = Color.Black,
+                modifier = Modifier.size(24.dp)
+            )
+        } else if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                color = Color.Black,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                contentDescription = category.name,
+                tint = Color.Black,
+                modifier = Modifier.size(24.dp)
+            )
+        }
     }
 }
