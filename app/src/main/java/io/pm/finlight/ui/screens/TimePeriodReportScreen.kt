@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
-// REASON: FEATURE - The screen now conditionally displays the new
-// `MonthlyConsistencyCalendarCard` when the user is viewing a Monthly report.
-// The card is passed the relevant data and click handlers from the ViewModel,
-// making it fully interactive within the report screen.
+// REASON: FIX - The composable now accepts a TransactionViewModel instance, which
+// is passed to the TransactionItem component. This allows the UI to call the
+// `requestCategoryChange` function, fixing the "No value passed for parameter"
+// compilation error and enabling the feature on this screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -35,6 +35,7 @@ import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
@@ -49,6 +50,7 @@ import java.util.*
 fun TimePeriodReportScreen(
     navController: NavController,
     timePeriod: TimePeriod,
+    transactionViewModel: TransactionViewModel,
     initialDateMillis: Long? = null
 ) {
     val application = LocalContext.current.applicationContext as Application
@@ -59,7 +61,6 @@ fun TimePeriodReportScreen(
     val transactions by viewModel.transactionsForPeriod.collectAsState()
     val chartDataPair by viewModel.chartData.collectAsState()
     val insights by viewModel.insights.collectAsState()
-    // --- NEW: Collect consistency data and stats ---
     val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
     val consistencyStats by viewModel.consistencyStats.collectAsState()
 
@@ -139,7 +140,6 @@ fun TimePeriodReportScreen(
                     }
                 }
 
-                // --- NEW: Conditionally show the consistency card for monthly reports ---
                 if (timePeriod == TimePeriod.MONTHLY) {
                     item {
                         MonthlyConsistencyCalendarCard(
@@ -202,7 +202,8 @@ fun TimePeriodReportScreen(
                     items(transactions, key = { it.transaction.id }) { transaction ->
                         TransactionItem(
                             transactionDetails = transaction,
-                            onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") }
+                            onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") },
+                            onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
                         )
                     }
                 } else {

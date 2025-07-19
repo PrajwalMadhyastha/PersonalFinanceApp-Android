@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
-// REASON: UX REFINEMENT - The screen now accepts a `focusSearch` parameter.
-// The initial focus request on the search text field is now conditional based
-// on this parameter, preventing the keyboard from appearing automatically when
-// navigating from a non-search-focused context (like the calendar).
+// REASON: FIX - The composable now accepts a TransactionViewModel instance, which
+// is passed to the TransactionItem component. This allows the UI to call the
+// `requestCategoryChange` function, fixing the "No value passed for parameter"
+// compilation error and enabling the feature on this screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -43,11 +43,12 @@ import java.util.*
 @Composable
 fun SearchScreen(
     navController: NavController,
-    viewModel: SearchViewModel,
-    focusSearch: Boolean // --- NEW: Parameter to control initial focus ---
+    searchViewModel: SearchViewModel,
+    transactionViewModel: TransactionViewModel,
+    focusSearch: Boolean
 ) {
-    val searchUiState by viewModel.uiState.collectAsState()
-    val searchResults by viewModel.searchResults.collectAsState()
+    val searchUiState by searchViewModel.uiState.collectAsState()
+    val searchResults by searchViewModel.searchResults.collectAsState()
 
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
@@ -67,7 +68,7 @@ fun SearchScreen(
         Column(modifier = Modifier.padding(16.dp)) {
             OutlinedTextField(
                 value = searchUiState.keyword,
-                onValueChange = { viewModel.onKeywordChange(it) },
+                onValueChange = { searchViewModel.onKeywordChange(it) },
                 label = { Text("Keyword (description, notes)") },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -119,21 +120,21 @@ fun SearchScreen(
                                 label = "Account",
                                 options = searchUiState.accounts,
                                 selectedOption = searchUiState.selectedAccount,
-                                onOptionSelected = { viewModel.onAccountChange(it) },
+                                onOptionSelected = { searchViewModel.onAccountChange(it) },
                                 getDisplayName = { it.name },
                             )
                             SearchableDropdown(
                                 label = "Category",
                                 options = searchUiState.categories,
                                 selectedOption = searchUiState.selectedCategory,
-                                onOptionSelected = { viewModel.onCategoryChange(it) },
+                                onOptionSelected = { searchViewModel.onCategoryChange(it) },
                                 getDisplayName = { it.name },
                             )
                             SearchableDropdown(
                                 label = "Transaction Type",
                                 options = listOf("All", "Income", "Expense"),
                                 selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
-                                onOptionSelected = { viewModel.onTypeChange(it) },
+                                onOptionSelected = { searchViewModel.onTypeChange(it) },
                                 getDisplayName = { it },
                             )
                             Row(
@@ -145,7 +146,7 @@ fun SearchScreen(
                                     date = searchUiState.startDate,
                                     formatter = dateFormatter,
                                     onClick = { showStartDatePicker = true },
-                                    onClear = { viewModel.onDateChange(start = null) },
+                                    onClear = { searchViewModel.onDateChange(start = null) },
                                     modifier = Modifier.weight(1f),
                                 )
                                 DateTextField(
@@ -153,12 +154,12 @@ fun SearchScreen(
                                     date = searchUiState.endDate,
                                     formatter = dateFormatter,
                                     onClick = { showEndDatePicker = true },
-                                    onClear = { viewModel.onDateChange(end = null) },
+                                    onClear = { searchViewModel.onDateChange(end = null) },
                                     modifier = Modifier.weight(1f),
                                 )
                             }
                             OutlinedButton(
-                                onClick = { viewModel.clearFilters() },
+                                onClick = { searchViewModel.clearFilters() },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Clear All Filters") }
                         }
@@ -188,6 +189,7 @@ fun SearchScreen(
                     TransactionItem(
                         transactionDetails = transactionDetails,
                         onClick = { navController.navigate("transaction_detail/${transactionDetails.transaction.id}") },
+                        onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
                     )
                 }
             }
@@ -203,7 +205,6 @@ fun SearchScreen(
         }
     }
 
-    // --- UPDATED: Conditionally request focus ---
     LaunchedEffect(Unit) {
         if (focusSearch) {
             focusRequester.requestFocus()
@@ -216,7 +217,7 @@ fun SearchScreen(
             onDismissRequest = { showStartDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.onDateChange(start = datePickerState.selectedDateMillis)
+                    searchViewModel.onDateChange(start = datePickerState.selectedDateMillis)
                     showStartDatePicker = false
                 }) { Text("OK") }
             },
@@ -234,7 +235,7 @@ fun SearchScreen(
             onDismissRequest = { showEndDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.onDateChange(end = datePickerState.selectedDateMillis)
+                    searchViewModel.onDateChange(end = datePickerState.selectedDateMillis)
                     showEndDatePicker = false
                 }) { Text("OK") }
             },

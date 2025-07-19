@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The call to the DashboardScreen composable inside the NavHost has
-// been updated to pass the `transactionViewModel`. This is necessary to fix the
-// "Unresolved reference" error and allow the dashboard to trigger the in-place
-// category change feature.
+// REASON: FIX - The NavHost has been updated to pass the shared `transactionViewModel`
+// to the IncomeScreen, SearchScreen, and TimePeriodReportScreen. This resolves
+// the compilation errors and allows these screens to correctly trigger the
+// in-place category change feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -576,7 +576,7 @@ fun AppNavHost(
                 if (date != -1L) date else null
             )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
-            SearchScreen(navController, searchViewModel, focusSearch)
+            SearchScreen(navController, searchViewModel, transactionViewModel, focusSearch)
         }
         composable(
             route = "review_sms_screen",
@@ -594,7 +594,7 @@ fun AppNavHost(
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) {
-            IncomeScreen(navController, incomeViewModel)
+            IncomeScreen(navController, incomeViewModel, transactionViewModel)
         }
 
         composable(
@@ -818,7 +818,12 @@ fun AppNavHost(
             }
             val date = backStackEntry.arguments?.getLong("date")
             if (timePeriod != null) {
-                TimePeriodReportScreen(navController = navController, timePeriod = timePeriod, initialDateMillis = date)
+                TimePeriodReportScreen(
+                    navController = navController,
+                    timePeriod = timePeriod,
+                    transactionViewModel = transactionViewModel,
+                    initialDateMillis = date
+                )
             }
         }
 

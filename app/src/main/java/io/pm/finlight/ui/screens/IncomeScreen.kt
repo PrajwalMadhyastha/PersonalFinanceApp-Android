@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
-// REASON: MAJOR REFACTOR - The `IncomeHeader` has been updated to align with the
-// "Project Aurora" vision. The standard `Card` has been replaced with a `GlassPanel`
-// component, and all text colors are now theme-aware, ensuring a cohesive,
-// modern, and high-contrast user experience for the income screen.
+// REASON: FIX - The composable now accepts a TransactionViewModel instance. This
+// is passed to the TransactionList component, allowing it to call the necessary
+// `requestCategoryChange` function and fixing the "No value passed for parameter"
+// compilation error.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -33,6 +33,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.IncomeViewModel
 import io.pm.finlight.MonthlySummaryItem
+import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.FilterBottomSheet
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionList
@@ -45,21 +46,22 @@ import java.util.*
 @Composable
 fun IncomeScreen(
     navController: NavController,
-    viewModel: IncomeViewModel = viewModel(),
+    incomeViewModel: IncomeViewModel = viewModel(),
+    transactionViewModel: TransactionViewModel
 ) {
     val tabs = listOf("Credits", "Categories")
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
 
-    val incomeTransactions by viewModel.incomeTransactionsForSelectedMonth.collectAsState()
-    val incomeByCategory by viewModel.incomeByCategoryForSelectedMonth.collectAsState()
-    val totalIncome by viewModel.totalIncomeForSelectedMonth.collectAsState()
-    val selectedMonth by viewModel.selectedMonth.collectAsState()
-    val monthlySummaries by viewModel.monthlySummaries.collectAsState()
+    val incomeTransactions by incomeViewModel.incomeTransactionsForSelectedMonth.collectAsState()
+    val incomeByCategory by incomeViewModel.incomeByCategoryForSelectedMonth.collectAsState()
+    val totalIncome by incomeViewModel.totalIncomeForSelectedMonth.collectAsState()
+    val selectedMonth by incomeViewModel.selectedMonth.collectAsState()
+    val monthlySummaries by incomeViewModel.monthlySummaries.collectAsState()
 
-    val filterState by viewModel.filterState.collectAsState()
-    val allAccounts by viewModel.allAccounts.collectAsState()
-    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
+    val filterState by incomeViewModel.filterState.collectAsState()
+    val allAccounts by incomeViewModel.allAccounts.collectAsState()
+    val allCategories by incomeViewModel.allCategories.collectAsState(initial = emptyList())
     var showFilterSheet by remember { mutableStateOf(false) }
 
     val areFiltersActive by remember(filterState) {
@@ -107,7 +109,7 @@ fun IncomeScreen(
                 totalIncome = totalIncome,
                 selectedMonth = selectedMonth,
                 monthlySummaries = monthlySummaries,
-                onMonthSelected = { viewModel.setSelectedMonth(it) }
+                onMonthSelected = { incomeViewModel.setSelectedMonth(it) }
             )
 
             TabRow(
@@ -136,7 +138,11 @@ fun IncomeScreen(
                 modifier = Modifier.weight(1f)
             ) { page ->
                 when (page) {
-                    0 -> TransactionList(transactions = incomeTransactions, navController = navController)
+                    0 -> TransactionList(
+                        transactions = incomeTransactions,
+                        navController = navController,
+                        onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
+                    )
                     1 -> CategorySpendingScreen(spendingList = incomeByCategory)
                 }
             }
@@ -149,10 +155,10 @@ fun IncomeScreen(
                 filterState = filterState,
                 accounts = allAccounts,
                 categories = allCategories,
-                onKeywordChange = viewModel::updateFilterKeyword,
-                onAccountChange = viewModel::updateFilterAccount,
-                onCategoryChange = viewModel::updateFilterCategory,
-                onClearFilters = viewModel::clearFilters
+                onKeywordChange = incomeViewModel::updateFilterKeyword,
+                onAccountChange = incomeViewModel::updateFilterAccount,
+                onCategoryChange = incomeViewModel::updateFilterCategory,
+                onClearFilters = incomeViewModel::clearFilters
             )
         }
     }

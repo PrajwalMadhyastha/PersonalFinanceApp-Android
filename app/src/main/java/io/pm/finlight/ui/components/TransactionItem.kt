@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: FEATURE - Added an `onCategoryClick` callback and made the category
-// icon and text clickable for non-split transactions. This allows triggering the
-// new in-place category change feature directly from a transaction list.
-// The `TransactionList` composable is also updated to accept and pass this callback.
+// REASON: FIX - Replaced the deprecated `Icons.Filled.CallSplit` with the
+// recommended `Icons.AutoMirrored.Filled.CallSplit` to resolve the lint warning
+// and ensure proper support for right-to-left layouts.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -15,7 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.*
@@ -45,7 +44,7 @@ fun TransactionItem(
     modifier: Modifier = Modifier,
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
-    onCategoryClick: (TransactionDetails) -> Unit // --- NEW: Callback for category clicks
+    onCategoryClick: (TransactionDetails) -> Unit
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
     val isSplit = transactionDetails.transaction.isSplit
@@ -60,7 +59,6 @@ fun TransactionItem(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // --- UPDATED: Made the category icon clickable ---
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -81,7 +79,7 @@ fun TransactionItem(
                 when {
                     isSplit -> {
                         Icon(
-                            imageVector = Icons.Default.CallSplit,
+                            imageVector = Icons.AutoMirrored.Filled.CallSplit, // --- FIX: Use AutoMirrored icon
                             contentDescription = "Split Transaction",
                             tint = Color.Black.copy(alpha = contentAlpha),
                             modifier = Modifier.size(22.dp)
@@ -121,7 +119,6 @@ fun TransactionItem(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                 )
-                // --- UPDATED: Display category name, which is now also clickable ---
                 Text(
                     text = if (isSplit) "Multiple Categories" else (transactionDetails.categoryName ?: "Uncategorized"),
                     style = MaterialTheme.typography.bodyMedium,
@@ -168,7 +165,6 @@ fun TransactionItem(
 fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
-    // --- NEW: Accept the category click callback ---
     onCategoryClick: (TransactionDetails) -> Unit
 ) {
     if (transactions.isEmpty()) {
@@ -193,7 +189,6 @@ fun TransactionList(
                     onClick = {
                         navController.navigate("transaction_detail/${details.transaction.id}")
                     },
-                    // --- NEW: Pass the callback down ---
                     onCategoryClick = onCategoryClick
                 )
             }
