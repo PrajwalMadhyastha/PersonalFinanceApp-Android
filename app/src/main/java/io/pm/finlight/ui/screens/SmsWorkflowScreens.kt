@@ -1,14 +1,20 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
-// REASON: FEATURE (Travel Mode SMS) - The screen now reads the `isForeignCurrency`
-// flag from the PotentialTransaction object. If true, it displays the amount
-// in the foreign currency and shows a conversion info message. The save action
-// is updated to pass this flag to the ViewModel.
+// REASON: MAJOR REFACTOR - The ApproveTransactionScreen has been completely
+// redesigned to align with the "Project Aurora" vision, using GlassPanel
+// components and theme-aware styling.
+// BUG FIX - The navigation logic after approving a transaction has been corrected.
+// It now pops the entire back stack and navigates to the dashboard, preventing
+// the user from returning to the approval screen.
+// BUG FIX - Added missing imports for `border` and `AutoMirrored.Filled.ArrowBack`.
+// BUG FIX - Added the missing `isDark()` helper function.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -18,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -36,8 +43,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.google.gson.Gson
 import io.pm.finlight.*
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.GlassPanelBorder
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 import java.text.NumberFormat
@@ -47,6 +59,8 @@ private sealed class ApproveSheetContent {
     object Category : ApproveSheetContent()
     object Tags : ApproveSheetContent()
 }
+
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 
 @Composable
@@ -212,11 +226,10 @@ fun ApproveTransactionScreen(
     var activeSheetContent by remember { mutableStateOf<ApproveSheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
-    // --- NEW: Handle Travel Mode ---
     val travelModeSettings by transactionViewModel.travelModeSettings.collectAsState()
     val isForeign = potentialTxn.isForeignCurrency == true
     val currencySymbol = if (isForeign) CurrencyHelper.getCurrencySymbol(travelModeSettings?.currencyCode) else "₹"
-    val homeCurrencySymbol = "₹" // Assuming INR
+    val homeCurrencySymbol = "₹"
 
     val isSaveEnabled = description.isNotBlank() && selectedCategory != null
 
@@ -226,7 +239,20 @@ fun ApproveTransactionScreen(
         }
     }
 
-    Scaffold { innerPadding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Approve Transaction") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .padding(innerPadding)
@@ -235,16 +261,16 @@ fun ApproveTransactionScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Card(elevation = CardDefaults.cardElevation(2.dp)) {
+                GlassPanel {
                     Column(Modifier.padding(16.dp)) {
                         Text(
                             "$currencySymbol${"%,.2f".format(potentialTxn.amount)}",
                             style = MaterialTheme.typography.displaySmall,
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.End,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                        // --- NEW: Show conversion helper text ---
                         if (isForeign && travelModeSettings != null) {
                             val convertedAmount = potentialTxn.amount * travelModeSettings!!.conversionRate
                             Text(
@@ -255,7 +281,7 @@ fun ApproveTransactionScreen(
                                 textAlign = TextAlign.End
                             )
                         }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                         OutlinedTextField(
                             value = description,
                             onValueChange = { description = it },
@@ -263,7 +289,9 @@ fun ApproveTransactionScreen(
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
-                                focusedBorderColor = Color.Transparent
+                                focusedBorderColor = Color.Transparent,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                             ),
                             placeholder = { Text("What was this for?") }
                         )
@@ -271,17 +299,47 @@ fun ApproveTransactionScreen(
                 }
             }
             item {
-                TabRow(selectedTabIndex = if (selectedTransactionType == "expense") 0 else 1) {
-                    listOf("Expense", "Income").forEachIndexed { index, title ->
-                        Tab(selected = (if (selectedTransactionType == "expense") 0 else 1) == index, onClick = {
-                            selectedTransactionType = if (index == 0) "expense" else "income"
-                        }, text = { Text(title) })
-                    }
+                val glassFillColor = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.04f)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(CircleShape)
+                        .background(glassFillColor)
+                        .border(1.dp, GlassPanelBorder, CircleShape)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { selectedTransactionType = "expense" },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedTransactionType == "expense") MaterialTheme.colorScheme.primary else Color.Transparent,
+                            contentColor = if (selectedTransactionType == "expense") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        ),
+                        elevation = null
+                    ) { Text("Expense", fontWeight = FontWeight.Bold) }
+
+                    Button(
+                        onClick = { selectedTransactionType = "income" },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedTransactionType == "income") MaterialTheme.colorScheme.primary else Color.Transparent,
+                            contentColor = if (selectedTransactionType == "income") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        ),
+                        elevation = null
+                    ) { Text("Income", fontWeight = FontWeight.Bold) }
                 }
             }
 
             item {
-                Card(elevation = CardDefaults.cardElevation(2.dp)) {
+                GlassPanel {
                     Column {
                         DetailRow(
                             icon = Icons.Default.AccountBalanceWallet,
@@ -289,7 +347,7 @@ fun ApproveTransactionScreen(
                             value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
                             onClick = null
                         )
-                        HorizontalDivider()
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                         DetailRow(
                             icon = Icons.Default.Category,
                             label = "Category",
@@ -298,30 +356,34 @@ fun ApproveTransactionScreen(
                             valueColor = if (selectedCategory == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                             leadingIcon = { selectedCategory?.let { CategoryIcon(it, Modifier.size(24.dp)) } }
                         )
-                        HorizontalDivider()
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                         DetailRow(
                             icon = Icons.Default.NewLabel,
                             label = "Tags",
                             value = if (selectedTags.isEmpty()) "Add tags" else selectedTags.joinToString { it.name },
                             onClick = { activeSheetContent = ApproveSheetContent.Tags }
                         )
-                        HorizontalDivider()
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                         OutlinedTextField(
                             value = notes,
                             onValueChange = { notes = it },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text("Add notes...") },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = "Notes") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = "Notes", tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
                                 focusedBorderColor = Color.Transparent,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                             )
                         )
                     }
                 }
             }
             item {
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
                         Text("Cancel")
                     }
@@ -334,7 +396,7 @@ fun ApproveTransactionScreen(
                                     categoryId = selectedCategory?.id,
                                     notes = notes.takeIf { it.isNotBlank() },
                                     tags = selectedTags,
-                                    isForeign = isForeign // --- NEW: Pass the flag
+                                    isForeign = isForeign
                                 )
                                 if (success) {
                                     settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)
@@ -343,7 +405,12 @@ fun ApproveTransactionScreen(
                                     }
                                     val notificationManager = NotificationManagerCompat.from(context)
                                     notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
-                                    navController.popBackStack()
+                                    // --- FIX: Navigate to dashboard and clear the back stack ---
+                                    navController.navigate("dashboard") {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            inclusive = true
+                                        }
+                                    }
                                 }
                             }
                         },
@@ -356,9 +423,12 @@ fun ApproveTransactionScreen(
     }
 
     if (activeSheetContent != null) {
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
         ModalBottomSheet(
             onDismissRequest = { activeSheetContent = null },
-            sheetState = sheetState
+            sheetState = sheetState,
+            containerColor = popupContainerColor
         ) {
             when (activeSheetContent) {
                 is ApproveSheetContent.Category -> ApproveCategoryPickerSheet(
@@ -397,11 +467,11 @@ private fun DetailRow(
         if (leadingIcon != null) {
             leadingIcon()
         } else {
-            Icon(icon, contentDescription = label)
+            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(16.dp))
-        Text(label, modifier = Modifier.weight(1f))
-        Text(value, color = valueColor, fontWeight = FontWeight.SemiBold)
+        Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+        Text(value, color = valueColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (onClick != null) {
             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
