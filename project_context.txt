@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Fri Jul 18 11:42:59 IST 2025
+Generated on: Sat Jul 19 11:38:16 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -754,6 +754,85 @@ class AccountRepository(private val accountDao: AccountDao) {
 -e 
 
 
+================== FILE: ./app/src/main/java/CurrencyHelper.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CurrencyHelper.kt
+// REASON: NEW FILE - This object provides a curated list of common world
+// currencies and a helper function to get a currency's symbol from its code.
+// This is used to populate the dropdowns in the new Currency & Travel screen.
+// =================================================================================
+package io.pm.finlight
+
+import java.util.Currency
+import java.util.Locale
+
+data class CurrencyInfo(
+    val countryName: String,
+    val currencyCode: String, // e.g., USD
+    val currencySymbol: String // e.g., $
+)
+
+object CurrencyHelper {
+    // A curated list of common currencies. A full list can be very long.
+    val commonCurrencies: List<CurrencyInfo> by lazy {
+        listOf(
+            "United States" to "USD",
+            "Eurozone" to "EUR",
+            "Japan" to "JPY",
+            "United Kingdom" to "GBP",
+            "Australia" to "AUD",
+            "Canada" to "CAD",
+            "Switzerland" to "CHF",
+            "China" to "CNY",
+            "Sweden" to "SEK",
+            "New Zealand" to "NZD",
+            "Singapore" to "SGD",
+            "Hong Kong" to "HKD",
+            "Norway" to "NOK",
+            "South Korea" to "KRW",
+            "Turkey" to "TRY",
+            "Russia" to "RUB",
+            "India" to "INR",
+            "Brazil" to "BRL",
+            "South Africa" to "ZAR",
+            "United Arab Emirates" to "AED",
+            "Thailand" to "THB",
+            "Malaysia" to "MYR",
+            "Indonesia" to "IDR",
+            "Vietnam" to "VND",
+            "Philippines" to "PHP",
+            "Mexico" to "MXN",
+            "Saudi Arabia" to "SAR",
+            "Qatar" to "QAR",
+            "Oman" to "OMR",
+            "Kuwait" to "KWD",
+            "Bahrain" to "BHD"
+        ).mapNotNull { (country, code) ->
+            try {
+                val currency = Currency.getInstance(code)
+                CurrencyInfo(country, currency.currencyCode, currency.getSymbol(Locale.getDefault()))
+            } catch (e: Exception) {
+                null // Ignore if currency code is not supported on the device
+            }
+        }.sortedBy { it.countryName }
+    }
+
+    fun getCurrencySymbol(currencyCode: String?): String {
+        if (currencyCode == null) return ""
+        return try {
+            Currency.getInstance(currencyCode).getSymbol(Locale.getDefault())
+        } catch (e: Exception) {
+            currencyCode
+        }
+    }
+
+    fun getCurrencyInfo(currencyCode: String?): CurrencyInfo? {
+        return commonCurrencies.find { it.currencyCode.equals(currencyCode, ignoreCase = true) }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/FinancialSummary.kt ==================
 package io.pm.finlight
 
@@ -1169,10 +1248,9 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - The logic for the `monthlySummaries` flow has been updated.
-// Instead of showing a rolling 12-month view, it now correctly displays all
-// 12 months of the current calendar year, restoring the original, preferred
-// behavior for the month scroller component.
+// REASON: FEATURE - The ViewModel now observes TravelModeSettings. The
+// `addTransaction` function is updated to accept an optional originalAmount and
+// performs the currency conversion before saving if Travel Mode is active.
 // =================================================================================
 package io.pm.finlight
 
@@ -1272,6 +1350,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _retroUpdateSheetState = MutableStateFlow<RetroUpdateSheetState?>(null)
     val retroUpdateSheetState = _retroUpdateSheetState.asStateFlow()
 
+    // --- NEW: Expose Travel Mode settings ---
+    val travelModeSettings: StateFlow<TravelModeSettings?>
+
     init {
         transactionRepository = TransactionRepository(db.transactionDao())
         accountRepository = AccountRepository(db.accountDao())
@@ -1281,6 +1362,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
+
+        // --- NEW: Initialize travel mode settings flow ---
+        travelModeSettings = settingsRepository.getTravelModeSettings()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = null
+            )
 
         merchantAliases = merchantRenameRuleRepository.getAliasesAsMap()
             .map { it.mapKeys { (key, _) -> key.lowercase(Locale.getDefault()) } }
@@ -1328,7 +1417,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             initialValue = emptyList()
         )
 
-        // --- UPDATED: Logic to get all months of the current year ---
         val currentYear = Calendar.getInstance().get(Calendar.YEAR)
         val startOfYear = Calendar.getInstance().apply {
             set(Calendar.YEAR, currentYear)
@@ -1340,7 +1428,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             .map { trends ->
                 val dateFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
                 val monthMap = trends.filter {
-                    // Ensure we only process trends for the current year
                     (dateFormat.parse(it.monthYear) ?: Date()).let { date ->
                         val cal = Calendar.getInstance().apply { time = date }
                         cal.get(Calendar.YEAR) == currentYear
@@ -1394,6 +1481,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // --- UPDATED: Function now handles currency conversion ---
     suspend fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -1410,8 +1498,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             _validationError.value = "Description cannot be empty."
             return false
         }
-        val amount = amountStr.toDoubleOrNull()
-        if (amount == null || amount <= 0.0) {
+        val enteredAmount = amountStr.toDoubleOrNull()
+        if (enteredAmount == null || enteredAmount <= 0.0) {
             _validationError.value = "Please enter a valid, positive amount."
             return false
         }
@@ -1420,30 +1508,53 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             return false
         }
 
+        val travelSettings = travelModeSettings.value
+        val isTravelMode = travelSettings?.isEnabled == true &&
+                date >= travelSettings.startDate &&
+                date <= travelSettings.endDate
+
+        val transactionToSave = if (isTravelMode) {
+            Transaction(
+                description = description,
+                originalDescription = description,
+                categoryId = categoryId,
+                amount = enteredAmount * travelSettings!!.conversionRate, // Converted amount
+                date = date,
+                accountId = accountId,
+                notes = notes,
+                transactionType = transactionType,
+                isExcluded = false,
+                sourceSmsId = null,
+                sourceSmsHash = null,
+                source = "Added Manually",
+                originalAmount = enteredAmount, // Original foreign amount
+                currencyCode = travelSettings.currencyCode,
+                conversionRate = travelSettings.conversionRate.toDouble()
+            )
+        } else {
+            Transaction(
+                description = description,
+                originalDescription = description,
+                categoryId = categoryId,
+                amount = enteredAmount, // Home currency amount
+                date = date,
+                accountId = accountId,
+                notes = notes,
+                transactionType = transactionType,
+                isExcluded = false,
+                sourceSmsId = null,
+                sourceSmsHash = null,
+                source = "Added Manually"
+            )
+        }
 
         return try {
             withContext(Dispatchers.IO) {
                 val savedImagePaths = imageUris.mapNotNull { uri ->
                     saveImageToInternalStorage(uri)
                 }
-                val newTransaction =
-                    Transaction(
-                        description = description,
-                        originalDescription = description,
-                        categoryId = categoryId,
-                        amount = amount,
-                        date = date,
-                        accountId = accountId,
-                        notes = notes,
-                        transactionType = transactionType,
-                        isExcluded = false,
-                        sourceSmsId = null,
-                        sourceSmsHash = null,
-                        source = "Added Manually"
-                    )
-
                 transactionRepository.insertTransactionWithTagsAndImages(
-                    newTransaction,
+                    transactionToSave,
                     _selectedTags.value,
                     savedImagePaths
                 )
@@ -2118,10 +2229,9 @@ class MonthlySummaryWorker(
 ================== FILE: ./app/src/main/java/NavItems.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added new entries for "add_edit_goal" and
-// "add_edit_goal/{goalId}" to the screenTitles map. This ensures the new
-// dedicated screen for managing savings goals will have the correct title
-// ("New Savings Goal" or "Edit Savings Goal") in the app's top bar.
+// REASON: FEATURE - Added a new entry for "currency_travel_settings" to the
+// screenTitles map. This provides the title for the new screen where users will
+// manage the multi-currency "Travel Mode" feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -2173,6 +2283,8 @@ val screenTitles = mapOf(
     "automation_settings" to "Automation & AI",
     "notification_settings" to "Notifications",
     "data_settings" to "Security & Data",
+    // --- NEW: Title for the new currency screen ---
+    "currency_travel_settings" to "Currency & Travel",
     // --- NEW: Titles for the dedicated goal screen ---
     "add_edit_goal" to "New Savings Goal",
     "add_edit_goal/{goalId}" to "Edit Savings Goal"
@@ -4322,378 +4434,6 @@ private fun auroraTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedTrailingIconColor = MaterialTheme.colorScheme.primary,
     unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
 )
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingPages.kt
-// REASON: MAJOR REFACTOR - The entire onboarding flow has been redesigned to
-// align with the "Project Aurora" vision. All form elements and action buttons
-// are now contained within `GlassPanel` components, and all text colors are
-// theme-aware, ensuring a cohesive, high-contrast, and modern user experience
-// from the moment the app is first launched.
-// =================================================================================
-package io.pm.finlight.ui.screens
-
-import android.Manifest
-import android.os.Build
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Message
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.dp
-import io.pm.finlight.OnboardingViewModel
-import io.pm.finlight.ui.components.GlassPanel
-
-@Composable
-fun WelcomePage() {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.PrivacyTip,
-            contentDescription = "Privacy Icon",
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "Welcome to Finlight",
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            buildAnnotatedString {
-                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
-                    append("Your ")
-                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
-                        append("PRIVACY")
-                    }
-                    append(" is our ")
-                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
-                        append("PRIORITY")
-                    }
-                    append(". All your data is ")
-                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
-                        append("STORED SECURELY")
-                    }
-                    append(" and ")
-                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
-                        append("ONLY ON YOUR DEVICE")
-                    }
-                    append(". Let's get you set up.")
-                }
-            },
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun UserNamePage(viewModel: OnboardingViewModel, pagerState: PagerState) {
-    val name by viewModel.userName.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.AccountCircle,
-            contentDescription = "User Icon",
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(Modifier.height(24.dp))
-        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
-        Text(
-            "This will be used to personalize your experience.",
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(24.dp))
-        GlassPanel {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { viewModel.onNameChanged(it) },
-                label = { Text("Your Name") },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text,
-                    capitalization = KeyboardCapitalization.Words
-                ),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                    focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = MaterialTheme.colorScheme.primary,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                )
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun BudgetSetupPage(viewModel: OnboardingViewModel, pagerState: PagerState) {
-    val budget by viewModel.monthlyBudget.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.Savings,
-            contentDescription = "Budget Icon",
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(Modifier.height(24.dp))
-        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
-        Text(
-            "Give yourself a spending target for the month.",
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            "This can be changed any time in Settings.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(24.dp))
-        GlassPanel {
-            OutlinedTextField(
-                value = budget,
-                onValueChange = { viewModel.onBudgetChanged(it) },
-                label = { Text("Total Monthly Budget") },
-                leadingIcon = { Text("₹", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                    focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = MaterialTheme.colorScheme.primary,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                )
-            )
-        }
-    }
-}
-
-@Composable
-fun SmsPermissionPage(onPermissionResult: () -> Unit) {
-    val context = LocalContext.current
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { perms ->
-        if (perms.values.any { !it }) {
-            Toast.makeText(context, "Permissions denied. You can enable them later in settings.", Toast.LENGTH_LONG).show()
-        } else {
-            Toast.makeText(context, "SMS Scanning Enabled!", Toast.LENGTH_SHORT).show()
-        }
-        onPermissionResult()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(Icons.AutoMirrored.Filled.Message, contentDescription = "SMS Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(24.dp))
-        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "Consider allowing Finlight to read your SMS inbox to automatically detect and import new transactions. This is a huge time-saver!",
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = {
-            permissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
-        }) {
-            Text("Enable SMS Scanning")
-        }
-    }
-}
-
-@Composable
-fun SmsScanningInfoPage() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.AutoAwesome,
-            contentDescription = "Magic Wand Icon",
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(Modifier.height(24.dp))
-        Text("Supercharge Your Setup", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.height(16.dp))
-        Text(
-            buildAnnotatedString {
-                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
-                    append("After setup, you can visit the ")
-                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
-                        append("Settings")
-                    }
-                    append(" screen at any time to import existing transactions from your SMS inbox.\n\nYou'll have two options:\n\n")
-                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
-                        append("• Quick Scan:")
-                    }
-                    append(" A fast scan of recent messages. This defaults to the last 30 days, but you can pick any start date you like!\n\n")
-                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
-                        append("• Full Scan:")
-                    }
-                    append(" A complete scan of your entire inbox.")
-                }
-            },
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-
-@Composable
-fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
-    val context = LocalContext.current
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            Toast.makeText(context, "Notifications enabled!", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(context, "You can enable notifications later in settings.", Toast.LENGTH_LONG).show()
-        }
-        onPermissionResult()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(Icons.Default.NotificationsActive, contentDescription = "Notification Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(24.dp))
-        Text("Stay Updated", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "Get notified about new transactions and receive daily, weekly and monthly summaries by enabling notifications.",
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(24.dp))
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Button(onClick = {
-                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }) {
-                Text("Enable Notifications")
-            }
-            Spacer(Modifier.height(16.dp))
-        } else {
-            LaunchedEffect(Unit) {
-                onPermissionResult()
-            }
-        }
-    }
-}
-
-@Composable
-fun CompletionPage() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.CheckCircle,
-            contentDescription = "Success Icon",
-            modifier = Modifier.size(100.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "You're All Set!",
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "Your accounts and preferences have been saved. You can now start tracking your finances.",
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
 -e 
 
 
@@ -7270,13 +7010,10 @@ private fun CsvInfoDialog(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: FEATURE - Added a segmented button to allow toggling between "Expense"
-// and "Income" transaction types, completing the core functionality of the
-// Transaction Composer. The control is styled to match the "Project Aurora"
-// glassmorphism aesthetic.
-// BUG FIX - Replaced direct use of `GlassPanelFill` with the `GlassPanel`
-// composable to ensure the component is theme-aware and to resolve the
-// "Unresolved reference" build error.
+// REASON: FEATURE - The screen now observes the TravelModeSettings. If travel
+// mode is active, it updates the currency symbol in the UI and displays a
+// real-time conversion helper text. The save action is updated to pass the
+// foreign currency amount to the ViewModel for conversion.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -7337,6 +7074,7 @@ import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -7378,6 +7116,7 @@ fun AddTransactionScreen(
     val selectedTags by viewModel.selectedTags.collectAsState()
     val defaultAccount by viewModel.defaultAccount.collectAsState()
     val validationError by viewModel.validationError.collectAsState()
+    val travelModeSettings by viewModel.travelModeSettings.collectAsState()
 
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
@@ -7454,6 +7193,15 @@ fun AddTransactionScreen(
         label = "CategoryColorAnimation"
     )
 
+    // --- NEW: Determine if travel mode is active for the selected date ---
+    val isTravelModeActive = remember(travelModeSettings, selectedDateTime) {
+        travelModeSettings?.let {
+            it.isEnabled &&
+                    selectedDateTime.timeInMillis >= it.startDate &&
+                    selectedDateTime.timeInMillis <= it.endDate
+        } ?: false
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         SpotlightBackground(color = animatedCategoryColor)
 
@@ -7482,7 +7230,9 @@ fun AddTransactionScreen(
                 AmountComposer(
                     amount = amount,
                     description = description,
-                    onDescriptionClick = { activeSheet = ComposerSheet.Description }
+                    onDescriptionClick = { activeSheet = ComposerSheet.Description },
+                    isTravelMode = isTravelModeActive,
+                    travelModeSettings = travelModeSettings
                 )
                 Spacer(Modifier.height(24.dp))
 
@@ -7684,8 +7434,16 @@ private fun SpotlightBackground(color: Color) {
 private fun AmountComposer(
     amount: String,
     description: String,
-    onDescriptionClick: () -> Unit
+    onDescriptionClick: () -> Unit,
+    isTravelMode: Boolean,
+    travelModeSettings: TravelModeSettings?
 ) {
+    val currencySymbol = if (isTravelMode) {
+        CurrencyHelper.getCurrencySymbol(travelModeSettings?.currencyCode)
+    } else {
+        "₹" // Default to home currency symbol
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.clickable(onClick = onDescriptionClick)
@@ -7700,7 +7458,7 @@ private fun AmountComposer(
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "₹",
+                text = currencySymbol,
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.Top)
@@ -7711,6 +7469,17 @@ private fun AmountComposer(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1
+            )
+        }
+        // --- NEW: Conversion helper text ---
+        if (isTravelMode && travelModeSettings != null) {
+            val enteredAmount = amount.toDoubleOrNull() ?: 0.0
+            val convertedAmount = enteredAmount * travelModeSettings.conversionRate
+            val homeSymbol = "₹" // Assuming home is INR for now
+            Text(
+                text = "≈ $homeSymbol${NumberFormat.getInstance().format(convertedAmount)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -9525,6 +9294,13 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
+// REASON: FEATURE - The screen now includes a conditional
+// `CurrencyConversionInfoCard`. This card appears only for transactions made in
+// a foreign currency, displaying the original amount, the conversion rate used,
+// and the final converted amount, making the process transparent to the user.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.net.Uri
@@ -9593,6 +9369,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLEncoder
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import io.pm.finlight.R
@@ -9787,7 +9564,6 @@ fun TransactionDetailScreen(
                         contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
                         item {
-                            // --- MODIFIED: Wrap header in a padded Box for a card-like appearance ---
                             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 TransactionSpotlightHeader(
                                     details = details,
@@ -9797,6 +9573,15 @@ fun TransactionDetailScreen(
                                     onCategoryClick = { activeSheetContent = SheetContent.Category },
                                     onDateTimeClick = { showDatePicker = true }
                                 )
+                            }
+                        }
+
+                        // --- NEW: Conditionally display currency conversion info ---
+                        if (details.transaction.originalAmount != null) {
+                            item {
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    CurrencyConversionInfoCard(transaction = details.transaction)
+                                }
                             }
                         }
 
@@ -10061,8 +9846,64 @@ fun TransactionDetailScreen(
 }
 
 @Composable
+private fun CurrencyConversionInfoCard(transaction: Transaction) {
+    val homeCurrencySymbol = "₹" // Assuming home is INR for now
+    val foreignCurrencySymbol = CurrencyHelper.getCurrencySymbol(transaction.currencyCode)
+    val numberFormat = remember { NumberFormat.getNumberInstance(Locale("en", "IN")).apply { maximumFractionDigits = 2 } }
+
+    GlassPanel {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "Currency Conversion",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Original Amount:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "${foreignCurrencySymbol}${numberFormat.format(transaction.originalAmount)}",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Conversion Rate:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "1 ${transaction.currencyCode} = $homeCurrencySymbol${numberFormat.format(transaction.conversionRate)}",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Converted Amount:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "$homeCurrencySymbol${numberFormat.format(transaction.amount)}",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DynamicCategoryBackground(category: Category) {
-    // --- UPDATED: Show '?' for Uncategorized, otherwise the first letter ---
     val letter = if (category.name == "Uncategorized") "?" else category.name.firstOrNull()?.uppercase() ?: "?"
     val color = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
 
@@ -10107,7 +9948,6 @@ private fun TransactionSpotlightHeader(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            // --- UPDATED: Conditional background logic ---
             val isPredefined = CategoryIconHelper.getCategoryBackground(category.iconKey) != R.drawable.bg_cat_general
             if (isPredefined) {
                 Image(
@@ -13231,6 +13071,329 @@ private fun RuleDetailRow(label: String, value: String) {
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CurrencyTravelScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CurrencyTravelScreen.kt
+// REASON: NEW FILE - This screen provides the UI for managing the new "Travel
+// Mode" feature. It allows users to view/change their home currency and
+// enable/disable travel mode, including setting the foreign currency, conversion
+// rate, and trip duration. It is designed with the "Project Aurora" aesthetic.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import io.pm.finlight.CurrencyHelper
+import io.pm.finlight.CurrencyInfo
+import io.pm.finlight.CurrencyViewModel
+import io.pm.finlight.TravelModeSettings
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
+import java.text.SimpleDateFormat
+import java.util.*
+
+// --- FIX: Add the missing isDark() helper function ---
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CurrencyTravelScreen(
+    navController: NavController,
+    viewModel: CurrencyViewModel = viewModel()
+) {
+    val homeCurrencyCode by viewModel.homeCurrency.collectAsState()
+    val travelSettings by viewModel.travelModeSettings.collectAsState()
+    val context = LocalContext.current
+
+    // UI State
+    var isTravelModeEnabled by remember(travelSettings) { mutableStateOf(travelSettings?.isEnabled ?: false) }
+    var selectedCurrency by remember(travelSettings) { mutableStateOf(CurrencyHelper.getCurrencyInfo(travelSettings?.currencyCode)) }
+    var conversionRate by remember(travelSettings) { mutableStateOf(travelSettings?.conversionRate?.toString() ?: "") }
+    var startDate by remember(travelSettings) { mutableStateOf(travelSettings?.startDate) }
+    var endDate by remember(travelSettings) { mutableStateOf(travelSettings?.endDate) }
+
+    // Dialog visibility
+    var showHomeCurrencyPicker by remember { mutableStateOf(false) }
+    var showTravelCurrencyPicker by remember { mutableStateOf(false) }
+    var showStartDatePicker by remember { mutableStateOf(false) }
+    var showEndDatePicker by remember { mutableStateOf(false) }
+
+    val isSaveEnabled = isTravelModeEnabled && selectedCurrency != null && (conversionRate.toFloatOrNull() ?: 0f) > 0f && startDate != null && endDate != null
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Currency & Travel") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Home Currency Section
+            item {
+                SettingsSection(title = "Home Currency") {
+                    ListItem(
+                        headlineContent = { Text("Default Currency") },
+                        supportingContent = { Text("Used for all reports and budgets") },
+                        trailingContent = {
+                            TextButton(onClick = { showHomeCurrencyPicker = true }) {
+                                Text("${CurrencyHelper.getCurrencyInfo(homeCurrencyCode)?.currencyCode ?: homeCurrencyCode} (${CurrencyHelper.getCurrencySymbol(homeCurrencyCode)})")
+                            }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
+            }
+
+            // Travel Mode Section
+            item {
+                SettingsSection(title = "Travel Mode") {
+                    ListItem(
+                        headlineContent = { Text("Enable Travel Mode") },
+                        supportingContent = { Text("Log expenses in a foreign currency for a specific trip.") },
+                        trailingContent = {
+                            Switch(
+                                checked = isTravelModeEnabled,
+                                onCheckedChange = {
+                                    isTravelModeEnabled = it
+                                    if (!it) {
+                                        viewModel.disableTravelMode()
+                                        Toast.makeText(context, "Travel Mode Disabled", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+
+                    AnimatedVisibility(visible = isTravelModeEnabled) {
+                        Column {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            ListItem(
+                                headlineContent = { Text("Foreign Currency") },
+                                trailingContent = {
+                                    TextButton(onClick = { showTravelCurrencyPicker = true }) {
+                                        Text(selectedCurrency?.currencyCode ?: "Select")
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            ListItem(
+                                headlineContent = {
+                                    Column {
+                                        Text("Conversion Rate")
+                                        Text(
+                                            "1 ${selectedCurrency?.currencyCode ?: "Foreign"} = ? ${homeCurrencyCode}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                trailingContent = {
+                                    OutlinedTextField(
+                                        value = conversionRate,
+                                        onValueChange = { conversionRate = it.filter { c -> c.isDigit() || c == '.' } },
+                                        modifier = Modifier.width(100.dp),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true,
+                                        label = { Text(homeCurrencyCode) }
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            ListItem(
+                                headlineContent = { Text("Trip Start Date") },
+                                trailingContent = {
+                                    val formatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+                                    TextButton(onClick = { showStartDatePicker = true }) {
+                                        Text(startDate?.let { formatter.format(Date(it)) } ?: "Select")
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            ListItem(
+                                headlineContent = { Text("Trip End Date") },
+                                trailingContent = {
+                                    val formatter = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+                                    TextButton(onClick = { showEndDatePicker = true }) {
+                                        Text(endDate?.let { formatter.format(Date(it)) } ?: "Select")
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                if (isTravelModeEnabled) {
+                    Button(
+                        onClick = {
+                            val settings = TravelModeSettings(
+                                isEnabled = true,
+                                currencyCode = selectedCurrency!!.currencyCode,
+                                conversionRate = conversionRate.toFloat(),
+                                startDate = startDate!!,
+                                endDate = endDate!!
+                            )
+                            viewModel.saveTravelModeSettings(settings)
+                            Toast.makeText(context, "Travel Mode settings saved!", Toast.LENGTH_SHORT).show()
+                            navController.popBackStack()
+                        },
+                        enabled = isSaveEnabled,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Save Travel Settings")
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Dialogs ---
+    if (showHomeCurrencyPicker) {
+        CurrencyPickerDialog(
+            title = "Select Home Currency",
+            onDismiss = { showHomeCurrencyPicker = false },
+            onCurrencySelected = {
+                viewModel.saveHomeCurrency(it.currencyCode)
+                showHomeCurrencyPicker = false
+            }
+        )
+    }
+
+    if (showTravelCurrencyPicker) {
+        CurrencyPickerDialog(
+            title = "Select Travel Currency",
+            onDismiss = { showTravelCurrencyPicker = false },
+            onCurrencySelected = {
+                selectedCurrency = it
+                showTravelCurrencyPicker = false
+            }
+        )
+    }
+
+    if (showStartDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = startDate ?: System.currentTimeMillis())
+        DatePickerDialog(
+            onDismissRequest = { showStartDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    startDate = datePickerState.selectedDateMillis
+                    showStartDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") } }
+        ) { DatePicker(state = datePickerState) }
+    }
+
+    if (showEndDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = endDate ?: startDate ?: System.currentTimeMillis())
+        DatePickerDialog(
+            onDismissRequest = { showEndDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    endDate = datePickerState.selectedDateMillis
+                    showEndDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") } }
+        ) { DatePicker(state = datePickerState) }
+    }
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+        )
+        GlassPanel {
+            Column {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun CurrencyPickerDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onCurrencySelected: (CurrencyInfo) -> Unit
+) {
+    val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+    val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                LazyColumn {
+                    items(CurrencyHelper.commonCurrencies.size) { index ->
+                        val currency = CurrencyHelper.commonCurrencies[index]
+                        ListItem(
+                            headlineContent = { Text("${currency.countryName} (${currency.currencyCode})") },
+                            trailingContent = { Text(currency.currencySymbol) },
+                            modifier = Modifier.clickable { onCurrencySelected(currency) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        containerColor = popupContainerColor
+    )
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
@@ -13502,39 +13665,63 @@ fun IncomeHeader(
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt ==================
 // =================================================================================
-// FILE: app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt
-// REASON: BUG FIX - The PagerState is now passed down to the individual page
-// composables (`UserNamePage`, `BudgetSetupPage`). This allows each page to
-// know when it is the `currentPage` and request focus only when it is active,
-// preventing focus from being stolen by off-screen pages.
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt
+// REASON: REFACTOR - Combined OnboardingPages.kt into this file to resolve an
+// 'Unresolved reference' compilation error and improve code cohesion.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.Manifest
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import io.pm.finlight.CurrencyHelper
+import io.pm.finlight.CurrencyInfo
 import io.pm.finlight.OnboardingViewModel
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
+
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () -> Unit) {
-    val pagerState = rememberPagerState { 7 }
+    val pagerState = rememberPagerState { 8 }
     val scope = rememberCoroutineScope()
 
     val onNextClicked: () -> Unit = {
@@ -13565,13 +13752,13 @@ fun OnboardingScreen(viewModel: OnboardingViewModel, onOnboardingFinished: () ->
         ) { page ->
             when (page) {
                 0 -> WelcomePage()
-                // --- FIX: Pass pagerState to pages that need to manage focus ---
                 1 -> UserNamePage(viewModel = viewModel, pagerState = pagerState)
                 2 -> BudgetSetupPage(viewModel = viewModel, pagerState = pagerState)
-                3 -> SmsPermissionPage(onPermissionResult = onNextClicked)
-                4 -> SmsScanningInfoPage()
-                5 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
-                6 -> CompletionPage()
+                3 -> CurrencySetupPage(viewModel = viewModel)
+                4 -> SmsPermissionPage(onPermissionResult = onNextClicked)
+                5 -> SmsScanningInfoPage()
+                6 -> NotificationPermissionPage(onPermissionResult = onNextClicked)
+                7 -> CompletionPage()
             }
         }
     }
@@ -13598,8 +13785,8 @@ fun OnboardingBottomBar(
             PageIndicator(pageCount = pagerState.pageCount, currentPage = pagerState.currentPage)
 
             val isNextButtonVisible = pagerState.currentPage < pagerState.pageCount - 1 &&
-                    pagerState.currentPage != 3 && // Hide on SMS Permission Page
-                    pagerState.currentPage != 5    // Hide on Notification Permission Page
+                    pagerState.currentPage != 4 && // Hide on SMS Permission Page
+                    pagerState.currentPage != 6    // Hide on Notification Permission Page
 
             val isNextEnabled = if (pagerState.currentPage == 1) {
                 userName.isNotBlank()
@@ -13641,6 +13828,431 @@ fun PageIndicator(pageCount: Int, currentPage: Int) {
                     .background(color)
             )
         }
+    }
+}
+
+@Composable
+fun WelcomePage() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.PrivacyTip,
+            contentDescription = "Privacy Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "Welcome to Finlight",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            buildAnnotatedString {
+                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                    append("Your ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                        append("PRIVACY")
+                    }
+                    append(" is our ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                        append("PRIORITY")
+                    }
+                    append(". All your data is ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("STORED SECURELY")
+                    }
+                    append(" and ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("ONLY ON YOUR DEVICE")
+                    }
+                    append(".\n\nThere is ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("NO LOGIN")
+                    }
+                    append(" needed. We will never ask for your phone number or email.\n\nTo keep your data safe, automatic backups to your personal Google Drive are enabled by default. This backup is encrypted and you can disable this at any time in the settings. Let's get you set up.")
+                }
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun UserNamePage(viewModel: OnboardingViewModel, pagerState: PagerState) {
+    val name by viewModel.userName.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.AccountCircle,
+            contentDescription = "User Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("What should we call you?", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            "This will be used to personalize your experience.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(24.dp))
+        GlassPanel {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { viewModel.onNameChanged(it) },
+                label = { Text("Your Name") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    capitalization = KeyboardCapitalization.Words
+                ),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                )
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun BudgetSetupPage(viewModel: OnboardingViewModel, pagerState: PagerState) {
+    val budget by viewModel.monthlyBudget.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Savings,
+            contentDescription = "Budget Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("Set a Monthly Budget", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            "Give yourself a spending target for the month.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            "This can be changed any time in Settings.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(24.dp))
+        GlassPanel {
+            OutlinedTextField(
+                value = budget,
+                onValueChange = { viewModel.onBudgetChanged(it) },
+                label = { Text("Total Monthly Budget") },
+                leadingIcon = { Text("₹", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun CurrencySetupPage(viewModel: OnboardingViewModel) {
+    val detectedCurrency by viewModel.homeCurrency.collectAsState()
+    var showCurrencyPicker by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Public,
+            contentDescription = "Currency Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("Confirm Your Currency", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            "We've set your home currency based on your device's region. This will be used for all reports and budgets.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(24.dp))
+
+        detectedCurrency?.let {
+            GlassPanel {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            text = "${it.countryName} (${it.currencyCode})",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Symbol: ${it.currencySymbol}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(onClick = { showCurrencyPicker = true }) {
+                        Text("Change")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCurrencyPicker) {
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+        AlertDialog(
+            onDismissRequest = { showCurrencyPicker = false },
+            title = { Text("Select Home Currency") },
+            text = {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    LazyColumn {
+                        items(CurrencyHelper.commonCurrencies.size) { index ->
+                            val currency = CurrencyHelper.commonCurrencies[index]
+                            ListItem(
+                                headlineContent = { Text("${currency.countryName} (${currency.currencyCode})") },
+                                trailingContent = { Text(currency.currencySymbol) },
+                                modifier = Modifier.clickable {
+                                    viewModel.onHomeCurrencyChanged(currency)
+                                    showCurrencyPicker = false
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCurrencyPicker = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = popupContainerColor
+        )
+    }
+}
+
+@Composable
+fun SmsPermissionPage(onPermissionResult: () -> Unit) {
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        if (perms.values.any { !it }) {
+            Toast.makeText(context, "Permissions denied. You can enable them later in settings.", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(context, "SMS Scanning Enabled!", Toast.LENGTH_SHORT).show()
+        }
+        onPermissionResult()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.AutoMirrored.Filled.Message, contentDescription = "SMS Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(24.dp))
+        Text("Automate Your Tracking", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Consider allowing Finlight to read your SMS inbox to automatically detect and import new transactions. This is a huge time-saver!",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = {
+            permissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+        }) {
+            Text("Enable SMS Scanning")
+        }
+    }
+}
+
+@Composable
+fun SmsScanningInfoPage() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = "Magic Wand Icon",
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(24.dp))
+        Text("Supercharge Your Setup", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            buildAnnotatedString {
+                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                    append("After setup, you can visit the ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("Settings")
+                    }
+                    append(" screen at any time to import existing transactions from your SMS inbox.\n\nYou'll have two options:\n\n")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("• Quick Scan:")
+                    }
+                    append(" A fast scan of recent messages. This defaults to the last 30 days, but you can pick any start date you like!\n\n")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                        append("• Full Scan:")
+                    }
+                    append(" A complete scan of your entire inbox.")
+                }
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+
+@Composable
+fun NotificationPermissionPage(onPermissionResult: () -> Unit) {
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Toast.makeText(context, "Notifications enabled!", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "You can enable notifications later in settings.", Toast.LENGTH_LONG).show()
+        }
+        onPermissionResult()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Default.NotificationsActive, contentDescription = "Notification Icon", modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(24.dp))
+        Text("Stay Updated", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Get notified about new transactions and receive daily, weekly and monthly summaries by enabling notifications.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(24.dp))
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Button(onClick = {
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }) {
+                Text("Enable Notifications")
+            }
+            Spacer(Modifier.height(16.dp))
+        } else {
+            LaunchedEffect(Unit) {
+                onPermissionResult()
+            }
+        }
+    }
+}
+
+@Composable
+fun CompletionPage() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = "Success Icon",
+            modifier = Modifier.size(100.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "You're All Set!",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Your accounts and preferences have been saved. You can now start tracking your finances.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 -e 
@@ -13809,11 +14421,9 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: FEATURE - Added a new "Savings Goals" item to the "General" settings
-// section, providing a navigation entry point to the new GoalScreen.
-// UPDATE: Reorganized the screen to be more minimalistic. The "General" section
-// is now displayed directly, while other sections are moved to separate screens
-// accessible via navigation items.
+// REASON: FEATURE - Added a new "Currency & Travel" item to the "Preferences"
+// section, providing a navigation entry point to the new screen for managing
+// the multi-currency feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -13952,6 +14562,14 @@ fun ProfileScreen(
                     subtitle = "Manage SMS parsing and rules",
                     icon = Icons.Default.AutoAwesome,
                     onClick = { navController.navigate("automation_settings") }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                // --- NEW: Add navigation item for Currency & Travel ---
+                SettingsActionItem(
+                    text = "Currency & Travel",
+                    subtitle = "Manage home currency and travel mode",
+                    icon = Icons.Default.Flight,
+                    onClick = { navController.navigate("currency_travel_settings") }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                 SettingsActionItem(
@@ -17402,13 +18020,8 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - The route for `search_screen` has been updated to accept an
-// optional `date` argument. This allows other screens, like the new Spending
-// Consistency Calendar, to navigate to the search results pre-filtered for a
-// specific day.
-// UX REFINEMENT - Added a `focusSearch` argument to the `search_screen` route
-// to conditionally control whether the search bar receives initial focus,
-// preventing the keyboard from appearing automatically when not desired.
+// REASON: FEATURE - Added the route for the new "currency_travel_settings"
+// screen to the AppNavHost, making it accessible from the Profile screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -17641,7 +18254,8 @@ fun MainAppScreen() {
         "automation_settings",
         "notification_settings",
         "data_settings",
-        "add_edit_goal"
+        "add_edit_goal",
+        "currency_travel_settings" // --- NEW: Add new screen to hide main top bar
     )
 
     val currentTitle = if (showBottomBar) {
@@ -18243,6 +18857,16 @@ fun AppNavHost(
         ) {
             DataSettingsScreen(navController, settingsViewModel)
         }
+        // --- NEW: Add route for the new screen ---
+        composable(
+            "currency_travel_settings",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
+            CurrencyTravelScreen(navController)
+        }
     }
 }
 
@@ -18778,6 +19402,13 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
 
 ================== FILE: ./app/src/main/java/OnboardingViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/OnboardingViewModel.kt
+// REASON: FEATURE - The ViewModel is updated to detect the user's home
+// currency from their device locale. It exposes this currency and provides a
+// function to save the final selection, integrating currency setup into the
+// onboarding flow.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.lifecycle.ViewModel
@@ -18785,6 +19416,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.Currency
+import java.util.Locale
 
 class OnboardingViewModel(
     private val categoryRepository: CategoryRepository,
@@ -18797,6 +19430,15 @@ class OnboardingViewModel(
     private val _monthlyBudget = MutableStateFlow("")
     val monthlyBudget = _monthlyBudget.asStateFlow()
 
+    // --- NEW: State for home currency ---
+    private val _homeCurrency = MutableStateFlow<CurrencyInfo?>(null)
+    val homeCurrency = _homeCurrency.asStateFlow()
+
+    init {
+        // --- NEW: Detect home currency on init ---
+        detectHomeCurrency()
+    }
+
     fun onNameChanged(newName: String) {
         _userName.value = newName
     }
@@ -18807,15 +19449,40 @@ class OnboardingViewModel(
         }
     }
 
+    // --- NEW: Function to detect currency from locale ---
+    private fun detectHomeCurrency() {
+        viewModelScope.launch {
+            try {
+                val defaultLocale = Locale.getDefault()
+                val currency = Currency.getInstance(defaultLocale)
+                _homeCurrency.value = CurrencyInfo(
+                    countryName = defaultLocale.displayCountry,
+                    currencyCode = currency.currencyCode,
+                    currencySymbol = currency.getSymbol(defaultLocale)
+                )
+            } catch (e: Exception) {
+                // Fallback to INR if detection fails
+                _homeCurrency.value = CurrencyHelper.getCurrencyInfo("INR")
+            }
+        }
+    }
+
+    // --- NEW: Function to update the selected home currency ---
+    fun onHomeCurrencyChanged(currencyInfo: CurrencyInfo) {
+        _homeCurrency.value = currencyInfo
+    }
+
     fun finishOnboarding() {
         viewModelScope.launch {
             if (_userName.value.isNotBlank()) {
                 settingsRepository.saveUserName(_userName.value)
             }
 
-            // --- BUG FIX: Ensure the full list of predefined categories is inserted ---
-            // This replaces any faulty logic that was creating a few default categories.
-            // It guarantees all users start with the complete, visually-rich category set.
+            // --- NEW: Save the selected home currency ---
+            _homeCurrency.value?.let {
+                settingsRepository.saveHomeCurrency(it.currencyCode)
+            }
+
             categoryRepository.insertAll(CategoryIconHelper.predefinedCategories)
 
             val budgetFloat = _monthlyBudget.value.toFloatOrNull() ?: 0f
@@ -19215,11 +19882,9 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - The database has been updated to include the new
-// `RecurringPattern` entity and its corresponding `RecurringPatternDao`. The
-// database version has been incremented, and new migrations (25 to 26 and 26 to 27)
-// have been added to create the `recurring_patterns` table and add the
-// `smsSignature` column to the `transactions` table.
+// REASON: FEATURE - Incremented database version to 28 and added MIGRATION_27_28
+// to add the new `originalAmount`, `currencyCode`, and `conversionRate` columns
+// to the `transactions` table for multi-currency support.
 // =================================================================================
 package io.pm.finlight
 
@@ -19250,9 +19915,9 @@ import java.util.Calendar
         MerchantCategoryMapping::class,
         IgnoreRule::class,
         Goal::class,
-        RecurringPattern::class // --- NEW: Add the new entity
+        RecurringPattern::class
     ],
-    version = 27, // --- UPDATED: Incremented version number
+    version = 28, // --- UPDATED: Incremented version number
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -19268,7 +19933,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
     abstract fun ignoreRuleDao(): IgnoreRuleDao
     abstract fun goalDao(): GoalDao
-    abstract fun recurringPatternDao(): RecurringPatternDao // --- NEW: Add the new DAO
+    abstract fun recurringPatternDao(): RecurringPatternDao
 
     companion object {
         @Volatile
@@ -19511,7 +20176,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the recurring_patterns table ---
         val MIGRATION_25_26 = object : Migration(25, 26) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -19532,11 +20196,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add the smsSignature column to transactions ---
         val MIGRATION_26_27 = object : Migration(26, 27) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `transactions` ADD COLUMN `smsSignature` TEXT")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_transactions_smsSignature` ON `transactions` (`smsSignature`)")
+            }
+        }
+
+        // --- NEW: Migration to add multi-currency fields to the transactions table ---
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `originalAmount` REAL")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `currencyCode` TEXT")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `conversionRate` REAL")
             }
         }
 
@@ -19545,7 +20217,7 @@ abstract class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -19939,7 +20611,69 @@ data class AppDataBackup(
 -e 
 
 
+================== FILE: ./app/src/main/java/CurrencyViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/CurrencyViewModel.kt
+// REASON: NEW FILE - This ViewModel provides the state and logic for the new
+// Currency & Travel screen. It interfaces with the SettingsRepository to get
+// and save the home currency and all Travel Mode settings.
+// =================================================================================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class CurrencyViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val settingsRepository = SettingsRepository(application)
+
+    val homeCurrency: StateFlow<String> = settingsRepository.getHomeCurrency()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = "INR"
+        )
+
+    val travelModeSettings: StateFlow<TravelModeSettings?> = settingsRepository.getTravelModeSettings()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = null
+        )
+
+    fun saveHomeCurrency(currencyCode: String) {
+        viewModelScope.launch {
+            settingsRepository.saveHomeCurrency(currencyCode)
+        }
+    }
+
+    fun saveTravelModeSettings(settings: TravelModeSettings) {
+        viewModelScope.launch {
+            settingsRepository.saveTravelModeSettings(settings)
+        }
+    }
+
+    fun disableTravelMode() {
+        viewModelScope.launch {
+            settingsRepository.saveTravelModeSettings(null)
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
+// REASON: FEATURE - Added a data class and functions to save and retrieve all
+// settings related to the new "Travel Mode" feature, including the home
+// currency, from SharedPreferences.
+// =================================================================================
 package io.pm.finlight
 
 import android.content.Context
@@ -19953,6 +20687,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.util.Calendar
 import java.util.Locale
+
+// --- NEW: Data class to hold all travel mode settings ---
+data class TravelModeSettings(
+    val isEnabled: Boolean,
+    val currencyCode: String,
+    val conversionRate: Float,
+    val startDate: Long,
+    val endDate: Long
+)
 
 class SettingsRepository(context: Context) {
 
@@ -19984,9 +20727,59 @@ class SettingsRepository(context: Context) {
         private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
         private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
         private const val KEY_SELECTED_THEME = "selected_app_theme"
+        // --- NEW: Keys for Travel Mode ---
+        private const val KEY_HOME_CURRENCY = "home_currency_code"
+        private const val KEY_TRAVEL_MODE_SETTINGS = "travel_mode_settings"
     }
 
-    // --- NEW: Blocking function to get a historical monthly budget ---
+    // --- NEW: Functions for Home Currency ---
+    fun saveHomeCurrency(currencyCode: String) {
+        prefs.edit {
+            putString(KEY_HOME_CURRENCY, currencyCode)
+        }
+    }
+
+    fun getHomeCurrency(): Flow<String> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_HOME_CURRENCY) {
+                    trySend(sp.getString(key, "INR") ?: "INR")
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            // Default to INR if not set
+            trySend(prefs.getString(KEY_HOME_CURRENCY, "INR") ?: "INR")
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+    // --- NEW: Functions for Travel Mode Settings ---
+    fun saveTravelModeSettings(settings: TravelModeSettings?) {
+        val json = if (settings == null) null else gson.toJson(settings)
+        prefs.edit {
+            putString(KEY_TRAVEL_MODE_SETTINGS, json)
+        }
+    }
+
+    fun getTravelModeSettings(): Flow<TravelModeSettings?> {
+        return callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == KEY_TRAVEL_MODE_SETTINGS) {
+                    val json = sp.getString(key, null)
+                    val settings = if (json == null) null else gson.fromJson(json, TravelModeSettings::class.java)
+                    trySend(settings)
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            val initialJson = prefs.getString(KEY_TRAVEL_MODE_SETTINGS, null)
+            val initialSettings = if (initialJson == null) null else gson.fromJson(initialJson, TravelModeSettings::class.java)
+            trySend(initialSettings)
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+    }
+
+
+    // --- Blocking function to get a historical monthly budget ---
     /**
      * Retrieves the overall budget for a specific month synchronously.
      * If no budget is set for the given month, it looks backward up to 12 months
@@ -23082,9 +23875,9 @@ data class Budget(
 ================== FILE: ./app/src/main/java/Transaction.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/Transaction.kt
-// REASON: FEATURE - Added a new nullable `smsSignature` field. This will store
-// the normalized hash of the original SMS message, which is the key to identifying
-// potential recurring transactions automatically. An index is added for efficient lookups.
+// REASON: FEATURE - Added new nullable fields `originalAmount`, `currencyCode`,
+// and `conversionRate` to support multi-currency transactions. The existing
+// `amount` field will always store the value converted to the home currency.
 // =================================================================================
 package io.pm.finlight
 
@@ -23122,7 +23915,7 @@ data class Transaction(
     val id: Int = 0,
     val description: String,
     val categoryId: Int?,
-    val amount: Double,
+    val amount: Double, // ALWAYS in home currency
     val date: Long,
     val accountId: Int,
     val notes: String?,
@@ -23132,8 +23925,11 @@ data class Transaction(
     val source: String = "Manual Entry",
     val originalDescription: String? = null,
     val isExcluded: Boolean = false,
-    // --- NEW: Field to store the SMS signature for pattern detection ---
-    val smsSignature: String? = null
+    val smsSignature: String? = null,
+    // --- NEW: Fields for multi-currency support ---
+    val originalAmount: Double? = null, // Amount in foreign currency
+    val currencyCode: String? = null, // e.g., "USD", "EUR"
+    val conversionRate: Double? = null // Rate to convert originalAmount to home currency
 )
 -e 
 

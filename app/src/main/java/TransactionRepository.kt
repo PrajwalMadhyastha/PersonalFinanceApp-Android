@@ -1,3 +1,9 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
+// REASON: FEATURE (Splitting) - Added a new function `getTransactionWithSplits`
+// to expose the corresponding DAO method. This will be used by the ViewModel
+// to fetch all the data needed for the splitting UI.
+// =================================================================================
 package io.pm.finlight
 
 import android.util.Log
@@ -5,6 +11,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
 
 class TransactionRepository(private val transactionDao: TransactionDao) {
+
+    // --- NEW: Expose the DAO function to get a transaction with its splits ---
+    fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?> {
+        return transactionDao.getTransactionWithSplits(transactionId)
+    }
+
+    // --- (Existing repository methods below) ---
+
     val allTransactions: Flow<List<TransactionDetails>> =
         transactionDao.getAllTransactions()
             .onEach { transactions ->
@@ -14,7 +28,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Expose the DAO function to get the first transaction date ---
     fun getFirstTransactionDate(): Flow<Long?> {
         return transactionDao.getFirstTransactionDate()
     }

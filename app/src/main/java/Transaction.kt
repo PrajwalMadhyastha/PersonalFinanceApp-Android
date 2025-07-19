@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/Transaction.kt
-// REASON: FEATURE - Added new nullable fields `originalAmount`, `currencyCode`,
-// and `conversionRate` to support multi-currency transactions. The existing
-// `amount` field will always store the value converted to the home currency.
+// REASON: FEATURE (Splitting) - Added a new `isSplit` boolean column. This will
+// act as a simple flag to quickly identify "parent" transactions that have been
+// split into multiple items, which is crucial for UI logic and preventing direct
+// edits to a split transaction's amount.
 // =================================================================================
 package io.pm.finlight
 
@@ -18,7 +19,7 @@ import kotlinx.serialization.Serializable
     indices = [
         Index(value = ["categoryId"]),
         Index(value = ["accountId"]),
-        Index(value = ["smsSignature"]) // --- NEW: Index for faster lookups
+        Index(value = ["smsSignature"])
     ],
     foreignKeys = [
         ForeignKey(
@@ -51,8 +52,9 @@ data class Transaction(
     val originalDescription: String? = null,
     val isExcluded: Boolean = false,
     val smsSignature: String? = null,
-    // --- NEW: Fields for multi-currency support ---
-    val originalAmount: Double? = null, // Amount in foreign currency
-    val currencyCode: String? = null, // e.g., "USD", "EUR"
-    val conversionRate: Double? = null // Rate to convert originalAmount to home currency
+    val originalAmount: Double? = null,
+    val currencyCode: String? = null,
+    val conversionRate: Double? = null,
+    // --- NEW: Flag to indicate this is a parent transaction ---
+    val isSplit: Boolean = false
 )

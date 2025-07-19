@@ -1,3 +1,13 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
+// REASON: FEATURE (Splitting) - Added a new query `getTransactionWithSplits` to
+// fetch a parent transaction and all its associated child splits in a single
+// database call. Also added `setTransactionAsSplit` to update the `isSplit` flag.
+// FIX - Removed the redundant @Transaction annotation, which was causing a build
+// error. Room handles this implicitly for queries using @Relation.
+// FIX - Corrected a SQL syntax error in `getSpendingByMerchantForMonth` by adding
+// the missing table alias 'T', which was causing a build failure.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -6,15 +16,24 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Query to find the timestamp of the very first transaction ---
+    // --- NEW: Query to get a parent transaction and its children ---
+    // The @Transaction annotation is not needed here as Room handles it implicitly
+    // for queries that use @Relation.
+    @Query("SELECT * FROM transactions WHERE id = :transactionId")
+    fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?>
+
+    // --- NEW: Query to mark a transaction as a parent ---
+    @Query("UPDATE transactions SET isSplit = :isSplit WHERE id = :transactionId")
+    suspend fun setTransactionAsSplit(transactionId: Int, isSplit: Boolean)
+
+    // --- (Existing DAO methods below) ---
+
     @Query("SELECT MIN(date) FROM transactions")
     fun getFirstTransactionDate(): Flow<Long?>
 
-    // --- NEW: Get all transactions with a signature since a given date ---
     @Query("SELECT * FROM transactions WHERE smsSignature IS NOT NULL AND date >= :sinceDate")
     suspend fun getTransactionsWithSignatureSince(sinceDate: Long): List<Transaction>
 
-    // --- NEW: Get all transactions that match a specific signature ---
     @Query("SELECT * FROM transactions WHERE smsSignature = :signature ORDER BY date ASC")
     suspend fun getTransactionsBySignature(signature: String): List<Transaction>
 
@@ -122,16 +141,16 @@ interface TransactionDao {
 
     @Query("""
         SELECT
-            description as merchantName,
-            SUM(amount) as totalAmount,
-            COUNT(id) as transactionCount
-        FROM transactions
-        WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
-          AND isExcluded = 0
-          AND (:keyword IS NULL OR LOWER(description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR accountId = :accountId)
-          AND (:categoryId IS NULL OR categoryId = :categoryId)
-        GROUP BY LOWER(description)
+            T.description as merchantName,
+            SUM(T.amount) as totalAmount,
+            COUNT(T.id) as transactionCount
+        FROM transactions AS T
+        WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
+          AND T.isExcluded = 0
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
+        GROUP BY LOWER(T.description)
         ORDER BY totalAmount DESC
     """)
     fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>>

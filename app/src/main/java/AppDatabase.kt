@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - Incremented database version to 28 and added MIGRATION_27_28
-// to add the new `originalAmount`, `currencyCode`, and `conversionRate` columns
-// to the `transactions` table for multi-currency support.
+// REASON: FEATURE (Splitting) - Incremented database version to 29. Added the
+// new `SplitTransaction` entity and its corresponding `SplitTransactionDao`.
+// Added MIGRATION_28_29 to create the `split_transactions` table and add the
+// `isSplit` column to the `transactions` table.
 // =================================================================================
 package io.pm.finlight
 
@@ -33,9 +34,10 @@ import java.util.Calendar
         MerchantCategoryMapping::class,
         IgnoreRule::class,
         Goal::class,
-        RecurringPattern::class
+        RecurringPattern::class,
+        SplitTransaction::class // --- NEW: Add new entity
     ],
-    version = 28, // --- UPDATED: Incremented version number
+    version = 29, // --- UPDATED: Incremented version number
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,6 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun ignoreRuleDao(): IgnoreRuleDao
     abstract fun goalDao(): GoalDao
     abstract fun recurringPatternDao(): RecurringPatternDao
+    abstract fun splitTransactionDao(): SplitTransactionDao // --- NEW: Add new DAO abstract function
 
     companion object {
         @Volatile
@@ -321,7 +324,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add multi-currency fields to the transactions table ---
         val MIGRATION_27_28 = object : Migration(27, 28) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `transactions` ADD COLUMN `originalAmount` REAL")
@@ -330,12 +332,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration for transaction splitting ---
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Add the isSplit column to the main transactions table
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `isSplit` INTEGER NOT NULL DEFAULT 0")
+
+                // 2. Create the new table for split items
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `split_transactions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `parentTransactionId` INTEGER NOT NULL, 
+                        `amount` REAL NOT NULL, 
+                        `categoryId` INTEGER, 
+                        `notes` TEXT, 
+                        FOREIGN KEY(`parentTransactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE, 
+                        FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON DELETE SET NULL
+                    )
+                """)
+                // 3. Add indices for performance
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_split_transactions_parentTransactionId` ON `split_transactions` (`parentTransactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_split_transactions_categoryId` ON `split_transactions` (`categoryId`)")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
