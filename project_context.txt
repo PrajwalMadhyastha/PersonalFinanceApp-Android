@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jul 19 15:55:40 IST 2025
+Generated on: Sat Jul 19 16:41:22 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -1294,10 +1294,10 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Splitting) - Added the `unsplitTransaction` function. This
-// function orchestrates the process of reverting a split transaction back to a
-// single entity by deleting its child items and restoring the parent's original
-// state within a database transaction.
+// REASON: FEATURE - Added state management for the in-place category change feature.
+// A new StateFlow `transactionForCategoryChange` will hold the transaction being
+// edited, and new functions `requestCategoryChange` and `cancelCategoryChange`
+// will be used by the UI to show and hide the category picker bottom sheet.
 // =================================================================================
 package io.pm.finlight
 
@@ -1361,6 +1361,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _showFilterSheet = MutableStateFlow(false)
     val showFilterSheet: StateFlow<Boolean> = _showFilterSheet.asStateFlow()
+
+    // --- NEW: State for in-place category change ---
+    private val _transactionForCategoryChange = MutableStateFlow<TransactionDetails?>(null)
+    val transactionForCategoryChange: StateFlow<TransactionDetails?> = _transactionForCategoryChange.asStateFlow()
+
 
     private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
         _selectedMonth.combine(_filterState) { month, filters ->
@@ -1508,6 +1513,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _defaultAccount.value = db.accountDao().findByName("Cash Spends")
         }
+    }
+
+    // --- NEW: Functions to manage the category change sheet ---
+    fun requestCategoryChange(details: TransactionDetails) {
+        _transactionForCategoryChange.value = details
+    }
+
+    fun cancelCategoryChange() {
+        _transactionForCategoryChange.value = null
     }
 
     fun getSplitDetailsForTransaction(transactionId: Int): Flow<List<SplitTransactionDetails>> {
@@ -2042,7 +2056,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             transactionRepository.delete(transaction)
         }
 
-    // --- NEW: Function to un-split a transaction ---
     fun unsplitTransaction(transaction: Transaction) {
         viewModelScope.launch {
             db.withTransaction {
@@ -6407,10 +6420,10 @@ private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
-// REASON: FEATURE - The screen now conditionally displays the new
-// `MonthlyConsistencyCalendarCard` when the user is viewing a Monthly report.
-// The card is passed the relevant data and click handlers from the ViewModel,
-// making it fully interactive within the report screen.
+// REASON: FIX - The composable now accepts a TransactionViewModel instance, which
+// is passed to the TransactionItem component. This allows the UI to call the
+// `requestCategoryChange` function, fixing the "No value passed for parameter"
+// compilation error and enabling the feature on this screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -6442,6 +6455,7 @@ import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.GlassPanel
@@ -6456,6 +6470,7 @@ import java.util.*
 fun TimePeriodReportScreen(
     navController: NavController,
     timePeriod: TimePeriod,
+    transactionViewModel: TransactionViewModel,
     initialDateMillis: Long? = null
 ) {
     val application = LocalContext.current.applicationContext as Application
@@ -6466,7 +6481,6 @@ fun TimePeriodReportScreen(
     val transactions by viewModel.transactionsForPeriod.collectAsState()
     val chartDataPair by viewModel.chartData.collectAsState()
     val insights by viewModel.insights.collectAsState()
-    // --- NEW: Collect consistency data and stats ---
     val monthlyConsistencyData by viewModel.monthlyConsistencyData.collectAsState()
     val consistencyStats by viewModel.consistencyStats.collectAsState()
 
@@ -6546,7 +6560,6 @@ fun TimePeriodReportScreen(
                     }
                 }
 
-                // --- NEW: Conditionally show the consistency card for monthly reports ---
                 if (timePeriod == TimePeriod.MONTHLY) {
                     item {
                         MonthlyConsistencyCalendarCard(
@@ -6609,7 +6622,8 @@ fun TimePeriodReportScreen(
                     items(transactions, key = { it.transaction.id }) { transaction ->
                         TransactionItem(
                             transactionDetails = transaction,
-                            onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") }
+                            onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") },
+                            onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
                         )
                     }
                 } else {
@@ -9466,8 +9480,10 @@ private fun RuleSummaryItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FIX - The unused `PlaceholderTabContent` composable has been removed
-// to resolve the "UnusedSymbol" warning.
+// REASON: FEATURE - The TransactionList composable is now passed the
+// `onCategoryClick` lambda. This connects the UI action of clicking a category
+// in the list to the ViewModel's `requestCategoryChange` function, completing
+// the feature's workflow for this screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -9532,7 +9548,6 @@ fun TransactionListScreen(
     val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
     val showFilterSheet by viewModel.showFilterSheet.collectAsState()
 
-    // --- REMOVED: Scaffold and TopAppBar are now handled in MainActivity ---
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -9570,7 +9585,11 @@ fun TransactionListScreen(
             modifier = Modifier.weight(1f)
         ) { page ->
             when (page) {
-                0 -> TransactionList(transactions = transactions, navController = navController)
+                0 -> TransactionList(
+                    transactions = transactions,
+                    navController = navController,
+                    onCategoryClick = { viewModel.requestCategoryChange(it) }
+                )
                 1 -> CategorySpendingScreen(spendingList = categorySpending)
                 2 -> MerchantSpendingScreen(merchantList = merchantSpending)
             }
@@ -9579,7 +9598,6 @@ fun TransactionListScreen(
 
 
     if (showFilterSheet) {
-        // --- UPDATE: Added containerColor to match the Aurora design system for popups ---
         ModalBottomSheet(
             onDismissRequest = { viewModel.onFilterSheetDismiss() },
             containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
@@ -9607,7 +9625,6 @@ fun MonthlySummaryHeader(
     onMonthSelected: (Calendar) -> Unit
 ) {
     val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
-    // --- FIX: Corrected the invalid date format pattern from "LLLL einger" to "LLLL yyyy" ---
     val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
     var showMonthScroller by remember { mutableStateOf(false) }
 
@@ -9633,7 +9650,6 @@ fun MonthlySummaryHeader(
                     text = monthYearFormat.format(selectedMonth.time),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    // --- FIX: Explicitly set color for dark mode contrast ---
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Icon(
@@ -9694,7 +9710,6 @@ fun MonthlySummaryHeader(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                // --- FIX: Explicitly set color for dark mode contrast ---
                 Text("Total Spent", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalSpent)}",
@@ -9704,7 +9719,6 @@ fun MonthlySummaryHeader(
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                // --- FIX: Explicitly set color for dark mode contrast ---
                 Text("Total Income", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalIncome)}",
@@ -9771,7 +9785,6 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
                 text = "Spent: ₹${"%,.0f".format(spent)}",
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.SemiBold,
-                // --- FIX: Explicitly set color for dark mode contrast ---
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
@@ -11970,17 +11983,11 @@ private fun AccountDetailTransactionItem(transactionDetails: TransactionDetails)
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FIX - The navigation logic for the "Spending Consistency" card's
-// `onReportClick` handler has been corrected. It now explicitly pops up to the
-// `Dashboard` route, which is the start destination of the bottom navigation
-// graph. This ensures it behaves identically to the bottom navigation bar,
-// fixing the back stack issue and preventing the "overlapping" screen problem.
-// FEATURE - The `SPENDING_CONSISTENCY` card has been replaced with a new card
-// that displays the scrollable yearly heatmap directly on the dashboard.
-// FIX - Corrected the LazyColumn implementation in AddCardSheetContent to use
-// `itemsIndexed`, resolving several compilation errors.
-// UX REFINEMENT - Updated the navigation call from the consistency calendar to
-// prevent the keyboard from automatically showing on the search screen.
+// REASON: FIX - Corrected an "Unresolved reference" error. The screen now
+// accepts a TransactionViewModel instance, which is passed down to the
+// DashboardCard. This allows the `onCategoryClick` callback to correctly call
+// `transactionViewModel.requestCategoryChange(it)` instead of incorrectly
+// calling it on the DashboardViewModel.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12027,17 +12034,18 @@ import java.util.Date
 @Composable
 fun DashboardScreen(
     navController: NavController,
-    viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
+    dashboardViewModel: DashboardViewModel,
+    transactionViewModel: TransactionViewModel
 ) {
-    val visibleCards by viewModel.visibleCards.collectAsState()
-    val isCustomizationMode by viewModel.isCustomizationMode.collectAsState()
-    val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
-    val hiddenCards by viewModel.hiddenCards.collectAsState()
-    val yearlyConsistencyData by viewModel.yearlyConsistencyData.collectAsState()
+    val visibleCards by dashboardViewModel.visibleCards.collectAsState()
+    val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
+    val showAddCardSheet by dashboardViewModel.showAddCardSheet.collectAsState()
+    val hiddenCards by dashboardViewModel.hiddenCards.collectAsState()
+    val yearlyConsistencyData by dashboardViewModel.yearlyConsistencyData.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
     var overscrollJob by remember { mutableStateOf<Job?>(null) }
-    val dragDropState = rememberDragDropState(onMove = viewModel::updateCardOrder)
+    val dragDropState = rememberDragDropState(onMove = dashboardViewModel::updateCardOrder)
 
     if (showAddCardSheet) {
         val sheetContainerColor = if (isSystemInDarkTheme()) {
@@ -12047,14 +12055,14 @@ fun DashboardScreen(
         }
 
         ModalBottomSheet(
-            onDismissRequest = { viewModel.onAddCardSheetDismiss() },
+            onDismissRequest = { dashboardViewModel.onAddCardSheetDismiss() },
             containerColor = sheetContainerColor
         ) {
             AddCardSheetContent(
                 hiddenCards = hiddenCards,
                 onAddCard = { cardType ->
-                    viewModel.showCard(cardType)
-                    viewModel.onAddCardSheetDismiss()
+                    dashboardViewModel.showCard(cardType)
+                    dashboardViewModel.onAddCardSheetDismiss()
                 }
             )
         }
@@ -12083,7 +12091,7 @@ fun DashboardScreen(
                             } ?: run { overscrollJob?.cancel() }
                     },
                     onDragStart = { offset ->
-                        viewModel.enterCustomizationMode()
+                        dashboardViewModel.enterCustomizationMode()
                         dragDropState.onDragStart(offset)
                     },
                     onDragEnd = { dragDropState.onDragEnd() },
@@ -12135,10 +12143,11 @@ fun DashboardScreen(
                 DashboardCard(
                     cardType = cardType,
                     navController = navController,
-                    viewModel = viewModel,
+                    dashboardViewModel = dashboardViewModel,
+                    transactionViewModel = transactionViewModel,
                     isCustomizationMode = isCustomizationMode,
-                    onHide = { viewModel.hideCard(cardType) },
-                    yearlyConsistencyData = yearlyConsistencyData
+                    onHide = { dashboardViewModel.hideCard(cardType) },
+                    yearlyConsistencyData = yearlyConsistencyData,
                 )
             }
         }
@@ -12149,21 +12158,22 @@ fun DashboardScreen(
 private fun DashboardCard(
     cardType: DashboardCardType,
     navController: NavController,
-    viewModel: DashboardViewModel,
+    dashboardViewModel: DashboardViewModel,
+    transactionViewModel: TransactionViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
     yearlyConsistencyData: List<CalendarDayStatus>
 ) {
-    val netWorth by viewModel.netWorth.collectAsState()
-    val monthlyIncome by viewModel.monthlyIncome.collectAsState()
-    val monthlyExpenses by viewModel.monthlyExpenses.collectAsState()
-    val overallBudget by viewModel.overallMonthlyBudget.collectAsState()
-    val recentTransactions by viewModel.recentTransactions.collectAsState()
-    val accountsSummary by viewModel.accountsSummary.collectAsState()
-    val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
-    val budgetStatus by viewModel.budgetStatus.collectAsState()
-    val amountRemaining by viewModel.amountRemaining.collectAsState()
-    val monthYear = viewModel.monthYear
+    val netWorth by dashboardViewModel.netWorth.collectAsState()
+    val monthlyIncome by dashboardViewModel.monthlyIncome.collectAsState()
+    val monthlyExpenses by dashboardViewModel.monthlyExpenses.collectAsState()
+    val overallBudget by dashboardViewModel.overallMonthlyBudget.collectAsState()
+    val recentTransactions by dashboardViewModel.recentTransactions.collectAsState()
+    val accountsSummary by dashboardViewModel.accountsSummary.collectAsState()
+    val safeToSpendPerDay by dashboardViewModel.safeToSpendPerDay.collectAsState()
+    val budgetStatus by dashboardViewModel.budgetStatus.collectAsState()
+    val amountRemaining by dashboardViewModel.amountRemaining.collectAsState()
+    val monthYear = dashboardViewModel.monthYear
 
     Box {
         when (cardType) {
@@ -12178,7 +12188,11 @@ private fun DashboardCard(
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
-            DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(recentTransactions, navController)
+            DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(
+                transactions = recentTransactions,
+                navController = navController,
+                onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
+            )
             DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
             DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
                 budgetStatus = budgetStatus,
@@ -12204,7 +12218,6 @@ private fun DashboardCard(
                             ConsistencyCalendar(
                                 data = yearlyConsistencyData,
                                 onDayClick = { date ->
-                                    // --- UPDATED: Pass focusSearch=false to prevent keyboard ---
                                     navController.navigate("search_screen?date=${date.time}&focusSearch=false")
                                 }
                             )
@@ -12661,10 +12674,10 @@ private fun RecurringTransactionItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
-// REASON: UX REFINEMENT - The screen now accepts a `focusSearch` parameter.
-// The initial focus request on the search text field is now conditional based
-// on this parameter, preventing the keyboard from appearing automatically when
-// navigating from a non-search-focused context (like the calendar).
+// REASON: FIX - The composable now accepts a TransactionViewModel instance, which
+// is passed to the TransactionItem component. This allows the UI to call the
+// `requestCategoryChange` function, fixing the "No value passed for parameter"
+// compilation error and enabling the feature on this screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12704,11 +12717,12 @@ import java.util.*
 @Composable
 fun SearchScreen(
     navController: NavController,
-    viewModel: SearchViewModel,
-    focusSearch: Boolean // --- NEW: Parameter to control initial focus ---
+    searchViewModel: SearchViewModel,
+    transactionViewModel: TransactionViewModel,
+    focusSearch: Boolean
 ) {
-    val searchUiState by viewModel.uiState.collectAsState()
-    val searchResults by viewModel.searchResults.collectAsState()
+    val searchUiState by searchViewModel.uiState.collectAsState()
+    val searchResults by searchViewModel.searchResults.collectAsState()
 
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
@@ -12728,7 +12742,7 @@ fun SearchScreen(
         Column(modifier = Modifier.padding(16.dp)) {
             OutlinedTextField(
                 value = searchUiState.keyword,
-                onValueChange = { viewModel.onKeywordChange(it) },
+                onValueChange = { searchViewModel.onKeywordChange(it) },
                 label = { Text("Keyword (description, notes)") },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -12780,21 +12794,21 @@ fun SearchScreen(
                                 label = "Account",
                                 options = searchUiState.accounts,
                                 selectedOption = searchUiState.selectedAccount,
-                                onOptionSelected = { viewModel.onAccountChange(it) },
+                                onOptionSelected = { searchViewModel.onAccountChange(it) },
                                 getDisplayName = { it.name },
                             )
                             SearchableDropdown(
                                 label = "Category",
                                 options = searchUiState.categories,
                                 selectedOption = searchUiState.selectedCategory,
-                                onOptionSelected = { viewModel.onCategoryChange(it) },
+                                onOptionSelected = { searchViewModel.onCategoryChange(it) },
                                 getDisplayName = { it.name },
                             )
                             SearchableDropdown(
                                 label = "Transaction Type",
                                 options = listOf("All", "Income", "Expense"),
                                 selectedOption = searchUiState.transactionType.replaceFirstChar { it.uppercase() },
-                                onOptionSelected = { viewModel.onTypeChange(it) },
+                                onOptionSelected = { searchViewModel.onTypeChange(it) },
                                 getDisplayName = { it },
                             )
                             Row(
@@ -12806,7 +12820,7 @@ fun SearchScreen(
                                     date = searchUiState.startDate,
                                     formatter = dateFormatter,
                                     onClick = { showStartDatePicker = true },
-                                    onClear = { viewModel.onDateChange(start = null) },
+                                    onClear = { searchViewModel.onDateChange(start = null) },
                                     modifier = Modifier.weight(1f),
                                 )
                                 DateTextField(
@@ -12814,12 +12828,12 @@ fun SearchScreen(
                                     date = searchUiState.endDate,
                                     formatter = dateFormatter,
                                     onClick = { showEndDatePicker = true },
-                                    onClear = { viewModel.onDateChange(end = null) },
+                                    onClear = { searchViewModel.onDateChange(end = null) },
                                     modifier = Modifier.weight(1f),
                                 )
                             }
                             OutlinedButton(
-                                onClick = { viewModel.clearFilters() },
+                                onClick = { searchViewModel.clearFilters() },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Clear All Filters") }
                         }
@@ -12849,6 +12863,7 @@ fun SearchScreen(
                     TransactionItem(
                         transactionDetails = transactionDetails,
                         onClick = { navController.navigate("transaction_detail/${transactionDetails.transaction.id}") },
+                        onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
                     )
                 }
             }
@@ -12864,7 +12879,6 @@ fun SearchScreen(
         }
     }
 
-    // --- UPDATED: Conditionally request focus ---
     LaunchedEffect(Unit) {
         if (focusSearch) {
             focusRequester.requestFocus()
@@ -12877,7 +12891,7 @@ fun SearchScreen(
             onDismissRequest = { showStartDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.onDateChange(start = datePickerState.selectedDateMillis)
+                    searchViewModel.onDateChange(start = datePickerState.selectedDateMillis)
                     showStartDatePicker = false
                 }) { Text("OK") }
             },
@@ -12895,7 +12909,7 @@ fun SearchScreen(
             onDismissRequest = { showEndDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.onDateChange(end = datePickerState.selectedDateMillis)
+                    searchViewModel.onDateChange(end = datePickerState.selectedDateMillis)
                     showEndDatePicker = false
                 }) { Text("OK") }
             },
@@ -14029,10 +14043,10 @@ private fun CurrencyPickerDialog(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
-// REASON: MAJOR REFACTOR - The `IncomeHeader` has been updated to align with the
-// "Project Aurora" vision. The standard `Card` has been replaced with a `GlassPanel`
-// component, and all text colors are now theme-aware, ensuring a cohesive,
-// modern, and high-contrast user experience for the income screen.
+// REASON: FIX - The composable now accepts a TransactionViewModel instance. This
+// is passed to the TransactionList component, allowing it to call the necessary
+// `requestCategoryChange` function and fixing the "No value passed for parameter"
+// compilation error.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -14062,6 +14076,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.IncomeViewModel
 import io.pm.finlight.MonthlySummaryItem
+import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.FilterBottomSheet
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.TransactionList
@@ -14074,21 +14089,22 @@ import java.util.*
 @Composable
 fun IncomeScreen(
     navController: NavController,
-    viewModel: IncomeViewModel = viewModel(),
+    incomeViewModel: IncomeViewModel = viewModel(),
+    transactionViewModel: TransactionViewModel
 ) {
     val tabs = listOf("Credits", "Categories")
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
 
-    val incomeTransactions by viewModel.incomeTransactionsForSelectedMonth.collectAsState()
-    val incomeByCategory by viewModel.incomeByCategoryForSelectedMonth.collectAsState()
-    val totalIncome by viewModel.totalIncomeForSelectedMonth.collectAsState()
-    val selectedMonth by viewModel.selectedMonth.collectAsState()
-    val monthlySummaries by viewModel.monthlySummaries.collectAsState()
+    val incomeTransactions by incomeViewModel.incomeTransactionsForSelectedMonth.collectAsState()
+    val incomeByCategory by incomeViewModel.incomeByCategoryForSelectedMonth.collectAsState()
+    val totalIncome by incomeViewModel.totalIncomeForSelectedMonth.collectAsState()
+    val selectedMonth by incomeViewModel.selectedMonth.collectAsState()
+    val monthlySummaries by incomeViewModel.monthlySummaries.collectAsState()
 
-    val filterState by viewModel.filterState.collectAsState()
-    val allAccounts by viewModel.allAccounts.collectAsState()
-    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
+    val filterState by incomeViewModel.filterState.collectAsState()
+    val allAccounts by incomeViewModel.allAccounts.collectAsState()
+    val allCategories by incomeViewModel.allCategories.collectAsState(initial = emptyList())
     var showFilterSheet by remember { mutableStateOf(false) }
 
     val areFiltersActive by remember(filterState) {
@@ -14136,7 +14152,7 @@ fun IncomeScreen(
                 totalIncome = totalIncome,
                 selectedMonth = selectedMonth,
                 monthlySummaries = monthlySummaries,
-                onMonthSelected = { viewModel.setSelectedMonth(it) }
+                onMonthSelected = { incomeViewModel.setSelectedMonth(it) }
             )
 
             TabRow(
@@ -14165,7 +14181,11 @@ fun IncomeScreen(
                 modifier = Modifier.weight(1f)
             ) { page ->
                 when (page) {
-                    0 -> TransactionList(transactions = incomeTransactions, navController = navController)
+                    0 -> TransactionList(
+                        transactions = incomeTransactions,
+                        navController = navController,
+                        onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
+                    )
                     1 -> CategorySpendingScreen(spendingList = incomeByCategory)
                 }
             }
@@ -14178,10 +14198,10 @@ fun IncomeScreen(
                 filterState = filterState,
                 accounts = allAccounts,
                 categories = allCategories,
-                onKeywordChange = viewModel::updateFilterKeyword,
-                onAccountChange = viewModel::updateFilterAccount,
-                onCategoryChange = viewModel::updateFilterCategory,
-                onClearFilters = viewModel::clearFilters
+                onKeywordChange = incomeViewModel::updateFilterKeyword,
+                onAccountChange = incomeViewModel::updateFilterAccount,
+                onCategoryChange = incomeViewModel::updateFilterCategory,
+                onClearFilters = incomeViewModel::clearFilters
             )
         }
     }
@@ -15825,6 +15845,13 @@ fun AuroraAnimatedBackground() {
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
+// REASON: FEATURE - The `AuroraRecentActivityCard` composable now accepts and
+// passes the `onCategoryClick` callback to each `TransactionItem`. This allows
+// the in-place category change feature to be triggered from the dashboard's
+// recent activity card.
+// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.EaseOutCubic
@@ -16347,7 +16374,11 @@ fun AuroraNetWorthCard(netWorth: Double) {
  * @param navController The NavController for navigation.
  */
 @Composable
-fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
+fun AuroraRecentActivityCard(
+    transactions: List<TransactionDetails>,
+    navController: NavController,
+    onCategoryClick: (TransactionDetails) -> Unit
+) {
     GlassPanel {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -16402,7 +16433,8 @@ fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navControll
                             transactionDetails = details,
                             onClick = {
                                 navController.navigate("transaction_detail/${details.transaction.id}")
-                            }
+                            },
+                            onCategoryClick = onCategoryClick
                         )
                     }
                 }
@@ -16715,10 +16747,9 @@ fun Modifier.pagerTabIndicatorOffset(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: FEATURE (Splitting) - The composable now checks if a transaction is
-// split. If it is, it displays a dedicated "split" icon and shows "Multiple
-// Categories" as a subtitle, providing clear visual feedback to the user in
-// transaction lists.
+// REASON: FIX - Replaced the deprecated `Icons.Filled.CallSplit` with the
+// recommended `Icons.AutoMirrored.Filled.CallSplit` to resolve the lint warning
+// and ensure proper support for right-to-left layouts.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -16730,7 +16761,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.*
@@ -16760,6 +16791,7 @@ fun TransactionItem(
     modifier: Modifier = Modifier,
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
+    onCategoryClick: (TransactionDetails) -> Unit
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
     val isSplit = transactionDetails.transaction.isSplit
@@ -16778,6 +16810,7 @@ fun TransactionItem(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
+                    .clickable(enabled = !isSplit) { onCategoryClick(transactionDetails) }
                     .background(
                         CategoryIconHelper.getIconBackgroundColor(
                             when {
@@ -16793,7 +16826,7 @@ fun TransactionItem(
                 when {
                     isSplit -> {
                         Icon(
-                            imageVector = Icons.Default.CallSplit,
+                            imageVector = Icons.AutoMirrored.Filled.CallSplit, // --- FIX: Use AutoMirrored icon
                             contentDescription = "Split Transaction",
                             tint = Color.Black.copy(alpha = contentAlpha),
                             modifier = Modifier.size(22.dp)
@@ -16833,21 +16866,13 @@ fun TransactionItem(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                 )
-                if (isSplit) {
-                    Text(
-                        text = "Multiple Categories",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
-                    )
-                } else if (!transactionDetails.transaction.notes.isNullOrBlank()) {
-                    Text(
-                        text = transactionDetails.transaction.notes,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
-                    )
-                }
+                Text(
+                    text = if (isSplit) "Multiple Categories" else (transactionDetails.categoryName ?: "Uncategorized"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontStyle = FontStyle.Italic,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
+                    modifier = Modifier.clickable(enabled = !isSplit) { onCategoryClick(transactionDetails) }
+                )
                 Text(
                     text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                     style = MaterialTheme.typography.bodySmall,
@@ -16887,6 +16912,7 @@ fun TransactionItem(
 fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
+    onCategoryClick: (TransactionDetails) -> Unit
 ) {
     if (transactions.isEmpty()) {
         Box(
@@ -16909,7 +16935,8 @@ fun TransactionList(
                     transactionDetails = details,
                     onClick = {
                         navController.navigate("transaction_detail/${details.transaction.id}")
-                    }
+                    },
+                    onCategoryClick = onCategoryClick
                 )
             }
         }
@@ -18671,9 +18698,10 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE (Splitting) - Added the route for the new
-// `split_transaction/{transactionId}` screen to the AppNavHost, making it
-// accessible from the Transaction Detail screen.
+// REASON: FIX - The NavHost has been updated to pass the shared `transactionViewModel`
+// to the IncomeScreen, SearchScreen, and TimePeriodReportScreen. This resolves
+// the compilation errors and allows these screens to correctly trigger the
+// in-place category change feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -18697,8 +18725,13 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -18711,7 +18744,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -18728,6 +18764,8 @@ import io.pm.finlight.ui.components.DaybreakAnimatedBackground
 import io.pm.finlight.ui.screens.*
 import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.net.URLDecoder
 import java.util.concurrent.Executor
 
@@ -18881,6 +18919,8 @@ fun MainAppScreen() {
     val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
     val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
 
+    val transactionForCategoryChange by transactionViewModel.transactionForCategoryChange.collectAsState()
+
 
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
@@ -18908,7 +18948,7 @@ fun MainAppScreen() {
         "data_settings",
         "add_edit_goal",
         "currency_travel_settings",
-        "split_transaction" // --- NEW: Add new screen to hide main top bar
+        "split_transaction"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -19074,6 +19114,31 @@ fun MainAppScreen() {
                 goalViewModel = goalViewModel
             )
         }
+
+        if (transactionForCategoryChange != null) {
+            val transaction = transactionForCategoryChange!!
+            val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
+            val isThemeDark = isSystemInDarkTheme()
+            val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+            ModalBottomSheet(
+                onDismissRequest = { transactionViewModel.cancelCategoryChange() },
+                containerColor = popupContainerColor
+            ) {
+                CategoryPickerSheet(
+                    title = "Change Category",
+                    items = categories,
+                    onItemSelected = { newCategory ->
+                        transactionViewModel.updateTransactionCategory(transaction.transaction.id, newCategory.id)
+                        transactionViewModel.cancelCategoryChange()
+                    },
+                    onAddNew = {
+                        // For simplicity, we won't allow creating a new category from this quick sheet.
+                        // The user can use the full edit screen for that.
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -19102,7 +19167,6 @@ fun AppNavHost(
             SplashScreen(navController = navController, activity = activity)
         }
 
-        // --- NEW: Add route for the split transaction screen ---
         composable(
             "split_transaction/{transactionId}",
             arguments = listOf(navArgument("transactionId") { type = NavType.IntType }),
@@ -19135,7 +19199,11 @@ fun AppNavHost(
         }
 
         composable(BottomNavItem.Dashboard.route) {
-            DashboardScreen(navController, dashboardViewModel)
+            DashboardScreen(
+                navController = navController,
+                dashboardViewModel = dashboardViewModel,
+                transactionViewModel = transactionViewModel
+            )
         }
         composable(
             route = BottomNavItem.Transactions.route,
@@ -19206,7 +19274,7 @@ fun AppNavHost(
                 if (date != -1L) date else null
             )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
-            SearchScreen(navController, searchViewModel, focusSearch)
+            SearchScreen(navController, searchViewModel, transactionViewModel, focusSearch)
         }
         composable(
             route = "review_sms_screen",
@@ -19224,7 +19292,7 @@ fun AppNavHost(
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) {
-            IncomeScreen(navController, incomeViewModel)
+            IncomeScreen(navController, incomeViewModel, transactionViewModel)
         }
 
         composable(
@@ -19448,7 +19516,12 @@ fun AppNavHost(
             }
             val date = backStackEntry.arguments?.getLong("date")
             if (timePeriod != null) {
-                TimePeriodReportScreen(navController = navController, timePeriod = timePeriod, initialDateMillis = date)
+                TimePeriodReportScreen(
+                    navController = navController,
+                    timePeriod = timePeriod,
+                    transactionViewModel = transactionViewModel,
+                    initialDateMillis = date
+                )
             }
         }
 
@@ -19554,6 +19627,112 @@ fun SplashScreen(navController: NavHostController, activity: Activity) {
         contentAlignment = Alignment.Center
     ) {
         CircularProgressIndicator()
+    }
+}
+
+// --- NEW: Copied from TransactionDetailScreen for reusability ---
+@Composable
+private fun CategoryPickerSheet(
+    title: String,
+    items: List<Category>,
+    onItemSelected: (Category) -> Unit,
+    onAddNew: (() -> Unit)? = null
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 100.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(items) { category ->
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            onItemSelected(category)
+                        }
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CategoryIconDisplay(category)
+                    Text(
+                        category.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+            if (onAddNew != null) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(onClick = onAddNew)
+                            .padding(vertical = 12.dp)
+                            .height(80.dp), // Match height of other items
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.AddCircleOutline,
+                            contentDescription = "Create New",
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "New",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+// --- NEW: Copied from TransactionDetailScreen for reusability ---
+@Composable
+private fun CategoryIconDisplay(category: Category) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (category.name == "Uncategorized") {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon("help_outline"),
+                contentDescription = category.name,
+                tint = Color.Black,
+                modifier = Modifier.size(24.dp)
+            )
+        } else if (category.iconKey == "letter_default") {
+            Text(
+                text = category.name.firstOrNull()?.uppercase() ?: "?",
+                color = Color.Black,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                contentDescription = category.name,
+                tint = Color.Black,
+                modifier = Modifier.size(24.dp)
+            )
+        }
     }
 }
 -e 

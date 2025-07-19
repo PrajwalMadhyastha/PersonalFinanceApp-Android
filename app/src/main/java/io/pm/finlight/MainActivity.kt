@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The NavHost has been updated to pass the shared `transactionViewModel`
-// to the IncomeScreen, SearchScreen, and TimePeriodReportScreen. This resolves
-// the compilation errors and allows these screens to correctly trigger the
-// in-place category change feature.
+// REASON: UX REFINEMENT - The ModalBottomSheet for the in-place category change
+// feature has been updated to be full-screen. This is achieved by setting
+// `skipPartiallyExpanded = true` in its state and making the sheet's content
+// fill the maximum height, improving usability for long category lists.
 // =================================================================================
 package io.pm.finlight
 
@@ -418,26 +418,25 @@ fun MainAppScreen() {
         }
 
         if (transactionForCategoryChange != null) {
-            val transaction = transactionForCategoryChange!!
             val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
             val isThemeDark = isSystemInDarkTheme()
             val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+            // --- UPDATED: Create a sheet state that skips the half-expanded state ---
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
             ModalBottomSheet(
                 onDismissRequest = { transactionViewModel.cancelCategoryChange() },
+                sheetState = sheetState, // Pass the new state
                 containerColor = popupContainerColor
             ) {
                 CategoryPickerSheet(
                     title = "Change Category",
                     items = categories,
                     onItemSelected = { newCategory ->
-                        transactionViewModel.updateTransactionCategory(transaction.transaction.id, newCategory.id)
+                        transactionViewModel.updateTransactionCategory(transactionForCategoryChange!!.transaction.id, newCategory.id)
                         transactionViewModel.cancelCategoryChange()
                     },
-                    onAddNew = {
-                        // For simplicity, we won't allow creating a new category from this quick sheet.
-                        // The user can use the full edit screen for that.
-                    }
+                    onAddNew = null // Keep it simple as requested
                 )
             }
         }
@@ -932,7 +931,6 @@ fun SplashScreen(navController: NavHostController, activity: Activity) {
     }
 }
 
-// --- NEW: Copied from TransactionDetailScreen for reusability ---
 @Composable
 private fun CategoryPickerSheet(
     title: String,
@@ -940,7 +938,8 @@ private fun CategoryPickerSheet(
     onItemSelected: (Category) -> Unit,
     onAddNew: (() -> Unit)? = null
 ) {
-    Column(modifier = Modifier.navigationBarsPadding()) {
+    // --- UPDATED: Add Modifier.fillMaxHeight() to make the sheet content expand ---
+    Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
@@ -1003,7 +1002,6 @@ private fun CategoryPickerSheet(
     }
 }
 
-// --- NEW: Copied from TransactionDetailScreen for reusability ---
 @Composable
 private fun CategoryIconDisplay(category: Category) {
     Box(
