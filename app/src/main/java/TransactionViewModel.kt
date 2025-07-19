@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Splitting) - The ViewModel's calculations for monthly income
-// and expenses have been updated to use the split-aware
-// `getFinancialSummaryForRangeFlow` query. This ensures the summary totals on the
-// transaction list screen are accurate after a split.
+// REASON: FEATURE (Splitting) - Added the `unsplitTransaction` function. This
+// function orchestrates the process of reverting a split transaction back to a
+// single entity by deleting its child items and restoring the parent's original
+// state within a database transaction.
 // =================================================================================
 package io.pm.finlight
 
@@ -747,6 +747,24 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             transactionRepository.delete(transaction)
         }
+
+    // --- NEW: Function to un-split a transaction ---
+    fun unsplitTransaction(transaction: Transaction) {
+        viewModelScope.launch {
+            db.withTransaction {
+                // Heuristic: try to restore the category from the first split item if possible, before deleting them.
+                val firstSplitCategory = db.splitTransactionDao().getSplitsForParent(transaction.id).firstOrNull()?.firstOrNull()?.splitTransaction?.categoryId
+
+                // Delete all child split items
+                db.splitTransactionDao().deleteSplitsForParent(transaction.id)
+
+                // Revert the parent transaction's state
+                val originalDescription = transaction.originalDescription ?: transaction.description
+                db.transactionDao().unmarkAsSplit(transaction.id, originalDescription, firstSplitCategory)
+            }
+        }
+    }
+
 
     fun clearError() {
         _validationError.value = null

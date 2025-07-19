@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FIX (Splitting) - Corrected several SQL syntax and column mapping
-// errors in the split-aware queries. The `getIncomeTransactionsForRange` query
-// now selects all required columns, and the `getMonthlyTrends` query correctly
-// references date columns, resolving all build errors.
+// REASON: FEATURE (Splitting) - Added the `unmarkAsSplit` function. This is a
+// crucial part of the "un-split" feature, allowing the parent transaction to be
+// reverted to its original, non-split state by restoring its description and
+// category.
 // =================================================================================
 package io.pm.finlight
 
@@ -18,6 +18,15 @@ interface TransactionDao {
 
     @Query("UPDATE transactions SET isSplit = :isSplit, categoryId = CASE WHEN :isSplit = 1 THEN NULL ELSE categoryId END, description = CASE WHEN :isSplit = 1 THEN 'Split Transaction' ELSE description END WHERE id = :transactionId")
     suspend fun markAsSplit(transactionId: Int, isSplit: Boolean)
+
+    // --- NEW: Function to revert a split transaction to a normal one ---
+    @Query("""
+        UPDATE transactions 
+        SET isSplit = 0, description = :originalDescription, categoryId = :newCategoryId
+        WHERE id = :transactionId
+    """)
+    suspend fun unmarkAsSplit(transactionId: Int, originalDescription: String, newCategoryId: Int?)
+
 
     @Query("SELECT MIN(date) FROM transactions")
     fun getFirstTransactionDate(): Flow<Long?>

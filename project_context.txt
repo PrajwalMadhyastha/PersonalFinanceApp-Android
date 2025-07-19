@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jul 19 13:26:09 IST 2025
+Generated on: Sat Jul 19 14:51:55 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -1294,10 +1294,10 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Splitting) - The ViewModel is now aware of split transactions.
-// It initializes a new `SplitTransactionRepository` and exposes a
-// `getSplitDetailsForTransaction` function. This allows the TransactionDetailScreen
-// to fetch and display the child items of a split transaction.
+// REASON: FEATURE (Splitting) - The ViewModel's calculations for monthly income
+// and expenses have been updated to use the split-aware
+// `getFinancialSummaryForRangeFlow` query. This ensures the summary totals on the
+// transaction list screen are accurate after a split.
 // =================================================================================
 package io.pm.finlight
 
@@ -1346,7 +1346,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
     private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository
-    // --- NEW: Add repository for splits ---
     private val splitTransactionRepository: SplitTransactionRepository
     private val context = application
 
@@ -1411,7 +1410,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
-        // --- NEW: Initialize the split repository ---
         splitTransactionRepository = SplitTransactionRepository(db.splitTransactionDao())
 
 
@@ -1434,13 +1432,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             applyAliases(transactions, aliases)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        monthlyIncome = transactionsForSelectedMonth.map { txns ->
-            txns.filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+        val financialSummaryFlow = _selectedMonth.flatMapLatest { calendar ->
+            val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+            val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+            transactionRepository.getFinancialSummaryForRangeFlow(monthStart, monthEnd)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-        monthlyExpenses = transactionsForSelectedMonth.map { txns ->
-            txns.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+        monthlyIncome = financialSummaryFlow.map { it?.totalIncome ?: 0.0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+        monthlyExpenses = financialSummaryFlow.map { it?.totalExpenses ?: 0.0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
         categorySpendingForSelectedMonth = combinedState.flatMapLatest { (calendar, filters) ->
             val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
@@ -1508,7 +1510,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- NEW: Function to get split details ---
     fun getSplitDetailsForTransaction(transactionId: Int): Flow<List<SplitTransactionDetails>> {
         return splitTransactionRepository.getSplitsForParent(transactionId)
     }
@@ -1517,13 +1518,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             try {
                 db.withTransaction {
-                    // 1. Mark the parent transaction as split
-                    db.transactionDao().setTransactionAsSplit(parentTransactionId, true)
-
-                    // 2. Clear any existing splits for this parent
+                    db.transactionDao().markAsSplit(parentTransactionId, true)
                     db.splitTransactionDao().deleteSplitsForParent(parentTransactionId)
-
-                    // 3. Create new SplitTransaction entities from the UI state
                     val newSplits = splitItems.map {
                         SplitTransaction(
                             parentTransactionId = parentTransactionId,
@@ -1532,8 +1528,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                             notes = it.notes
                         )
                     }
-
-                    // 4. Insert all new splits
                     db.splitTransactionDao().insertAll(newSplits)
                 }
                 withContext(Dispatchers.Main) {
@@ -1541,7 +1535,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving transaction splits", e)
-                // Optionally, handle the error (e.g., show a toast)
             }
         }
     }
@@ -9777,10 +9770,10 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE (Splitting) - The screen now fetches and displays the child
-// items of a split transaction. A new `SplitSummaryCard` is shown if the
-// transaction's `isSplit` flag is true. The main category chip in the header is
-// hidden for split transactions to avoid showing redundant or incorrect info.
+// REASON: FEATURE (Splitting) - The screen's main header has been updated to
+// correctly reflect a split transaction's state. It now displays a generic
+// background, shows a "Split" icon, and hides the category chip, ensuring a
+// consistent UI with the transaction list items.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -9894,7 +9887,6 @@ fun TransactionDetailScreen(
         }
     }
 
-    // --- NEW: Fetch split details ---
     val splits by viewModel.getSplitDetailsForTransaction(transactionId).collectAsState(initial = emptyList())
 
     val reparseResult = navController.currentBackStackEntry
@@ -10052,8 +10044,12 @@ fun TransactionDetailScreen(
                                 TransactionSpotlightHeader(
                                     details = details,
                                     visitCount = visitCount,
-                                    isSplit = details.transaction.isSplit, // --- PASS isSplit FLAG ---
-                                    onDescriptionClick = { activeSheetContent = SheetContent.Description },
+                                    isSplit = details.transaction.isSplit,
+                                    onDescriptionClick = {
+                                        if (!details.transaction.isSplit) {
+                                            activeSheetContent = SheetContent.Description
+                                        }
+                                    },
                                     onAmountClick = {
                                         if (!details.transaction.isSplit) {
                                             activeSheetContent = SheetContent.Amount
@@ -10075,7 +10071,6 @@ fun TransactionDetailScreen(
                             }
                         }
 
-                        // --- NEW: Conditionally display split summary ---
                         if (details.transaction.isSplit) {
                             item {
                                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -10347,7 +10342,6 @@ fun TransactionDetailScreen(
     }
 }
 
-// --- NEW: Card to display the list of split items ---
 @Composable
 private fun SplitSummaryCard(splits: List<SplitTransactionDetails>) {
     GlassPanel {
@@ -10373,7 +10367,6 @@ private fun SplitSummaryCard(splits: List<SplitTransactionDetails>) {
     }
 }
 
-// --- NEW: A single row in the SplitSummaryCard ---
 @Composable
 private fun SplitSummaryItem(details: SplitTransactionDetails) {
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
@@ -10474,20 +10467,29 @@ private fun CurrencyConversionInfoCard(transaction: Transaction) {
 }
 
 @Composable
-private fun DynamicCategoryBackground(category: Category) {
-    val letter = if (category.name == "Uncategorized") "?" else category.name.firstOrNull()?.uppercase() ?: "?"
+private fun DynamicCategoryBackground(category: Category, isSplit: Boolean) {
     val color = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
 
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = letter,
-            fontSize = 250.sp,
-            fontWeight = FontWeight.Bold,
-            color = color.copy(alpha = 0.15f)
-        )
+        if (isSplit) {
+            Icon(
+                imageVector = Icons.Default.CallSplit,
+                contentDescription = "Split Transaction Background",
+                modifier = Modifier.size(250.dp),
+                tint = color.copy(alpha = 0.15f)
+            )
+        } else {
+            val letter = if (category.name == "Uncategorized") "?" else category.name.firstOrNull()?.uppercase() ?: "?"
+            Text(
+                text = letter,
+                fontSize = 250.sp,
+                fontWeight = FontWeight.Bold,
+                color = color.copy(alpha = 0.15f)
+            )
+        }
     }
 }
 
@@ -10501,8 +10503,15 @@ private fun TransactionSpotlightHeader(
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit
 ) {
-    val category = details.toCategory()
-    val categoryColor = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
+    val displayCategory = if (isSplit) {
+        Category(name = "Multiple Categories", iconKey = "call_split", colorKey = "gray_light")
+    } else {
+        details.toCategory()
+    }
+
+    val headerDescription = if (isSplit) "Split Transaction" else details.transaction.description
+
+    val categoryColor = CategoryIconHelper.getIconBackgroundColor(displayCategory.colorKey)
     val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yy, h:mm a", Locale.getDefault()) }
 
     val animatedAmount by animateFloatAsState(
@@ -10520,17 +10529,17 @@ private fun TransactionSpotlightHeader(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            val isPredefined = CategoryIconHelper.getCategoryBackground(category.iconKey) != R.drawable.bg_cat_general
-            if (isPredefined) {
+            val isPredefined = CategoryIconHelper.getCategoryBackground(displayCategory.iconKey) != R.drawable.bg_cat_general
+            if (isPredefined && !isSplit) {
                 Image(
-                    painter = painterResource(id = CategoryIconHelper.getCategoryBackground(category.iconKey)),
+                    painter = painterResource(id = CategoryIconHelper.getCategoryBackground(displayCategory.iconKey)),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize(),
                     alpha = 0.3f
                 )
             } else {
-                DynamicCategoryBackground(category = category)
+                DynamicCategoryBackground(category = displayCategory, isSplit = isSplit)
             }
 
             Box(
@@ -10567,7 +10576,7 @@ private fun TransactionSpotlightHeader(
                 Spacer(modifier = Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = details.transaction.description,
+                        text = headerDescription,
                         style = MaterialTheme.typography.headlineMedium,
                         color = Color.White,
                         textAlign = TextAlign.Center,
@@ -10591,13 +10600,12 @@ private fun TransactionSpotlightHeader(
                     color = Color.White,
                     modifier = Modifier.clickable(onClick = onAmountClick)
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                // --- UPDATED: Conditionally hide category chip ---
+                Spacer(Modifier.height(16.dp))
                 if (!isSplit) {
                     ChipWithIcon(
-                        text = category.name,
+                        text = displayCategory.name,
                         onClick = onCategoryClick,
-                        category = category
+                        category = displayCategory
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
@@ -11345,7 +11353,6 @@ private fun CategoryIconDisplay(category: Category) {
             .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
         contentAlignment = Alignment.Center
     ) {
-        // --- UPDATED: Prioritize showing '?' for Uncategorized ---
         if (category.name == "Uncategorized") {
             Icon(
                 imageVector = CategoryIconHelper.getIcon("help_outline"),
@@ -11372,7 +11379,6 @@ private fun CategoryIconDisplay(category: Category) {
 }
 
 private fun TransactionDetails.toCategory(): Category {
-    // --- UPDATED: Use red color for uncategorized items ---
     return if (this.categoryName == null || this.categoryName == "Uncategorized") {
         Category(
             id = 0,
@@ -11409,7 +11415,6 @@ private fun ChipWithIcon(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // --- UPDATED: Prioritize showing '?' for Uncategorized ---
         if (category.name == "Uncategorized") {
             Icon(
                 imageVector = CategoryIconHelper.getIcon("help_outline"),
@@ -16674,11 +16679,10 @@ fun Modifier.pagerTabIndicatorOffset(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: FIX - The unused `AccountTransactionItem` composable has been removed
-// to resolve the "UnusedSymbol" warning.
-// FIX - Removed an unnecessary non-null assertion (!!) on the 'notes' property.
-// The compiler already smart-casts it to a non-null type within the if-check,
-// so the assertion was redundant.
+// REASON: FEATURE (Splitting) - The composable now checks if a transaction is
+// split. If it is, it displays a dedicated "split" icon and shows "Multiple
+// Categories" as a subtitle, providing clear visual feedback to the user in
+// transaction lists.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -16690,6 +16694,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.*
@@ -16721,6 +16726,7 @@ fun TransactionItem(
     onClick: () -> Unit,
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
+    val isSplit = transactionDetails.transaction.isSplit
     val isUncategorized = transactionDetails.categoryName == null || transactionDetails.categoryName == "Uncategorized"
 
     GlassPanel(
@@ -16738,14 +16744,25 @@ fun TransactionItem(
                     .clip(CircleShape)
                     .background(
                         CategoryIconHelper.getIconBackgroundColor(
-                            if (isUncategorized) "red_light" else transactionDetails.categoryColorKey ?: "gray_light"
+                            when {
+                                isSplit -> "gray_light"
+                                isUncategorized -> "red_light"
+                                else -> transactionDetails.categoryColorKey ?: "gray_light"
+                            }
                         )
                             .copy(alpha = contentAlpha)
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                // --- UPDATED: Logic to handle uncategorized state ---
                 when {
+                    isSplit -> {
+                        Icon(
+                            imageVector = Icons.Default.CallSplit,
+                            contentDescription = "Split Transaction",
+                            tint = Color.Black.copy(alpha = contentAlpha),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                     isUncategorized -> {
                         Icon(
                             imageVector = CategoryIconHelper.getIcon("help_outline"),
@@ -16756,7 +16773,7 @@ fun TransactionItem(
                     }
                     transactionDetails.categoryIconKey == "letter_default" -> {
                         Text(
-                            text = transactionDetails.categoryName.firstOrNull()?.uppercase() ?: "?",
+                            text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             color = Color.Black.copy(alpha = contentAlpha)
@@ -16780,7 +16797,14 @@ fun TransactionItem(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                 )
-                if (!transactionDetails.transaction.notes.isNullOrBlank()) {
+                if (isSplit) {
+                    Text(
+                        text = "Multiple Categories",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
+                    )
+                } else if (!transactionDetails.transaction.notes.isNullOrBlank()) {
                     Text(
                         text = transactionDetails.transaction.notes,
                         style = MaterialTheme.typography.bodyMedium,
@@ -23182,13 +23206,10 @@ data class IgnoreRule(
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE (Splitting) - Added a new query `getTransactionWithSplits` to
-// fetch a parent transaction and all its associated child splits in a single
-// database call. Also added `setTransactionAsSplit` to update the `isSplit` flag.
-// FIX - Removed the redundant @Transaction annotation, which was causing a build
-// error. Room handles this implicitly for queries using @Relation.
-// FIX - Corrected a SQL syntax error in `getSpendingByMerchantForMonth` by adding
-// the missing table alias 'T', which was causing a build failure.
+// REASON: FIX (Splitting) - Corrected several SQL syntax and column mapping
+// errors in the split-aware queries. The `getIncomeTransactionsForRange` query
+// now selects all required columns, and the `getMonthlyTrends` query correctly
+// references date columns, resolving all build errors.
 // =================================================================================
 package io.pm.finlight
 
@@ -23198,17 +23219,11 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Query to get a parent transaction and its children ---
-    // The @Transaction annotation is not needed here as Room handles it implicitly
-    // for queries that use @Relation.
     @Query("SELECT * FROM transactions WHERE id = :transactionId")
     fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?>
 
-    // --- NEW: Query to mark a transaction as a parent ---
-    @Query("UPDATE transactions SET isSplit = :isSplit WHERE id = :transactionId")
-    suspend fun setTransactionAsSplit(transactionId: Int, isSplit: Boolean)
-
-    // --- (Existing DAO methods below) ---
+    @Query("UPDATE transactions SET isSplit = :isSplit, categoryId = CASE WHEN :isSplit = 1 THEN NULL ELSE categoryId END, description = CASE WHEN :isSplit = 1 THEN 'Split Transaction' ELSE description END WHERE id = :transactionId")
+    suspend fun markAsSplit(transactionId: Int, isSplit: Boolean)
 
     @Query("SELECT MIN(date) FROM transactions")
     fun getFirstTransactionDate(): Flow<Long?>
@@ -23222,15 +23237,20 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT
-            C.name as categoryName,
-            SUM(T.amount) as totalAmount,
-            C.iconKey as iconKey,
-            C.colorKey as categoryColorKey
-        FROM transactions AS T
-        INNER JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0
+        WITH AtomicExpenses AS (
+            -- 1. Regular, non-split transactions
+            SELECT T.categoryId, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
+            UNION ALL
+            -- 2. Child items from split transactions
+            SELECT S.categoryId, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
+        )
+        SELECT C.name as categoryName, SUM(AE.amount) as totalAmount, C.iconKey as iconKey, C.colorKey as categoryColorKey
+        FROM AtomicExpenses AS AE
+        JOIN categories AS C ON AE.categoryId = C.id
+        WHERE AE.categoryId IS NOT NULL
         GROUP BY C.name
         ORDER BY totalAmount DESC
         LIMIT 3
@@ -23240,15 +23260,18 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT
-            C.name as categoryName,
-            SUM(T.amount) as totalAmount,
-            C.iconKey as iconKey,
-            C.colorKey as categoryColorKey
-        FROM transactions AS T
-        INNER JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0
+        WITH AtomicExpenses AS (
+            SELECT T.categoryId, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
+            UNION ALL
+            SELECT S.categoryId, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
+        )
+        SELECT C.name as categoryName, SUM(AE.amount) as totalAmount, C.iconKey as iconKey, C.colorKey as categoryColorKey
+        FROM AtomicExpenses AS AE
+        JOIN categories AS C ON AE.categoryId = C.id
+        WHERE AE.categoryId IS NOT NULL
         GROUP BY C.name
         ORDER BY totalAmount DESC
         LIMIT 1
@@ -23281,41 +23304,54 @@ interface TransactionDao {
     fun getAllTransactions(): Flow<List<TransactionDetails>>
 
     @Query("""
+        WITH AtomicIncomes AS (
+            SELECT T.*
+            FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
+            UNION ALL
+            SELECT
+                P.id, P.description, S.categoryId, S.amount, P.date, P.accountId, S.notes, P.transactionType, P.sourceSmsId, P.sourceSmsHash, P.source,
+                P.originalDescription, P.isExcluded, P.smsSignature, P.originalAmount, P.currencyCode, P.conversionRate, P.isSplit
+            FROM split_transactions AS S JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'income' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
+        )
         SELECT
-            T.*,
+            AI.*,
             A.name as accountName,
             C.name as categoryName,
             C.iconKey as categoryIconKey,
             C.colorKey as categoryColorKey
-        FROM
-            transactions AS T
-        LEFT JOIN
-            accounts AS A ON T.accountId = A.id
-        LEFT JOIN
-            categories AS C ON T.categoryId = C.id
-        WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0
-          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR T.accountId = :accountId)
-          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
-        ORDER BY
-            T.date DESC
+        FROM AtomicIncomes AS AI
+        LEFT JOIN accounts AS A ON AI.accountId = A.id
+        LEFT JOIN categories AS C ON AI.categoryId = C.id
+        WHERE (:keyword IS NULL OR LOWER(AI.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AI.notes) LIKE '%' || LOWER(:keyword) || '%')
+          AND (:accountId IS NULL OR AI.accountId = :accountId)
+          AND (:categoryId IS NULL OR AI.categoryId = :categoryId)
+        ORDER BY AI.date DESC
     """)
     fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>>
 
     @Query("""
+        WITH AtomicIncomes AS (
+            SELECT T.categoryId, T.amount, T.description, T.notes, T.accountId
+            FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
+            UNION ALL
+            SELECT S.categoryId, S.amount, P.description, S.notes, P.accountId
+            FROM split_transactions AS S JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'income' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
+        )
         SELECT 
             C.name as categoryName, 
-            SUM(T.amount) as totalAmount,
+            SUM(AI.amount) as totalAmount,
             C.iconKey as iconKey,
             C.colorKey as colorKey
-        FROM transactions AS T
-        INNER JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0
-          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR T.accountId = :accountId)
-          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
+        FROM AtomicIncomes AS AI
+        JOIN categories AS C ON AI.categoryId = C.id
+        WHERE AI.categoryId IS NOT NULL
+          AND (:keyword IS NULL OR LOWER(AI.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AI.notes) LIKE '%' || LOWER(:keyword) || '%')
+          AND (:accountId IS NULL OR AI.accountId = :accountId)
+          AND (:categoryId IS NULL OR AI.categoryId = :categoryId)
         GROUP BY C.name
         ORDER BY totalAmount DESC
     """)
@@ -23329,6 +23365,7 @@ interface TransactionDao {
         FROM transactions AS T
         WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
           AND T.isExcluded = 0
+          AND T.isSplit = 0
           AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR T.accountId = :accountId)
           AND (:categoryId IS NULL OR T.categoryId = :categoryId)
@@ -23469,9 +23506,17 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT SUM(T.amount) FROM transactions AS T
-        INNER JOIN categories AS C ON T.categoryId = C.id
-        WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate AND T.transactionType = 'expense' AND T.isExcluded = 0
+        WITH AtomicExpenses AS (
+            SELECT T.categoryId, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
+            UNION ALL
+            SELECT S.categoryId, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
+        )
+        SELECT SUM(AE.amount) FROM AtomicExpenses AS AE
+        JOIN categories AS C ON AE.categoryId = C.id
+        WHERE C.name = :categoryName AND AE.categoryId IS NOT NULL
     """
     )
     fun getSpendingForCategory(
@@ -23482,18 +23527,26 @@ interface TransactionDao {
 
     @Query(
         """
+        WITH AtomicExpenses AS (
+            SELECT T.categoryId, T.amount, T.description, T.notes, T.accountId
+            FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
+            UNION ALL
+            SELECT S.categoryId, S.amount, P.description, S.notes, P.accountId
+            FROM split_transactions AS S JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
+        )
         SELECT 
             C.name as categoryName, 
-            SUM(T.amount) as totalAmount,
+            SUM(AE.amount) as totalAmount,
             C.iconKey as iconKey,
             C.colorKey as colorKey
-        FROM transactions AS T
-        INNER JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0
-          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR T.accountId = :accountId)
-          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
+        FROM AtomicExpenses AS AE
+        JOIN categories AS C ON AE.categoryId = C.id
+        WHERE AE.categoryId IS NOT NULL
+          AND (:keyword IS NULL OR LOWER(AE.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AE.notes) LIKE '%' || LOWER(:keyword) || '%')
+          AND (:accountId IS NULL OR AE.accountId = :accountId)
+          AND (:categoryId IS NULL OR AE.categoryId = :categoryId)
         GROUP BY C.name
         ORDER BY totalAmount ASC
     """
@@ -23509,11 +23562,13 @@ interface TransactionDao {
     @Query(
         """
         SELECT
-            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as monthYear,
-            SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
-            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
-        FROM transactions
-        WHERE date >= :startDate AND isExcluded = 0
+            strftime('%Y-%m', T1.date / 1000, 'unixepoch', 'localtime') as monthYear,
+            SUM(CASE WHEN T1.transactionType = 'income' AND T1.isSplit = 0 THEN T1.amount ELSE 0 END) + 
+            (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE strftime('%Y-%m', p.date / 1000, 'unixepoch', 'localtime') = strftime('%Y-%m', T1.date / 1000, 'unixepoch', 'localtime') AND p.isExcluded = 0 AND p.transactionType = 'income') as totalIncome,
+            SUM(CASE WHEN T1.transactionType = 'expense' AND T1.isSplit = 0 THEN T1.amount ELSE 0 END) + 
+            (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE strftime('%Y-%m', p.date / 1000, 'unixepoch', 'localtime') = strftime('%Y-%m', T1.date / 1000, 'unixepoch', 'localtime') AND p.isExcluded = 0 AND p.transactionType = 'expense') as totalExpenses
+        FROM transactions AS T1
+        WHERE T1.date >= :startDate AND T1.isExcluded = 0
         GROUP BY monthYear
         ORDER BY monthYear ASC
     """
@@ -23528,19 +23583,19 @@ interface TransactionDao {
 
     @Query("""
         SELECT
-            SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
-            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
-        FROM transactions
-        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+            SUM(CASE WHEN T.transactionType = 'income' AND T.isSplit = 0 THEN T.amount ELSE 0 END) + (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE p.date BETWEEN :startDate AND :endDate AND p.transactionType = 'income' AND p.isExcluded = 0) as totalIncome,
+            SUM(CASE WHEN T.transactionType = 'expense' AND T.isSplit = 0 THEN T.amount ELSE 0 END) + (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE p.date BETWEEN :startDate AND :endDate AND p.transactionType = 'expense' AND p.isExcluded = 0) as totalExpenses
+        FROM transactions AS T
+        WHERE T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
     """)
     suspend fun getFinancialSummaryForRange(startDate: Long, endDate: Long): FinancialSummary?
 
     @Query("""
         SELECT
-            SUM(CASE WHEN transactionType = 'income' THEN amount ELSE 0 END) as totalIncome,
-            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalExpenses
-        FROM transactions
-        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+            SUM(CASE WHEN T.transactionType = 'income' AND T.isSplit = 0 THEN T.amount ELSE 0 END) + (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE p.date BETWEEN :startDate AND :endDate AND p.transactionType = 'income' AND p.isExcluded = 0) as totalIncome,
+            SUM(CASE WHEN T.transactionType = 'expense' AND T.isSplit = 0 THEN T.amount ELSE 0 END) + (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE p.date BETWEEN :startDate AND :endDate AND p.transactionType = 'expense' AND p.isExcluded = 0) as totalExpenses
+        FROM transactions AS T
+        WHERE T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
     """)
     fun getFinancialSummaryForRangeFlow(startDate: Long, endDate: Long): Flow<FinancialSummary?>
 
@@ -23573,33 +23628,57 @@ interface TransactionDao {
     suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag>
 
     @Query("""
+        WITH AtomicExpenses AS (
+            SELECT T.date, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0
+            UNION ALL
+            SELECT P.date, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND P.isExcluded = 0
+        )
         SELECT
             strftime('%Y-%m-%d', date / 1000, 'unixepoch', 'localtime') as date,
-            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
-        FROM transactions
-        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+            SUM(amount) as totalAmount
+        FROM AtomicExpenses
+        WHERE date BETWEEN :startDate AND :endDate
         GROUP BY date
         ORDER BY date ASC
     """)
     fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>>
 
     @Query("""
+        WITH AtomicExpenses AS (
+            SELECT P.date, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND P.isExcluded = 0
+            UNION ALL
+            SELECT T.date, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0
+        )
         SELECT
             strftime('%Y-%W', date / 1000, 'unixepoch', 'localtime') as period,
-            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
-        FROM transactions
-        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+            SUM(amount) as totalAmount
+        FROM AtomicExpenses
+        WHERE date BETWEEN :startDate AND :endDate
         GROUP BY period
         ORDER BY period ASC
     """)
     fun getWeeklySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
 
     @Query("""
+        WITH AtomicExpenses AS (
+            SELECT P.date, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND P.isExcluded = 0
+            UNION ALL
+            SELECT T.date, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0
+        )
         SELECT
             strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
-            SUM(CASE WHEN transactionType = 'expense' THEN amount ELSE 0 END) as totalAmount
-        FROM transactions
-        WHERE date BETWEEN :startDate AND :endDate AND isExcluded = 0
+            SUM(amount) as totalAmount
+        FROM AtomicExpenses
+        WHERE date BETWEEN :startDate AND :endDate
         GROUP BY period
         ORDER BY period ASC
     """)
@@ -24015,10 +24094,10 @@ class MerchantCategoryMappingRepository(private val dao: MerchantCategoryMapping
 ================== FILE: ./app/src/main/java/BudgetDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/BudgetDao.kt
-// REASON: BUG FIX - All `strftime` date functions have been updated to use the
-// 'localtime' modifier. This ensures that all date-based grouping is performed
-// using the device's local timezone instead of UTC. This corrects the bug where
-// spending was being attributed to the wrong month, fixing budget calculations.
+// REASON: FEATURE (Splitting) - The queries for calculating spending against
+// budgets (`getBudgetsWithSpendingForMonth` and `getActualSpendingForCategory`)
+// have been rewritten. They now use a UNION ALL to combine non-split transactions
+// with child split items, ensuring budget calculations are accurate.
 // =================================================================================
 package io.pm.finlight
 
@@ -24035,6 +24114,16 @@ interface BudgetDao {
 
     @Query(
         """
+        WITH AtomicExpenses AS (
+            -- 1. Regular, non-split transactions
+            SELECT T.categoryId, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND T.isExcluded = 0
+            UNION ALL
+            -- 2. Child items from split transactions
+            SELECT S.categoryId, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND strftime('%Y-%m', P.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND P.isExcluded = 0
+        )
         SELECT
             B.*,
             IFNULL(TxSums.totalSpent, 0.0) as spent,
@@ -24045,10 +24134,10 @@ interface BudgetDao {
         LEFT JOIN
             (SELECT
                 C.name as categoryName,
-                SUM(T.amount) as totalSpent
-             FROM transactions AS T
-             JOIN categories AS C ON T.categoryId = C.id
-             WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND T.isExcluded = 0
+                SUM(AE.amount) as totalSpent
+             FROM AtomicExpenses AS AE
+             JOIN categories AS C ON AE.categoryId = C.id
+             WHERE AE.categoryId IS NOT NULL
              GROUP BY C.name) AS TxSums
         ON B.categoryName = TxSums.categoryName
         LEFT JOIN categories AS Cat ON B.categoryName = Cat.name
@@ -24068,7 +24157,19 @@ interface BudgetDao {
     suspend fun insert(budget: Budget)
 
     @Query(
-        "SELECT SUM(amount) FROM transactions WHERE categoryId = (SELECT id FROM categories WHERE name = :categoryName) AND strftime('%m', date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', date / 1000, 'unixepoch', 'localtime') + 0 = :year AND transactionType = 'expense' AND isExcluded = 0",
+        """
+        WITH AtomicExpenses AS (
+            SELECT T.categoryId, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND strftime('%m', T.date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', T.date / 1000, 'unixepoch', 'localtime') + 0 = :year AND T.isExcluded = 0
+            UNION ALL
+            SELECT S.categoryId, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND strftime('%m', P.date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', P.date / 1000, 'unixepoch', 'localtime') + 0 = :year AND P.isExcluded = 0
+        )
+        SELECT SUM(AE.amount) FROM AtomicExpenses AS AE
+        JOIN categories AS C ON AE.categoryId = C.id
+        WHERE C.name = :categoryName AND AE.categoryId IS NOT NULL
+    """
     )
     fun getActualSpendingForCategory(
         categoryName: String,
@@ -25552,11 +25653,10 @@ data class DailyTotal(
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: REFACTOR - The `ConsistencyStats` data class and its corresponding
-// calculation logic have been updated to include a new `noDataDays` metric.
-// This provides a more complete summary for the dashboard card.
-// FEATURE - Added `yearlyConsistencyData` flow to fetch the full year's
-// heatmap data for the new dashboard card, replacing the old monthly-only logic.
+// REASON: FEATURE (Splitting) - The ViewModel now uses the split-aware
+// `getFinancialSummaryForRangeFlow` query to calculate `monthlyIncome` and
+// `monthlyExpenses`. This replaces the client-side calculation and ensures that
+// dashboard totals accurately reflect split transactions.
 // =================================================================================
 package io.pm.finlight
 
@@ -25605,7 +25705,6 @@ class DashboardViewModel(
     private val _showAddCardSheet = MutableStateFlow(false)
     val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
 
-    // --- NEW: Flow for the full yearly heatmap data ---
     val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
 
     init {
@@ -25679,27 +25778,15 @@ class DashboardViewModel(
                 set(Calendar.MILLISECOND, 999)
             }.timeInMillis
 
-        val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(
-            startDate = monthStart,
-            endDate = monthEnd,
-            keyword = null,
-            accountId = null,
-            categoryId = null
-        ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        // --- UPDATED: Use the split-aware financial summary query ---
+        val financialSummaryFlow = transactionRepository.getFinancialSummaryForRangeFlow(monthStart, monthEnd)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-        monthlyIncome =
-            transactionsThisMonth.map { transactions ->
-                transactions
-                    .filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }
-                    .sumOf { it.transaction.amount }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+        monthlyIncome = financialSummaryFlow.map { it?.totalIncome ?: 0.0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-        monthlyExpenses =
-            transactionsThisMonth.map { transactions ->
-                transactions
-                    .filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }
-                    .sumOf { it.transaction.amount }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+        monthlyExpenses = financialSummaryFlow.map { it?.totalExpenses ?: 0.0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
         val currentYear = calendar.get(Calendar.YEAR)
         val currentMonth = calendar.get(Calendar.MONTH) + 1
@@ -25743,7 +25830,6 @@ class DashboardViewModel(
                     initialValue = emptyList(),
                 )
 
-        // --- NEW: Initialize the yearly data flow ---
         yearlyConsistencyData = flow {
             emit(generateYearlyConsistencyData())
         }.flowOn(Dispatchers.Default)
@@ -25754,7 +25840,6 @@ class DashboardViewModel(
             )
     }
 
-    // --- NEW: Function to generate data for the full year heatmap ---
     private suspend fun generateYearlyConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
         val calendar = Calendar.getInstance()
         val endDate = calendar.timeInMillis
