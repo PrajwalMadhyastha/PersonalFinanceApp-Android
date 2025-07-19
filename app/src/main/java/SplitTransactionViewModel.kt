@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionViewModel.kt
-// REASON: NEW FILE - This dedicated ViewModel manages the state and business
-// logic for the new transaction splitting screen. It holds the list of split
-// items, tracks the remaining amount to be allocated, and enforces the "Golden
-// Rule" where the sum of splits must equal the parent total.
+// REASON: FEATURE (Splitting) - The ViewModel is now "edit-aware". The init
+// logic checks if the parent transaction is already split. If so, it loads the
+// existing split items from the repository; otherwise, it proceeds with the
+// original creation flow. This enables the screen to function for both creating
+// and editing splits.
 // =================================================================================
 package io.pm.finlight
 
@@ -53,6 +54,9 @@ class SplitTransactionViewModel(
     private val db = AppDatabase.getInstance(application)
     private val transactionRepository = TransactionRepository(db.transactionDao())
     val categoryRepository = CategoryRepository(db.categoryDao())
+    // --- NEW: Add SplitTransactionRepository dependency ---
+    private val splitTransactionRepository = SplitTransactionRepository(db.splitTransactionDao())
+
 
     private val _uiState = MutableStateFlow(SplitTransactionUiState())
     val uiState = _uiState.asStateFlow()
@@ -61,25 +65,52 @@ class SplitTransactionViewModel(
 
     init {
         viewModelScope.launch {
-            // For splitting, we only care about the parent transaction, not its relations.
             val parentTxn = transactionRepository.getTransactionById(transactionId).firstOrNull()
             if (parentTxn != null) {
-                // Initialize with a single split item for the full amount, uncategorized.
-                val initialSplit = SplitItem(
-                    id = nextTempId--,
-                    amount = parentTxn.amount.toString(),
-                    category = null,
-                    notes = parentTxn.notes
-                )
-                _uiState.value = SplitTransactionUiState(
-                    parentTransaction = parentTxn,
-                    splitItems = listOf(initialSplit),
-                    remainingAmount = 0.0
-                )
+                // --- UPDATED: Logic to handle both create and edit modes ---
+                if (parentTxn.isSplit) {
+                    // EDIT MODE: Load existing splits
+                    val existingSplits = splitTransactionRepository.getSplitsForParent(transactionId).firstOrNull()
+                    if (!existingSplits.isNullOrEmpty()) {
+                        val splitItems = existingSplits.map { details ->
+                            SplitItem(
+                                id = details.splitTransaction.id,
+                                amount = details.splitTransaction.amount.toString(),
+                                category = categoryRepository.getCategoryById(details.splitTransaction.categoryId ?: -1),
+                                notes = details.splitTransaction.notes
+                            )
+                        }
+                        _uiState.value = SplitTransactionUiState(
+                            parentTransaction = parentTxn,
+                            splitItems = splitItems,
+                            remainingAmount = 0.0 // Should be 0 if saved correctly
+                        )
+                    } else {
+                        // Edge case: isSplit is true but no splits found. Treat as new.
+                        initializeForCreation(parentTxn)
+                    }
+                } else {
+                    // CREATE MODE: Existing logic
+                    initializeForCreation(parentTxn)
+                }
             } else {
                 _uiState.value = SplitTransactionUiState(error = "Transaction not found.")
             }
         }
+    }
+
+    private fun initializeForCreation(parentTxn: Transaction) {
+        val initialSplit = SplitItem(
+            id = nextTempId--,
+            amount = parentTxn.amount.toString(),
+            category = null,
+            notes = parentTxn.notes
+        )
+        _uiState.value = SplitTransactionUiState(
+            parentTransaction = parentTxn,
+            splitItems = listOf(initialSplit),
+            remainingAmount = 0.0
+        )
     }
 
     fun addSplitItem() {
