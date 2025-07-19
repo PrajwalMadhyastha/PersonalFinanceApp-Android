@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: FIX - Resolved multiple compilation errors by adding the required
-// imports for `toArgb` and `IconCompat`. Replaced the non-existent
-// `ic_stat_name` drawable with the standard `ic_launcher_foreground` to fix
-// the unresolved reference error.
+// REASON: FIX - The `createCategoryIconBitmap` function has been updated to
+// create a taller bitmap and draw the icon in the vertical center, which fixes
+// the icon's alignment in the notification. The `getFallbackDrawableRes`
+// function has been greatly expanded to map category keys to specific app
+// drawables, ensuring the correct icon is displayed. Added logging for easier debugging.
 // =================================================================================
 package io.pm.finlight
 
@@ -15,13 +16,14 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.util.Log
+import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.TaskStackBuilder
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.IconCompat
 import androidx.core.net.toUri
 import com.google.gson.Gson
 import java.net.URLEncoder
@@ -81,7 +83,7 @@ object NotificationHelper {
         }
 
         val builder = NotificationCompat.Builder(context, MainApplication.RICH_TRANSACTION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // <-- FIX: Use a valid drawable
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(contentText)
             .setLargeIcon(categoryBitmap)
@@ -98,31 +100,98 @@ object NotificationHelper {
         }
     }
 
+    /**
+     * Maps a category icon key (String) to a specific drawable resource from the app's
+     * res/drawable folder. This is necessary because the Android Notification system
+     * cannot render Jetpack Compose ImageVectors and requires a traditional drawable
+     * to create the icon bitmap. This function acts as a "translation layer" between
+     * the two UI systems.
+     */
+    @DrawableRes
+    private fun getFallbackDrawableRes(iconKey: String?): Int {
+        return when (iconKey) {
+            "restaurant", "fastfood" -> R.drawable.ic_restaurant
+            "shopping_cart", "shopping_bag" -> R.drawable.ic_shopping_cart
+            "receipt_long", "schedule" -> R.drawable.ic_receipt_long
+            "local_gas_station" -> R.drawable.ic_local_gas_station
+            "travel_explore" -> R.drawable.ic_travel_explore
+            "work", "business" -> R.drawable.ic_work
+            "favorite", "fitness_center" -> R.drawable.ic_favorite
+            "school" -> R.drawable.ic_school
+            "directions_car" -> R.drawable.ic_directions_car
+            "home", "house" -> R.drawable.ic_home
+            "shield" -> R.drawable.ic_shield
+            "star" -> R.drawable.ic_star
+            "swap_horiz" -> R.drawable.ic_swap_horiz
+            "trending_up" -> R.drawable.ic_trending_up
+            "redo" -> R.drawable.ic_redo
+            "add_card" -> R.drawable.ic_add_card
+            "two_wheeler" -> R.drawable.ic_two_wheeler
+            "credit_score" -> R.drawable.ic_credit_score
+            "people" -> R.drawable.ic_people
+            "group" -> R.drawable.ic_group
+            "card_giftcard" -> R.drawable.ic_card_giftcard
+            "pets" -> R.drawable.ic_pets
+            "account_balance" -> R.drawable.ic_account_balance
+            "more_horiz" -> R.drawable.ic_more_horiz
+            else -> R.drawable.ic_help_outline // A sensible default for uncategorized or new icons
+        }
+    }
+
+
     private fun createCategoryIconBitmap(context: Context, details: TransactionDetails): Bitmap {
-        val size = 128
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val width = 128
+        // Create a taller bitmap to help with vertical centering in the notification panel.
+        val height = (width * 1.5).toInt()
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        // Background color
+        // 1. Draw the colored circle background
         val colorKey = details.categoryColorKey ?: "gray_light"
-        val backgroundColor = CategoryIconHelper.getIconBackgroundColor(colorKey).toArgb() // <-- FIX: Added import for toArgb
-        val paint = Paint().apply {
+        val backgroundColor = CategoryIconHelper.getIconBackgroundColor(colorKey).toArgb()
+        val backgroundPaint = Paint().apply {
             color = backgroundColor
             style = Paint.Style.FILL
+            isAntiAlias = true
         }
-        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+        // Draw the circle in the vertical center of the taller canvas.
+        canvas.drawCircle(width / 2f, height / 2f, width / 2f, backgroundPaint)
 
-        // Icon
-        val iconKey = details.categoryIconKey ?: "category"
-        val iconVector = CategoryIconHelper.getIcon(iconKey)
+        // 2. Draw the icon on top of the circle
+        val iconKey = details.categoryIconKey
+        Log.d("NotificationHelper", "Creating icon for category: '${details.categoryName}', iconKey: '$iconKey'")
 
-        val iconDrawable = IconCompat.createWithVector(context, iconVector).loadDrawable(context) // <-- FIX: Added import for IconCompat
-        val iconSize = (size * 0.6).toInt()
-        val iconLeft = (size - iconSize) / 2
-        val iconTop = (size - iconSize) / 2
-        iconDrawable?.setBounds(iconLeft, iconTop, iconLeft + iconSize, iconTop + iconSize)
-        iconDrawable?.setTint(android.graphics.Color.BLACK)
-        iconDrawable?.draw(canvas)
+        if (iconKey != null && iconKey != "letter_default" && iconKey != "category") {
+            val drawableResId = getFallbackDrawableRes(iconKey)
+            Log.d("NotificationHelper", "Mapped iconKey '$iconKey' to drawable resource ID: $drawableResId")
+            val iconDrawable = ContextCompat.getDrawable(context, drawableResId)
+
+            if (iconDrawable == null) {
+                Log.e("NotificationHelper", "Failed to load drawable for key '$iconKey' (Res ID: $drawableResId)")
+            }
+
+            val iconSize = (width * 0.6).toInt()
+            // Calculate bounds to center the icon within the taller canvas.
+            val iconLeft = (width - iconSize) / 2
+            val iconTop = (height - iconSize) / 2
+            iconDrawable?.setBounds(iconLeft, iconTop, iconLeft + iconSize, iconTop + iconSize)
+            iconDrawable?.setTint(android.graphics.Color.BLACK)
+            iconDrawable?.draw(canvas)
+        } else {
+            // Fallback to drawing the first letter if no specific icon is set
+            val categoryName = details.categoryName ?: "Other"
+            val text = categoryName.firstOrNull()?.uppercase() ?: "?"
+            val textPaint = Paint().apply {
+                color = android.graphics.Color.BLACK
+                textSize = width * 0.5f
+                textAlign = Paint.Align.CENTER
+                isAntiAlias = true
+                typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            }
+            // Adjust Y position for the taller canvas to ensure text is centered in the circle
+            val textY = (height / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
+            canvas.drawText(text, width / 2f, textY, textPaint)
+        }
 
         return bitmap
     }

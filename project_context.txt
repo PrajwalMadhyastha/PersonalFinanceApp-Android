@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jul 19 16:41:22 IST 2025
+Generated on: Sat Jul 19 17:48:29 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -2642,6 +2642,82 @@ class IncomeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearFilters() {
         _filterState.value = TransactionFilterState()
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/TransactionNotificationWorker.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionNotificationWorker.kt
+// REASON: FIX - The CoroutineWorker's constructor has been corrected to properly
+// pass the application context. This resolves the "Argument type mismatch" and
+// "No value passed for parameter" compilation errors.
+// =================================================================================
+package io.pm.finlight
+
+import android.content.Context
+import android.util.Log
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.withContext
+import java.util.Calendar
+
+class TransactionNotificationWorker(
+    private val context: Context,
+    workerParams: WorkerParameters
+) : CoroutineWorker(context, workerParams) { // <-- FIX: Pass context to the parent constructor
+
+    companion object {
+        const val KEY_TRANSACTION_ID = "transaction_id"
+    }
+
+    override suspend fun doWork(): Result {
+        val transactionId = inputData.getInt(KEY_TRANSACTION_ID, -1)
+        if (transactionId == -1) {
+            Log.e("TransactionNotificationWorker", "Invalid transactionId received.")
+            return Result.failure()
+        }
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val db = AppDatabase.getInstance(context)
+                val transactionDao = db.transactionDao()
+
+                // 1. Fetch full transaction details
+                val details = transactionDao.getTransactionDetailsById(transactionId).firstOrNull()
+                if (details == null) {
+                    Log.e("TransactionNotificationWorker", "TransactionDetails not found for id: $transactionId")
+                    return@withContext Result.failure()
+                }
+
+                // 2. Calculate monthly totals
+                val calendar = Calendar.getInstance().apply { timeInMillis = details.transaction.date }
+                val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0) }.timeInMillis
+                val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1) }.timeInMillis
+                val summary = transactionDao.getFinancialSummaryForRange(monthStart, monthEnd)
+                val monthlyTotal = if (details.transaction.transactionType == "income") summary?.totalIncome else summary?.totalExpenses
+
+                // 3. Get visit count
+                val visitCount = transactionDao.getTransactionCountForMerchantSuspend(details.transaction.originalDescription ?: details.transaction.description)
+
+                // 4. Show the rich notification
+                NotificationHelper.showRichTransactionNotification(
+                    context = context,
+                    details = details,
+                    monthlyTotal = monthlyTotal ?: 0.0,
+                    visitCount = visitCount
+                )
+
+                Log.d("TransactionNotificationWorker", "Successfully created rich notification for transaction id: $transactionId")
+                Result.success()
+            } catch (e: Exception) {
+                Log.e("TransactionNotificationWorker", "Worker failed for transaction id: $transactionId", e)
+                Result.retry()
+            }
+        }
     }
 }
 -e 
@@ -18698,10 +18774,10 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The NavHost has been updated to pass the shared `transactionViewModel`
-// to the IncomeScreen, SearchScreen, and TimePeriodReportScreen. This resolves
-// the compilation errors and allows these screens to correctly trigger the
-// in-place category change feature.
+// REASON: UX REFINEMENT - The ModalBottomSheet for the in-place category change
+// feature has been updated to be full-screen. This is achieved by setting
+// `skipPartiallyExpanded = true` in its state and making the sheet's content
+// fill the maximum height, improving usability for long category lists.
 // =================================================================================
 package io.pm.finlight
 
@@ -19116,26 +19192,25 @@ fun MainAppScreen() {
         }
 
         if (transactionForCategoryChange != null) {
-            val transaction = transactionForCategoryChange!!
             val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
             val isThemeDark = isSystemInDarkTheme()
             val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+            // --- UPDATED: Create a sheet state that skips the half-expanded state ---
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
             ModalBottomSheet(
                 onDismissRequest = { transactionViewModel.cancelCategoryChange() },
+                sheetState = sheetState, // Pass the new state
                 containerColor = popupContainerColor
             ) {
                 CategoryPickerSheet(
                     title = "Change Category",
                     items = categories,
                     onItemSelected = { newCategory ->
-                        transactionViewModel.updateTransactionCategory(transaction.transaction.id, newCategory.id)
+                        transactionViewModel.updateTransactionCategory(transactionForCategoryChange!!.transaction.id, newCategory.id)
                         transactionViewModel.cancelCategoryChange()
                     },
-                    onAddNew = {
-                        // For simplicity, we won't allow creating a new category from this quick sheet.
-                        // The user can use the full edit screen for that.
-                    }
+                    onAddNew = null // Keep it simple as requested
                 )
             }
         }
@@ -19630,7 +19705,6 @@ fun SplashScreen(navController: NavHostController, activity: Activity) {
     }
 }
 
-// --- NEW: Copied from TransactionDetailScreen for reusability ---
 @Composable
 private fun CategoryPickerSheet(
     title: String,
@@ -19638,7 +19712,8 @@ private fun CategoryPickerSheet(
     onItemSelected: (Category) -> Unit,
     onAddNew: (() -> Unit)? = null
 ) {
-    Column(modifier = Modifier.navigationBarsPadding()) {
+    // --- UPDATED: Add Modifier.fillMaxHeight() to make the sheet content expand ---
+    Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
@@ -19701,7 +19776,6 @@ private fun CategoryPickerSheet(
     }
 }
 
-// --- NEW: Copied from TransactionDetailScreen for reusability ---
 @Composable
 private fun CategoryIconDisplay(category: Category) {
     Box(
@@ -23421,10 +23495,10 @@ data class IgnoreRule(
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE (Splitting) - Added the `unmarkAsSplit` function. This is a
-// crucial part of the "un-split" feature, allowing the parent transaction to be
-// reverted to its original, non-split state by restoring its description and
-// category.
+// REASON: FIX - Corrected a SQL query ambiguity in `getIncomeByCategoryForMonth`.
+// The `WHERE` clause was updated to filter by `C.id` (the joined category table's
+// ID) instead of `AI.categoryId` (the subquery's column). This resolves the
+// "no such column" compilation error from Room's query parser.
 // =================================================================================
 package io.pm.finlight
 
@@ -23440,7 +23514,6 @@ interface TransactionDao {
     @Query("UPDATE transactions SET isSplit = :isSplit, categoryId = CASE WHEN :isSplit = 1 THEN NULL ELSE categoryId END, description = CASE WHEN :isSplit = 1 THEN 'Split Transaction' ELSE description END WHERE id = :transactionId")
     suspend fun markAsSplit(transactionId: Int, isSplit: Boolean)
 
-    // --- NEW: Function to revert a split transaction to a normal one ---
     @Query("""
         UPDATE transactions 
         SET isSplit = 0, description = :originalDescription, categoryId = :newCategoryId
@@ -23575,7 +23648,7 @@ interface TransactionDao {
         WHERE AI.categoryId IS NOT NULL
           AND (:keyword IS NULL OR LOWER(AI.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AI.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR AI.accountId = :accountId)
-          AND (:categoryId IS NULL OR AI.categoryId = :categoryId)
+          AND (:categoryId IS NULL OR C.id = :categoryId)
         GROUP BY C.name
         ORDER BY totalAmount DESC
     """)
@@ -23934,6 +24007,13 @@ interface TransactionDao {
         AND isExcluded = 0
     """)
     fun getTransactionCountForMerchant(description: String): Flow<Int>
+
+    @Query("""
+        SELECT COUNT(*) FROM transactions
+        WHERE (LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description))
+        AND isExcluded = 0
+    """)
+    suspend fun getTransactionCountForMerchantSuspend(description: String): Int
 
     @Query("""
         SELECT * FROM transactions
@@ -24729,8 +24809,10 @@ class BootReceiver : BroadcastReceiver() {
 ================== FILE: ./app/src/main/java/MainApplication.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainApplication.kt
-// REASON: Added a new notification channel ID and a corresponding creation
-// function to support the new monthly summary notifications.
+// REASON: FEATURE - Added a new notification channel, RICH_TRANSACTION_CHANNEL_ID,
+// specifically for the new, more detailed transaction notifications. This allows
+// users to customize their notification preferences for these alerts separately
+// from other app notifications.
 // =================================================================================
 package io.pm.finlight
 
@@ -24743,9 +24825,10 @@ import com.github.mikephil.charting.utils.Utils
 class MainApplication : Application() {
     companion object {
         const val TRANSACTION_CHANNEL_ID = "transaction_channel"
+        // --- NEW: A dedicated channel for the new rich notifications ---
+        const val RICH_TRANSACTION_CHANNEL_ID = "rich_transaction_channel"
         const val DAILY_REPORT_CHANNEL_ID = "daily_report_channel"
         const val SUMMARY_CHANNEL_ID = "summary_channel"
-        // --- NEW: Add a channel ID for monthly summaries ---
         const val MONTHLY_SUMMARY_CHANNEL_ID = "monthly_summary_channel"
     }
 
@@ -24754,9 +24837,10 @@ class MainApplication : Application() {
         Utils.init(this)
 
         createTransactionNotificationChannel()
+        // --- NEW: Call the creation function for the new channel ---
+        createRichTransactionNotificationChannel()
         createDailyReportNotificationChannel()
         createSummaryNotificationChannel()
-        // --- NEW: Call the creation function for the new channel ---
         createMonthlySummaryNotificationChannel()
     }
 
@@ -24774,6 +24858,23 @@ class MainApplication : Application() {
             notificationManager.createNotificationChannel(channel)
         }
     }
+
+    // --- NEW: Function to create the rich transaction notification channel ---
+    private fun createRichTransactionNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Detailed Transactions"
+            val descriptionText = "Richer, more detailed notifications for auto-saved transactions."
+            val importance = NotificationManager.IMPORTANCE_HIGH // Higher importance
+            val channel =
+                NotificationChannel(RICH_TRANSACTION_CHANNEL_ID, name, importance).apply {
+                    description = descriptionText
+                }
+            val notificationManager: NotificationManager =
+                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
 
     private fun createDailyReportNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -24805,7 +24906,6 @@ class MainApplication : Application() {
         }
     }
 
-    // --- NEW: Function to create the monthly summary notification channel ---
     private fun createMonthlySummaryNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "Monthly Summaries"
@@ -24911,10 +25011,11 @@ data class Transaction(
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: FEATURE - The receiver now retrieves the `smsSignature` generated by
-// the parser and includes it when creating the new `Transaction` object. This
-// is a critical step, as it saves the signature to the database, making it
-// available for the pattern detection worker.
+// REASON: FEATURE - The notification logic has been offloaded to a background
+// worker. Instead of calling NotificationHelper directly, the receiver now
+// enqueues a OneTimeWorkRequest for the new TransactionNotificationWorker,
+// passing the new transaction's ID. This makes the receiver more lightweight
+// and robust.
 // =================================================================================
 package io.pm.finlight
 
@@ -24926,6 +25027,9 @@ import android.content.pm.PackageManager
 import android.provider.Telephony
 import android.util.Log
 import androidx.core.app.ActivityCompat
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -24998,19 +25102,17 @@ class SmsReceiver : BroadcastReceiver() {
                                     sourceSmsId = potentialTxn.sourceSmsId,
                                     sourceSmsHash = potentialTxn.sourceSmsHash,
                                     source = "Auto-Captured",
-                                    // --- NEW: Pass the signature to the transaction object ---
                                     smsSignature = potentialTxn.smsSignature
                                 )
                                 val newTransactionId = transactionDao.insert(newTransaction)
                                 Log.d(tag, "Transaction saved successfully with ID: $newTransactionId")
 
+                                // --- UPDATED: Enqueue the worker to show the notification ---
                                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                                    val savedTransaction = newTransaction.copy(id = newTransactionId.toInt())
-                                    if (potentialTxn.categoryId == null && settingsRepository.isUnknownTransactionPopupEnabledBlocking()) {
-                                        NotificationHelper.showTransactionNotification(context, savedTransaction)
-                                    } else {
-                                        NotificationHelper.showAutoSaveConfirmationNotification(context, savedTransaction)
-                                    }
+                                    val workRequest = OneTimeWorkRequestBuilder<TransactionNotificationWorker>()
+                                        .setInputData(workDataOf(TransactionNotificationWorker.KEY_TRANSACTION_ID to newTransactionId.toInt()))
+                                        .build()
+                                    WorkManager.getInstance(context).enqueue(workRequest)
                                 }
 
                             } else {
@@ -25033,11 +25135,11 @@ class SmsReceiver : BroadcastReceiver() {
 ================== FILE: ./app/src/main/java/NotificationHelper.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: FEATURE - Added `showRecurringPatternDetectedNotification`. This
-// function creates a specific notification to inform the user that the app has
-// automatically identified a new recurring transaction. It includes a deep link
-// to the "Add/Edit Recurring Rule" screen, pre-filled with the detected data,
-// allowing the user to review, modify, or confirm the new rule.
+// REASON: FIX - The `createCategoryIconBitmap` function has been updated to
+// create a taller bitmap and draw the icon in the vertical center, which fixes
+// the icon's alignment in the notification. The `getFallbackDrawableRes`
+// function has been greatly expanded to map category keys to specific app
+// drawables, ensuring the correct icon is displayed. Added logging for easier debugging.
 // =================================================================================
 package io.pm.finlight
 
@@ -25046,10 +25148,17 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.util.Log
+import androidx.annotation.DrawableRes
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.TaskStackBuilder
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import com.google.gson.Gson
 import java.net.URLEncoder
@@ -25062,11 +25171,167 @@ object NotificationHelper {
     private const val DEEP_LINK_URI_EDIT = "app://finlight.pm.io/transaction_detail"
     private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
     private const val DEEP_LINK_URI_LINK_RECURRING = "app://finlight.pm.io/link_recurring"
-    // --- NEW: Deep link for the new pattern detection flow ---
     private const val DEEP_LINK_URI_ADD_RECURRING = "app://finlight.pm.io/add_recurring_transaction"
 
 
-    // --- NEW: Notification for when a recurring pattern is detected ---
+    fun showRichTransactionNotification(
+        context: Context,
+        details: TransactionDetails,
+        monthlyTotal: Double,
+        visitCount: Int
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val intent = Intent(Intent.ACTION_VIEW, "$DEEP_LINK_URI_EDIT/${details.transaction.id}".toUri()).apply {
+            `package` = context.packageName
+        }
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(intent)
+            getPendingIntent(details.transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+        val amountStr = currencyFormat.format(details.transaction.amount)
+        val title = "Finlight · ${details.accountName}"
+        val contentText = "$amountStr at ${details.transaction.description}"
+
+        val categoryBitmap = createCategoryIconBitmap(context, details)
+
+        // Expanded View (InboxStyle)
+        val inboxStyle = NotificationCompat.InboxStyle()
+            .setBigContentTitle(title)
+            .setSummaryText(details.categoryName ?: "Uncategorized")
+
+        val totalLabel = if (details.transaction.transactionType == "income") "income this month" else "spent this month"
+        inboxStyle.addLine("${currencyFormat.format(monthlyTotal)} $totalLabel")
+
+        if (visitCount > 0) {
+            val visitText = when (visitCount) {
+                1 -> "This is your first visit here."
+                2 -> "This is your 2nd visit here."
+                3 -> "This is your 3rd visit here."
+                else -> "This is your ${visitCount}th visit here."
+            }
+            inboxStyle.addLine(visitText)
+        }
+
+        val builder = NotificationCompat.Builder(context, MainApplication.RICH_TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(contentText)
+            .setLargeIcon(categoryBitmap)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setStyle(inboxStyle)
+            .setAutoCancel(true)
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis())
+            .addAction(0, "View Details", pendingIntent)
+
+        with(NotificationManagerCompat.from(context)) {
+            notify(details.transaction.id, builder.build())
+        }
+    }
+
+    /**
+     * Maps a category icon key (String) to a specific drawable resource from the app's
+     * res/drawable folder. This is necessary because the Android Notification system
+     * cannot render Jetpack Compose ImageVectors and requires a traditional drawable
+     * to create the icon bitmap. This function acts as a "translation layer" between
+     * the two UI systems.
+     */
+    @DrawableRes
+    private fun getFallbackDrawableRes(iconKey: String?): Int {
+        return when (iconKey) {
+            "restaurant", "fastfood" -> R.drawable.ic_restaurant
+            "shopping_cart", "shopping_bag" -> R.drawable.ic_shopping_cart
+            "receipt_long", "schedule" -> R.drawable.ic_receipt_long
+            "local_gas_station" -> R.drawable.ic_local_gas_station
+            "travel_explore" -> R.drawable.ic_travel_explore
+            "work", "business" -> R.drawable.ic_work
+            "favorite", "fitness_center" -> R.drawable.ic_favorite
+            "school" -> R.drawable.ic_school
+            "directions_car" -> R.drawable.ic_directions_car
+            "home", "house" -> R.drawable.ic_home
+            "shield" -> R.drawable.ic_shield
+            "star" -> R.drawable.ic_star
+            "swap_horiz" -> R.drawable.ic_swap_horiz
+            "trending_up" -> R.drawable.ic_trending_up
+            "redo" -> R.drawable.ic_redo
+            "add_card" -> R.drawable.ic_add_card
+            "two_wheeler" -> R.drawable.ic_two_wheeler
+            "credit_score" -> R.drawable.ic_credit_score
+            "people" -> R.drawable.ic_people
+            "group" -> R.drawable.ic_group
+            "card_giftcard" -> R.drawable.ic_card_giftcard
+            "pets" -> R.drawable.ic_pets
+            "account_balance" -> R.drawable.ic_account_balance
+            "more_horiz" -> R.drawable.ic_more_horiz
+            else -> R.drawable.ic_help_outline // A sensible default for uncategorized or new icons
+        }
+    }
+
+
+    private fun createCategoryIconBitmap(context: Context, details: TransactionDetails): Bitmap {
+        val width = 128
+        // Create a taller bitmap to help with vertical centering in the notification panel.
+        val height = (width * 1.5).toInt()
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // 1. Draw the colored circle background
+        val colorKey = details.categoryColorKey ?: "gray_light"
+        val backgroundColor = CategoryIconHelper.getIconBackgroundColor(colorKey).toArgb()
+        val backgroundPaint = Paint().apply {
+            color = backgroundColor
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        // Draw the circle in the vertical center of the taller canvas.
+        canvas.drawCircle(width / 2f, height / 2f, width / 2f, backgroundPaint)
+
+        // 2. Draw the icon on top of the circle
+        val iconKey = details.categoryIconKey
+        Log.d("NotificationHelper", "Creating icon for category: '${details.categoryName}', iconKey: '$iconKey'")
+
+        if (iconKey != null && iconKey != "letter_default" && iconKey != "category") {
+            val drawableResId = getFallbackDrawableRes(iconKey)
+            Log.d("NotificationHelper", "Mapped iconKey '$iconKey' to drawable resource ID: $drawableResId")
+            val iconDrawable = ContextCompat.getDrawable(context, drawableResId)
+
+            if (iconDrawable == null) {
+                Log.e("NotificationHelper", "Failed to load drawable for key '$iconKey' (Res ID: $drawableResId)")
+            }
+
+            val iconSize = (width * 0.6).toInt()
+            // Calculate bounds to center the icon within the taller canvas.
+            val iconLeft = (width - iconSize) / 2
+            val iconTop = (height - iconSize) / 2
+            iconDrawable?.setBounds(iconLeft, iconTop, iconLeft + iconSize, iconTop + iconSize)
+            iconDrawable?.setTint(android.graphics.Color.BLACK)
+            iconDrawable?.draw(canvas)
+        } else {
+            // Fallback to drawing the first letter if no specific icon is set
+            val categoryName = details.categoryName ?: "Other"
+            val text = categoryName.firstOrNull()?.uppercase() ?: "?"
+            val textPaint = Paint().apply {
+                color = android.graphics.Color.BLACK
+                textSize = width * 0.5f
+                textAlign = Paint.Align.CENTER
+                isAntiAlias = true
+                typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            }
+            // Adjust Y position for the taller canvas to ensure text is centered in the circle
+            val textY = (height / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
+            canvas.drawText(text, width / 2f, textY, textPaint)
+        }
+
+        return bitmap
+    }
+
+
     fun showRecurringPatternDetectedNotification(
         context: Context,
         rule: RecurringTransaction
@@ -25075,14 +25340,12 @@ object NotificationHelper {
             return
         }
 
-        // The deep link will navigate to the add/edit screen with the new rule's ID
         val deepLinkUri = "$DEEP_LINK_URI_ADD_RECURRING?ruleId=${rule.id}".toUri()
 
         val intent = Intent(Intent.ACTION_VIEW, deepLinkUri).apply {
             `package` = context.packageName
         }
 
-        // Use the rule's ID for a unique notification ID
         val notificationId = "pattern_${rule.id}".hashCode()
         val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
             addNextIntentWithParentStack(intent)
