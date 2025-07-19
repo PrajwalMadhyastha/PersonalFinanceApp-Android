@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - The MainAppScreen now observes the `transactionForCategoryChange`
-// state from the TransactionViewModel. When a transaction is selected, it displays
-// a ModalBottomSheet with a CategoryPickerSheet, allowing users to change the
-// category of a transaction in-place without navigating to a new screen.
+// REASON: FIX - The call to the DashboardScreen composable inside the NavHost has
+// been updated to pass the `transactionViewModel`. This is necessary to fix the
+// "Unresolved reference" error and allow the dashboard to trigger the in-place
+// category change feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -221,7 +221,6 @@ fun MainAppScreen() {
     val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
     val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
 
-    // --- NEW: Observe state for category change sheet ---
     val transactionForCategoryChange by transactionViewModel.transactionForCategoryChange.collectAsState()
 
 
@@ -418,7 +417,6 @@ fun MainAppScreen() {
             )
         }
 
-        // --- NEW: Modal Bottom Sheet for changing category ---
         if (transactionForCategoryChange != null) {
             val transaction = transactionForCategoryChange!!
             val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
@@ -503,7 +501,11 @@ fun AppNavHost(
         }
 
         composable(BottomNavItem.Dashboard.route) {
-            DashboardScreen(navController, dashboardViewModel)
+            DashboardScreen(
+                navController = navController,
+                dashboardViewModel = dashboardViewModel,
+                transactionViewModel = transactionViewModel
+            )
         }
         composable(
             route = BottomNavItem.Transactions.route,

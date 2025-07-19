@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FEATURE - The `onCategoryClick` callback is now passed down from the
-// DashboardScreen through the `DashboardCard` to the `AuroraRecentActivityCard`.
-// This connects the UI event to the ViewModel, enabling the in-place category
-// change feature from the dashboard.
+// REASON: FIX - Corrected an "Unresolved reference" error. The screen now
+// accepts a TransactionViewModel instance, which is passed down to the
+// DashboardCard. This allows the `onCategoryClick` callback to correctly call
+// `transactionViewModel.requestCategoryChange(it)` instead of incorrectly
+// calling it on the DashboardViewModel.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -50,17 +51,18 @@ import java.util.Date
 @Composable
 fun DashboardScreen(
     navController: NavController,
-    viewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application)),
+    dashboardViewModel: DashboardViewModel,
+    transactionViewModel: TransactionViewModel
 ) {
-    val visibleCards by viewModel.visibleCards.collectAsState()
-    val isCustomizationMode by viewModel.isCustomizationMode.collectAsState()
-    val showAddCardSheet by viewModel.showAddCardSheet.collectAsState()
-    val hiddenCards by viewModel.hiddenCards.collectAsState()
-    val yearlyConsistencyData by viewModel.yearlyConsistencyData.collectAsState()
+    val visibleCards by dashboardViewModel.visibleCards.collectAsState()
+    val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
+    val showAddCardSheet by dashboardViewModel.showAddCardSheet.collectAsState()
+    val hiddenCards by dashboardViewModel.hiddenCards.collectAsState()
+    val yearlyConsistencyData by dashboardViewModel.yearlyConsistencyData.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
     var overscrollJob by remember { mutableStateOf<Job?>(null) }
-    val dragDropState = rememberDragDropState(onMove = viewModel::updateCardOrder)
+    val dragDropState = rememberDragDropState(onMove = dashboardViewModel::updateCardOrder)
 
     if (showAddCardSheet) {
         val sheetContainerColor = if (isSystemInDarkTheme()) {
@@ -70,14 +72,14 @@ fun DashboardScreen(
         }
 
         ModalBottomSheet(
-            onDismissRequest = { viewModel.onAddCardSheetDismiss() },
+            onDismissRequest = { dashboardViewModel.onAddCardSheetDismiss() },
             containerColor = sheetContainerColor
         ) {
             AddCardSheetContent(
                 hiddenCards = hiddenCards,
                 onAddCard = { cardType ->
-                    viewModel.showCard(cardType)
-                    viewModel.onAddCardSheetDismiss()
+                    dashboardViewModel.showCard(cardType)
+                    dashboardViewModel.onAddCardSheetDismiss()
                 }
             )
         }
@@ -106,7 +108,7 @@ fun DashboardScreen(
                             } ?: run { overscrollJob?.cancel() }
                     },
                     onDragStart = { offset ->
-                        viewModel.enterCustomizationMode()
+                        dashboardViewModel.enterCustomizationMode()
                         dragDropState.onDragStart(offset)
                     },
                     onDragEnd = { dragDropState.onDragEnd() },
@@ -158,11 +160,11 @@ fun DashboardScreen(
                 DashboardCard(
                     cardType = cardType,
                     navController = navController,
-                    viewModel = viewModel,
+                    dashboardViewModel = dashboardViewModel,
+                    transactionViewModel = transactionViewModel,
                     isCustomizationMode = isCustomizationMode,
-                    onHide = { viewModel.hideCard(cardType) },
+                    onHide = { dashboardViewModel.hideCard(cardType) },
                     yearlyConsistencyData = yearlyConsistencyData,
-                    onCategoryClick = { viewModel.requestCategoryChange(it) }
                 )
             }
         }
@@ -173,22 +175,22 @@ fun DashboardScreen(
 private fun DashboardCard(
     cardType: DashboardCardType,
     navController: NavController,
-    viewModel: DashboardViewModel,
+    dashboardViewModel: DashboardViewModel,
+    transactionViewModel: TransactionViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
-    yearlyConsistencyData: List<CalendarDayStatus>,
-    onCategoryClick: (TransactionDetails) -> Unit
+    yearlyConsistencyData: List<CalendarDayStatus>
 ) {
-    val netWorth by viewModel.netWorth.collectAsState()
-    val monthlyIncome by viewModel.monthlyIncome.collectAsState()
-    val monthlyExpenses by viewModel.monthlyExpenses.collectAsState()
-    val overallBudget by viewModel.overallMonthlyBudget.collectAsState()
-    val recentTransactions by viewModel.recentTransactions.collectAsState()
-    val accountsSummary by viewModel.accountsSummary.collectAsState()
-    val safeToSpendPerDay by viewModel.safeToSpendPerDay.collectAsState()
-    val budgetStatus by viewModel.budgetStatus.collectAsState()
-    val amountRemaining by viewModel.amountRemaining.collectAsState()
-    val monthYear = viewModel.monthYear
+    val netWorth by dashboardViewModel.netWorth.collectAsState()
+    val monthlyIncome by dashboardViewModel.monthlyIncome.collectAsState()
+    val monthlyExpenses by dashboardViewModel.monthlyExpenses.collectAsState()
+    val overallBudget by dashboardViewModel.overallMonthlyBudget.collectAsState()
+    val recentTransactions by dashboardViewModel.recentTransactions.collectAsState()
+    val accountsSummary by dashboardViewModel.accountsSummary.collectAsState()
+    val safeToSpendPerDay by dashboardViewModel.safeToSpendPerDay.collectAsState()
+    val budgetStatus by dashboardViewModel.budgetStatus.collectAsState()
+    val amountRemaining by dashboardViewModel.amountRemaining.collectAsState()
+    val monthYear = dashboardViewModel.monthYear
 
     Box {
         when (cardType) {
@@ -203,7 +205,11 @@ private fun DashboardCard(
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
-            DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(recentTransactions, navController, onCategoryClick)
+            DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(
+                transactions = recentTransactions,
+                navController = navController,
+                onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
+            )
             DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
             DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
                 budgetStatus = budgetStatus,
