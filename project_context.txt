@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jul 19 11:38:16 IST 2025
+Generated on: Sat Jul 19 13:26:09 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -850,6 +850,52 @@ data class FinancialSummary(
 -e 
 
 
+================== FILE: ./app/src/main/java/SplitTransactionDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionDao.kt
+// REASON: FEATURE (Splitting) - Added a new `getSplitsForParent` query. This
+// query joins the split_transactions table with the categories table to fetch
+// each split item along with its full category details, which is necessary for
+// displaying them in the UI.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface SplitTransactionDao {
+
+    @Transaction
+    @Query("""
+        SELECT s.*, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
+        FROM split_transactions s
+        LEFT JOIN categories c ON s.categoryId = c.id
+        WHERE s.parentTransactionId = :parentTransactionId
+        ORDER BY s.amount DESC
+    """)
+    fun getSplitsForParent(parentTransactionId: Int): Flow<List<SplitTransactionDetails>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(splits: List<SplitTransaction>)
+
+    @Update
+    suspend fun update(split: SplitTransaction)
+
+    @Query("DELETE FROM split_transactions WHERE id = :splitId")
+    suspend fun deleteById(splitId: Int)
+
+    @Query("DELETE FROM split_transactions WHERE parentTransactionId = :parentTransactionId")
+    suspend fun deleteSplitsForParent(parentTransactionId: Int)
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/BudgetRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/BudgetRepository.kt
@@ -1248,9 +1294,10 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE - The ViewModel now observes TravelModeSettings. The
-// `addTransaction` function is updated to accept an optional originalAmount and
-// performs the currency conversion before saving if Travel Mode is active.
+// REASON: FEATURE (Splitting) - The ViewModel is now aware of split transactions.
+// It initializes a new `SplitTransactionRepository` and exposes a
+// `getSplitDetailsForTransaction` function. This allows the TransactionDetailScreen
+// to fetch and display the child items of a split transaction.
 // =================================================================================
 package io.pm.finlight
 
@@ -1259,6 +1306,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -1298,6 +1346,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
     private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository
+    // --- NEW: Add repository for splits ---
+    private val splitTransactionRepository: SplitTransactionRepository
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
@@ -1350,7 +1400,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _retroUpdateSheetState = MutableStateFlow<RetroUpdateSheetState?>(null)
     val retroUpdateSheetState = _retroUpdateSheetState.asStateFlow()
 
-    // --- NEW: Expose Travel Mode settings ---
     val travelModeSettings: StateFlow<TravelModeSettings?>
 
     init {
@@ -1362,8 +1411,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
+        // --- NEW: Initialize the split repository ---
+        splitTransactionRepository = SplitTransactionRepository(db.splitTransactionDao())
 
-        // --- NEW: Initialize travel mode settings flow ---
+
         travelModeSettings = settingsRepository.getTravelModeSettings()
             .stateIn(
                 scope = viewModelScope,
@@ -1457,6 +1508,44 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // --- NEW: Function to get split details ---
+    fun getSplitDetailsForTransaction(transactionId: Int): Flow<List<SplitTransactionDetails>> {
+        return splitTransactionRepository.getSplitsForParent(transactionId)
+    }
+
+    fun saveTransactionSplits(parentTransactionId: Int, splitItems: List<SplitItem>, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                db.withTransaction {
+                    // 1. Mark the parent transaction as split
+                    db.transactionDao().setTransactionAsSplit(parentTransactionId, true)
+
+                    // 2. Clear any existing splits for this parent
+                    db.splitTransactionDao().deleteSplitsForParent(parentTransactionId)
+
+                    // 3. Create new SplitTransaction entities from the UI state
+                    val newSplits = splitItems.map {
+                        SplitTransaction(
+                            parentTransactionId = parentTransactionId,
+                            amount = it.amount.toDoubleOrNull() ?: 0.0,
+                            categoryId = it.category?.id,
+                            notes = it.notes
+                        )
+                    }
+
+                    // 4. Insert all new splits
+                    db.splitTransactionDao().insertAll(newSplits)
+                }
+                withContext(Dispatchers.Main) {
+                    onComplete()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving transaction splits", e)
+                // Optionally, handle the error (e.g., show a toast)
+            }
+        }
+    }
+
     private fun applyAliases(transactions: List<TransactionDetails>, aliases: Map<String, String>): List<TransactionDetails> {
         return transactions.map { details ->
             val key = (details.transaction.originalDescription ?: details.transaction.description).lowercase(Locale.getDefault())
@@ -1481,7 +1570,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- UPDATED: Function now handles currency conversion ---
     suspend fun addTransaction(
         description: String,
         categoryId: Int?,
@@ -2936,6 +3024,26 @@ data class ReportScreenData(
 -e 
 
 
+================== FILE: ./app/src/main/java/SplitTransactionRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionRepository.kt
+// REASON: NEW FILE - This repository abstracts the data source for split
+// transactions. It provides a clean API for the ViewModel to fetch split items
+// with their full category details from the SplitTransactionDao.
+// =================================================================================
+package io.pm.finlight
+
+import kotlinx.coroutines.flow.Flow
+
+class SplitTransactionRepository(private val splitTransactionDao: SplitTransactionDao) {
+
+    fun getSplitsForParent(parentTransactionId: Int): Flow<List<SplitTransactionDetails>> {
+        return splitTransactionDao.getSplitsForParent(parentTransactionId)
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/MerchantMapping.kt ==================
 package io.pm.finlight
 
@@ -3102,6 +3210,27 @@ data class MonthlyTrend(
 -e 
 
 
+================== FILE: ./app/src/main/java/SplitTransactionDetails.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionDetails.kt
+// REASON: NEW FILE - This is a Data Transfer Object (DTO) that combines a
+// SplitTransaction with its corresponding Category details (name, icon, color).
+// It's used by Room to return the complete data needed for the UI in a single query.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Embedded
+
+data class SplitTransactionDetails(
+    @Embedded
+    val splitTransaction: SplitTransaction,
+    val categoryName: String?,
+    val categoryIconKey: String?,
+    val categoryColorKey: String?
+)
+-e 
+
+
 ================== FILE: ./app/src/main/java/RecurringTransaction.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransaction.kt
@@ -3254,6 +3383,31 @@ class LinkTransactionViewModel(
         }
     }
 }
+-e 
+
+
+================== FILE: ./app/src/main/java/TransactionWithSplits.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionWithSplits.kt
+// REASON: NEW FILE - This is a Data Transfer Object (DTO) used by Room to return
+// a parent transaction along with its list of child split items. The @Relation
+// annotation tells Room how to join the two entities.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Embedded
+import androidx.room.Relation
+
+data class TransactionWithSplits(
+    @Embedded
+    val transaction: Transaction,
+
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "parentTransactionId"
+    )
+    val splits: List<SplitTransaction>
+)
 -e 
 
 
@@ -4099,6 +4253,333 @@ private fun DeleteTagDialog(
         },
         containerColor = popupContainerColor
     )
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SplitTransactionScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SplitTransactionScreen.kt
+// REASON: NEW FILE - This screen provides the dedicated UI for splitting a
+// transaction. It displays the total amount, the remaining unallocated amount,
+// and a list of editable split items. It enforces the rule that the sum of
+// splits must equal the total before saving.
+// FIX - Added the missing private `isDark()` helper function to resolve a
+// build error when determining the background color for the bottom sheet.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import android.app.Application
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import io.pm.finlight.*
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.theme.PopupSurfaceDark
+import io.pm.finlight.ui.theme.PopupSurfaceLight
+import java.text.NumberFormat
+import java.util.*
+
+// Helper to detect perceived luminance.
+private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SplitTransactionScreen(
+    navController: NavController,
+    transactionId: Int
+) {
+    val application = LocalContext.current.applicationContext as Application
+    val factory = SplitTransactionViewModelFactory(application, transactionId)
+    val viewModel: SplitTransactionViewModel = viewModel(factory = factory)
+    // We also need the TransactionViewModel to perform the final save operation
+    val transactionViewModel: TransactionViewModel = viewModel()
+
+    val uiState by viewModel.uiState.collectAsState()
+    val categories by viewModel.categoryRepository.allCategories.collectAsState(initial = emptyList())
+    val context = LocalContext.current
+
+    var activeSheetTarget by remember { mutableStateOf<SplitItem?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val isSaveEnabled = uiState.remainingAmount == 0.0 && uiState.splitItems.all { it.category != null }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Split Transaction") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    SplitHeader(
+                        totalAmount = uiState.parentTransaction?.amount ?: 0.0,
+                        remainingAmount = uiState.remainingAmount
+                    )
+                }
+
+                items(uiState.splitItems, key = { it.id }) { item ->
+                    SplitItemRow(
+                        item = item,
+                        onAmountChange = { newAmount -> viewModel.updateSplitAmount(item, newAmount) },
+                        onCategoryClick = { activeSheetTarget = item },
+                        onDeleteClick = { viewModel.removeSplitItem(item) }
+                    )
+                }
+
+                item {
+                    OutlinedButton(
+                        onClick = { viewModel.addSplitItem() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Split")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add Item")
+                    }
+                }
+            }
+
+            // Bottom Save Bar
+            Surface(shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .navigationBarsPadding(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            transactionViewModel.saveTransactionSplits(transactionId, uiState.splitItems) {
+                                Toast.makeText(context, "Transaction split saved!", Toast.LENGTH_SHORT).show()
+                                navController.popBackStack()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = isSaveEnabled
+                    ) { Text("Save Splits") }
+                }
+            }
+        }
+    }
+
+    if (activeSheetTarget != null) {
+        val isThemeDark = MaterialTheme.colorScheme.surface.isDark()
+        val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
+
+        ModalBottomSheet(
+            onDismissRequest = { activeSheetTarget = null },
+            sheetState = sheetState,
+            containerColor = popupContainerColor
+        ) {
+            SplitCategoryPickerSheet(
+                categories = categories,
+                onCategorySelected = { category ->
+                    activeSheetTarget?.let {
+                        viewModel.updateSplitCategory(it, category)
+                    }
+                    activeSheetTarget = null
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SplitHeader(totalAmount: Double, remainingAmount: Double) {
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
+    val remainingColor = when {
+        remainingAmount > 0 -> MaterialTheme.colorScheme.error
+        remainingAmount < 0 -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    GlassPanel {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "Total Amount",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                currencyFormat.format(totalAmount),
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                "Remaining: ${currencyFormat.format(remainingAmount)}",
+                style = MaterialTheme.typography.titleMedium,
+                color = remainingColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun SplitItemRow(
+    item: SplitItem,
+    onAmountChange: (String) -> Unit,
+    onCategoryClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    GlassPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onCategoryClick)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                val icon = item.category?.let { CategoryIconHelper.getIcon(it.iconKey) } ?: Icons.Default.Add
+                Icon(
+                    imageVector = icon,
+                    contentDescription = "Category",
+                    tint = if (item.category != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    item.category?.name ?: "Set",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (item.category != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            OutlinedTextField(
+                value = item.amount,
+                onValueChange = onAmountChange,
+                modifier = Modifier.weight(1f),
+                label = { Text("Amount") },
+                leadingIcon = { Text("₹") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true
+            )
+
+            IconButton(onClick = onDeleteClick) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete Split", tint = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SplitCategoryPickerSheet(
+    categories: List<Category>,
+    onCategorySelected: (Category) -> Unit
+) {
+    Column(modifier = Modifier.navigationBarsPadding()) {
+        Text(
+            "Select Category for Split",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 100.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(categories) { category ->
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onCategorySelected(category) }
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = CategoryIconHelper.getIcon(category.iconKey),
+                            contentDescription = category.name,
+                            tint = Color.Black,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Text(
+                        category.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
 }
 -e 
 
@@ -9296,10 +9777,10 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE - The screen now includes a conditional
-// `CurrencyConversionInfoCard`. This card appears only for transactions made in
-// a foreign currency, displaying the original amount, the conversion rate used,
-// and the final converted amount, making the process transparent to the user.
+// REASON: FEATURE (Splitting) - The screen now fetches and displays the child
+// items of a split transaction. A new `SplitSummaryCard` is shown if the
+// transaction's `isSplit` flag is true. The main category chip in the header is
+// hidden for split transactions to avoid showing redundant or incorrect info.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -9412,6 +9893,9 @@ fun TransactionDetailScreen(
             }
         }
     }
+
+    // --- NEW: Fetch split details ---
+    val splits by viewModel.getSplitDetailsForTransaction(transactionId).collectAsState(initial = emptyList())
 
     val reparseResult = navController.currentBackStackEntry
         ?.savedStateHandle
@@ -9568,19 +10052,34 @@ fun TransactionDetailScreen(
                                 TransactionSpotlightHeader(
                                     details = details,
                                     visitCount = visitCount,
+                                    isSplit = details.transaction.isSplit, // --- PASS isSplit FLAG ---
                                     onDescriptionClick = { activeSheetContent = SheetContent.Description },
-                                    onAmountClick = { activeSheetContent = SheetContent.Amount },
+                                    onAmountClick = {
+                                        if (!details.transaction.isSplit) {
+                                            activeSheetContent = SheetContent.Amount
+                                        } else {
+                                            Toast.makeText(context, "Edit splits to change total amount.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
                                     onCategoryClick = { activeSheetContent = SheetContent.Category },
                                     onDateTimeClick = { showDatePicker = true }
                                 )
                             }
                         }
 
-                        // --- NEW: Conditionally display currency conversion info ---
                         if (details.transaction.originalAmount != null) {
                             item {
                                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                                     CurrencyConversionInfoCard(transaction = details.transaction)
+                                }
+                            }
+                        }
+
+                        // --- NEW: Conditionally display split summary ---
+                        if (details.transaction.isSplit) {
+                            item {
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    SplitSummaryCard(splits = splits)
                                 }
                             }
                         }
@@ -9624,7 +10123,10 @@ fun TransactionDetailScreen(
                                         images = attachedImages,
                                         onAddClick = { imagePickerLauncher.launch("image/*") },
                                         onViewClick = { showImageViewer = it },
-                                        onDeleteClick = { showImageDeleteDialog = it }
+                                        onDeleteClick = { showImageDeleteDialog = it },
+                                        onSplitClick = {
+                                            navController.navigate("split_transaction/${details.transaction.id}")
+                                        }
                                     )
                                 }
                             }
@@ -9845,6 +10347,75 @@ fun TransactionDetailScreen(
     }
 }
 
+// --- NEW: Card to display the list of split items ---
+@Composable
+private fun SplitSummaryCard(splits: List<SplitTransactionDetails>) {
+    GlassPanel {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "Split Details",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                splits.forEach { splitDetail ->
+                    SplitSummaryItem(splitDetail)
+                }
+            }
+        }
+    }
+}
+
+// --- NEW: A single row in the SplitSummaryCard ---
+@Composable
+private fun SplitSummaryItem(details: SplitTransactionDetails) {
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                    CategoryIconHelper.getIconBackgroundColor(
+                        details.categoryColorKey ?: "gray_light"
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
+                contentDescription = details.categoryName,
+                tint = Color.Black,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Text(
+            text = details.categoryName ?: "Uncategorized",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = currencyFormat.format(details.splitTransaction.amount),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+
 @Composable
 private fun CurrencyConversionInfoCard(transaction: Transaction) {
     val homeCurrencySymbol = "₹" // Assuming home is INR for now
@@ -9924,6 +10495,7 @@ private fun DynamicCategoryBackground(category: Category) {
 private fun TransactionSpotlightHeader(
     details: TransactionDetails,
     visitCount: Int,
+    isSplit: Boolean,
     onDescriptionClick: () -> Unit,
     onAmountClick: () -> Unit,
     onCategoryClick: () -> Unit,
@@ -9993,15 +10565,25 @@ private fun TransactionSpotlightHeader(
                 verticalArrangement = Arrangement.Center
             ) {
                 Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = details.transaction.description,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .clickable(onClick = onDescriptionClick)
-                        .padding(horizontal = 16.dp)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = details.transaction.description,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .clickable(onClick = onDescriptionClick)
+                            .padding(horizontal = 16.dp)
+                    )
+                    if (details.transaction.isSplit) {
+                        Icon(
+                            imageVector = Icons.Default.CallSplit,
+                            contentDescription = "Split Transaction",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
                 Text(
                     text = "₹${"%,.2f".format(animatedAmount)}",
                     style = MaterialTheme.typography.displayMedium,
@@ -10010,11 +10592,14 @@ private fun TransactionSpotlightHeader(
                     modifier = Modifier.clickable(onClick = onAmountClick)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                ChipWithIcon(
-                    text = category.name,
-                    onClick = onCategoryClick,
-                    category = category
-                )
+                // --- UPDATED: Conditionally hide category chip ---
+                if (!isSplit) {
+                    ChipWithIcon(
+                        text = category.name,
+                        onClick = onCategoryClick,
+                        category = category
+                    )
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 Row(
                     modifier = Modifier
@@ -10193,7 +10778,8 @@ private fun AttachmentRow(
     images: List<TransactionImage>,
     onAddClick: () -> Unit,
     onViewClick: (Uri) -> Unit,
-    onDeleteClick: (TransactionImage) -> Unit
+    onDeleteClick: (TransactionImage) -> Unit,
+    onSplitClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -10207,14 +10793,19 @@ private fun AttachmentRow(
         ) {
             Icon(Icons.Default.Attachment, contentDescription = "Attachments", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(16.dp))
-            Text("Attachments", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+            Text("Actions", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+            TextButton(onClick = onSplitClick) {
+                Icon(Icons.Default.CallSplit, contentDescription = "Split Transaction", modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Split")
+            }
             TextButton(onClick = onAddClick) {
+                Icon(Icons.Default.AddAPhoto, contentDescription = "Add Attachment", modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
                 Text("Add")
             }
         }
-        if (images.isEmpty()) {
-            Text("No photos or receipts attached", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-        } else {
+        if (images.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(images) { image ->
                     Box {
@@ -18020,8 +18611,9 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - Added the route for the new "currency_travel_settings"
-// screen to the AppNavHost, making it accessible from the Profile screen.
+// REASON: FEATURE (Splitting) - Added the route for the new
+// `split_transaction/{transactionId}` screen to the AppNavHost, making it
+// accessible from the Transaction Detail screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -18255,7 +18847,8 @@ fun MainAppScreen() {
         "notification_settings",
         "data_settings",
         "add_edit_goal",
-        "currency_travel_settings" // --- NEW: Add new screen to hide main top bar
+        "currency_travel_settings",
+        "split_transaction" // --- NEW: Add new screen to hide main top bar
     )
 
     val currentTitle = if (showBottomBar) {
@@ -18268,7 +18861,7 @@ fun MainAppScreen() {
     val fabRoutes = setOf(
         "account_list",
         "recurring_transactions",
-        "goals_screen" // Add goals_screen to show FAB
+        "goals_screen"
     )
     val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
 
@@ -18449,6 +19042,19 @@ fun AppNavHost(
             SplashScreen(navController = navController, activity = activity)
         }
 
+        // --- NEW: Add route for the split transaction screen ---
+        composable(
+            "split_transaction/{transactionId}",
+            arguments = listOf(navArgument("transactionId") { type = NavType.IntType }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { backStackEntry ->
+            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
+            SplitTransactionScreen(navController = navController, transactionId = transactionId)
+        }
+
         composable(
             "manage_parse_rules",
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
@@ -18519,7 +19125,6 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            // --- UPDATED: Add focusSearch argument ---
             route = "search_screen?categoryId={categoryId}&date={date}&focusSearch={focusSearch}",
             arguments = listOf(
                 navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 },
@@ -18533,7 +19138,6 @@ fun AppNavHost(
         ) { backStackEntry ->
             val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
             val date = backStackEntry.arguments?.getLong("date") ?: -1L
-            // --- UPDATED: Get the new argument ---
             val focusSearch = backStackEntry.arguments?.getBoolean("focusSearch") ?: true
 
             val factory = SearchViewModelFactory(
@@ -18542,7 +19146,6 @@ fun AppNavHost(
                 if (date != -1L) date else null
             )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
-            // --- UPDATED: Pass the argument to the screen ---
             SearchScreen(navController, searchViewModel, focusSearch)
         }
         composable(
@@ -18857,7 +19460,6 @@ fun AppNavHost(
         ) {
             DataSettingsScreen(navController, settingsViewModel)
         }
-        // --- NEW: Add route for the new screen ---
         composable(
             "currency_travel_settings",
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
@@ -19882,9 +20484,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE - Incremented database version to 28 and added MIGRATION_27_28
-// to add the new `originalAmount`, `currencyCode`, and `conversionRate` columns
-// to the `transactions` table for multi-currency support.
+// REASON: FEATURE (Splitting) - Incremented database version to 29. Added the
+// new `SplitTransaction` entity and its corresponding `SplitTransactionDao`.
+// Added MIGRATION_28_29 to create the `split_transactions` table and add the
+// `isSplit` column to the `transactions` table.
 // =================================================================================
 package io.pm.finlight
 
@@ -19915,9 +20518,10 @@ import java.util.Calendar
         MerchantCategoryMapping::class,
         IgnoreRule::class,
         Goal::class,
-        RecurringPattern::class
+        RecurringPattern::class,
+        SplitTransaction::class // --- NEW: Add new entity
     ],
-    version = 28, // --- UPDATED: Incremented version number
+    version = 29, // --- UPDATED: Incremented version number
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -19934,6 +20538,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun ignoreRuleDao(): IgnoreRuleDao
     abstract fun goalDao(): GoalDao
     abstract fun recurringPatternDao(): RecurringPatternDao
+    abstract fun splitTransactionDao(): SplitTransactionDao // --- NEW: Add new DAO abstract function
 
     companion object {
         @Volatile
@@ -20203,7 +20808,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration to add multi-currency fields to the transactions table ---
         val MIGRATION_27_28 = object : Migration(27, 28) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `transactions` ADD COLUMN `originalAmount` REAL")
@@ -20212,12 +20816,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // --- NEW: Migration for transaction splitting ---
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Add the isSplit column to the main transactions table
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `isSplit` INTEGER NOT NULL DEFAULT 0")
+
+                // 2. Create the new table for split items
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `split_transactions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `parentTransactionId` INTEGER NOT NULL, 
+                        `amount` REAL NOT NULL, 
+                        `categoryId` INTEGER, 
+                        `notes` TEXT, 
+                        FOREIGN KEY(`parentTransactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE, 
+                        FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON DELETE SET NULL
+                    )
+                """)
+                // 3. Add indices for performance
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_split_transactions_parentTransactionId` ON `split_transactions` (`parentTransactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_split_transactions_categoryId` ON `split_transactions` (`categoryId`)")
+            }
+        }
+
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -22552,6 +23180,16 @@ data class IgnoreRule(
 
 
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
+// REASON: FEATURE (Splitting) - Added a new query `getTransactionWithSplits` to
+// fetch a parent transaction and all its associated child splits in a single
+// database call. Also added `setTransactionAsSplit` to update the `isSplit` flag.
+// FIX - Removed the redundant @Transaction annotation, which was causing a build
+// error. Room handles this implicitly for queries using @Relation.
+// FIX - Corrected a SQL syntax error in `getSpendingByMerchantForMonth` by adding
+// the missing table alias 'T', which was causing a build failure.
+// =================================================================================
 package io.pm.finlight
 
 import androidx.room.*
@@ -22560,15 +23198,24 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Query to find the timestamp of the very first transaction ---
+    // --- NEW: Query to get a parent transaction and its children ---
+    // The @Transaction annotation is not needed here as Room handles it implicitly
+    // for queries that use @Relation.
+    @Query("SELECT * FROM transactions WHERE id = :transactionId")
+    fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?>
+
+    // --- NEW: Query to mark a transaction as a parent ---
+    @Query("UPDATE transactions SET isSplit = :isSplit WHERE id = :transactionId")
+    suspend fun setTransactionAsSplit(transactionId: Int, isSplit: Boolean)
+
+    // --- (Existing DAO methods below) ---
+
     @Query("SELECT MIN(date) FROM transactions")
     fun getFirstTransactionDate(): Flow<Long?>
 
-    // --- NEW: Get all transactions with a signature since a given date ---
     @Query("SELECT * FROM transactions WHERE smsSignature IS NOT NULL AND date >= :sinceDate")
     suspend fun getTransactionsWithSignatureSince(sinceDate: Long): List<Transaction>
 
-    // --- NEW: Get all transactions that match a specific signature ---
     @Query("SELECT * FROM transactions WHERE smsSignature = :signature ORDER BY date ASC")
     suspend fun getTransactionsBySignature(signature: String): List<Transaction>
 
@@ -22676,16 +23323,16 @@ interface TransactionDao {
 
     @Query("""
         SELECT
-            description as merchantName,
-            SUM(amount) as totalAmount,
-            COUNT(id) as transactionCount
-        FROM transactions
-        WHERE transactionType = 'expense' AND date BETWEEN :startDate AND :endDate
-          AND isExcluded = 0
-          AND (:keyword IS NULL OR LOWER(description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR accountId = :accountId)
-          AND (:categoryId IS NULL OR categoryId = :categoryId)
-        GROUP BY LOWER(description)
+            T.description as merchantName,
+            SUM(T.amount) as totalAmount,
+            COUNT(T.id) as transactionCount
+        FROM transactions AS T
+        WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
+          AND T.isExcluded = 0
+          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
+          AND (:accountId IS NULL OR T.accountId = :accountId)
+          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
+        GROUP BY LOWER(T.description)
         ORDER BY totalAmount DESC
     """)
     fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>>
@@ -23875,9 +24522,10 @@ data class Budget(
 ================== FILE: ./app/src/main/java/Transaction.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/Transaction.kt
-// REASON: FEATURE - Added new nullable fields `originalAmount`, `currencyCode`,
-// and `conversionRate` to support multi-currency transactions. The existing
-// `amount` field will always store the value converted to the home currency.
+// REASON: FEATURE (Splitting) - Added a new `isSplit` boolean column. This will
+// act as a simple flag to quickly identify "parent" transactions that have been
+// split into multiple items, which is crucial for UI logic and preventing direct
+// edits to a split transaction's amount.
 // =================================================================================
 package io.pm.finlight
 
@@ -23893,7 +24541,7 @@ import kotlinx.serialization.Serializable
     indices = [
         Index(value = ["categoryId"]),
         Index(value = ["accountId"]),
-        Index(value = ["smsSignature"]) // --- NEW: Index for faster lookups
+        Index(value = ["smsSignature"])
     ],
     foreignKeys = [
         ForeignKey(
@@ -23926,10 +24574,11 @@ data class Transaction(
     val originalDescription: String? = null,
     val isExcluded: Boolean = false,
     val smsSignature: String? = null,
-    // --- NEW: Fields for multi-currency support ---
-    val originalAmount: Double? = null, // Amount in foreign currency
-    val currencyCode: String? = null, // e.g., "USD", "EUR"
-    val conversionRate: Double? = null // Rate to convert originalAmount to home currency
+    val originalAmount: Double? = null,
+    val currencyCode: String? = null,
+    val conversionRate: Double? = null,
+    // --- NEW: Flag to indicate this is a parent transaction ---
+    val isSplit: Boolean = false
 )
 -e 
 
@@ -24488,7 +25137,190 @@ class RecurringTransactionWorker(
 -e 
 
 
+================== FILE: ./app/src/main/java/SplitTransaction.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SplitTransaction.kt
+// REASON: NEW FILE - Defines the Room entity for a single split item. This is
+// the "child" in our parent-child data model. It holds its own amount and
+// category, and is linked back to the original parent transaction via a
+// foreign key.
+// =================================================================================
+package io.pm.finlight
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+@Entity(
+    tableName = "split_transactions",
+    foreignKeys = [
+        ForeignKey(
+            entity = Transaction::class,
+            parentColumns = ["id"],
+            childColumns = ["parentTransactionId"],
+            onDelete = ForeignKey.CASCADE // If the parent is deleted, its splits are also deleted.
+        ),
+        ForeignKey(
+            entity = Category::class,
+            parentColumns = ["id"],
+            childColumns = ["categoryId"],
+            onDelete = ForeignKey.SET_NULL // If a category is deleted, the split remains but uncategorized.
+        )
+    ],
+    indices = [
+        Index(value = ["parentTransactionId"]),
+        Index(value = ["categoryId"])
+    ]
+)
+data class SplitTransaction(
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+    val parentTransactionId: Int,
+    val amount: Double,
+    val categoryId: Int?,
+    val notes: String?
+)
+-e 
+
+
+================== FILE: ./app/src/main/java/SplitTransactionViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionViewModel.kt
+// REASON: NEW FILE - This dedicated ViewModel manages the state and business
+// logic for the new transaction splitting screen. It holds the list of split
+// items, tracks the remaining amount to be allocated, and enforces the "Golden
+// Rule" where the sum of splits must equal the parent total.
+// =================================================================================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+data class SplitItem(
+    val id: Int, // Can be a temporary ID for new items, or the real ID for existing ones
+    val amount: String,
+    val category: Category?,
+    val notes: String?
+)
+
+data class SplitTransactionUiState(
+    val parentTransaction: Transaction? = null,
+    val splitItems: List<SplitItem> = emptyList(),
+    val remainingAmount: Double = 0.0,
+    val isSaving: Boolean = false,
+    val error: String? = null
+)
+
+class SplitTransactionViewModelFactory(
+    private val application: Application,
+    private val transactionId: Int
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(SplitTransactionViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return SplitTransactionViewModel(application, transactionId) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+class SplitTransactionViewModel(
+    application: Application,
+    private val transactionId: Int
+) : ViewModel() {
+
+    private val db = AppDatabase.getInstance(application)
+    private val transactionRepository = TransactionRepository(db.transactionDao())
+    val categoryRepository = CategoryRepository(db.categoryDao())
+
+    private val _uiState = MutableStateFlow(SplitTransactionUiState())
+    val uiState = _uiState.asStateFlow()
+
+    private var nextTempId = -1 // For unique keys for new items
+
+    init {
+        viewModelScope.launch {
+            // For splitting, we only care about the parent transaction, not its relations.
+            val parentTxn = transactionRepository.getTransactionById(transactionId).firstOrNull()
+            if (parentTxn != null) {
+                // Initialize with a single split item for the full amount, uncategorized.
+                val initialSplit = SplitItem(
+                    id = nextTempId--,
+                    amount = parentTxn.amount.toString(),
+                    category = null,
+                    notes = parentTxn.notes
+                )
+                _uiState.value = SplitTransactionUiState(
+                    parentTransaction = parentTxn,
+                    splitItems = listOf(initialSplit),
+                    remainingAmount = 0.0
+                )
+            } else {
+                _uiState.value = SplitTransactionUiState(error = "Transaction not found.")
+            }
+        }
+    }
+
+    fun addSplitItem() {
+        _uiState.update { currentState ->
+            val newSplit = SplitItem(id = nextTempId--, amount = "0.0", category = null, notes = null)
+            currentState.copy(splitItems = currentState.splitItems + newSplit)
+        }
+        recalculateRemainingAmount()
+    }
+
+    fun removeSplitItem(itemToRemove: SplitItem) {
+        _uiState.update { currentState ->
+            currentState.copy(splitItems = currentState.splitItems.filter { it.id != itemToRemove.id })
+        }
+        recalculateRemainingAmount()
+    }
+
+    fun updateSplitAmount(itemToUpdate: SplitItem, newAmount: String) {
+        _uiState.update { currentState ->
+            val updatedList = currentState.splitItems.map {
+                if (it.id == itemToUpdate.id) it.copy(amount = newAmount) else it
+            }
+            currentState.copy(splitItems = updatedList)
+        }
+        recalculateRemainingAmount()
+    }
+
+    fun updateSplitCategory(itemToUpdate: SplitItem, newCategory: Category?) {
+        _uiState.update { currentState ->
+            val updatedList = currentState.splitItems.map {
+                if (it.id == itemToUpdate.id) it.copy(category = newCategory) else it
+            }
+            currentState.copy(splitItems = updatedList)
+        }
+    }
+
+    private fun recalculateRemainingAmount() {
+        _uiState.update { currentState ->
+            val parentAmount = currentState.parentTransaction?.amount ?: 0.0
+            val totalSplitAmount = currentState.splitItems.sumOf { it.amount.toDoubleOrNull() ?: 0.0 }
+            currentState.copy(remainingAmount = parentAmount - totalSplitAmount)
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
+// REASON: FEATURE (Splitting) - Added a new function `getTransactionWithSplits`
+// to expose the corresponding DAO method. This will be used by the ViewModel
+// to fetch all the data needed for the splitting UI.
+// =================================================================================
 package io.pm.finlight
 
 import android.util.Log
@@ -24496,6 +25328,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
 
 class TransactionRepository(private val transactionDao: TransactionDao) {
+
+    // --- NEW: Expose the DAO function to get a transaction with its splits ---
+    fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?> {
+        return transactionDao.getTransactionWithSplits(transactionId)
+    }
+
+    // --- (Existing repository methods below) ---
+
     val allTransactions: Flow<List<TransactionDetails>> =
         transactionDao.getAllTransactions()
             .onEach { transactions ->
@@ -24505,7 +25345,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
                 )
             }
 
-    // --- NEW: Expose the DAO function to get the first transaction date ---
     fun getFirstTransactionDate(): Flow<Long?> {
         return transactionDao.getFirstTransactionDate()
     }

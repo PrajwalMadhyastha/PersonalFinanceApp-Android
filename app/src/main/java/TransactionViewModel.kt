@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Splitting) - The ViewModel is now aware of split transactions.
-// It initializes a new `SplitTransactionRepository` and exposes a
-// `getSplitDetailsForTransaction` function. This allows the TransactionDetailScreen
-// to fetch and display the child items of a split transaction.
+// REASON: FEATURE (Splitting) - The `saveTransactionSplits` function has been
+// updated to call the new `markAsSplit` DAO function. This ensures that when a
+// transaction is split, its original category is correctly nullified in the
+// database.
 // =================================================================================
 package io.pm.finlight
 
@@ -52,7 +52,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
     private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository
-    // --- NEW: Add repository for splits ---
     private val splitTransactionRepository: SplitTransactionRepository
     private val context = application
 
@@ -117,7 +116,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
-        // --- NEW: Initialize the split repository ---
         splitTransactionRepository = SplitTransactionRepository(db.splitTransactionDao())
 
 
@@ -214,7 +212,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- NEW: Function to get split details ---
     fun getSplitDetailsForTransaction(transactionId: Int): Flow<List<SplitTransactionDetails>> {
         return splitTransactionRepository.getSplitsForParent(transactionId)
     }
@@ -223,8 +220,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             try {
                 db.withTransaction {
-                    // 1. Mark the parent transaction as split
-                    db.transactionDao().setTransactionAsSplit(parentTransactionId, true)
+                    // 1. Mark the parent transaction as split and nullify its category
+                    db.transactionDao().markAsSplit(parentTransactionId, true)
 
                     // 2. Clear any existing splits for this parent
                     db.splitTransactionDao().deleteSplitsForParent(parentTransactionId)

@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE (Splitting) - The screen now fetches and displays the child
-// items of a split transaction. A new `SplitSummaryCard` is shown if the
-// transaction's `isSplit` flag is true. The main category chip in the header is
-// hidden for split transactions to avoid showing redundant or incorrect info.
+// REASON: FEATURE (Splitting) - The screen's main header has been updated to
+// correctly reflect a split transaction's state. It now displays a generic
+// background, shows a "Split" icon, and hides the category chip, ensuring a
+// consistent UI with the transaction list items.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -117,7 +117,6 @@ fun TransactionDetailScreen(
         }
     }
 
-    // --- NEW: Fetch split details ---
     val splits by viewModel.getSplitDetailsForTransaction(transactionId).collectAsState(initial = emptyList())
 
     val reparseResult = navController.currentBackStackEntry
@@ -275,8 +274,12 @@ fun TransactionDetailScreen(
                                 TransactionSpotlightHeader(
                                     details = details,
                                     visitCount = visitCount,
-                                    isSplit = details.transaction.isSplit, // --- PASS isSplit FLAG ---
-                                    onDescriptionClick = { activeSheetContent = SheetContent.Description },
+                                    isSplit = details.transaction.isSplit,
+                                    onDescriptionClick = {
+                                        if (!details.transaction.isSplit) {
+                                            activeSheetContent = SheetContent.Description
+                                        }
+                                    },
                                     onAmountClick = {
                                         if (!details.transaction.isSplit) {
                                             activeSheetContent = SheetContent.Amount
@@ -298,7 +301,6 @@ fun TransactionDetailScreen(
                             }
                         }
 
-                        // --- NEW: Conditionally display split summary ---
                         if (details.transaction.isSplit) {
                             item {
                                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -570,7 +572,6 @@ fun TransactionDetailScreen(
     }
 }
 
-// --- NEW: Card to display the list of split items ---
 @Composable
 private fun SplitSummaryCard(splits: List<SplitTransactionDetails>) {
     GlassPanel {
@@ -596,7 +597,6 @@ private fun SplitSummaryCard(splits: List<SplitTransactionDetails>) {
     }
 }
 
-// --- NEW: A single row in the SplitSummaryCard ---
 @Composable
 private fun SplitSummaryItem(details: SplitTransactionDetails) {
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
@@ -697,20 +697,29 @@ private fun CurrencyConversionInfoCard(transaction: Transaction) {
 }
 
 @Composable
-private fun DynamicCategoryBackground(category: Category) {
-    val letter = if (category.name == "Uncategorized") "?" else category.name.firstOrNull()?.uppercase() ?: "?"
+private fun DynamicCategoryBackground(category: Category, isSplit: Boolean) {
     val color = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
 
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = letter,
-            fontSize = 250.sp,
-            fontWeight = FontWeight.Bold,
-            color = color.copy(alpha = 0.15f)
-        )
+        if (isSplit) {
+            Icon(
+                imageVector = Icons.Default.CallSplit,
+                contentDescription = "Split Transaction Background",
+                modifier = Modifier.size(250.dp),
+                tint = color.copy(alpha = 0.15f)
+            )
+        } else {
+            val letter = if (category.name == "Uncategorized") "?" else category.name.firstOrNull()?.uppercase() ?: "?"
+            Text(
+                text = letter,
+                fontSize = 250.sp,
+                fontWeight = FontWeight.Bold,
+                color = color.copy(alpha = 0.15f)
+            )
+        }
     }
 }
 
@@ -724,8 +733,15 @@ private fun TransactionSpotlightHeader(
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit
 ) {
-    val category = details.toCategory()
-    val categoryColor = CategoryIconHelper.getIconBackgroundColor(category.colorKey)
+    val displayCategory = if (isSplit) {
+        Category(name = "Multiple Categories", iconKey = "call_split", colorKey = "gray_light")
+    } else {
+        details.toCategory()
+    }
+
+    val headerDescription = if (isSplit) "Split Transaction" else details.transaction.description
+
+    val categoryColor = CategoryIconHelper.getIconBackgroundColor(displayCategory.colorKey)
     val dateFormatter = remember { SimpleDateFormat("EEE, dd MMMM yy, h:mm a", Locale.getDefault()) }
 
     val animatedAmount by animateFloatAsState(
@@ -743,17 +759,17 @@ private fun TransactionSpotlightHeader(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            val isPredefined = CategoryIconHelper.getCategoryBackground(category.iconKey) != R.drawable.bg_cat_general
-            if (isPredefined) {
+            val isPredefined = CategoryIconHelper.getCategoryBackground(displayCategory.iconKey) != R.drawable.bg_cat_general
+            if (isPredefined && !isSplit) {
                 Image(
-                    painter = painterResource(id = CategoryIconHelper.getCategoryBackground(category.iconKey)),
+                    painter = painterResource(id = CategoryIconHelper.getCategoryBackground(displayCategory.iconKey)),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize(),
                     alpha = 0.3f
                 )
             } else {
-                DynamicCategoryBackground(category = category)
+                DynamicCategoryBackground(category = displayCategory, isSplit = isSplit)
             }
 
             Box(
@@ -790,7 +806,7 @@ private fun TransactionSpotlightHeader(
                 Spacer(modifier = Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = details.transaction.description,
+                        text = headerDescription,
                         style = MaterialTheme.typography.headlineMedium,
                         color = Color.White,
                         textAlign = TextAlign.Center,
@@ -814,13 +830,12 @@ private fun TransactionSpotlightHeader(
                     color = Color.White,
                     modifier = Modifier.clickable(onClick = onAmountClick)
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                // --- UPDATED: Conditionally hide category chip ---
+                Spacer(Modifier.height(16.dp))
                 if (!isSplit) {
                     ChipWithIcon(
-                        text = category.name,
+                        text = displayCategory.name,
                         onClick = onCategoryClick,
-                        category = category
+                        category = displayCategory
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
@@ -1568,7 +1583,6 @@ private fun CategoryIconDisplay(category: Category) {
             .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
         contentAlignment = Alignment.Center
     ) {
-        // --- UPDATED: Prioritize showing '?' for Uncategorized ---
         if (category.name == "Uncategorized") {
             Icon(
                 imageVector = CategoryIconHelper.getIcon("help_outline"),
@@ -1595,7 +1609,6 @@ private fun CategoryIconDisplay(category: Category) {
 }
 
 private fun TransactionDetails.toCategory(): Category {
-    // --- UPDATED: Use red color for uncategorized items ---
     return if (this.categoryName == null || this.categoryName == "Uncategorized") {
         Category(
             id = 0,
@@ -1632,7 +1645,6 @@ private fun ChipWithIcon(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // --- UPDATED: Prioritize showing '?' for Uncategorized ---
         if (category.name == "Uncategorized") {
             Icon(
                 imageVector = CategoryIconHelper.getIcon("help_outline"),

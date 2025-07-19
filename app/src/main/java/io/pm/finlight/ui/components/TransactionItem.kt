@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: FIX - The unused `AccountTransactionItem` composable has been removed
-// to resolve the "UnusedSymbol" warning.
-// FIX - Removed an unnecessary non-null assertion (!!) on the 'notes' property.
-// The compiler already smart-casts it to a non-null type within the if-check,
-// so the assertion was redundant.
+// REASON: FEATURE (Splitting) - The composable now checks if a transaction is
+// split. If it is, it displays a dedicated "split" icon and shows "Multiple
+// Categories" as a subtitle, providing clear visual feedback to the user in
+// transaction lists.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -16,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.*
@@ -47,6 +47,7 @@ fun TransactionItem(
     onClick: () -> Unit,
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
+    val isSplit = transactionDetails.transaction.isSplit
     val isUncategorized = transactionDetails.categoryName == null || transactionDetails.categoryName == "Uncategorized"
 
     GlassPanel(
@@ -64,14 +65,25 @@ fun TransactionItem(
                     .clip(CircleShape)
                     .background(
                         CategoryIconHelper.getIconBackgroundColor(
-                            if (isUncategorized) "red_light" else transactionDetails.categoryColorKey ?: "gray_light"
+                            when {
+                                isSplit -> "gray_light"
+                                isUncategorized -> "red_light"
+                                else -> transactionDetails.categoryColorKey ?: "gray_light"
+                            }
                         )
                             .copy(alpha = contentAlpha)
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                // --- UPDATED: Logic to handle uncategorized state ---
                 when {
+                    isSplit -> {
+                        Icon(
+                            imageVector = Icons.Default.CallSplit,
+                            contentDescription = "Split Transaction",
+                            tint = Color.Black.copy(alpha = contentAlpha),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                     isUncategorized -> {
                         Icon(
                             imageVector = CategoryIconHelper.getIcon("help_outline"),
@@ -82,7 +94,7 @@ fun TransactionItem(
                     }
                     transactionDetails.categoryIconKey == "letter_default" -> {
                         Text(
-                            text = transactionDetails.categoryName.firstOrNull()?.uppercase() ?: "?",
+                            text = transactionDetails.categoryName?.firstOrNull()?.uppercase() ?: "?",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             color = Color.Black.copy(alpha = contentAlpha)
@@ -106,7 +118,14 @@ fun TransactionItem(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                 )
-                if (!transactionDetails.transaction.notes.isNullOrBlank()) {
+                if (isSplit) {
+                    Text(
+                        text = "Multiple Categories",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
+                    )
+                } else if (!transactionDetails.transaction.notes.isNullOrBlank()) {
                     Text(
                         text = transactionDetails.transaction.notes,
                         style = MaterialTheme.typography.bodyMedium,

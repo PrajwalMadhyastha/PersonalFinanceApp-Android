@@ -1,12 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE (Splitting) - Added a new query `getTransactionWithSplits` to
-// fetch a parent transaction and all its associated child splits in a single
-// database call. Also added `setTransactionAsSplit` to update the `isSplit` flag.
-// FIX - Removed the redundant @Transaction annotation, which was causing a build
-// error. Room handles this implicitly for queries using @Relation.
-// FIX - Corrected a SQL syntax error in `getSpendingByMerchantForMonth` by adding
-// the missing table alias 'T', which was causing a build failure.
+// REASON: FEATURE (Splitting) - The `markAsSplit` function is further enhanced.
+// It now also updates the parent transaction's description to "Split Transaction",
+// ensuring its representation is consistent across all UI lists.
 // =================================================================================
 package io.pm.finlight
 
@@ -16,15 +12,12 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TransactionDao {
 
-    // --- NEW: Query to get a parent transaction and its children ---
-    // The @Transaction annotation is not needed here as Room handles it implicitly
-    // for queries that use @Relation.
     @Query("SELECT * FROM transactions WHERE id = :transactionId")
     fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?>
 
-    // --- NEW: Query to mark a transaction as a parent ---
-    @Query("UPDATE transactions SET isSplit = :isSplit WHERE id = :transactionId")
-    suspend fun setTransactionAsSplit(transactionId: Int, isSplit: Boolean)
+    // --- UPDATED: This query now also updates the description when splitting ---
+    @Query("UPDATE transactions SET isSplit = :isSplit, categoryId = CASE WHEN :isSplit = 1 THEN NULL ELSE categoryId END, description = CASE WHEN :isSplit = 1 THEN 'Split Transaction' ELSE description END WHERE id = :transactionId")
+    suspend fun markAsSplit(transactionId: Int, isSplit: Boolean)
 
     // --- (Existing DAO methods below) ---
 
