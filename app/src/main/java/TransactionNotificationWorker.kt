@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionNotificationWorker.kt
-// REASON: NEW FILE - This worker is created to handle the generation of rich
-// transaction notifications. It runs in the background to fetch all necessary
-// data (transaction details, monthly totals, visit count) without blocking the
-// SmsReceiver, and then calls the NotificationHelper to display the detailed alert.
+// REASON: FIX - The CoroutineWorker's constructor has been corrected to properly
+// pass the application context. This resolves the "Argument type mismatch" and
+// "No value passed for parameter" compilation errors.
 // =================================================================================
 package io.pm.finlight
 
@@ -19,7 +18,7 @@ import java.util.Calendar
 class TransactionNotificationWorker(
     private val context: Context,
     workerParams: WorkerParameters
-) : CoroutineWorker(workerParams) {
+) : CoroutineWorker(context, workerParams) { // <-- FIX: Pass context to the parent constructor
 
     companion object {
         const val KEY_TRANSACTION_ID = "transaction_id"
