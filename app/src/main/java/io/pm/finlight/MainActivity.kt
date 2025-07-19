@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: UX REFINEMENT - The ModalBottomSheet for the in-place category change
-// feature has been updated to be full-screen. This is achieved by setting
-// `skipPartiallyExpanded = true` in its state and making the sheet's content
-// fill the maximum height, improving usability for long category lists.
+// REASON: FEATURE (Travel Mode SMS) - The NavHost entry for the approval screen
+// has been updated. It now accepts a new optional boolean argument, `isForeign`,
+// which will be passed from the new travel mode notification to indicate the
+// user's currency choice.
 // =================================================================================
 package io.pm.finlight
 
@@ -421,12 +421,11 @@ fun MainAppScreen() {
             val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
             val isThemeDark = isSystemInDarkTheme()
             val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
-            // --- UPDATED: Create a sheet state that skips the half-expanded state ---
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
             ModalBottomSheet(
                 onDismissRequest = { transactionViewModel.cancelCategoryChange() },
-                sheetState = sheetState, // Pass the new state
+                sheetState = sheetState,
                 containerColor = popupContainerColor
             ) {
                 CategoryPickerSheet(
@@ -436,7 +435,7 @@ fun MainAppScreen() {
                         transactionViewModel.updateTransactionCategory(transactionForCategoryChange!!.transaction.id, newCategory.id)
                         transactionViewModel.cancelCategoryChange()
                     },
-                    onAddNew = null // Keep it simple as requested
+                    onAddNew = null
                 )
             }
         }
@@ -597,9 +596,12 @@ fun AppNavHost(
         }
 
         composable(
+            // --- UPDATED: Add new optional argument and update deep link ---
             route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
-            arguments = listOf(navArgument("potentialTxnJson") { type = NavType.StringType }),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve_sms?potentialTxnJson={potentialTxnJson}" }),
+            arguments = listOf(
+                navArgument("potentialTxnJson") { type = NavType.StringType }
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve_transaction_screen?potentialTxnJson={potentialTxnJson}" }),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
@@ -938,7 +940,6 @@ private fun CategoryPickerSheet(
     onItemSelected: (Category) -> Unit,
     onAddNew: (() -> Unit)? = null
 ) {
-    // --- UPDATED: Add Modifier.fillMaxHeight() to make the sheet content expand ---
     Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
         Text(
             title,
@@ -979,7 +980,7 @@ private fun CategoryPickerSheet(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable(onClick = onAddNew)
                             .padding(vertical = 12.dp)
-                            .height(80.dp), // Match height of other items
+                            .height(80.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {

@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/PotentialTransaction.kt
-// REASON: FIX - Added the missing `smsSignature` field. This resolves the
-// compilation error in the SmsParser and allows the generated signature to be
-// passed along to the next stage of processing.
+// REASON: FEATURE (Travel Mode SMS) - Added a new nullable `isForeignCurrency`
+// field. This will be used in the deep link from the new travel mode notification
+// to tell the approval screen whether the transaction amount should be treated
+// as foreign currency and converted.
 // =================================================================================
 package io.pm.finlight
 
@@ -17,6 +18,7 @@ package io.pm.finlight
  * @param potentialAccount Holds the parsed account name and type, if found.
  * @param categoryId The ID of a learned category, if a mapping exists for the merchant.
  * @param smsSignature A stable hash of the SMS body used for pattern detection.
+ * @param isForeignCurrency A flag passed from the notification to indicate user's currency choice.
  */
 data class PotentialTransaction(
     val sourceSmsId: Long,
@@ -28,6 +30,7 @@ data class PotentialTransaction(
     val potentialAccount: PotentialAccount? = null,
     val sourceSmsHash: String? = null,
     val categoryId: Int? = null,
-    // --- NEW: Add field for the pattern detection signature ---
-    val smsSignature: String? = null
+    val smsSignature: String? = null,
+    // --- NEW: Flag to indicate if this is a foreign currency transaction ---
+    val isForeignCurrency: Boolean? = null
 )

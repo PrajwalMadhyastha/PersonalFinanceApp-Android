@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: FIX - The `createCategoryIconBitmap` function has been updated to
-// create a taller bitmap and draw the icon in the vertical center, which fixes
-// the icon's alignment in the notification. The `getFallbackDrawableRes`
-// function has been greatly expanded to map category keys to specific app
-// drawables, ensuring the correct icon is displayed. Added logging for easier debugging.
+// REASON: FEATURE (Travel Mode SMS) - Added a new function
+// `showTravelModeSmsNotification`. This creates a notification with two actions
+// that deep link to the approval screen, allowing the user to specify whether
+// an SMS transaction was in the foreign or home currency.
 // =================================================================================
 package io.pm.finlight
 
@@ -37,6 +36,60 @@ object NotificationHelper {
     private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
     private const val DEEP_LINK_URI_LINK_RECURRING = "app://finlight.pm.io/link_recurring"
     private const val DEEP_LINK_URI_ADD_RECURRING = "app://finlight.pm.io/add_recurring_transaction"
+    // --- NEW: A base URI for the approval screen ---
+    private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_transaction_screen"
+
+
+    // --- NEW: Notification for SMS received during Travel Mode ---
+    fun showTravelModeSmsNotification(
+        context: Context,
+        potentialTxn: PotentialTransaction,
+        travelSettings: TravelModeSettings
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        val homeCurrencySymbol = CurrencyHelper.getCurrencySymbol("INR") // Assuming home is INR
+        val foreignCurrencyCode = travelSettings.currencyCode
+        val contentTitle = "Transaction while traveling?"
+        val contentText = "Was this transaction in $foreignCurrencyCode or $homeCurrencySymbol?"
+
+        // Action 1: This was in the FOREIGN currency
+        val foreignTxn = potentialTxn.copy(isForeignCurrency = true)
+        val foreignJson = URLEncoder.encode(Gson().toJson(foreignTxn), "UTF-8")
+        val foreignIntent = Intent(Intent.ACTION_VIEW, "$DEEP_LINK_URI_APPROVE?potentialTxnJson=$foreignJson".toUri()).apply {
+            `package` = context.packageName
+        }
+        val foreignPendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(foreignIntent)
+            getPendingIntent(potentialTxn.sourceSmsId.toInt() + 1, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        // Action 2: This was in the HOME currency
+        val homeTxn = potentialTxn.copy(isForeignCurrency = false)
+        val homeJson = URLEncoder.encode(Gson().toJson(homeTxn), "UTF-8")
+        val homeIntent = Intent(Intent.ACTION_VIEW, "$DEEP_LINK_URI_APPROVE?potentialTxnJson=$homeJson".toUri()).apply {
+            `package` = context.packageName
+        }
+        val homePendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
+            addNextIntentWithParentStack(homeIntent)
+            getPendingIntent(potentialTxn.sourceSmsId.toInt() + 2, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(contentTitle)
+            .setContentText(contentText)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .addAction(0, "It was in $foreignCurrencyCode", foreignPendingIntent)
+            .addAction(0, "It was in $homeCurrencySymbol", homePendingIntent)
+
+        with(NotificationManagerCompat.from(context)) {
+            notify(potentialTxn.sourceSmsId.toInt(), builder.build())
+        }
+    }
 
 
     fun showRichTransactionNotification(
@@ -64,7 +117,6 @@ object NotificationHelper {
 
         val categoryBitmap = createCategoryIconBitmap(context, details)
 
-        // Expanded View (InboxStyle)
         val inboxStyle = NotificationCompat.InboxStyle()
             .setBigContentTitle(title)
             .setSummaryText(details.categoryName ?: "Uncategorized")
@@ -100,13 +152,6 @@ object NotificationHelper {
         }
     }
 
-    /**
-     * Maps a category icon key (String) to a specific drawable resource from the app's
-     * res/drawable folder. This is necessary because the Android Notification system
-     * cannot render Jetpack Compose ImageVectors and requires a traditional drawable
-     * to create the icon bitmap. This function acts as a "translation layer" between
-     * the two UI systems.
-     */
     @DrawableRes
     private fun getFallbackDrawableRes(iconKey: String?): Int {
         return when (iconKey) {
@@ -134,19 +179,17 @@ object NotificationHelper {
             "pets" -> R.drawable.ic_pets
             "account_balance" -> R.drawable.ic_account_balance
             "more_horiz" -> R.drawable.ic_more_horiz
-            else -> R.drawable.ic_help_outline // A sensible default for uncategorized or new icons
+            else -> R.drawable.ic_help_outline
         }
     }
 
 
     private fun createCategoryIconBitmap(context: Context, details: TransactionDetails): Bitmap {
         val width = 128
-        // Create a taller bitmap to help with vertical centering in the notification panel.
-        val height = (width * 1.5).toInt()
+        val height = (width * 1.2).toInt()
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        // 1. Draw the colored circle background
         val colorKey = details.categoryColorKey ?: "gray_light"
         val backgroundColor = CategoryIconHelper.getIconBackgroundColor(colorKey).toArgb()
         val backgroundPaint = Paint().apply {
@@ -154,10 +197,8 @@ object NotificationHelper {
             style = Paint.Style.FILL
             isAntiAlias = true
         }
-        // Draw the circle in the vertical center of the taller canvas.
         canvas.drawCircle(width / 2f, height / 2f, width / 2f, backgroundPaint)
 
-        // 2. Draw the icon on top of the circle
         val iconKey = details.categoryIconKey
         Log.d("NotificationHelper", "Creating icon for category: '${details.categoryName}', iconKey: '$iconKey'")
 
@@ -171,14 +212,12 @@ object NotificationHelper {
             }
 
             val iconSize = (width * 0.6).toInt()
-            // Calculate bounds to center the icon within the taller canvas.
             val iconLeft = (width - iconSize) / 2
             val iconTop = (height - iconSize) / 2
             iconDrawable?.setBounds(iconLeft, iconTop, iconLeft + iconSize, iconTop + iconSize)
             iconDrawable?.setTint(android.graphics.Color.BLACK)
             iconDrawable?.draw(canvas)
         } else {
-            // Fallback to drawing the first letter if no specific icon is set
             val categoryName = details.categoryName ?: "Other"
             val text = categoryName.firstOrNull()?.uppercase() ?: "?"
             val textPaint = Paint().apply {
@@ -188,7 +227,6 @@ object NotificationHelper {
                 isAntiAlias = true
                 typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
             }
-            // Adjust Y position for the taller canvas to ensure text is centered in the circle
             val textY = (height / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
             canvas.drawText(text, width / 2f, textY, textPaint)
         }

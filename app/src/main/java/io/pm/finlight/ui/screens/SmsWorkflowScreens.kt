@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
-// REASON: BUG FIX - Corrected the navigation call for the `onCreateRule` action.
-// The route is now constructed with a proper query parameter
-// (`?potentialTransactionJson=...`) to match the NavHost definition, resolving
-// the `IllegalArgumentException` crash.
+// REASON: FEATURE (Travel Mode SMS) - The screen now reads the `isForeignCurrency`
+// flag from the PotentialTransaction object. If true, it displays the amount
+// in the foreign currency and shows a conversion info message. The save action
+// is updated to pass this flag to the ViewModel.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -40,6 +40,8 @@ import com.google.gson.Gson
 import io.pm.finlight.*
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
+import java.text.NumberFormat
+import java.util.*
 
 private sealed class ApproveSheetContent {
     object Category : ApproveSheetContent()
@@ -113,7 +115,6 @@ fun ReviewSmsScreen(
                     onCreateRule = { transaction ->
                         val json = Gson().toJson(transaction)
                         val encodedJson = URLEncoder.encode(json, "UTF-8")
-                        // --- FIX: Use query parameter format ---
                         navController.navigate("rule_creation_screen?potentialTransactionJson=$encodedJson")
                     },
                     onLink = { transaction ->
@@ -211,6 +212,11 @@ fun ApproveTransactionScreen(
     var activeSheetContent by remember { mutableStateOf<ApproveSheetContent?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
+    // --- NEW: Handle Travel Mode ---
+    val travelModeSettings by transactionViewModel.travelModeSettings.collectAsState()
+    val isForeign = potentialTxn.isForeignCurrency == true
+    val currencySymbol = if (isForeign) CurrencyHelper.getCurrencySymbol(travelModeSettings?.currencyCode) else "₹"
+    val homeCurrencySymbol = "₹" // Assuming INR
 
     val isSaveEnabled = description.isNotBlank() && selectedCategory != null
 
@@ -232,12 +238,23 @@ fun ApproveTransactionScreen(
                 Card(elevation = CardDefaults.cardElevation(2.dp)) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
-                            "₹${"%,.2f".format(potentialTxn.amount)}",
+                            "$currencySymbol${"%,.2f".format(potentialTxn.amount)}",
                             style = MaterialTheme.typography.displaySmall,
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.End,
                             fontWeight = FontWeight.Bold
                         )
+                        // --- NEW: Show conversion helper text ---
+                        if (isForeign && travelModeSettings != null) {
+                            val convertedAmount = potentialTxn.amount * travelModeSettings!!.conversionRate
+                            Text(
+                                "≈ $homeCurrencySymbol${NumberFormat.getInstance().format(convertedAmount)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.End
+                            )
+                        }
                         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                         OutlinedTextField(
                             value = description,
@@ -270,7 +287,7 @@ fun ApproveTransactionScreen(
                             icon = Icons.Default.AccountBalanceWallet,
                             label = "Account",
                             value = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account",
-                            onClick = null // Not editable
+                            onClick = null
                         )
                         HorizontalDivider()
                         DetailRow(
@@ -316,7 +333,8 @@ fun ApproveTransactionScreen(
                                     description = description,
                                     categoryId = selectedCategory?.id,
                                     notes = notes.takeIf { it.isNotBlank() },
-                                    tags = selectedTags
+                                    tags = selectedTags,
+                                    isForeign = isForeign // --- NEW: Pass the flag
                                 )
                                 if (success) {
                                     settingsViewModel.onTransactionApproved(potentialTxn.sourceSmsId)

@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Travel Mode Splitting) - The `saveTransactionSplits` function
-// is now aware of foreign currency. It checks the parent transaction for a
-// conversion rate. If one exists, it applies it to each split item, saving both
-// the converted (home) and original (foreign) amounts to the database.
+// REASON: FEATURE (Travel Mode SMS) - The `approveSmsTransaction` function now
+// accepts an `isForeign` flag. If true, it fetches the current travel settings,
+// applies the conversion rate to the transaction amount, and saves both the
+// original and converted amounts, fully integrating SMS capture with Travel Mode.
 // =================================================================================
 package io.pm.finlight
 
@@ -242,13 +242,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     db.transactionDao().markAsSplit(parentTransactionId, true)
                     db.splitTransactionDao().deleteSplitsForParent(parentTransactionId)
 
-                    // --- UPDATED: Handle currency conversion during save ---
                     val newSplits = splitItems.map {
                         val originalAmount = it.amount.toDoubleOrNull() ?: 0.0
                         SplitTransaction(
                             parentTransactionId = parentTransactionId,
-                            amount = originalAmount * conversionRate, // Converted amount
-                            originalAmount = if (parentTxn.currencyCode != null) originalAmount else null, // Store original if foreign
+                            amount = originalAmount * conversionRate,
+                            originalAmount = if (parentTxn.currencyCode != null) originalAmount else null,
                             categoryId = it.category?.id,
                             notes = it.notes
                         )
@@ -324,7 +323,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 description = description,
                 originalDescription = description,
                 categoryId = categoryId,
-                amount = enteredAmount * travelSettings!!.conversionRate, // Converted amount
+                amount = enteredAmount * travelSettings!!.conversionRate,
                 date = date,
                 accountId = accountId,
                 notes = notes,
@@ -333,7 +332,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 sourceSmsId = null,
                 sourceSmsHash = null,
                 source = "Added Manually",
-                originalAmount = enteredAmount, // Original foreign amount
+                originalAmount = enteredAmount,
                 currencyCode = travelSettings.currencyCode,
                 conversionRate = travelSettings.conversionRate.toDouble()
             )
@@ -342,7 +341,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 description = description,
                 originalDescription = description,
                 categoryId = categoryId,
-                amount = enteredAmount, // Home currency amount
+                amount = enteredAmount,
                 date = date,
                 accountId = accountId,
                 notes = notes,
@@ -707,12 +706,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         currentTxnIdForTags = null
     }
 
+    // --- UPDATED: Function now accepts an `isForeign` flag ---
     suspend fun approveSmsTransaction(
         potentialTxn: PotentialTransaction,
         description: String,
         categoryId: Int?,
         notes: String?,
-        tags: Set<Tag>
+        tags: Set<Tag>,
+        isForeign: Boolean
     ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
@@ -726,24 +727,48 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     account = db.accountDao().findByName(accountName)
                 }
 
-                if (account == null) {
-                    return@withContext false
+                if (account == null) return@withContext false
+
+                // --- NEW: Handle currency conversion if needed ---
+                val transactionToSave = if (isForeign) {
+                    val travelSettings = settingsRepository.getTravelModeSettings().first()
+                    if (travelSettings == null) {
+                        Log.e(TAG, "Attempted to save foreign SMS transaction, but Travel Mode is not configured.")
+                        return@withContext false
+                    }
+                    Transaction(
+                        description = description,
+                        originalDescription = potentialTxn.merchantName,
+                        categoryId = categoryId,
+                        amount = potentialTxn.amount * travelSettings.conversionRate, // Converted amount
+                        date = System.currentTimeMillis(),
+                        accountId = account.id,
+                        notes = notes,
+                        transactionType = potentialTxn.transactionType,
+                        sourceSmsId = potentialTxn.sourceSmsId,
+                        sourceSmsHash = potentialTxn.sourceSmsHash,
+                        source = "Imported",
+                        originalAmount = potentialTxn.amount, // Original foreign amount
+                        currencyCode = travelSettings.currencyCode,
+                        conversionRate = travelSettings.conversionRate.toDouble()
+                    )
+                } else {
+                    Transaction(
+                        description = description,
+                        originalDescription = potentialTxn.merchantName,
+                        categoryId = categoryId,
+                        amount = potentialTxn.amount, // Home currency amount
+                        date = System.currentTimeMillis(),
+                        accountId = account.id,
+                        notes = notes,
+                        transactionType = potentialTxn.transactionType,
+                        sourceSmsId = potentialTxn.sourceSmsId,
+                        sourceSmsHash = potentialTxn.sourceSmsHash,
+                        source = "Imported"
+                    )
                 }
 
-                val newTransaction = Transaction(
-                    description = description,
-                    originalDescription = potentialTxn.merchantName,
-                    categoryId = categoryId,
-                    amount = potentialTxn.amount,
-                    date = System.currentTimeMillis(),
-                    accountId = account.id,
-                    notes = notes,
-                    transactionType = potentialTxn.transactionType,
-                    sourceSmsId = potentialTxn.sourceSmsId,
-                    sourceSmsHash = potentialTxn.sourceSmsHash,
-                    source = "Imported"
-                )
-                transactionRepository.insertTransactionWithTags(newTransaction, tags)
+                transactionRepository.insertTransactionWithTags(transactionToSave, tags)
 
                 if (categoryId != null && potentialTxn.merchantName != null) {
                     val mapping = MerchantCategoryMapping(
