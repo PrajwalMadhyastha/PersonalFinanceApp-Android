@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Splitting) - The `saveTransactionSplits` function has been
-// updated to call the new `markAsSplit` DAO function. This ensures that when a
-// transaction is split, its original category is correctly nullified in the
-// database.
+// REASON: FEATURE (Splitting) - The ViewModel's calculations for monthly income
+// and expenses have been updated to use the split-aware
+// `getFinancialSummaryForRangeFlow` query. This ensures the summary totals on the
+// transaction list screen are accurate after a split.
 // =================================================================================
 package io.pm.finlight
 
@@ -138,13 +138,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             applyAliases(transactions, aliases)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        monthlyIncome = transactionsForSelectedMonth.map { txns ->
-            txns.filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+        val financialSummaryFlow = _selectedMonth.flatMapLatest { calendar ->
+            val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+            val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); set(Calendar.DAY_OF_MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59) }.timeInMillis
+            transactionRepository.getFinancialSummaryForRangeFlow(monthStart, monthEnd)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-        monthlyExpenses = transactionsForSelectedMonth.map { txns ->
-            txns.filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }.sumOf { it.transaction.amount }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+        monthlyIncome = financialSummaryFlow.map { it?.totalIncome ?: 0.0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+        monthlyExpenses = financialSummaryFlow.map { it?.totalExpenses ?: 0.0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
         categorySpendingForSelectedMonth = combinedState.flatMapLatest { (calendar, filters) ->
             val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
@@ -220,13 +224,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             try {
                 db.withTransaction {
-                    // 1. Mark the parent transaction as split and nullify its category
                     db.transactionDao().markAsSplit(parentTransactionId, true)
-
-                    // 2. Clear any existing splits for this parent
                     db.splitTransactionDao().deleteSplitsForParent(parentTransactionId)
-
-                    // 3. Create new SplitTransaction entities from the UI state
                     val newSplits = splitItems.map {
                         SplitTransaction(
                             parentTransactionId = parentTransactionId,
@@ -235,8 +234,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                             notes = it.notes
                         )
                     }
-
-                    // 4. Insert all new splits
                     db.splitTransactionDao().insertAll(newSplits)
                 }
                 withContext(Dispatchers.Main) {
@@ -244,7 +241,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving transaction splits", e)
-                // Optionally, handle the error (e.g., show a toast)
             }
         }
     }

@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: REFACTOR - The `ConsistencyStats` data class and its corresponding
-// calculation logic have been updated to include a new `noDataDays` metric.
-// This provides a more complete summary for the dashboard card.
-// FEATURE - Added `yearlyConsistencyData` flow to fetch the full year's
-// heatmap data for the new dashboard card, replacing the old monthly-only logic.
+// REASON: FEATURE (Splitting) - The ViewModel now uses the split-aware
+// `getFinancialSummaryForRangeFlow` query to calculate `monthlyIncome` and
+// `monthlyExpenses`. This replaces the client-side calculation and ensures that
+// dashboard totals accurately reflect split transactions.
 // =================================================================================
 package io.pm.finlight
 
@@ -53,7 +52,6 @@ class DashboardViewModel(
     private val _showAddCardSheet = MutableStateFlow(false)
     val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
 
-    // --- NEW: Flow for the full yearly heatmap data ---
     val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
 
     init {
@@ -127,27 +125,15 @@ class DashboardViewModel(
                 set(Calendar.MILLISECOND, 999)
             }.timeInMillis
 
-        val transactionsThisMonth = transactionRepository.getTransactionDetailsForRange(
-            startDate = monthStart,
-            endDate = monthEnd,
-            keyword = null,
-            accountId = null,
-            categoryId = null
-        ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        // --- UPDATED: Use the split-aware financial summary query ---
+        val financialSummaryFlow = transactionRepository.getFinancialSummaryForRangeFlow(monthStart, monthEnd)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-        monthlyIncome =
-            transactionsThisMonth.map { transactions ->
-                transactions
-                    .filter { it.transaction.transactionType == "income" && !it.transaction.isExcluded }
-                    .sumOf { it.transaction.amount }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+        monthlyIncome = financialSummaryFlow.map { it?.totalIncome ?: 0.0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-        monthlyExpenses =
-            transactionsThisMonth.map { transactions ->
-                transactions
-                    .filter { it.transaction.transactionType == "expense" && !it.transaction.isExcluded }
-                    .sumOf { it.transaction.amount }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+        monthlyExpenses = financialSummaryFlow.map { it?.totalExpenses ?: 0.0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
         val currentYear = calendar.get(Calendar.YEAR)
         val currentMonth = calendar.get(Calendar.MONTH) + 1
@@ -191,7 +177,6 @@ class DashboardViewModel(
                     initialValue = emptyList(),
                 )
 
-        // --- NEW: Initialize the yearly data flow ---
         yearlyConsistencyData = flow {
             emit(generateYearlyConsistencyData())
         }.flowOn(Dispatchers.Default)
@@ -202,7 +187,6 @@ class DashboardViewModel(
             )
     }
 
-    // --- NEW: Function to generate data for the full year heatmap ---
     private suspend fun generateYearlyConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
         val calendar = Calendar.getInstance()
         val endDate = calendar.timeInMillis

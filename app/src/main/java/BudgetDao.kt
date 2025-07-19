@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/BudgetDao.kt
-// REASON: BUG FIX - All `strftime` date functions have been updated to use the
-// 'localtime' modifier. This ensures that all date-based grouping is performed
-// using the device's local timezone instead of UTC. This corrects the bug where
-// spending was being attributed to the wrong month, fixing budget calculations.
+// REASON: FEATURE (Splitting) - The queries for calculating spending against
+// budgets (`getBudgetsWithSpendingForMonth` and `getActualSpendingForCategory`)
+// have been rewritten. They now use a UNION ALL to combine non-split transactions
+// with child split items, ensuring budget calculations are accurate.
 // =================================================================================
 package io.pm.finlight
 
@@ -20,6 +20,16 @@ interface BudgetDao {
 
     @Query(
         """
+        WITH AtomicExpenses AS (
+            -- 1. Regular, non-split transactions
+            SELECT T.categoryId, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND T.isExcluded = 0
+            UNION ALL
+            -- 2. Child items from split transactions
+            SELECT S.categoryId, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND strftime('%Y-%m', P.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND P.isExcluded = 0
+        )
         SELECT
             B.*,
             IFNULL(TxSums.totalSpent, 0.0) as spent,
@@ -30,10 +40,10 @@ interface BudgetDao {
         LEFT JOIN
             (SELECT
                 C.name as categoryName,
-                SUM(T.amount) as totalSpent
-             FROM transactions AS T
-             JOIN categories AS C ON T.categoryId = C.id
-             WHERE T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND T.isExcluded = 0
+                SUM(AE.amount) as totalSpent
+             FROM AtomicExpenses AS AE
+             JOIN categories AS C ON AE.categoryId = C.id
+             WHERE AE.categoryId IS NOT NULL
              GROUP BY C.name) AS TxSums
         ON B.categoryName = TxSums.categoryName
         LEFT JOIN categories AS Cat ON B.categoryName = Cat.name
@@ -53,7 +63,19 @@ interface BudgetDao {
     suspend fun insert(budget: Budget)
 
     @Query(
-        "SELECT SUM(amount) FROM transactions WHERE categoryId = (SELECT id FROM categories WHERE name = :categoryName) AND strftime('%m', date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', date / 1000, 'unixepoch', 'localtime') + 0 = :year AND transactionType = 'expense' AND isExcluded = 0",
+        """
+        WITH AtomicExpenses AS (
+            SELECT T.categoryId, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND strftime('%m', T.date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', T.date / 1000, 'unixepoch', 'localtime') + 0 = :year AND T.isExcluded = 0
+            UNION ALL
+            SELECT S.categoryId, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND strftime('%m', P.date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', P.date / 1000, 'unixepoch', 'localtime') + 0 = :year AND P.isExcluded = 0
+        )
+        SELECT SUM(AE.amount) FROM AtomicExpenses AS AE
+        JOIN categories AS C ON AE.categoryId = C.id
+        WHERE C.name = :categoryName AND AE.categoryId IS NOT NULL
+    """
     )
     fun getActualSpendingForCategory(
         categoryName: String,
