@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE - Added a new suspend function `getTransactionCountForMerchantSuspend`.
-// This non-Flow version is required by the new TransactionNotificationWorker to
-// synchronously fetch the visit count for a merchant when building the rich
-// notification in a background job.
+// REASON: FIX - Corrected a SQL query ambiguity in `getIncomeByCategoryForMonth`.
+// The `WHERE` clause was updated to filter by `C.id` (the joined category table's
+// ID) instead of `AI.categoryId` (the subquery's column). This resolves the
+// "no such column" compilation error from Room's query parser.
 // =================================================================================
 package io.pm.finlight
 
@@ -153,7 +153,7 @@ interface TransactionDao {
         WHERE AI.categoryId IS NOT NULL
           AND (:keyword IS NULL OR LOWER(AI.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AI.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR AI.accountId = :accountId)
-          AND (:categoryId IS NULL OR AI.categoryId = :categoryId)
+          AND (:categoryId IS NULL OR C.id = :categoryId)
         GROUP BY C.name
         ORDER BY totalAmount DESC
     """)
@@ -348,7 +348,7 @@ interface TransactionDao {
         WHERE AE.categoryId IS NOT NULL
           AND (:keyword IS NULL OR LOWER(AE.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AE.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR AE.accountId = :accountId)
-          AND (:categoryId IS NULL OR AI.categoryId = :categoryId)
+          AND (:categoryId IS NULL OR AE.categoryId = :categoryId)
         GROUP BY C.name
         ORDER BY totalAmount ASC
     """
@@ -513,7 +513,6 @@ interface TransactionDao {
     """)
     fun getTransactionCountForMerchant(description: String): Flow<Int>
 
-    // --- NEW: A suspend version of the above query for use in workers ---
     @Query("""
         SELECT COUNT(*) FROM transactions
         WHERE (LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description))
