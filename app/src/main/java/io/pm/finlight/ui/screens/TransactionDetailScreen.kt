@@ -3,6 +3,8 @@
 // REASON: REFACTOR - The "Split" / "Edit Splits" button has been moved from the
 // secondary actions row into the main TransactionSpotlightHeader. This makes the
 // action more prominent and improves the user workflow.
+// UX REFINEMENT - The text for the split button has been made more explicit,
+// changing from "Split" to "Split Transaction" for better clarity.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -739,7 +741,7 @@ private fun TransactionSpotlightHeader(
     onAmountClick: () -> Unit,
     onCategoryClick: () -> Unit,
     onDateTimeClick: () -> Unit,
-    onSplitClick: () -> Unit // --- NEW: Add callback ---
+    onSplitClick: () -> Unit
 ) {
     val displayCategory = if (isSplit) {
         Category(name = "Multiple Categories", iconKey = "call_split", colorKey = "gray_light")
@@ -846,7 +848,6 @@ private fun TransactionSpotlightHeader(
                         category = displayCategory
                     )
                 }
-                // --- NEW: Add the Split/Edit Splits button here ---
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = onSplitClick,
@@ -854,7 +855,7 @@ private fun TransactionSpotlightHeader(
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.7f))
                 ) {
                     val icon = if (isSplit) Icons.Default.Edit else Icons.Default.CallSplit
-                    val text = if (isSplit) "Edit Splits" else "Split"
+                    val text = if (isSplit) "Edit Splits" else "Split Transaction"
                     Icon(icon, contentDescription = text, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(text)
