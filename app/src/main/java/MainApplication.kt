@@ -1,7 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainApplication.kt
-// REASON: Added a new notification channel ID and a corresponding creation
-// function to support the new monthly summary notifications.
+// REASON: FEATURE - Added a new notification channel, RICH_TRANSACTION_CHANNEL_ID,
+// specifically for the new, more detailed transaction notifications. This allows
+// users to customize their notification preferences for these alerts separately
+// from other app notifications.
 // =================================================================================
 package io.pm.finlight
 
@@ -14,9 +16,10 @@ import com.github.mikephil.charting.utils.Utils
 class MainApplication : Application() {
     companion object {
         const val TRANSACTION_CHANNEL_ID = "transaction_channel"
+        // --- NEW: A dedicated channel for the new rich notifications ---
+        const val RICH_TRANSACTION_CHANNEL_ID = "rich_transaction_channel"
         const val DAILY_REPORT_CHANNEL_ID = "daily_report_channel"
         const val SUMMARY_CHANNEL_ID = "summary_channel"
-        // --- NEW: Add a channel ID for monthly summaries ---
         const val MONTHLY_SUMMARY_CHANNEL_ID = "monthly_summary_channel"
     }
 
@@ -25,9 +28,10 @@ class MainApplication : Application() {
         Utils.init(this)
 
         createTransactionNotificationChannel()
+        // --- NEW: Call the creation function for the new channel ---
+        createRichTransactionNotificationChannel()
         createDailyReportNotificationChannel()
         createSummaryNotificationChannel()
-        // --- NEW: Call the creation function for the new channel ---
         createMonthlySummaryNotificationChannel()
     }
 
@@ -45,6 +49,23 @@ class MainApplication : Application() {
             notificationManager.createNotificationChannel(channel)
         }
     }
+
+    // --- NEW: Function to create the rich transaction notification channel ---
+    private fun createRichTransactionNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Detailed Transactions"
+            val descriptionText = "Richer, more detailed notifications for auto-saved transactions."
+            val importance = NotificationManager.IMPORTANCE_HIGH // Higher importance
+            val channel =
+                NotificationChannel(RICH_TRANSACTION_CHANNEL_ID, name, importance).apply {
+                    description = descriptionText
+                }
+            val notificationManager: NotificationManager =
+                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
 
     private fun createDailyReportNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -76,7 +97,6 @@ class MainApplication : Application() {
         }
     }
 
-    // --- NEW: Function to create the monthly summary notification channel ---
     private fun createMonthlySummaryNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "Monthly Summaries"
