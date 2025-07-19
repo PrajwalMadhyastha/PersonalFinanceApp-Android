@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Splitting) - Added the `unsplitTransaction` function. This
-// function orchestrates the process of reverting a split transaction back to a
-// single entity by deleting its child items and restoring the parent's original
-// state within a database transaction.
+// REASON: FEATURE - Added state management for the in-place category change feature.
+// A new StateFlow `transactionForCategoryChange` will hold the transaction being
+// edited, and new functions `requestCategoryChange` and `cancelCategoryChange`
+// will be used by the UI to show and hide the category picker bottom sheet.
 // =================================================================================
 package io.pm.finlight
 
@@ -67,6 +67,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _showFilterSheet = MutableStateFlow(false)
     val showFilterSheet: StateFlow<Boolean> = _showFilterSheet.asStateFlow()
+
+    // --- NEW: State for in-place category change ---
+    private val _transactionForCategoryChange = MutableStateFlow<TransactionDetails?>(null)
+    val transactionForCategoryChange: StateFlow<TransactionDetails?> = _transactionForCategoryChange.asStateFlow()
+
 
     private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
         _selectedMonth.combine(_filterState) { month, filters ->
@@ -214,6 +219,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _defaultAccount.value = db.accountDao().findByName("Cash Spends")
         }
+    }
+
+    // --- NEW: Functions to manage the category change sheet ---
+    fun requestCategoryChange(details: TransactionDetails) {
+        _transactionForCategoryChange.value = details
+    }
+
+    fun cancelCategoryChange() {
+        _transactionForCategoryChange.value = null
     }
 
     fun getSplitDetailsForTransaction(transactionId: Int): Flow<List<SplitTransactionDetails>> {
@@ -748,7 +762,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             transactionRepository.delete(transaction)
         }
 
-    // --- NEW: Function to un-split a transaction ---
     fun unsplitTransaction(transaction: Transaction) {
         viewModelScope.launch {
             db.withTransaction {

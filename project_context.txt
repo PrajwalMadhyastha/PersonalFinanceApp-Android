@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Sat Jul 19 14:51:55 IST 2025
+Generated on: Sat Jul 19 15:55:40 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -1294,10 +1294,10 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Splitting) - The ViewModel's calculations for monthly income
-// and expenses have been updated to use the split-aware
-// `getFinancialSummaryForRangeFlow` query. This ensures the summary totals on the
-// transaction list screen are accurate after a split.
+// REASON: FEATURE (Splitting) - Added the `unsplitTransaction` function. This
+// function orchestrates the process of reverting a split transaction back to a
+// single entity by deleting its child items and restoring the parent's original
+// state within a database transaction.
 // =================================================================================
 package io.pm.finlight
 
@@ -2041,6 +2041,24 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             transactionRepository.delete(transaction)
         }
+
+    // --- NEW: Function to un-split a transaction ---
+    fun unsplitTransaction(transaction: Transaction) {
+        viewModelScope.launch {
+            db.withTransaction {
+                // Heuristic: try to restore the category from the first split item if possible, before deleting them.
+                val firstSplitCategory = db.splitTransactionDao().getSplitsForParent(transaction.id).firstOrNull()?.firstOrNull()?.splitTransaction?.categoryId
+
+                // Delete all child split items
+                db.splitTransactionDao().deleteSplitsForParent(transaction.id)
+
+                // Revert the parent transaction's state
+                val originalDescription = transaction.originalDescription ?: transaction.description
+                db.transactionDao().unmarkAsSplit(transaction.id, originalDescription, firstSplitCategory)
+            }
+        }
+    }
+
 
     fun clearError() {
         _validationError.value = null
@@ -9770,10 +9788,11 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE (Splitting) - The screen's main header has been updated to
-// correctly reflect a split transaction's state. It now displays a generic
-// background, shows a "Split" icon, and hides the category chip, ensuring a
-// consistent UI with the transaction list items.
+// REASON: REFACTOR - The "Split" / "Edit Splits" button has been moved from the
+// secondary actions row into the main TransactionSpotlightHeader. This makes the
+// action more prominent and improves the user workflow.
+// UX REFINEMENT - The text for the split button has been made more explicit,
+// changing from "Split" to "Split Transaction" for better clarity.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -9785,6 +9804,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10019,6 +10039,16 @@ fun TransactionDetailScreen(
                                     expanded = showMenu,
                                     onDismissRequest = { showMenu = false }
                                 ) {
+                                    if (details.transaction.isSplit) {
+                                        DropdownMenuItem(
+                                            text = { Text("Un-split") },
+                                            onClick = {
+                                                showMenu = false
+                                                viewModel.unsplitTransaction(details.transaction)
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.MergeType, contentDescription = "Un-split") }
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         text = { Text("Delete") },
                                         onClick = {
@@ -10058,7 +10088,10 @@ fun TransactionDetailScreen(
                                         }
                                     },
                                     onCategoryClick = { activeSheetContent = SheetContent.Category },
-                                    onDateTimeClick = { showDatePicker = true }
+                                    onDateTimeClick = { showDatePicker = true },
+                                    onSplitClick = {
+                                        navController.navigate("split_transaction/${details.transaction.id}")
+                                    }
                                 )
                             }
                         }
@@ -10113,17 +10146,12 @@ fun TransactionDetailScreen(
 
                         item {
                             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                                GlassPanel {
-                                    AttachmentRow(
-                                        images = attachedImages,
-                                        onAddClick = { imagePickerLauncher.launch("image/*") },
-                                        onViewClick = { showImageViewer = it },
-                                        onDeleteClick = { showImageDeleteDialog = it },
-                                        onSplitClick = {
-                                            navController.navigate("split_transaction/${details.transaction.id}")
-                                        }
-                                    )
-                                }
+                                AttachmentRow(
+                                    images = attachedImages,
+                                    onAddClick = { imagePickerLauncher.launch("image/*") },
+                                    onViewClick = { showImageViewer = it },
+                                    onDeleteClick = { showImageDeleteDialog = it }
+                                )
                             }
                         }
 
@@ -10501,7 +10529,8 @@ private fun TransactionSpotlightHeader(
     onDescriptionClick: () -> Unit,
     onAmountClick: () -> Unit,
     onCategoryClick: () -> Unit,
-    onDateTimeClick: () -> Unit
+    onDateTimeClick: () -> Unit,
+    onSplitClick: () -> Unit
 ) {
     val displayCategory = if (isSplit) {
         Category(name = "Multiple Categories", iconKey = "call_split", colorKey = "gray_light")
@@ -10608,6 +10637,19 @@ private fun TransactionSpotlightHeader(
                         category = displayCategory
                     )
                 }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onSplitClick,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.7f))
+                ) {
+                    val icon = if (isSplit) Icons.Default.Edit else Icons.Default.CallSplit
+                    val text = if (isSplit) "Edit Splits" else "Split Transaction"
+                    Icon(icon, contentDescription = text, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(text)
+                }
+
                 Spacer(modifier = Modifier.weight(1f))
                 Row(
                     modifier = Modifier
@@ -10786,8 +10828,7 @@ private fun AttachmentRow(
     images: List<TransactionImage>,
     onAddClick: () -> Unit,
     onViewClick: (Uri) -> Unit,
-    onDeleteClick: (TransactionImage) -> Unit,
-    onSplitClick: () -> Unit
+    onDeleteClick: (TransactionImage) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -10802,11 +10843,6 @@ private fun AttachmentRow(
             Icon(Icons.Default.Attachment, contentDescription = "Attachments", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(16.dp))
             Text("Actions", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
-            TextButton(onClick = onSplitClick) {
-                Icon(Icons.Default.CallSplit, contentDescription = "Split Transaction", modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Split")
-            }
             TextButton(onClick = onAddClick) {
                 Icon(Icons.Default.AddAPhoto, contentDescription = "Add Attachment", modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
@@ -23206,10 +23242,10 @@ data class IgnoreRule(
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FIX (Splitting) - Corrected several SQL syntax and column mapping
-// errors in the split-aware queries. The `getIncomeTransactionsForRange` query
-// now selects all required columns, and the `getMonthlyTrends` query correctly
-// references date columns, resolving all build errors.
+// REASON: FEATURE (Splitting) - Added the `unmarkAsSplit` function. This is a
+// crucial part of the "un-split" feature, allowing the parent transaction to be
+// reverted to its original, non-split state by restoring its description and
+// category.
 // =================================================================================
 package io.pm.finlight
 
@@ -23224,6 +23260,15 @@ interface TransactionDao {
 
     @Query("UPDATE transactions SET isSplit = :isSplit, categoryId = CASE WHEN :isSplit = 1 THEN NULL ELSE categoryId END, description = CASE WHEN :isSplit = 1 THEN 'Split Transaction' ELSE description END WHERE id = :transactionId")
     suspend fun markAsSplit(transactionId: Int, isSplit: Boolean)
+
+    // --- NEW: Function to revert a split transaction to a normal one ---
+    @Query("""
+        UPDATE transactions 
+        SET isSplit = 0, description = :originalDescription, categoryId = :newCategoryId
+        WHERE id = :transactionId
+    """)
+    suspend fun unmarkAsSplit(transactionId: Int, originalDescription: String, newCategoryId: Int?)
+
 
     @Query("SELECT MIN(date) FROM transactions")
     fun getFirstTransactionDate(): Flow<Long?>
@@ -25288,10 +25333,11 @@ data class SplitTransaction(
 ================== FILE: ./app/src/main/java/SplitTransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionViewModel.kt
-// REASON: NEW FILE - This dedicated ViewModel manages the state and business
-// logic for the new transaction splitting screen. It holds the list of split
-// items, tracks the remaining amount to be allocated, and enforces the "Golden
-// Rule" where the sum of splits must equal the parent total.
+// REASON: FEATURE (Splitting) - The ViewModel is now "edit-aware". The init
+// logic checks if the parent transaction is already split. If so, it loads the
+// existing split items from the repository; otherwise, it proceeds with the
+// original creation flow. This enables the screen to function for both creating
+// and editing splits.
 // =================================================================================
 package io.pm.finlight
 
@@ -25341,6 +25387,9 @@ class SplitTransactionViewModel(
     private val db = AppDatabase.getInstance(application)
     private val transactionRepository = TransactionRepository(db.transactionDao())
     val categoryRepository = CategoryRepository(db.categoryDao())
+    // --- NEW: Add SplitTransactionRepository dependency ---
+    private val splitTransactionRepository = SplitTransactionRepository(db.splitTransactionDao())
+
 
     private val _uiState = MutableStateFlow(SplitTransactionUiState())
     val uiState = _uiState.asStateFlow()
@@ -25349,25 +25398,52 @@ class SplitTransactionViewModel(
 
     init {
         viewModelScope.launch {
-            // For splitting, we only care about the parent transaction, not its relations.
             val parentTxn = transactionRepository.getTransactionById(transactionId).firstOrNull()
             if (parentTxn != null) {
-                // Initialize with a single split item for the full amount, uncategorized.
-                val initialSplit = SplitItem(
-                    id = nextTempId--,
-                    amount = parentTxn.amount.toString(),
-                    category = null,
-                    notes = parentTxn.notes
-                )
-                _uiState.value = SplitTransactionUiState(
-                    parentTransaction = parentTxn,
-                    splitItems = listOf(initialSplit),
-                    remainingAmount = 0.0
-                )
+                // --- UPDATED: Logic to handle both create and edit modes ---
+                if (parentTxn.isSplit) {
+                    // EDIT MODE: Load existing splits
+                    val existingSplits = splitTransactionRepository.getSplitsForParent(transactionId).firstOrNull()
+                    if (!existingSplits.isNullOrEmpty()) {
+                        val splitItems = existingSplits.map { details ->
+                            SplitItem(
+                                id = details.splitTransaction.id,
+                                amount = details.splitTransaction.amount.toString(),
+                                category = categoryRepository.getCategoryById(details.splitTransaction.categoryId ?: -1),
+                                notes = details.splitTransaction.notes
+                            )
+                        }
+                        _uiState.value = SplitTransactionUiState(
+                            parentTransaction = parentTxn,
+                            splitItems = splitItems,
+                            remainingAmount = 0.0 // Should be 0 if saved correctly
+                        )
+                    } else {
+                        // Edge case: isSplit is true but no splits found. Treat as new.
+                        initializeForCreation(parentTxn)
+                    }
+                } else {
+                    // CREATE MODE: Existing logic
+                    initializeForCreation(parentTxn)
+                }
             } else {
                 _uiState.value = SplitTransactionUiState(error = "Transaction not found.")
             }
         }
+    }
+
+    private fun initializeForCreation(parentTxn: Transaction) {
+        val initialSplit = SplitItem(
+            id = nextTempId--,
+            amount = parentTxn.amount.toString(),
+            category = null,
+            notes = parentTxn.notes
+        )
+        _uiState.value = SplitTransactionUiState(
+            parentTransaction = parentTxn,
+            splitItems = listOf(initialSplit),
+            remainingAmount = 0.0
+        )
     }
 
     fun addSplitItem() {
