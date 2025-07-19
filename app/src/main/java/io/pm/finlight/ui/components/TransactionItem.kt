@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: FEATURE (Splitting) - The composable now checks if a transaction is
-// split. If it is, it displays a dedicated "split" icon and shows "Multiple
-// Categories" as a subtitle, providing clear visual feedback to the user in
-// transaction lists.
+// REASON: FEATURE - Added an `onCategoryClick` callback and made the category
+// icon and text clickable for non-split transactions. This allows triggering the
+// new in-place category change feature directly from a transaction list.
+// The `TransactionList` composable is also updated to accept and pass this callback.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -45,6 +45,7 @@ fun TransactionItem(
     modifier: Modifier = Modifier,
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
+    onCategoryClick: (TransactionDetails) -> Unit // --- NEW: Callback for category clicks
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
     val isSplit = transactionDetails.transaction.isSplit
@@ -59,10 +60,12 @@ fun TransactionItem(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // --- UPDATED: Made the category icon clickable ---
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
+                    .clickable(enabled = !isSplit) { onCategoryClick(transactionDetails) }
                     .background(
                         CategoryIconHelper.getIconBackgroundColor(
                             when {
@@ -118,21 +121,14 @@ fun TransactionItem(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                 )
-                if (isSplit) {
-                    Text(
-                        text = "Multiple Categories",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
-                    )
-                } else if (!transactionDetails.transaction.notes.isNullOrBlank()) {
-                    Text(
-                        text = transactionDetails.transaction.notes,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
-                    )
-                }
+                // --- UPDATED: Display category name, which is now also clickable ---
+                Text(
+                    text = if (isSplit) "Multiple Categories" else (transactionDetails.categoryName ?: "Uncategorized"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontStyle = FontStyle.Italic,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
+                    modifier = Modifier.clickable(enabled = !isSplit) { onCategoryClick(transactionDetails) }
+                )
                 Text(
                     text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
                     style = MaterialTheme.typography.bodySmall,
@@ -172,6 +168,8 @@ fun TransactionItem(
 fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
+    // --- NEW: Accept the category click callback ---
+    onCategoryClick: (TransactionDetails) -> Unit
 ) {
     if (transactions.isEmpty()) {
         Box(
@@ -194,7 +192,9 @@ fun TransactionList(
                     transactionDetails = details,
                     onClick = {
                         navController.navigate("transaction_detail/${details.transaction.id}")
-                    }
+                    },
+                    // --- NEW: Pass the callback down ---
+                    onCategoryClick = onCategoryClick
                 )
             }
         }
