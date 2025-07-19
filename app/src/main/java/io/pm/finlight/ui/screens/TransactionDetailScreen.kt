@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE (Splitting) - The screen's main header has been updated to
-// correctly reflect a split transaction's state. It now displays a generic
-// background, shows a "Split" icon, and hides the category chip, ensuring a
-// consistent UI with the transaction list items.
+// REASON: FEATURE (Splitting) - The UI is now fully aware of a transaction's
+// split state. The "Split" button dynamically changes to "Edit Splits", and a
+// new "Un-split" option appears in the menu for split transactions, providing a
+// complete and intuitive workflow for managing splits.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -249,6 +249,17 @@ fun TransactionDetailScreen(
                                     expanded = showMenu,
                                     onDismissRequest = { showMenu = false }
                                 ) {
+                                    // --- NEW: Conditionally show "Un-split" option ---
+                                    if (details.transaction.isSplit) {
+                                        DropdownMenuItem(
+                                            text = { Text("Un-split") },
+                                            onClick = {
+                                                showMenu = false
+                                                viewModel.unsplitTransaction(details.transaction)
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.MergeType, contentDescription = "Un-split") }
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         text = { Text("Delete") },
                                         onClick = {
@@ -343,17 +354,16 @@ fun TransactionDetailScreen(
 
                         item {
                             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                                GlassPanel {
-                                    AttachmentRow(
-                                        images = attachedImages,
-                                        onAddClick = { imagePickerLauncher.launch("image/*") },
-                                        onViewClick = { showImageViewer = it },
-                                        onDeleteClick = { showImageDeleteDialog = it },
-                                        onSplitClick = {
-                                            navController.navigate("split_transaction/${details.transaction.id}")
-                                        }
-                                    )
-                                }
+                                AttachmentRow(
+                                    images = attachedImages,
+                                    isSplit = details.transaction.isSplit, // --- NEW: Pass isSplit flag ---
+                                    onAddClick = { imagePickerLauncher.launch("image/*") },
+                                    onViewClick = { showImageViewer = it },
+                                    onDeleteClick = { showImageDeleteDialog = it },
+                                    onSplitClick = {
+                                        navController.navigate("split_transaction/${details.transaction.id}")
+                                    }
+                                )
                             }
                         }
 
@@ -1014,6 +1024,7 @@ private fun TagsRow(selectedTags: Set<Tag>, onClick: () -> Unit) {
 @Composable
 private fun AttachmentRow(
     images: List<TransactionImage>,
+    isSplit: Boolean, // --- NEW: Add parameter ---
     onAddClick: () -> Unit,
     onViewClick: (Uri) -> Unit,
     onDeleteClick: (TransactionImage) -> Unit,
@@ -1032,10 +1043,13 @@ private fun AttachmentRow(
             Icon(Icons.Default.Attachment, contentDescription = "Attachments", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(16.dp))
             Text("Actions", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+            // --- UPDATED: Conditionally change button text and icon ---
             TextButton(onClick = onSplitClick) {
-                Icon(Icons.Default.CallSplit, contentDescription = "Split Transaction", modifier = Modifier.size(18.dp))
+                val icon = if (isSplit) Icons.Default.Edit else Icons.Default.CallSplit
+                val text = if (isSplit) "Edit Splits" else "Split"
+                Icon(icon, contentDescription = text, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Split")
+                Text(text)
             }
             TextButton(onClick = onAddClick) {
                 Icon(Icons.Default.AddAPhoto, contentDescription = "Add Attachment", modifier = Modifier.size(18.dp))
