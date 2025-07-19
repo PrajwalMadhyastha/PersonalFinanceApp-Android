@@ -1,18 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
-// REASON: MAJOR REFACTOR - The ApproveTransactionScreen has been completely
-// redesigned to align with the "Project Aurora" vision, using GlassPanel
-// components and theme-aware styling.
-// BUG FIX - The navigation logic after approving a transaction has been corrected.
-// It now pops the entire back stack and navigates to the dashboard, preventing
-// the user from returning to the approval screen.
-// BUG FIX - Added missing imports for `border` and `AutoMirrored.Filled.ArrowBack`.
-// BUG FIX - Added the missing `isDark()` helper function.
-// UX REFINEMENT - The category picker bottom sheet is now full-screen.
-// UX REFINEMENT - The header of the approval screen has been redesigned for
-// better visual appeal and centered layout.
-// BUG FIX - Made the `when` statement for the bottom sheet exhaustive to fix a
-// compilation error.
+// REASON: FIX - The ApproveTransactionScreen now uses a LaunchedEffect to check
+// if the incoming PotentialTransaction has a learned categoryId. If it does,
+// the screen automatically finds and sets the correct category, restoring the
+// auto-categorization feature for SMS transactions in Travel Mode.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -242,6 +233,15 @@ fun ApproveTransactionScreen(
     DisposableEffect(Unit) {
         onDispose {
             transactionViewModel.clearSelectedTags()
+        }
+    }
+
+    // --- FIX: Pre-select the category if the parser found a learned one ---
+    LaunchedEffect(potentialTxn.categoryId, categories) {
+        if (categories.isNotEmpty()) {
+            potentialTxn.categoryId?.let { learnedCategoryId ->
+                selectedCategory = categories.find { it.id == learnedCategoryId }
+            }
         }
     }
 
