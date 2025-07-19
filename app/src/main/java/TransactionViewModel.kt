@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Splitting) - Added a new `saveTransactionSplits` function.
-// This function executes a database transaction to safely update the parent
-// transaction's `isSplit` flag and replace its old splits with the new list,
-// ensuring data integrity.
+// REASON: FEATURE (Splitting) - The ViewModel is now aware of split transactions.
+// It initializes a new `SplitTransactionRepository` and exposes a
+// `getSplitDetailsForTransaction` function. This allows the TransactionDetailScreen
+// to fetch and display the child items of a split transaction.
 // =================================================================================
 package io.pm.finlight
 
@@ -52,6 +52,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
     private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository
+    // --- NEW: Add repository for splits ---
+    private val splitTransactionRepository: SplitTransactionRepository
     private val context = application
 
     private val db = AppDatabase.getInstance(application)
@@ -115,6 +117,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
+        // --- NEW: Initialize the split repository ---
+        splitTransactionRepository = SplitTransactionRepository(db.splitTransactionDao())
+
 
         travelModeSettings = settingsRepository.getTravelModeSettings()
             .stateIn(
@@ -209,7 +214,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- NEW: Function to save transaction splits ---
+    // --- NEW: Function to get split details ---
+    fun getSplitDetailsForTransaction(transactionId: Int): Flow<List<SplitTransactionDetails>> {
+        return splitTransactionRepository.getSplitsForParent(transactionId)
+    }
+
     fun saveTransactionSplits(parentTransactionId: Int, splitItems: List<SplitItem>, onComplete: () -> Unit) {
         viewModelScope.launch {
             try {

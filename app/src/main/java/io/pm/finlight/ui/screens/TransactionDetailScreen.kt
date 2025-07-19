@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE (Splitting) - Added a "Split" button to the action row, which
-// navigates to the new SplitTransactionScreen. The amount field is now disabled
-// for editing if the transaction `isSplit` flag is true, enforcing the rule
-// that a split transaction's total is derived from its children.
+// REASON: FEATURE (Splitting) - The screen now fetches and displays the child
+// items of a split transaction. A new `SplitSummaryCard` is shown if the
+// transaction's `isSplit` flag is true. The main category chip in the header is
+// hidden for split transactions to avoid showing redundant or incorrect info.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -116,6 +116,9 @@ fun TransactionDetailScreen(
             }
         }
     }
+
+    // --- NEW: Fetch split details ---
+    val splits by viewModel.getSplitDetailsForTransaction(transactionId).collectAsState(initial = emptyList())
 
     val reparseResult = navController.currentBackStackEntry
         ?.savedStateHandle
@@ -272,8 +275,8 @@ fun TransactionDetailScreen(
                                 TransactionSpotlightHeader(
                                     details = details,
                                     visitCount = visitCount,
+                                    isSplit = details.transaction.isSplit, // --- PASS isSplit FLAG ---
                                     onDescriptionClick = { activeSheetContent = SheetContent.Description },
-                                    // --- UPDATED: Disable amount editing if split ---
                                     onAmountClick = {
                                         if (!details.transaction.isSplit) {
                                             activeSheetContent = SheetContent.Amount
@@ -291,6 +294,15 @@ fun TransactionDetailScreen(
                             item {
                                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                                     CurrencyConversionInfoCard(transaction = details.transaction)
+                                }
+                            }
+                        }
+
+                        // --- NEW: Conditionally display split summary ---
+                        if (details.transaction.isSplit) {
+                            item {
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    SplitSummaryCard(splits = splits)
                                 }
                             }
                         }
@@ -335,7 +347,6 @@ fun TransactionDetailScreen(
                                         onAddClick = { imagePickerLauncher.launch("image/*") },
                                         onViewClick = { showImageViewer = it },
                                         onDeleteClick = { showImageDeleteDialog = it },
-                                        // --- NEW: Add split action ---
                                         onSplitClick = {
                                             navController.navigate("split_transaction/${details.transaction.id}")
                                         }
@@ -559,6 +570,75 @@ fun TransactionDetailScreen(
     }
 }
 
+// --- NEW: Card to display the list of split items ---
+@Composable
+private fun SplitSummaryCard(splits: List<SplitTransactionDetails>) {
+    GlassPanel {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "Split Details",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                splits.forEach { splitDetail ->
+                    SplitSummaryItem(splitDetail)
+                }
+            }
+        }
+    }
+}
+
+// --- NEW: A single row in the SplitSummaryCard ---
+@Composable
+private fun SplitSummaryItem(details: SplitTransactionDetails) {
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                    CategoryIconHelper.getIconBackgroundColor(
+                        details.categoryColorKey ?: "gray_light"
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = CategoryIconHelper.getIcon(details.categoryIconKey ?: "category"),
+                contentDescription = details.categoryName,
+                tint = Color.Black,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Text(
+            text = details.categoryName ?: "Uncategorized",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = currencyFormat.format(details.splitTransaction.amount),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+
 @Composable
 private fun CurrencyConversionInfoCard(transaction: Transaction) {
     val homeCurrencySymbol = "₹" // Assuming home is INR for now
@@ -638,6 +718,7 @@ private fun DynamicCategoryBackground(category: Category) {
 private fun TransactionSpotlightHeader(
     details: TransactionDetails,
     visitCount: Int,
+    isSplit: Boolean,
     onDescriptionClick: () -> Unit,
     onAmountClick: () -> Unit,
     onCategoryClick: () -> Unit,
@@ -717,7 +798,6 @@ private fun TransactionSpotlightHeader(
                             .clickable(onClick = onDescriptionClick)
                             .padding(horizontal = 16.dp)
                     )
-                    // --- NEW: Visual indicator for split transactions ---
                     if (details.transaction.isSplit) {
                         Icon(
                             imageVector = Icons.Default.CallSplit,
@@ -735,11 +815,14 @@ private fun TransactionSpotlightHeader(
                     modifier = Modifier.clickable(onClick = onAmountClick)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                ChipWithIcon(
-                    text = category.name,
-                    onClick = onCategoryClick,
-                    category = category
-                )
+                // --- UPDATED: Conditionally hide category chip ---
+                if (!isSplit) {
+                    ChipWithIcon(
+                        text = category.name,
+                        onClick = onCategoryClick,
+                        category = category
+                    )
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 Row(
                     modifier = Modifier
@@ -934,7 +1017,6 @@ private fun AttachmentRow(
             Icon(Icons.Default.Attachment, contentDescription = "Attachments", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(16.dp))
             Text("Actions", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
-            // --- NEW: Split Button ---
             TextButton(onClick = onSplitClick) {
                 Icon(Icons.Default.CallSplit, contentDescription = "Split Transaction", modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
