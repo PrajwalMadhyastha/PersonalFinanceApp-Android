@@ -1,7 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - Added the route for the new "currency_travel_settings"
-// screen to the AppNavHost, making it accessible from the Profile screen.
+// REASON: FEATURE (Splitting) - Added the route for the new
+// `split_transaction/{transactionId}` screen to the AppNavHost, making it
+// accessible from the Transaction Detail screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -235,7 +236,8 @@ fun MainAppScreen() {
         "notification_settings",
         "data_settings",
         "add_edit_goal",
-        "currency_travel_settings" // --- NEW: Add new screen to hide main top bar
+        "currency_travel_settings",
+        "split_transaction" // --- NEW: Add new screen to hide main top bar
     )
 
     val currentTitle = if (showBottomBar) {
@@ -248,7 +250,7 @@ fun MainAppScreen() {
     val fabRoutes = setOf(
         "account_list",
         "recurring_transactions",
-        "goals_screen" // Add goals_screen to show FAB
+        "goals_screen"
     )
     val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
 
@@ -429,6 +431,19 @@ fun AppNavHost(
             SplashScreen(navController = navController, activity = activity)
         }
 
+        // --- NEW: Add route for the split transaction screen ---
+        composable(
+            "split_transaction/{transactionId}",
+            arguments = listOf(navArgument("transactionId") { type = NavType.IntType }),
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) { backStackEntry ->
+            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
+            SplitTransactionScreen(navController = navController, transactionId = transactionId)
+        }
+
         composable(
             "manage_parse_rules",
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
@@ -499,7 +514,6 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            // --- UPDATED: Add focusSearch argument ---
             route = "search_screen?categoryId={categoryId}&date={date}&focusSearch={focusSearch}",
             arguments = listOf(
                 navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 },
@@ -513,7 +527,6 @@ fun AppNavHost(
         ) { backStackEntry ->
             val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
             val date = backStackEntry.arguments?.getLong("date") ?: -1L
-            // --- UPDATED: Get the new argument ---
             val focusSearch = backStackEntry.arguments?.getBoolean("focusSearch") ?: true
 
             val factory = SearchViewModelFactory(
@@ -522,7 +535,6 @@ fun AppNavHost(
                 if (date != -1L) date else null
             )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
-            // --- UPDATED: Pass the argument to the screen ---
             SearchScreen(navController, searchViewModel, focusSearch)
         }
         composable(
@@ -837,7 +849,6 @@ fun AppNavHost(
         ) {
             DataSettingsScreen(navController, settingsViewModel)
         }
-        // --- NEW: Add route for the new screen ---
         composable(
             "currency_travel_settings",
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },

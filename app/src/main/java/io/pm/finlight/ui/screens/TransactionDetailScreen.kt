@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: FEATURE - The screen now includes a conditional
-// `CurrencyConversionInfoCard`. This card appears only for transactions made in
-// a foreign currency, displaying the original amount, the conversion rate used,
-// and the final converted amount, making the process transparent to the user.
+// REASON: FEATURE (Splitting) - Added a "Split" button to the action row, which
+// navigates to the new SplitTransactionScreen. The amount field is now disabled
+// for editing if the transaction `isSplit` flag is true, enforcing the rule
+// that a split transaction's total is derived from its children.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -273,14 +273,20 @@ fun TransactionDetailScreen(
                                     details = details,
                                     visitCount = visitCount,
                                     onDescriptionClick = { activeSheetContent = SheetContent.Description },
-                                    onAmountClick = { activeSheetContent = SheetContent.Amount },
+                                    // --- UPDATED: Disable amount editing if split ---
+                                    onAmountClick = {
+                                        if (!details.transaction.isSplit) {
+                                            activeSheetContent = SheetContent.Amount
+                                        } else {
+                                            Toast.makeText(context, "Edit splits to change total amount.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
                                     onCategoryClick = { activeSheetContent = SheetContent.Category },
                                     onDateTimeClick = { showDatePicker = true }
                                 )
                             }
                         }
 
-                        // --- NEW: Conditionally display currency conversion info ---
                         if (details.transaction.originalAmount != null) {
                             item {
                                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -328,7 +334,11 @@ fun TransactionDetailScreen(
                                         images = attachedImages,
                                         onAddClick = { imagePickerLauncher.launch("image/*") },
                                         onViewClick = { showImageViewer = it },
-                                        onDeleteClick = { showImageDeleteDialog = it }
+                                        onDeleteClick = { showImageDeleteDialog = it },
+                                        // --- NEW: Add split action ---
+                                        onSplitClick = {
+                                            navController.navigate("split_transaction/${details.transaction.id}")
+                                        }
                                     )
                                 }
                             }
@@ -697,15 +707,26 @@ private fun TransactionSpotlightHeader(
                 verticalArrangement = Arrangement.Center
             ) {
                 Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = details.transaction.description,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .clickable(onClick = onDescriptionClick)
-                        .padding(horizontal = 16.dp)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = details.transaction.description,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .clickable(onClick = onDescriptionClick)
+                            .padding(horizontal = 16.dp)
+                    )
+                    // --- NEW: Visual indicator for split transactions ---
+                    if (details.transaction.isSplit) {
+                        Icon(
+                            imageVector = Icons.Default.CallSplit,
+                            contentDescription = "Split Transaction",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
                 Text(
                     text = "₹${"%,.2f".format(animatedAmount)}",
                     style = MaterialTheme.typography.displayMedium,
@@ -897,7 +918,8 @@ private fun AttachmentRow(
     images: List<TransactionImage>,
     onAddClick: () -> Unit,
     onViewClick: (Uri) -> Unit,
-    onDeleteClick: (TransactionImage) -> Unit
+    onDeleteClick: (TransactionImage) -> Unit,
+    onSplitClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -911,14 +933,20 @@ private fun AttachmentRow(
         ) {
             Icon(Icons.Default.Attachment, contentDescription = "Attachments", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(16.dp))
-            Text("Attachments", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+            Text("Actions", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+            // --- NEW: Split Button ---
+            TextButton(onClick = onSplitClick) {
+                Icon(Icons.Default.CallSplit, contentDescription = "Split Transaction", modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Split")
+            }
             TextButton(onClick = onAddClick) {
+                Icon(Icons.Default.AddAPhoto, contentDescription = "Add Attachment", modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
                 Text("Add")
             }
         }
-        if (images.isEmpty()) {
-            Text("No photos or receipts attached", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-        } else {
+        if (images.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(images) { image ->
                     Box {

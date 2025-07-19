@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE - The ViewModel now observes TravelModeSettings. The
-// `addTransaction` function is updated to accept an optional originalAmount and
-// performs the currency conversion before saving if Travel Mode is active.
+// REASON: FEATURE (Splitting) - Added a new `saveTransactionSplits` function.
+// This function executes a database transaction to safely update the parent
+// transaction's `isSplit` flag and replace its old splits with the new list,
+// ensuring data integrity.
 // =================================================================================
 package io.pm.finlight
 
@@ -11,6 +12,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -102,7 +104,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _retroUpdateSheetState = MutableStateFlow<RetroUpdateSheetState?>(null)
     val retroUpdateSheetState = _retroUpdateSheetState.asStateFlow()
 
-    // --- NEW: Expose Travel Mode settings ---
     val travelModeSettings: StateFlow<TravelModeSettings?>
 
     init {
@@ -115,7 +116,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
 
-        // --- NEW: Initialize travel mode settings flow ---
         travelModeSettings = settingsRepository.getTravelModeSettings()
             .stateIn(
                 scope = viewModelScope,
@@ -209,6 +209,40 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // --- NEW: Function to save transaction splits ---
+    fun saveTransactionSplits(parentTransactionId: Int, splitItems: List<SplitItem>, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                db.withTransaction {
+                    // 1. Mark the parent transaction as split
+                    db.transactionDao().setTransactionAsSplit(parentTransactionId, true)
+
+                    // 2. Clear any existing splits for this parent
+                    db.splitTransactionDao().deleteSplitsForParent(parentTransactionId)
+
+                    // 3. Create new SplitTransaction entities from the UI state
+                    val newSplits = splitItems.map {
+                        SplitTransaction(
+                            parentTransactionId = parentTransactionId,
+                            amount = it.amount.toDoubleOrNull() ?: 0.0,
+                            categoryId = it.category?.id,
+                            notes = it.notes
+                        )
+                    }
+
+                    // 4. Insert all new splits
+                    db.splitTransactionDao().insertAll(newSplits)
+                }
+                withContext(Dispatchers.Main) {
+                    onComplete()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving transaction splits", e)
+                // Optionally, handle the error (e.g., show a toast)
+            }
+        }
+    }
+
     private fun applyAliases(transactions: List<TransactionDetails>, aliases: Map<String, String>): List<TransactionDetails> {
         return transactions.map { details ->
             val key = (details.transaction.originalDescription ?: details.transaction.description).lowercase(Locale.getDefault())
@@ -233,7 +267,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- UPDATED: Function now handles currency conversion ---
     suspend fun addTransaction(
         description: String,
         categoryId: Int?,
