@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE - Added state management for the in-place category change feature.
-// A new StateFlow `transactionForCategoryChange` will hold the transaction being
-// edited, and new functions `requestCategoryChange` and `cancelCategoryChange`
-// will be used by the UI to show and hide the category picker bottom sheet.
+// REASON: FEATURE (Travel Mode Splitting) - The `saveTransactionSplits` function
+// is now aware of foreign currency. It checks the parent transaction for a
+// conversion rate. If one exists, it applies it to each split item, saving both
+// the converted (home) and original (foreign) amounts to the database.
 // =================================================================================
 package io.pm.finlight
 
@@ -68,7 +68,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _showFilterSheet = MutableStateFlow(false)
     val showFilterSheet: StateFlow<Boolean> = _showFilterSheet.asStateFlow()
 
-    // --- NEW: State for in-place category change ---
     private val _transactionForCategoryChange = MutableStateFlow<TransactionDetails?>(null)
     val transactionForCategoryChange: StateFlow<TransactionDetails?> = _transactionForCategoryChange.asStateFlow()
 
@@ -221,7 +220,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- NEW: Functions to manage the category change sheet ---
     fun requestCategoryChange(details: TransactionDetails) {
         _transactionForCategoryChange.value = details
     }
@@ -237,13 +235,20 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun saveTransactionSplits(parentTransactionId: Int, splitItems: List<SplitItem>, onComplete: () -> Unit) {
         viewModelScope.launch {
             try {
+                val parentTxn = transactionRepository.getTransactionById(parentTransactionId).firstOrNull() ?: return@launch
+                val conversionRate = parentTxn.conversionRate ?: 1.0
+
                 db.withTransaction {
                     db.transactionDao().markAsSplit(parentTransactionId, true)
                     db.splitTransactionDao().deleteSplitsForParent(parentTransactionId)
+
+                    // --- UPDATED: Handle currency conversion during save ---
                     val newSplits = splitItems.map {
+                        val originalAmount = it.amount.toDoubleOrNull() ?: 0.0
                         SplitTransaction(
                             parentTransactionId = parentTransactionId,
-                            amount = it.amount.toDoubleOrNull() ?: 0.0,
+                            amount = originalAmount * conversionRate, // Converted amount
+                            originalAmount = if (parentTxn.currencyCode != null) originalAmount else null, // Store original if foreign
                             categoryId = it.category?.id,
                             notes = it.notes
                         )
@@ -765,13 +770,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun unsplitTransaction(transaction: Transaction) {
         viewModelScope.launch {
             db.withTransaction {
-                // Heuristic: try to restore the category from the first split item if possible, before deleting them.
                 val firstSplitCategory = db.splitTransactionDao().getSplitsForParent(transaction.id).firstOrNull()?.firstOrNull()?.splitTransaction?.categoryId
-
-                // Delete all child split items
                 db.splitTransactionDao().deleteSplitsForParent(transaction.id)
-
-                // Revert the parent transaction's state
                 val originalDescription = transaction.originalDescription ?: transaction.description
                 db.transactionDao().unmarkAsSplit(transaction.id, originalDescription, firstSplitCategory)
             }

@@ -1,11 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SplitTransactionScreen.kt
-// REASON: NEW FILE - This screen provides the dedicated UI for splitting a
-// transaction. It displays the total amount, the remaining unallocated amount,
-// and a list of editable split items. It enforces the rule that the sum of
-// splits must equal the total before saving.
-// FIX - Added the missing private `isDark()` helper function to resolve a
-// build error when determining the background color for the bottom sheet.
+// REASON: FEATURE (Travel Mode Splitting) - The screen is now currency-aware.
+// The SplitHeader and SplitItemRow components have been updated to display the
+// foreign currency symbol and amount if the parent transaction was made in
+// Travel Mode. A new info card has been added to show the conversion rate.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -28,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,7 +49,6 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 import java.text.NumberFormat
 import java.util.*
 
-// Helper to detect perceived luminance.
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,7 +60,6 @@ fun SplitTransactionScreen(
     val application = LocalContext.current.applicationContext as Application
     val factory = SplitTransactionViewModelFactory(application, transactionId)
     val viewModel: SplitTransactionViewModel = viewModel(factory = factory)
-    // We also need the TransactionViewModel to perform the final save operation
     val transactionViewModel: TransactionViewModel = viewModel()
 
     val uiState by viewModel.uiState.collectAsState()
@@ -100,14 +97,23 @@ fun SplitTransactionScreen(
             ) {
                 item {
                     SplitHeader(
-                        totalAmount = uiState.parentTransaction?.amount ?: 0.0,
+                        parentTransaction = uiState.parentTransaction,
                         remainingAmount = uiState.remainingAmount
                     )
                 }
 
+                // --- NEW: Conditionally show conversion info card ---
+                if (uiState.parentTransaction?.currencyCode != null) {
+                    item {
+                        ConversionInfoCard(transaction = uiState.parentTransaction!!)
+                    }
+                }
+
+
                 items(uiState.splitItems, key = { it.id }) { item ->
                     SplitItemRow(
                         item = item,
+                        currencyCode = uiState.parentTransaction?.currencyCode,
                         onAmountChange = { newAmount -> viewModel.updateSplitAmount(item, newAmount) },
                         onCategoryClick = { activeSheetTarget = item },
                         onDeleteClick = { viewModel.removeSplitItem(item) }
@@ -126,7 +132,6 @@ fun SplitTransactionScreen(
                 }
             }
 
-            // Bottom Save Bar
             Surface(shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)) {
                 Row(
                     modifier = Modifier
@@ -176,11 +181,19 @@ fun SplitTransactionScreen(
 }
 
 @Composable
-private fun SplitHeader(totalAmount: Double, remainingAmount: Double) {
+private fun SplitHeader(parentTransaction: Transaction?, remainingAmount: Double) {
+    // --- UPDATED: Use foreign currency info if available ---
+    val isTravelMode = parentTransaction?.originalAmount != null
+    val totalAmount = parentTransaction?.originalAmount ?: parentTransaction?.amount ?: 0.0
+    val currencySymbol = if (isTravelMode) {
+        CurrencyHelper.getCurrencySymbol(parentTransaction?.currencyCode)
+    } else {
+        "₹"
+    }
+
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
     val remainingColor = when {
-        remainingAmount > 0 -> MaterialTheme.colorScheme.error
-        remainingAmount < 0 -> MaterialTheme.colorScheme.error
+        remainingAmount > 0.001 || remainingAmount < -0.001 -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.primary
     }
 
@@ -198,13 +211,13 @@ private fun SplitHeader(totalAmount: Double, remainingAmount: Double) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                currencyFormat.format(totalAmount),
+                "$currencySymbol${currencyFormat.format(totalAmount).drop(1)}",
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                "Remaining: ${currencyFormat.format(remainingAmount)}",
+                "Remaining: $currencySymbol${currencyFormat.format(remainingAmount).drop(1)}",
                 style = MaterialTheme.typography.titleMedium,
                 color = remainingColor
             )
@@ -215,10 +228,18 @@ private fun SplitHeader(totalAmount: Double, remainingAmount: Double) {
 @Composable
 private fun SplitItemRow(
     item: SplitItem,
+    currencyCode: String?,
     onAmountChange: (String) -> Unit,
     onCategoryClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    // --- UPDATED: Use foreign currency symbol if available ---
+    val currencySymbol = if (currencyCode != null) {
+        CurrencyHelper.getCurrencySymbol(currencyCode)
+    } else {
+        "₹"
+    }
+
     GlassPanel {
         Row(
             modifier = Modifier
@@ -256,7 +277,7 @@ private fun SplitItemRow(
                 onValueChange = onAmountChange,
                 modifier = Modifier.weight(1f),
                 label = { Text("Amount") },
-                leadingIcon = { Text("₹") },
+                leadingIcon = { Text(currencySymbol) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true
             )
@@ -319,5 +340,34 @@ private fun SplitCategoryPickerSheet(
             }
         }
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+// --- NEW: A card to display conversion info ---
+@Composable
+private fun ConversionInfoCard(transaction: Transaction) {
+    val homeCurrencySymbol = "₹"
+    val foreignCurrencySymbol = CurrencyHelper.getCurrencySymbol(transaction.currencyCode)
+    val numberFormat = remember { NumberFormat.getNumberInstance(Locale("en", "IN")).apply { maximumFractionDigits = 2 } }
+
+    GlassPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                Icons.Default.Info,
+                contentDescription = "Conversion Info",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "Rate: 1 ${transaction.currencyCode} = $homeCurrencySymbol${numberFormat.format(transaction.conversionRate)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

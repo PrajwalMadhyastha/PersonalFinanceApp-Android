@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SplitTransaction.kt
-// REASON: NEW FILE - Defines the Room entity for a single split item. This is
-// the "child" in our parent-child data model. It holds its own amount and
-// category, and is linked back to the original parent transaction via a
-// foreign key.
+// REASON: FEATURE (Travel Mode Splitting) - Added a new nullable `originalAmount`
+// column. This will store the split amount in the foreign currency if the parent
+// transaction was made in Travel Mode, allowing the UI to display the correct
+// values while the `amount` column always stores the home currency value.
 // =================================================================================
 package io.pm.finlight
 
@@ -37,7 +37,9 @@ data class SplitTransaction(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     val parentTransactionId: Int,
-    val amount: Double,
+    val amount: Double, // ALWAYS in home currency
     val categoryId: Int?,
-    val notes: String?
+    val notes: String?,
+    // --- NEW: Store the amount in the original foreign currency, if applicable ---
+    val originalAmount: Double? = null
 )

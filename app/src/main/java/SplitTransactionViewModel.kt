@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionViewModel.kt
-// REASON: FEATURE (Splitting) - The ViewModel is now "edit-aware". The init
-// logic checks if the parent transaction is already split. If so, it loads the
-// existing split items from the repository; otherwise, it proceeds with the
-// original creation flow. This enables the screen to function for both creating
-// and editing splits.
+// REASON: FEATURE (Travel Mode Splitting) - The ViewModel's initialization
+// logic now checks if the parent transaction has a foreign currency amount. If
+// so, it uses that as the total for splitting and populates the initial split
+// item with the foreign amount, preparing the UI for foreign currency input.
 // =================================================================================
 package io.pm.finlight
 
@@ -54,7 +53,6 @@ class SplitTransactionViewModel(
     private val db = AppDatabase.getInstance(application)
     private val transactionRepository = TransactionRepository(db.transactionDao())
     val categoryRepository = CategoryRepository(db.categoryDao())
-    // --- NEW: Add SplitTransactionRepository dependency ---
     private val splitTransactionRepository = SplitTransactionRepository(db.splitTransactionDao())
 
 
@@ -67,15 +65,15 @@ class SplitTransactionViewModel(
         viewModelScope.launch {
             val parentTxn = transactionRepository.getTransactionById(transactionId).firstOrNull()
             if (parentTxn != null) {
-                // --- UPDATED: Logic to handle both create and edit modes ---
                 if (parentTxn.isSplit) {
-                    // EDIT MODE: Load existing splits
                     val existingSplits = splitTransactionRepository.getSplitsForParent(transactionId).firstOrNull()
                     if (!existingSplits.isNullOrEmpty()) {
                         val splitItems = existingSplits.map { details ->
+                            // --- UPDATED: Use originalAmount if available, otherwise fallback to home currency amount ---
+                            val displayAmount = details.splitTransaction.originalAmount ?: details.splitTransaction.amount
                             SplitItem(
                                 id = details.splitTransaction.id,
-                                amount = details.splitTransaction.amount.toString(),
+                                amount = displayAmount.toString(),
                                 category = categoryRepository.getCategoryById(details.splitTransaction.categoryId ?: -1),
                                 notes = details.splitTransaction.notes
                             )
@@ -83,14 +81,12 @@ class SplitTransactionViewModel(
                         _uiState.value = SplitTransactionUiState(
                             parentTransaction = parentTxn,
                             splitItems = splitItems,
-                            remainingAmount = 0.0 // Should be 0 if saved correctly
+                            remainingAmount = 0.0
                         )
                     } else {
-                        // Edge case: isSplit is true but no splits found. Treat as new.
                         initializeForCreation(parentTxn)
                     }
                 } else {
-                    // CREATE MODE: Existing logic
                     initializeForCreation(parentTxn)
                 }
             } else {
@@ -100,9 +96,11 @@ class SplitTransactionViewModel(
     }
 
     private fun initializeForCreation(parentTxn: Transaction) {
+        // --- UPDATED: Use originalAmount for splitting if it exists ---
+        val amountToSplit = parentTxn.originalAmount ?: parentTxn.amount
         val initialSplit = SplitItem(
             id = nextTempId--,
-            amount = parentTxn.amount.toString(),
+            amount = amountToSplit.toString(),
             category = null,
             notes = parentTxn.notes
         )
@@ -149,7 +147,8 @@ class SplitTransactionViewModel(
 
     private fun recalculateRemainingAmount() {
         _uiState.update { currentState ->
-            val parentAmount = currentState.parentTransaction?.amount ?: 0.0
+            // --- UPDATED: Use originalAmount for calculation if it exists ---
+            val parentAmount = currentState.parentTransaction?.originalAmount ?: currentState.parentTransaction?.amount ?: 0.0
             val totalSplitAmount = currentState.splitItems.sumOf { it.amount.toDoubleOrNull() ?: 0.0 }
             currentState.copy(remainingAmount = parentAmount - totalSplitAmount)
         }
