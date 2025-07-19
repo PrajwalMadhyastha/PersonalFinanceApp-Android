@@ -1,3 +1,10 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
+// REASON: FEATURE - The `AuroraRecentActivityCard` composable now accepts and
+// passes the `onCategoryClick` callback to each `TransactionItem`. This allows
+// the in-place category change feature to be triggered from the dashboard's
+// recent activity card.
+// =================================================================================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.EaseOutCubic
@@ -520,7 +527,11 @@ fun AuroraNetWorthCard(netWorth: Double) {
  * @param navController The NavController for navigation.
  */
 @Composable
-fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navController: NavController) {
+fun AuroraRecentActivityCard(
+    transactions: List<TransactionDetails>,
+    navController: NavController,
+    onCategoryClick: (TransactionDetails) -> Unit
+) {
     GlassPanel {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -575,7 +586,8 @@ fun AuroraRecentActivityCard(transactions: List<TransactionDetails>, navControll
                             transactionDetails = details,
                             onClick = {
                                 navController.navigate("transaction_detail/${details.transaction.id}")
-                            }
+                            },
+                            onCategoryClick = onCategoryClick
                         )
                     }
                 }

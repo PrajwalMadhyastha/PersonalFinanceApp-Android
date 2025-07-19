@@ -1,7 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FIX - The unused `PlaceholderTabContent` composable has been removed
-// to resolve the "UnusedSymbol" warning.
+// REASON: FEATURE - The TransactionList composable is now passed the
+// `onCategoryClick` lambda. This connects the UI action of clicking a category
+// in the list to the ViewModel's `requestCategoryChange` function, completing
+// the feature's workflow for this screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -66,7 +68,6 @@ fun TransactionListScreen(
     val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
     val showFilterSheet by viewModel.showFilterSheet.collectAsState()
 
-    // --- REMOVED: Scaffold and TopAppBar are now handled in MainActivity ---
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -104,7 +105,11 @@ fun TransactionListScreen(
             modifier = Modifier.weight(1f)
         ) { page ->
             when (page) {
-                0 -> TransactionList(transactions = transactions, navController = navController)
+                0 -> TransactionList(
+                    transactions = transactions,
+                    navController = navController,
+                    onCategoryClick = { viewModel.requestCategoryChange(it) }
+                )
                 1 -> CategorySpendingScreen(spendingList = categorySpending)
                 2 -> MerchantSpendingScreen(merchantList = merchantSpending)
             }
@@ -113,7 +118,6 @@ fun TransactionListScreen(
 
 
     if (showFilterSheet) {
-        // --- UPDATE: Added containerColor to match the Aurora design system for popups ---
         ModalBottomSheet(
             onDismissRequest = { viewModel.onFilterSheetDismiss() },
             containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
@@ -141,7 +145,6 @@ fun MonthlySummaryHeader(
     onMonthSelected: (Calendar) -> Unit
 ) {
     val monthFormat = SimpleDateFormat("LLL", Locale.getDefault())
-    // --- FIX: Corrected the invalid date format pattern from "LLLL einger" to "LLLL yyyy" ---
     val monthYearFormat = SimpleDateFormat("LLLL yyyy", Locale.getDefault())
     var showMonthScroller by remember { mutableStateOf(false) }
 
@@ -167,7 +170,6 @@ fun MonthlySummaryHeader(
                     text = monthYearFormat.format(selectedMonth.time),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    // --- FIX: Explicitly set color for dark mode contrast ---
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Icon(
@@ -228,7 +230,6 @@ fun MonthlySummaryHeader(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                // --- FIX: Explicitly set color for dark mode contrast ---
                 Text("Total Spent", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalSpent)}",
@@ -238,7 +239,6 @@ fun MonthlySummaryHeader(
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                // --- FIX: Explicitly set color for dark mode contrast ---
                 Text("Total Income", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "₹${"%,.2f".format(totalIncome)}",
@@ -305,7 +305,6 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
                 text = "Spent: ₹${"%,.0f".format(spent)}",
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.SemiBold,
-                // --- FIX: Explicitly set color for dark mode contrast ---
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(

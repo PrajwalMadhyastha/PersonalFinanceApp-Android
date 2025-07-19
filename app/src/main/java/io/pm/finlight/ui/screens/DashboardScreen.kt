@@ -1,16 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FIX - The navigation logic for the "Spending Consistency" card's
-// `onReportClick` handler has been corrected. It now explicitly pops up to the
-// `Dashboard` route, which is the start destination of the bottom navigation
-// graph. This ensures it behaves identically to the bottom navigation bar,
-// fixing the back stack issue and preventing the "overlapping" screen problem.
-// FEATURE - The `SPENDING_CONSISTENCY` card has been replaced with a new card
-// that displays the scrollable yearly heatmap directly on the dashboard.
-// FIX - Corrected the LazyColumn implementation in AddCardSheetContent to use
-// `itemsIndexed`, resolving several compilation errors.
-// UX REFINEMENT - Updated the navigation call from the consistency calendar to
-// prevent the keyboard from automatically showing on the search screen.
+// REASON: FEATURE - The `onCategoryClick` callback is now passed down from the
+// DashboardScreen through the `DashboardCard` to the `AuroraRecentActivityCard`.
+// This connects the UI event to the ViewModel, enabling the in-place category
+// change feature from the dashboard.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -168,7 +161,8 @@ fun DashboardScreen(
                     viewModel = viewModel,
                     isCustomizationMode = isCustomizationMode,
                     onHide = { viewModel.hideCard(cardType) },
-                    yearlyConsistencyData = yearlyConsistencyData
+                    yearlyConsistencyData = yearlyConsistencyData,
+                    onCategoryClick = { viewModel.requestCategoryChange(it) }
                 )
             }
         }
@@ -182,7 +176,8 @@ private fun DashboardCard(
     viewModel: DashboardViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
-    yearlyConsistencyData: List<CalendarDayStatus>
+    yearlyConsistencyData: List<CalendarDayStatus>,
+    onCategoryClick: (TransactionDetails) -> Unit
 ) {
     val netWorth by viewModel.netWorth.collectAsState()
     val monthlyIncome by viewModel.monthlyIncome.collectAsState()
@@ -208,7 +203,7 @@ private fun DashboardCard(
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
-            DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(recentTransactions, navController)
+            DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(recentTransactions, navController, onCategoryClick)
             DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
             DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
                 budgetStatus = budgetStatus,
@@ -234,7 +229,6 @@ private fun DashboardCard(
                             ConsistencyCalendar(
                                 data = yearlyConsistencyData,
                                 onDayClick = { date ->
-                                    // --- UPDATED: Pass focusSearch=false to prevent keyboard ---
                                     navController.navigate("search_screen?date=${date.time}&focusSearch=false")
                                 }
                             )
