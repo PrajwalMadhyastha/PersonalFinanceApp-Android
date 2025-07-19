@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE (Splitting) - Added the `unmarkAsSplit` function. This is a
-// crucial part of the "un-split" feature, allowing the parent transaction to be
-// reverted to its original, non-split state by restoring its description and
-// category.
+// REASON: FEATURE - Added a new suspend function `getTransactionCountForMerchantSuspend`.
+// This non-Flow version is required by the new TransactionNotificationWorker to
+// synchronously fetch the visit count for a merchant when building the rich
+// notification in a background job.
 // =================================================================================
 package io.pm.finlight
 
@@ -19,7 +19,6 @@ interface TransactionDao {
     @Query("UPDATE transactions SET isSplit = :isSplit, categoryId = CASE WHEN :isSplit = 1 THEN NULL ELSE categoryId END, description = CASE WHEN :isSplit = 1 THEN 'Split Transaction' ELSE description END WHERE id = :transactionId")
     suspend fun markAsSplit(transactionId: Int, isSplit: Boolean)
 
-    // --- NEW: Function to revert a split transaction to a normal one ---
     @Query("""
         UPDATE transactions 
         SET isSplit = 0, description = :originalDescription, categoryId = :newCategoryId
@@ -349,7 +348,7 @@ interface TransactionDao {
         WHERE AE.categoryId IS NOT NULL
           AND (:keyword IS NULL OR LOWER(AE.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AE.notes) LIKE '%' || LOWER(:keyword) || '%')
           AND (:accountId IS NULL OR AE.accountId = :accountId)
-          AND (:categoryId IS NULL OR AE.categoryId = :categoryId)
+          AND (:categoryId IS NULL OR AI.categoryId = :categoryId)
         GROUP BY C.name
         ORDER BY totalAmount ASC
     """
@@ -513,6 +512,14 @@ interface TransactionDao {
         AND isExcluded = 0
     """)
     fun getTransactionCountForMerchant(description: String): Flow<Int>
+
+    // --- NEW: A suspend version of the above query for use in workers ---
+    @Query("""
+        SELECT COUNT(*) FROM transactions
+        WHERE (LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description))
+        AND isExcluded = 0
+    """)
+    suspend fun getTransactionCountForMerchantSuspend(description: String): Int
 
     @Query("""
         SELECT * FROM transactions
