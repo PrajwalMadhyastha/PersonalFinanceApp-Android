@@ -8,6 +8,11 @@
 // the user from returning to the approval screen.
 // BUG FIX - Added missing imports for `border` and `AutoMirrored.Filled.ArrowBack`.
 // BUG FIX - Added the missing `isDark()` helper function.
+// UX REFINEMENT - The category picker bottom sheet is now full-screen.
+// UX REFINEMENT - The header of the approval screen has been redesigned for
+// better visual appeal and centered layout.
+// BUG FIX - Made the `when` statement for the bottom sheet exhaustive to fix a
+// compilation error.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -58,6 +63,7 @@ import java.util.*
 private sealed class ApproveSheetContent {
     object Category : ApproveSheetContent()
     object Tags : ApproveSheetContent()
+    object Description : ApproveSheetContent()
 }
 
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
@@ -224,7 +230,7 @@ fun ApproveTransactionScreen(
     val selectedTags by transactionViewModel.selectedTags.collectAsState()
 
     var activeSheetContent by remember { mutableStateOf<ApproveSheetContent?>(null) }
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val travelModeSettings by transactionViewModel.travelModeSettings.collectAsState()
     val isForeign = potentialTxn.isForeignCurrency == true
@@ -262,12 +268,22 @@ fun ApproveTransactionScreen(
         ) {
             item {
                 GlassPanel {
-                    Column(Modifier.padding(16.dp)) {
+                    Column(
+                        Modifier
+                            .padding(vertical = 24.dp, horizontal = 16.dp)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = description.ifBlank { "Description" },
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.clickable { activeSheetContent = ApproveSheetContent.Description }
+                        )
                         Text(
                             "$currencySymbol${"%,.2f".format(potentialTxn.amount)}",
                             style = MaterialTheme.typography.displaySmall,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.End,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -276,25 +292,9 @@ fun ApproveTransactionScreen(
                             Text(
                                 "≈ $homeCurrencySymbol${NumberFormat.getInstance().format(convertedAmount)}",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.fillMaxWidth(),
-                                textAlign = TextAlign.End
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-                        OutlinedTextField(
-                            value = description,
-                            onValueChange = { description = it },
-                            label = { Text("Description / Merchant") },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedBorderColor = Color.Transparent,
-                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            placeholder = { Text("What was this for?") }
-                        )
                     }
                 }
             }
@@ -405,7 +405,6 @@ fun ApproveTransactionScreen(
                                     }
                                     val notificationManager = NotificationManagerCompat.from(context)
                                     notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
-                                    // --- FIX: Navigate to dashboard and clear the back stack ---
                                     navController.navigate("dashboard") {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             inclusive = true
@@ -442,6 +441,34 @@ fun ApproveTransactionScreen(
                     onAddNewTag = transactionViewModel::addTagOnTheGo,
                     onConfirm = { activeSheetContent = null }
                 )
+                is ApproveSheetContent.Description -> {
+                    var tempDescription by remember { mutableStateOf(description) }
+                    Column(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .navigationBarsPadding(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Edit Description", style = MaterialTheme.typography.titleLarge)
+                        OutlinedTextField(
+                            value = tempDescription,
+                            onValueChange = { tempDescription = it },
+                            label = { Text("Description") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = { activeSheetContent = null }) { Text("Cancel") }
+                            Spacer(Modifier.width(8.dp))
+                            Button(onClick = {
+                                description = tempDescription
+                                activeSheetContent = null
+                            }) { Text("Done") }
+                        }
+                    }
+                }
                 else -> {}
             }
         }
@@ -483,7 +510,9 @@ private fun ApproveCategoryPickerSheet(
     items: List<Category>,
     onItemSelected: (Category) -> Unit
 ) {
-    Column(modifier = Modifier.navigationBarsPadding()) {
+    Column(modifier = Modifier
+        .navigationBarsPadding()
+        .fillMaxHeight()) {
         Text(
             "Select Category",
             style = MaterialTheme.typography.titleLarge,
