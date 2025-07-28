@@ -1,7 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt
-// REASON: REVERT - Reverted changes to make the items clickable. Navigation is
-// now handled by the parent screen.
+// REASON: FIX - Re-added the missing `createPieData` helper function that was
+// removed during a previous refactor. This resolves the "Unresolved reference"
+// compilation error.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -157,4 +158,21 @@ fun CategorySpendingCard(
             )
         }
     }
+}
+
+fun createPieData(spendingList: List<CategorySpending>): PieData {
+    val entries = spendingList.map {
+        PieEntry(it.totalAmount.toFloat(), it.categoryName)
+    }
+    val colors = spendingList.map {
+        (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
+    }
+    val dataSet = PieDataSet(entries, "Spending").apply {
+        this.colors = colors
+        valueFormatter = PercentFormatter()
+        valueTextSize = 12f
+        valueTextColor = Color.BLACK
+        setDrawValues(false) // Hiding values on the chart itself for a cleaner look
+    }
+    return PieData(dataSet)
 }
