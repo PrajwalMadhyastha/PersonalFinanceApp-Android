@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE (Travel Mode SMS) - The NavHost entry for the approval screen
-// has been updated. It now accepts a new optional boolean argument, `isForeign`,
-// which will be passed from the new travel mode notification to indicate the
-// user's currency choice.
+// REASON: FIX - The NavHost entry for the transaction_list screen has been
+// updated to accept an `initialTab` argument. This allows other screens, like
+// the dashboard, to deep-link directly to a specific tab (e.g., "Categories").
 // =================================================================================
 package io.pm.finlight
 
@@ -506,15 +505,23 @@ fun AppNavHost(
             )
         }
         composable(
-            route = BottomNavItem.Transactions.route,
+            // --- UPDATED: Route now accepts an optional argument ---
+            route = "transaction_list?initialTab={initialTab}",
+            arguments = listOf(navArgument("initialTab") {
+                type = NavType.IntType
+                defaultValue = 0
+            }),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
+        ) { backStackEntry ->
+            // --- UPDATED: Get the argument and pass it to the screen ---
+            val initialTab = backStackEntry.arguments?.getInt("initialTab") ?: 0
             TransactionListScreen(
                 navController = navController,
-                viewModel = transactionViewModel
+                viewModel = transactionViewModel,
+                initialTab = initialTab
             )
         }
         composable(

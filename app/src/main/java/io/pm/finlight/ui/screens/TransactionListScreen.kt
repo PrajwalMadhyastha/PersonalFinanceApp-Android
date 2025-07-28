@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FEATURE - The TransactionList composable is now passed the
-// `onCategoryClick` lambda. This connects the UI action of clicking a category
-// in the list to the ViewModel's `requestCategoryChange` function, completing
-// the feature's workflow for this screen.
+// REASON: FIX - The composable now accepts an `initialTab` parameter, which is
+// used to set the initial page of the HorizontalPager. This allows other screens
+// to deep-link to a specific tab, such as "Categories".
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -49,9 +48,11 @@ import java.util.*
 fun TransactionListScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
+    initialTab: Int = 0 // --- NEW: Parameter to control the starting tab ---
 ) {
     val tabs = listOf("Transactions", "Categories", "Merchants")
-    val pagerState = rememberPagerState { tabs.size }
+    // --- UPDATED: Use the initialTab parameter to set the pager's initial page ---
+    val pagerState = rememberPagerState(initialPage = initialTab) { tabs.size }
     val scope = rememberCoroutineScope()
 
     val transactions by viewModel.transactionsForSelectedMonth.collectAsState()

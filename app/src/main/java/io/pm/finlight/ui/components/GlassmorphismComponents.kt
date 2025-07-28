@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FIX - The progress calculation in the DashboardHeroCard is now clamped
-// using .coerceIn(0f, 1f). This ensures that if spending exceeds the budget, the
-// progress value remains at a maximum of 1.0, preventing the AuroraProgressBar
-// from breaking visually.
+// REASON: FIX - The onClick handler for the "View Categories" quick action has
+// been updated to navigate to the transaction list screen with an argument
+// (`initialTab=1`) that directs it to open the Categories tab.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -637,7 +636,8 @@ fun AuroraQuickActionsCard(navController: NavController) {
                 icon = Icons.Default.PieChart,
                 text = "View Categories",
                 onClick = {
-                    navController.navigate(BottomNavItem.Reports.route) {
+                    // --- UPDATED: Navigate to the transaction list with the correct tab index ---
+                    navController.navigate("transaction_list?initialTab=1") {
                         popUpTo(BottomNavItem.Dashboard.route) {
                             saveState = true
                         }
