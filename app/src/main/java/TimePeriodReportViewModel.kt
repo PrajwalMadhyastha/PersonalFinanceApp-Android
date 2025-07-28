@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
-// REASON: FIX - The `getPeriodDateRange` function for the MONTHLY time period
-// has been corrected. It now calculates the start and end of the actual
-// calendar month instead of a rolling 30-day window. This aligns the
-// transaction list and header totals with the monthly consistency calendar,
-// ensuring all data on the screen is consistent and the stats are accurate.
+// REASON: FIX - The `generateMonthConsistencyData` function now fetches the date
+// of the first-ever transaction. It marks any days in the calendar before this
+// date as NO_DATA, ensuring the heatmap stats accurately reflect the user's
+// actual transaction history.
 // =================================================================================
 package io.pm.finlight
 
@@ -273,6 +272,10 @@ class TimePeriodReportViewModel(
             set(Calendar.HOUR_OF_DAY, 23)
         }
 
+        // --- UPDATED: Fetch first transaction date ---
+        val firstTransactionDate = transactionDao.getFirstTransactionDate().first()
+        val firstDataCal = firstTransactionDate?.let { Calendar.getInstance().apply { timeInMillis = it } }
+
         val dailyTotals = transactionDao.getDailySpendingForDateRange(monthStartCal.timeInMillis, monthEndCal.timeInMillis).first()
         val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
 
@@ -285,6 +288,13 @@ class TimePeriodReportViewModel(
 
         for (i in 1..daysInMonth) {
             dayIterator.set(Calendar.DAY_OF_MONTH, i)
+
+            // --- UPDATED: Check if day is before first transaction ---
+            if (firstDataCal != null && dayIterator.before(firstDataCal)) {
+                resultList.add(CalendarDayStatus(dayIterator.time, SpendingStatus.NO_DATA, 0.0, 0.0))
+                continue
+            }
+
             val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, i)
             val amountSpent = spendingMap[dateKey] ?: 0.0
             val status = when {
