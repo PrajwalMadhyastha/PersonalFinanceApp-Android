@@ -1,15 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FEATURE - The "Spending Consistency" card has been updated with a
-// SegmentedButton to toggle between "Yearly" and "Monthly" views. It now
-// conditionally displays either the yearly heatmap or the new detailed monthly
-// calendar, using the new state and data flows from the ViewModel.
-// FIX - Corrected the usage of the experimental SegmentedButton API to resolve
-// compilation errors.
-// FIX - Wrapped the calendar views in a Box with a fixed height to prevent
-// layout shifts when toggling between the yearly and monthly views.
-// UX REFINEMENT - Updated the navigation calls from both the yearly and monthly
-// calendars to prevent the keyboard from automatically showing on the search screen.
+// REASON: FEATURE - The pie chart layout has been updated to display a detailed
+// legend to the right of the chart, showing each category's color, name, and
+// percentage. The chart itself no longer displays labels on slices, and the
+// old legend component has been removed.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -26,7 +20,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewMonth
@@ -53,12 +49,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.data.Entry
+import com.github.mikephil.charting.data.PieData
+import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.highlight.Highlight
 import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import io.pm.finlight.CategoryIconHelper
@@ -67,7 +66,6 @@ import io.pm.finlight.ReportPeriod
 import io.pm.finlight.ReportViewType
 import io.pm.finlight.ReportsViewModel
 import io.pm.finlight.TimePeriod
-import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.ConsistencyCalendar
 import io.pm.finlight.ui.components.DetailedMonthlyCalendar
 import io.pm.finlight.ui.components.GlassPanel
@@ -250,38 +248,46 @@ fun ReportsScreen(
                             )
                         }
                     } else {
-                        AndroidView(
-                            factory = { context ->
-                                PieChart(context).apply {
-                                    description.isEnabled = false
-                                    isDrawHoleEnabled = true
-                                    setHoleColor(android.graphics.Color.TRANSPARENT)
-                                    setEntryLabelColor(pieChartLabelColor)
-                                    setEntryLabelTextSize(12f)
-                                    legend.isEnabled = false
-                                    setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
-                                        override fun onValueSelected(e: Entry?, h: Highlight?) {
-                                            val categoryName = e?.data as? String ?: return
-                                            val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
-                                            category?.let {
-                                                navController.navigate("search_screen?categoryId=${it.id}")
-                                            }
-                                        }
-
-                                        override fun onNothingSelected() {}
-                                    })
-                                }
-                            },
-                            update = { chart ->
-                                chart.data = pieData
-                                chart.invalidate()
-                            },
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(300.dp),
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        ChartLegend(pieData)
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AndroidView(
+                                modifier = Modifier.weight(1f),
+                                factory = { context ->
+                                    PieChart(context).apply {
+                                        description.isEnabled = false
+                                        isDrawHoleEnabled = true
+                                        setHoleColor(android.graphics.Color.TRANSPARENT)
+                                        setEntryLabelColor(pieChartLabelColor)
+                                        setEntryLabelTextSize(12f)
+                                        legend.isEnabled = false
+                                        setDrawEntryLabels(false) // Hide labels on slices
+                                        setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                                            override fun onValueSelected(e: Entry?, h: Highlight?) {
+                                                val categoryName = e?.data as? String ?: return
+                                                val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
+                                                category?.let {
+                                                    navController.navigate("search_screen?categoryId=${it.id}")
+                                                }
+                                            }
+
+                                            override fun onNothingSelected() {}
+                                        })
+                                    }
+                                },
+                                update = { chart ->
+                                    chart.data = pieData
+                                    chart.invalidate()
+                                }
+                            )
+                            ChartLegend(
+                                modifier = Modifier.weight(1f),
+                                pieData = pieData
+                            )
+                        }
                     }
                 }
             }
@@ -457,5 +463,48 @@ private fun StatItem(count: Int, label: String) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
+    val dataSet = pieData?.dataSet as? PieDataSet ?: return
+    val totalValue = dataSet.yValueSum
+
+    LazyColumn(
+        modifier = modifier.padding(start = 16.dp),
+    ) {
+        items(dataSet.entryCount) { i ->
+            val entry = dataSet.getEntryForIndex(i)
+            val color = dataSet.getColor(i)
+            val percentage = if (totalValue > 0) (entry.value / totalValue * 100) else 0f
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(androidx.compose.ui.graphics.Color(color)),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = entry.label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${"%.1f".format(percentage)}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
     }
 }

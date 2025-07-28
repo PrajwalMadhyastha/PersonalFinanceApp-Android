@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt
-// REASON: FIX - Re-added the missing `createPieData` helper function that was
-// removed during a previous refactor. This resolves the "Unresolved reference"
-// compilation error.
+// REASON: FEATURE - The pie chart layout has been updated to display a detailed
+// legend to the right of the chart, showing each category's color, name, and
+// percentage of the total. The chart itself no longer displays labels on
+// the slices for a cleaner look.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.github.mikephil.charting.charts.PieChart
@@ -68,26 +70,36 @@ fun CategorySpendingScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(16.dp))
-                    AndroidView(
-                        factory = { context ->
-                            PieChart(context).apply {
-                                description.isEnabled = false
-                                isDrawHoleEnabled = true
-                                setHoleColor(Color.TRANSPARENT)
-                                setEntryLabelColor(pieChartLabelColor)
-                                setEntryLabelTextSize(12f)
-                                legend.isEnabled = false
-                                setUsePercentValues(true)
-                            }
-                        },
-                        update = { chart ->
-                            chart.data = pieData
-                            chart.invalidate()
-                        },
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(250.dp)
-                    )
+                            .height(250.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AndroidView(
+                            modifier = Modifier.weight(1f),
+                            factory = { context ->
+                                PieChart(context).apply {
+                                    description.isEnabled = false
+                                    isDrawHoleEnabled = true
+                                    setHoleColor(Color.TRANSPARENT)
+                                    setEntryLabelColor(pieChartLabelColor)
+                                    setEntryLabelTextSize(12f)
+                                    legend.isEnabled = false
+                                    setUsePercentValues(true)
+                                    setDrawEntryLabels(false) // Hide labels on slices
+                                }
+                            },
+                            update = { chart ->
+                                chart.data = pieData
+                                chart.invalidate()
+                            }
+                        )
+                        ChartLegend(
+                            modifier = Modifier.weight(1f),
+                            pieData = pieData
+                        )
+                    }
                 }
             }
         }
@@ -156,6 +168,49 @@ fun CategorySpendingCard(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+        }
+    }
+}
+
+@Composable
+private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
+    val dataSet = pieData?.dataSet as? PieDataSet ?: return
+    val totalValue = dataSet.yValueSum
+
+    LazyColumn(
+        modifier = modifier.padding(start = 16.dp),
+    ) {
+        items(dataSet.entryCount) { i ->
+            val entry = dataSet.getEntryForIndex(i)
+            val color = dataSet.getColor(i)
+            val percentage = if (totalValue > 0) (entry.value / totalValue * 100) else 0f
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(androidx.compose.ui.graphics.Color(color)),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = entry.label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${"%.1f".format(percentage)}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }
