@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FEATURE - The `AuroraRecentActivityCard` composable now accepts and
-// passes the `onCategoryClick` callback to each `TransactionItem`. This allows
-// the in-place category change feature to be triggered from the dashboard's
-// recent activity card.
+// REASON: FIX - The progress calculation in the DashboardHeroCard is now clamped
+// using .coerceIn(0f, 1f). This ensures that if spending exceeds the budget, the
+// progress value remains at a maximum of 1.0, preventing the AuroraProgressBar
+// from breaking visually.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -118,9 +118,10 @@ fun DashboardHeroCard(
     navController: NavController,
     monthYear: String
 ) {
+    // --- FIX: Coerce the progress value to be between 0f and 1f ---
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
-        targetValue = progress,
+        targetValue = progress.coerceIn(0f, 1f), // This ensures the value doesn't exceed 1.0
         animationSpec = tween(durationMillis = 400, easing = EaseOutCubic),
         label = "BudgetProgressAnimation"
     )
