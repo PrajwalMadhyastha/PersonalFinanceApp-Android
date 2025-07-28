@@ -83,6 +83,7 @@ fun CategorySpendingScreen(
                                     description.isEnabled = false
                                     isDrawHoleEnabled = true
                                     setHoleColor(Color.TRANSPARENT)
+                                    holeRadius = 70f
                                     setEntryLabelColor(pieChartLabelColor)
                                     setEntryLabelTextSize(12f)
                                     legend.isEnabled = false
@@ -175,8 +176,11 @@ fun CategorySpendingCard(
 @Composable
 private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
     val dataSet = pieData?.dataSet as? PieDataSet ?: return
-    val totalValue = dataSet.yValueSum
-
+    var sumOfValues = 0f
+    for (i in 0 until dataSet.entryCount) {
+        sumOfValues += dataSet.getEntryForIndex(i).value
+    }
+    val totalValue = sumOfValues
     LazyColumn(
         modifier = modifier.padding(start = 16.dp),
     ) {
