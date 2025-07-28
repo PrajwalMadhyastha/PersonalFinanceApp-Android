@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
-// REASON: FIX - The `generateConsistencyDataForMonth` function now correctly
-// identifies and handles future dates. It marks any day after the current date
-// as NO_DATA, which fixes the inaccurate stats on the main reports screen's
-// monthly consistency view.
+// REASON: FIX - The `displayedConsistencyStats` calculation for the monthly view
+// now filters out future dates before counting statuses. This ensures the stats
+// perfectly match the visible calendar, which does not render future days,
+// resolving the data discrepancy.
 // =================================================================================
 package io.pm.finlight
 
@@ -169,7 +169,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             consistencyCalendarData,
             detailedMonthData
         ) { viewType, yearlyData, monthlyData ->
-            val dataToProcess = if (viewType == ReportViewType.YEARLY) yearlyData else monthlyData
+            val today = Calendar.getInstance()
+            // --- FIX: Filter out future dates for monthly stats to match the UI ---
+            val dataToProcess = if (viewType == ReportViewType.YEARLY) {
+                yearlyData
+            } else {
+                monthlyData.filter { !it.date.after(today.time) }
+            }
+
             val goodDays = dataToProcess.count { it.status == SpendingStatus.WITHIN_LIMIT }
             val badDays = dataToProcess.count { it.status == SpendingStatus.OVER_LIMIT }
             val noSpendDays = dataToProcess.count { it.status == SpendingStatus.NO_SPEND }
@@ -262,7 +269,6 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             dayIterator.set(Calendar.DAY_OF_MONTH, i)
             val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, i)
 
-            // --- FIX: Check for future dates and dates before first transaction ---
             if (dayIterator.after(today) || (firstDataCal != null && dayIterator.before(firstDataCal))) {
                 resultList.add(CalendarDayStatus(dayIterator.time, SpendingStatus.NO_DATA, 0.0, 0.0))
                 continue
