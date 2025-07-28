@@ -1,10 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
-// REASON: FEATURE - The ViewModel now includes logic to generate data for the
-// Spending Consistency card. It fetches daily spending for the selected month,
-// calculates the status of each day against the budget, and exposes both the
-// raw calendar data and the summary statistics (e.g., "Good Days") as StateFlows
-// for the UI to consume.
+// REASON: FIX - The `getPeriodDateRange` function for the MONTHLY time period
+// has been corrected. It now calculates the start and end of the actual
+// calendar month instead of a rolling 30-day window. This aligns the
+// transaction list and header totals with the monthly consistency calendar,
+// ensuring all data on the screen is consistent and the stats are accurate.
 // =================================================================================
 package io.pm.finlight
 
@@ -61,7 +61,7 @@ class TimePeriodReportViewModel(
                 when (timePeriod) {
                     TimePeriod.DAILY -> add(Calendar.HOUR_OF_DAY, -24)
                     TimePeriod.WEEKLY -> add(Calendar.DAY_OF_YEAR, -7)
-                    TimePeriod.MONTHLY -> add(Calendar.DAY_OF_YEAR, -30)
+                    TimePeriod.MONTHLY -> add(Calendar.MONTH, -1)
                 }
             }
             val (previousStart, previousEnd) = getPeriodDateRange(previousPeriodEndCal)
@@ -240,7 +240,20 @@ class TimePeriodReportViewModel(
         when (timePeriod) {
             TimePeriod.DAILY -> startCal.add(Calendar.HOUR_OF_DAY, -24)
             TimePeriod.WEEKLY -> startCal.add(Calendar.DAY_OF_YEAR, -7)
-            TimePeriod.MONTHLY -> startCal.add(Calendar.DAY_OF_YEAR, -30)
+            // --- FIX: Use the start and end of the calendar month ---
+            TimePeriod.MONTHLY -> {
+                startCal.set(Calendar.DAY_OF_MONTH, 1)
+                startCal.set(Calendar.HOUR_OF_DAY, 0)
+                startCal.set(Calendar.MINUTE, 0)
+                startCal.set(Calendar.SECOND, 0)
+                startCal.set(Calendar.MILLISECOND, 0)
+
+                endCal.set(Calendar.DAY_OF_MONTH, endCal.getActualMaximum(Calendar.DAY_OF_MONTH))
+                endCal.set(Calendar.HOUR_OF_DAY, 23)
+                endCal.set(Calendar.MINUTE, 59)
+                endCal.set(Calendar.SECOND, 59)
+                endCal.set(Calendar.MILLISECOND, 999)
+            }
         }
 
         return Pair(startCal.timeInMillis, endCal.timeInMillis)
