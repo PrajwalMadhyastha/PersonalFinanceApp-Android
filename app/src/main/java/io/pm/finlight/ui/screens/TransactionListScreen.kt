@@ -1,9 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FEATURE - The screen now passes down click handlers to the Category
-// and Merchant spending lists. When an item is clicked, it applies the
-// corresponding filter in the ViewModel and switches the view back to the
-// main transaction list to show the filtered results.
+// REASON: REVERT - Reverted changes that added filtering logic. The screen now
+// navigates to a dedicated drilldown screen instead of filtering in place.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -41,6 +39,7 @@ import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -114,16 +113,19 @@ fun TransactionListScreen(
                 1 -> CategorySpendingScreen(
                     spendingList = categorySpending,
                     onCategoryClick = { categorySpendingItem ->
-                        val category = allCategories.find { it.name == categorySpendingItem.categoryName }
-                        viewModel.updateFilterCategory(category)
-                        scope.launch { pagerState.animateScrollToPage(0) }
+                        val month = selectedMonth.get(Calendar.MONTH) + 1
+                        val year = selectedMonth.get(Calendar.YEAR)
+                        val encodedCategoryName = URLEncoder.encode(categorySpendingItem.categoryName, "UTF-8")
+                        navController.navigate("category_detail/$encodedCategoryName/$month/$year")
                     }
                 )
                 2 -> MerchantSpendingScreen(
                     merchantList = merchantSpending,
                     onMerchantClick = { merchantSpendingSummary ->
-                        viewModel.updateFilterKeyword(merchantSpendingSummary.merchantName)
-                        scope.launch { pagerState.animateScrollToPage(0) }
+                        val month = selectedMonth.get(Calendar.MONTH) + 1
+                        val year = selectedMonth.get(Calendar.YEAR)
+                        val encodedMerchantName = URLEncoder.encode(merchantSpendingSummary.merchantName, "UTF-8")
+                        navController.navigate("merchant_detail/$encodedMerchantName/$month/$year")
                     }
                 )
             }

@@ -1,8 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt
-// REASON: FEATURE - The screen now accepts an `onCategoryClick` lambda. The
-// list items are now clickable, triggering this callback to filter the main
-// transaction list by the selected category.
+// REASON: REVERT - Reverted changes to make the items clickable. Navigation is
+// now handled by the parent screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -158,21 +157,4 @@ fun CategorySpendingCard(
             )
         }
     }
-}
-
-fun createPieData(spendingList: List<CategorySpending>): PieData {
-    val entries = spendingList.map {
-        PieEntry(it.totalAmount.toFloat(), it.categoryName)
-    }
-    val colors = spendingList.map {
-        (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
-    }
-    val dataSet = PieDataSet(entries, "Spending").apply {
-        this.colors = colors
-        valueFormatter = PercentFormatter()
-        valueTextSize = 12f
-        valueTextColor = Color.BLACK
-        setDrawValues(false) // Hiding values on the chart itself for a cleaner look
-    }
-    return PieData(dataSet)
 }

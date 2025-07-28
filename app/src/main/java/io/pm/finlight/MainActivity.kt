@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The NavHost entry for the transaction_list screen has been
-// updated to accept an `initialTab` argument. This allows other screens, like
-// the dashboard, to deep-link directly to a specific tab (e.g., "Categories").
+// REASON: FEATURE - Added NavHost entries for the new "category_detail" and
+// "merchant_detail" screens. This defines the navigation routes and connects
+// them to the new DrilldownScreen composable, passing the required arguments.
 // =================================================================================
 package io.pm.finlight
 
@@ -249,7 +249,9 @@ fun MainAppScreen() {
         "data_settings",
         "add_edit_goal",
         "currency_travel_settings",
-        "split_transaction"
+        "split_transaction",
+        "category_detail",
+        "merchant_detail"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -505,7 +507,6 @@ fun AppNavHost(
             )
         }
         composable(
-            // --- UPDATED: Route now accepts an optional argument ---
             route = "transaction_list?initialTab={initialTab}",
             arguments = listOf(navArgument("initialTab") {
                 type = NavType.IntType
@@ -516,7 +517,6 @@ fun AppNavHost(
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { backStackEntry ->
-            // --- UPDATED: Get the argument and pass it to the screen ---
             val initialTab = backStackEntry.arguments?.getInt("initialTab") ?: 0
             TransactionListScreen(
                 navController = navController,
@@ -603,7 +603,6 @@ fun AppNavHost(
         }
 
         composable(
-            // --- UPDATED: Add new optional argument and update deep link ---
             route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
             arguments = listOf(
                 navArgument("potentialTxnJson") { type = NavType.StringType }
@@ -911,6 +910,45 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) {
             CurrencyTravelScreen(navController)
+        }
+        // --- NEW: NavHost entries for the drilldown screens ---
+        composable(
+            "category_detail/{categoryName}/{month}/{year}",
+            arguments = listOf(
+                navArgument("categoryName") { type = NavType.StringType },
+                navArgument("month") { type = NavType.IntType },
+                navArgument("year") { type = NavType.IntType }
+            )
+        ) { backStackEntry ->
+            val categoryName = URLDecoder.decode(backStackEntry.arguments?.getString("categoryName"), "UTF-8")
+            val month = backStackEntry.arguments?.getInt("month") ?: 0
+            val year = backStackEntry.arguments?.getInt("year") ?: 0
+            DrilldownScreen(
+                navController = navController,
+                drilldownType = DrilldownType.CATEGORY,
+                entityName = categoryName,
+                month = month,
+                year = year
+            )
+        }
+        composable(
+            "merchant_detail/{merchantName}/{month}/{year}",
+            arguments = listOf(
+                navArgument("merchantName") { type = NavType.StringType },
+                navArgument("month") { type = NavType.IntType },
+                navArgument("year") { type = NavType.IntType }
+            )
+        ) { backStackEntry ->
+            val merchantName = URLDecoder.decode(backStackEntry.arguments?.getString("merchantName"), "UTF-8")
+            val month = backStackEntry.arguments?.getInt("month") ?: 0
+            val year = backStackEntry.arguments?.getInt("year") ?: 0
+            DrilldownScreen(
+                navController = navController,
+                drilldownType = DrilldownType.MERCHANT,
+                entityName = merchantName,
+                month = month,
+                year = year
+            )
         }
     }
 }

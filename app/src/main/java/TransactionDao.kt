@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FIX - Corrected a SQL query ambiguity in `getIncomeByCategoryForMonth`.
-// The `WHERE` clause was updated to filter by `C.id` (the joined category table's
-// ID) instead of `AI.categoryId` (the subquery's column). This resolves the
-// "no such column" compilation error from Room's query parser.
+// REASON: FEATURE - Added new queries to support the drilldown screens:
+// - getTransactionsForCategoryName: Fetches all transactions for a specific category in a date range.
+// - getTransactionsForMerchantName: Fetches all transactions for a specific merchant in a date range.
+// - getMonthlySpendingForCategory: Gets historical monthly spending for a single category.
+// - getMonthlySpendingForMerchant: Gets historical monthly spending for a single merchant.
 // =================================================================================
 package io.pm.finlight
 
@@ -175,6 +176,71 @@ interface TransactionDao {
         ORDER BY totalAmount DESC
     """)
     fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>>
+
+    // --- NEW: Query for category drilldown transaction list ---
+    @Query("""
+        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
+        FROM transactions AS T
+        LEFT JOIN accounts AS A ON T.accountId = A.id
+        LEFT JOIN categories AS C ON T.categoryId = C.id
+        WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate
+        ORDER BY T.date DESC
+    """)
+    fun getTransactionsForCategoryName(categoryName: String, startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
+
+    // --- NEW: Query for merchant drilldown transaction list ---
+    @Query("""
+        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
+        FROM transactions AS T
+        LEFT JOIN accounts AS A ON T.accountId = A.id
+        LEFT JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.description = :merchantName AND T.date BETWEEN :startDate AND :endDate
+        ORDER BY T.date DESC
+    """)
+    fun getTransactionsForMerchantName(merchantName: String, startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
+
+    // --- NEW: Query for category drilldown monthly trend chart ---
+    @Query("""
+        WITH AtomicExpenses AS (
+            SELECT P.date, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            JOIN categories AS C ON S.categoryId = C.id
+            WHERE P.transactionType = 'expense' AND P.isExcluded = 0 AND C.name = :categoryName
+            UNION ALL
+            SELECT T.date, T.amount FROM transactions AS T
+            JOIN categories AS C ON T.categoryId = C.id
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0 AND C.name = :categoryName
+        )
+        SELECT
+            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
+            SUM(amount) as totalAmount
+        FROM AtomicExpenses
+        WHERE date BETWEEN :startDate AND :endDate
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getMonthlySpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
+
+    // --- NEW: Query for merchant drilldown monthly trend chart ---
+    @Query("""
+        WITH AtomicExpenses AS (
+            SELECT P.date, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND P.isExcluded = 0 AND P.description = :merchantName
+            UNION ALL
+            SELECT T.date, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0 AND T.description = :merchantName
+        )
+        SELECT
+            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
+            SUM(amount) as totalAmount
+        FROM AtomicExpenses
+        WHERE date BETWEEN :startDate AND :endDate
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getMonthlySpendingForMerchant(merchantName: String, startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
+
 
     @Insert
     suspend fun insertImage(transactionImage: TransactionImage)

@@ -1,8 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt
-// REASON: FEATURE - The screen now accepts an `onMerchantClick` lambda. The
-// list items are now clickable, triggering this callback to filter the main
-// transaction list by the selected merchant name.
+// REASON: REVERT - Reverted changes to make the items clickable. Navigation is
+// now handled by the parent screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 

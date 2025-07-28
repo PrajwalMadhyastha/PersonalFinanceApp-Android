@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added a new entry for "currency_travel_settings" to the
-// screenTitles map. This provides the title for the new screen where users will
-// manage the multi-currency "Travel Mode" feature.
+// REASON: FEATURE - Added new entries for "category_detail" and
+// "merchant_detail" to the screenTitles map. This provides the titles for the
+// new drilldown screens.
 // =================================================================================
 package io.pm.finlight
 
@@ -21,7 +21,7 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
 }
 val screenTitles = mapOf(
     BottomNavItem.Dashboard.route to "Dashboard",
-    BottomNavItem.Transactions.route to "All Transactions",
+    "transaction_list?initialTab={initialTab}" to "All Transactions",
     BottomNavItem.Reports.route to "Reports",
     BottomNavItem.Profile.route to "Profile",
     "settings_screen" to "App Settings",
@@ -49,14 +49,14 @@ val screenTitles = mapOf(
     "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction",
     "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar",
     "goals_screen" to "Savings Goals",
-    // --- NEW: Titles for reorganized settings screens ---
     "appearance_settings" to "Theme & Appearance",
     "automation_settings" to "Automation & AI",
     "notification_settings" to "Notifications",
     "data_settings" to "Security & Data",
-    // --- NEW: Title for the new currency screen ---
     "currency_travel_settings" to "Currency & Travel",
-    // --- NEW: Titles for the dedicated goal screen ---
     "add_edit_goal" to "New Savings Goal",
-    "add_edit_goal/{goalId}" to "Edit Savings Goal"
+    "add_edit_goal/{goalId}" to "Edit Savings Goal",
+    // --- NEW: Titles for the new drilldown screens ---
+    "category_detail/{categoryName}/{month}/{year}" to "Category Details",
+    "merchant_detail/{merchantName}/{month}/{year}" to "Merchant Details"
 )
