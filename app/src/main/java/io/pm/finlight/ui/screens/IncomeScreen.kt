@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
-// REASON: FIX - The composable now accepts a TransactionViewModel instance. This
-// is passed to the TransactionList component, allowing it to call the necessary
-// `requestCategoryChange` function and fixing the "No value passed for parameter"
-// compilation error.
+// REASON: FIX - The call to CategorySpendingScreen has been updated to include
+// the onCategoryClick handler. This resolves the compilation error and enables
+// users to filter the income transaction list by clicking on a category.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -143,7 +142,14 @@ fun IncomeScreen(
                         navController = navController,
                         onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
                     )
-                    1 -> CategorySpendingScreen(spendingList = incomeByCategory)
+                    1 -> CategorySpendingScreen(
+                        spendingList = incomeByCategory,
+                        onCategoryClick = { categorySpendingItem ->
+                            val category = allCategories.find { it.name == categorySpendingItem.categoryName }
+                            incomeViewModel.updateFilterCategory(category)
+                            scope.launch { pagerState.animateScrollToPage(0) }
+                        }
+                    )
                 }
             }
         }
