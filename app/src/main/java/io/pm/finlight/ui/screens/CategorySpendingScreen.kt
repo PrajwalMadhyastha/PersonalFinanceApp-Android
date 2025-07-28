@@ -1,7 +1,14 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt
+// REASON: FEATURE - The screen now accepts an `onCategoryClick` lambda. The
+// list items are now clickable, triggering this callback to filter the main
+// transaction list by the selected category.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.graphics.Color
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,7 +34,10 @@ import io.pm.finlight.CategorySpending
 import io.pm.finlight.ui.components.GlassPanel
 
 @Composable
-fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
+fun CategorySpendingScreen(
+    spendingList: List<CategorySpending>,
+    onCategoryClick: (CategorySpending) -> Unit
+) {
     if (spendingList.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -85,18 +95,25 @@ fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
         items(spendingList) { categorySpending ->
             CategorySpendingCard(
                 categorySpending = categorySpending,
-                totalSpending = totalSpending
+                totalSpending = totalSpending,
+                onClick = { onCategoryClick(categorySpending) }
             )
         }
     }
 }
 
 @Composable
-fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Double) {
+fun CategorySpendingCard(
+    categorySpending: CategorySpending,
+    totalSpending: Double,
+    onClick: () -> Unit
+) {
     val percentage = if (totalSpending > 0) (categorySpending.totalAmount / totalSpending * 100) else 0.0
 
     GlassPanel(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),

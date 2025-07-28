@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FIX - The composable now accepts an `initialTab` parameter, which is
-// used to set the initial page of the HorizontalPager. This allows other screens
-// to deep-link to a specific tab, such as "Categories".
+// REASON: FEATURE - The screen now passes down click handlers to the Category
+// and Merchant spending lists. When an item is clicked, it applies the
+// corresponding filter in the ViewModel and switches the view back to the
+// main transaction list to show the filtered results.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -48,10 +49,9 @@ import java.util.*
 fun TransactionListScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
-    initialTab: Int = 0 // --- NEW: Parameter to control the starting tab ---
+    initialTab: Int = 0
 ) {
     val tabs = listOf("Transactions", "Categories", "Merchants")
-    // --- UPDATED: Use the initialTab parameter to set the pager's initial page ---
     val pagerState = rememberPagerState(initialPage = initialTab) { tabs.size }
     val scope = rememberCoroutineScope()
 
@@ -111,8 +111,21 @@ fun TransactionListScreen(
                     navController = navController,
                     onCategoryClick = { viewModel.requestCategoryChange(it) }
                 )
-                1 -> CategorySpendingScreen(spendingList = categorySpending)
-                2 -> MerchantSpendingScreen(merchantList = merchantSpending)
+                1 -> CategorySpendingScreen(
+                    spendingList = categorySpending,
+                    onCategoryClick = { categorySpendingItem ->
+                        val category = allCategories.find { it.name == categorySpendingItem.categoryName }
+                        viewModel.updateFilterCategory(category)
+                        scope.launch { pagerState.animateScrollToPage(0) }
+                    }
+                )
+                2 -> MerchantSpendingScreen(
+                    merchantList = merchantSpending,
+                    onMerchantClick = { merchantSpendingSummary ->
+                        viewModel.updateFilterKeyword(merchantSpendingSummary.merchantName)
+                        scope.launch { pagerState.animateScrollToPage(0) }
+                    }
+                )
             }
         }
     }

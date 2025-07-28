@@ -1,5 +1,12 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt
+// REASON: FEATURE - The screen now accepts an `onMerchantClick` lambda. The
+// list items are now clickable, triggering this callback to filter the main
+// transaction list by the selected merchant name.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,7 +22,10 @@ import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.ExpenseRedDark
 
 @Composable
-fun MerchantSpendingScreen(merchantList: List<MerchantSpendingSummary>) {
+fun MerchantSpendingScreen(
+    merchantList: List<MerchantSpendingSummary>,
+    onMerchantClick: (MerchantSpendingSummary) -> Unit
+) {
     if (merchantList.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -31,15 +41,23 @@ fun MerchantSpendingScreen(merchantList: List<MerchantSpendingSummary>) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(merchantList) { merchant ->
-            MerchantSpendingCard(merchant = merchant)
+            MerchantSpendingCard(
+                merchant = merchant,
+                onClick = { onMerchantClick(merchant) }
+            )
         }
     }
 }
 
 @Composable
-fun MerchantSpendingCard(merchant: MerchantSpendingSummary) {
+fun MerchantSpendingCard(
+    merchant: MerchantSpendingSummary,
+    onClick: () -> Unit
+) {
     GlassPanel(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
