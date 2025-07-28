@@ -1,20 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
-// REASON: REFACTOR - This file has been updated to include a new composable,
-// `DetailedMonthlyCalendar`, which displays a traditional, interactive calendar
-// for a single month. The existing `ConsistencyCalendar` (yearly heatmap)
-// remains, and both are now available for use in the Reports screen to support
-// the new view toggle feature.
-// FIX - The size of the DetailedMonthlyCalendar has been reduced to better match
-// the yearly heatmap, preventing layout shifts when toggling.
-// FIX - Reverted the auto-scroll logic in the yearly heatmap to its previous
-// state to ensure the current month is visible but not perfectly centered.
-// PERFORMANCE - The yearly heatmap (`MonthColumn` and `DayCell`) has been
-// completely rewritten to draw directly onto a Canvas. This drastically reduces
-// the number of composables, fixing the laggy scrolling issue on the dashboard
-// and reports screens.
-// FIX - Resolved a compilation error by reading the MaterialTheme color outside
-// of the non-composable Canvas draw scope.
+// REASON: FIX - The `DetailedMonthlyCalendar` composable has been updated to not
+// render any cells for future dates. It now checks if a day is after the
+// current date and, if so, renders an empty Spacer instead of a calendar cell,
+// making the UI cleaner and less confusing.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -241,6 +230,7 @@ fun DetailedMonthlyCalendar(
     val weekDays = (Calendar.SUNDAY..Calendar.SATURDAY).map {
         dayOfWeekFormat.format(Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, it) }.time)
     }
+    val today = remember { Calendar.getInstance() }
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Header with month name and navigation
@@ -294,13 +284,19 @@ fun DetailedMonthlyCalendar(
                             val currentDayCal = (selectedMonth.clone() as Calendar).apply {
                                 set(Calendar.DAY_OF_MONTH, dayOfMonth)
                             }
-                            val dayData = dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to currentDayCal.get(Calendar.YEAR)]
-                            DetailedDayCell(
-                                day = dayOfMonth,
-                                data = dayData,
-                                isToday = isSameDay(currentDayCal, Calendar.getInstance()),
-                                onClick = { onDayClick(currentDayCal.time) }
-                            )
+
+                            // --- FIX: Don't render cells for future dates ---
+                            if (currentDayCal.after(today)) {
+                                Spacer(Modifier.size(28.dp))
+                            } else {
+                                val dayData = dataMap[currentDayCal.get(Calendar.DAY_OF_YEAR) to currentDayCal.get(Calendar.YEAR)]
+                                DetailedDayCell(
+                                    day = dayOfMonth,
+                                    data = dayData,
+                                    isToday = isSameDay(currentDayCal, today),
+                                    onClick = { onDayClick(currentDayCal.time) }
+                                )
+                            }
                         } else {
                             Spacer(Modifier.size(28.dp))
                         }
