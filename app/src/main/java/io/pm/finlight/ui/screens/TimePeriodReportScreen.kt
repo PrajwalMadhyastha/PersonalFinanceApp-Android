@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
-// REASON: FIX - The composable now accepts a TransactionViewModel instance, which
-// is passed to the TransactionItem component. This allows the UI to call the
-// `requestCategoryChange` function, fixing the "No value passed for parameter"
-// compilation error and enabling the feature on this screen.
+// REASON: FIX - The `MonthlyConsistencyCalendarCard` is now passed the
+// `selectedMonth` state and the month navigation callbacks from the ViewModel.
+// This allows the card to display the correct, interactive monthly calendar
+// instead of the old mini-heatmap, fixing the UI bug.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -145,11 +145,9 @@ fun TimePeriodReportScreen(
                         MonthlyConsistencyCalendarCard(
                             data = monthlyConsistencyData,
                             stats = consistencyStats,
-                            onReportClick = {
-                                navController.navigate(BottomNavItem.Reports.route) {
-                                    popUpTo(navController.graph.findStartDestination().id)
-                                }
-                            },
+                            selectedMonth = selectedDate,
+                            onPreviousMonth = viewModel::selectPreviousPeriod,
+                            onNextMonth = viewModel::selectNextPeriod,
                             onDayClick = { date ->
                                 navController.navigate("search_screen?date=${date.time}")
                             }

@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
-// REASON: FIX - The `DetailedMonthlyCalendar` composable has been updated to not
-// render any cells for future dates. It now checks if a day is after the
-// current date and, if so, renders an empty Spacer instead of a calendar cell,
-// making the UI cleaner and less confusing.
+// REASON: FIX - The `MonthlyConsistencyCalendarCard` now correctly uses the
+// `DetailedMonthlyCalendar` component instead of the mini-heatmap. This ensures
+// the correct, interactive calendar is displayed on the monthly report screen,
+// fixing the visual bug with future dates and improving UI consistency.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -53,13 +53,14 @@ private val DAY_SPACING = 4.dp
 fun MonthlyConsistencyCalendarCard(
     data: List<CalendarDayStatus>,
     stats: ConsistencyStats,
-    onReportClick: () -> Unit,
+    selectedMonth: Calendar,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
     onDayClick: (Date) -> Unit
 ) {
     GlassPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onReportClick)
     ) {
         Column(
             modifier = Modifier.padding(24.dp),
@@ -71,17 +72,6 @@ fun MonthlyConsistencyCalendarCard(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
-                )
-                Text(
-                    "View Full Report",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = "View Full Report",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
                 )
             }
 
@@ -98,22 +88,14 @@ fun MonthlyConsistencyCalendarCard(
                             CircularProgressIndicator()
                         }
                     } else {
-                        val currentMonthData = data.filter {
-                            val cal = Calendar.getInstance()
-                            val currentMonth = cal.get(Calendar.MONTH)
-                            cal.time = it.date
-                            cal.get(Calendar.MONTH) == currentMonth
-                        }
-                        Row {
-                            Spacer(Modifier.width(16.dp))
-                            MonthColumn(
-                                monthData = MonthData.fromCalendar(Calendar.getInstance()),
-                                year = Calendar.getInstance().get(Calendar.YEAR),
-                                today = Calendar.getInstance(),
-                                dataMap = currentMonthData.associateByDate(),
-                                onDayClick = onDayClick
-                            )
-                        }
+                        // --- FIX: Use the correct, detailed monthly calendar component ---
+                        DetailedMonthlyCalendar(
+                            data = data,
+                            selectedMonth = selectedMonth,
+                            onPreviousMonth = onPreviousMonth,
+                            onNextMonth = onNextMonth,
+                            onDayClick = onDayClick
+                        )
                     }
                 }
 
@@ -285,7 +267,6 @@ fun DetailedMonthlyCalendar(
                                 set(Calendar.DAY_OF_MONTH, dayOfMonth)
                             }
 
-                            // --- FIX: Don't render cells for future dates ---
                             if (currentDayCal.after(today)) {
                                 Spacer(Modifier.size(28.dp))
                             } else {
@@ -393,7 +374,6 @@ private fun MonthColumn(
     val canvasWidthDp = with(LocalDensity.current) { canvasWidth.toDp() }
     val canvasHeightDp = with(LocalDensity.current) { canvasHeight.toDp() }
 
-    // --- FIX: Read color from theme outside the Canvas scope ---
     val noDataColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
 
     Canvas(
@@ -461,7 +441,7 @@ private fun MonthColumn(
                             }
                             lerp(Color(0xFFF87171), Color(0xFFB91C1C), fraction.coerceIn(0f, 1f))
                         }
-                        else -> noDataColor // --- FIX: Use the variable here ---
+                        else -> noDataColor
                     }
 
                     drawRoundRect(
