@@ -1,12 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
-// REASON: FEATURE - The ViewModel is updated to support the new Yearly/Monthly
-// view toggle on the Reports screen. It now manages the state for the selected
-// view, the currently displayed month, and fetches the corresponding data for
-// the detailed monthly calendar view.
-// FIX - The logic for consistency stats is now combined into a single flow
-// that updates based on the selected view (Yearly/Monthly), ensuring the
-// correct stats are always displayed.
+// REASON: FIX - The `generateConsistencyDataForMonth` function now correctly
+// identifies and handles future dates. It marks any day after the current date
+// as NO_DATA, which fixes the inaccurate stats on the main reports screen's
+// monthly consistency view.
 // =================================================================================
 package io.pm.finlight
 
@@ -61,7 +58,6 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
     val detailedMonthData: StateFlow<List<CalendarDayStatus>>
 
-    // --- UPDATED: A single flow for stats that reacts to the view type ---
     val displayedConsistencyStats: StateFlow<ConsistencyStats>
 
     init {
@@ -168,7 +164,6 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             }.flowOn(Dispatchers.Default)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        // --- UPDATED: This flow now calculates stats based on the current view type ---
         displayedConsistencyStats = combine(
             reportViewType,
             consistencyCalendarData,
@@ -267,14 +262,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             dayIterator.set(Calendar.DAY_OF_MONTH, i)
             val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", year, month, i)
 
-            if (firstDataCal != null && dayIterator.before(firstDataCal)) {
+            // --- FIX: Check for future dates and dates before first transaction ---
+            if (dayIterator.after(today) || (firstDataCal != null && dayIterator.before(firstDataCal))) {
                 resultList.add(CalendarDayStatus(dayIterator.time, SpendingStatus.NO_DATA, 0.0, 0.0))
                 continue
             }
 
             val amountSpent = spendingMap[dateKey] ?: 0.0
             val status = when {
-                dayIterator.after(today) -> SpendingStatus.NO_DATA
                 amountSpent == 0.0 -> SpendingStatus.NO_SPEND
                 safeToSpend > 0 && amountSpent > safeToSpend -> SpendingStatus.OVER_LIMIT
                 else -> SpendingStatus.WITHIN_LIMIT
