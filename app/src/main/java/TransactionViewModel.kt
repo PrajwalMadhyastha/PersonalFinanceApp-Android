@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Travel Mode SMS) - The `approveSmsTransaction` function now
-// accepts an `isForeign` flag. If true, it fetches the current travel settings,
-// applies the conversion rate to the transaction amount, and saves both the
-// original and converted amounts, fully integrating SMS capture with Travel Mode.
+// REASON: FEATURE (Share Snapshot) - Added state management for the new
+// transaction selection feature. This includes a boolean StateFlow
+// `isSelectionModeActive` to toggle the UI, a `selectedTransactionIds` set to
+// track selections, and functions (`enterSelectionMode`, `toggleSelection`,
+// `clearSelection`) to manage the selection state from the UI.
 // =================================================================================
 package io.pm.finlight
 
@@ -70,6 +71,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _transactionForCategoryChange = MutableStateFlow<TransactionDetails?>(null)
     val transactionForCategoryChange: StateFlow<TransactionDetails?> = _transactionForCategoryChange.asStateFlow()
+
+    // --- NEW: State for selection mode ---
+    private val _isSelectionModeActive = MutableStateFlow(false)
+    val isSelectionModeActive: StateFlow<Boolean> = _isSelectionModeActive.asStateFlow()
+
+    private val _selectedTransactionIds = MutableStateFlow<Set<Int>>(emptySet())
+    val selectedTransactionIds: StateFlow<Set<Int>> = _selectedTransactionIds.asStateFlow()
 
 
     private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
@@ -219,6 +227,28 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             _defaultAccount.value = db.accountDao().findByName("Cash Spends")
         }
     }
+
+    // --- NEW: Functions to manage selection mode ---
+    fun enterSelectionMode(initialTransactionId: Int) {
+        _isSelectionModeActive.value = true
+        _selectedTransactionIds.value = setOf(initialTransactionId)
+    }
+
+    fun toggleTransactionSelection(transactionId: Int) {
+        _selectedTransactionIds.update { currentSelection ->
+            if (transactionId in currentSelection) {
+                currentSelection - transactionId
+            } else {
+                currentSelection + transactionId
+            }
+        }
+    }
+
+    fun clearSelectionMode() {
+        _isSelectionModeActive.value = false
+        _selectedTransactionIds.value = emptySet()
+    }
+
 
     fun requestCategoryChange(details: TransactionDetails) {
         _transactionForCategoryChange.value = details
@@ -706,7 +736,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         currentTxnIdForTags = null
     }
 
-    // --- UPDATED: Function now accepts an `isForeign` flag ---
     suspend fun approveSmsTransaction(
         potentialTxn: PotentialTransaction,
         description: String,
@@ -729,7 +758,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
                 if (account == null) return@withContext false
 
-                // --- NEW: Handle currency conversion if needed ---
                 val transactionToSave = if (isForeign) {
                     val travelSettings = settingsRepository.getTravelModeSettings().first()
                     if (travelSettings == null) {
@@ -740,7 +768,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         description = description,
                         originalDescription = potentialTxn.merchantName,
                         categoryId = categoryId,
-                        amount = potentialTxn.amount * travelSettings.conversionRate, // Converted amount
+                        amount = potentialTxn.amount * travelSettings.conversionRate,
                         date = System.currentTimeMillis(),
                         accountId = account.id,
                         notes = notes,
@@ -748,7 +776,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         sourceSmsId = potentialTxn.sourceSmsId,
                         sourceSmsHash = potentialTxn.sourceSmsHash,
                         source = "Imported",
-                        originalAmount = potentialTxn.amount, // Original foreign amount
+                        originalAmount = potentialTxn.amount,
                         currencyCode = travelSettings.currencyCode,
                         conversionRate = travelSettings.conversionRate.toDouble()
                     )
@@ -757,7 +785,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         description = description,
                         originalDescription = potentialTxn.merchantName,
                         categoryId = categoryId,
-                        amount = potentialTxn.amount, // Home currency amount
+                        amount = potentialTxn.amount,
                         date = System.currentTimeMillis(),
                         accountId = account.id,
                         notes = notes,

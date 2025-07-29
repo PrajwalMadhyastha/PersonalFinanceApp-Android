@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: FIX - Replaced the deprecated `Icons.Filled.CallSplit` with the
-// recommended `Icons.AutoMirrored.Filled.CallSplit` to resolve the lint warning
-// and ensure proper support for right-to-left layouts.
+// REASON: FEATURE (Share Snapshot) - The `TransactionItem` and `TransactionList`
+// composables have been updated to support selection mode. Items now respond to
+// long-press gestures to initiate selection and display a checkbox when in
+// selection mode. The click behavior is now conditional based on whether
+// selection mode is active.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -37,33 +39,57 @@ import io.pm.finlight.ui.theme.IncomeGreenLight
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransactionItem(
     modifier: Modifier = Modifier,
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
-    onCategoryClick: (TransactionDetails) -> Unit
+    onCategoryClick: (TransactionDetails) -> Unit,
+    // --- NEW: Parameters for selection mode ---
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    onEnterSelectionMode: () -> Unit,
+    onToggleSelection: () -> Unit
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
     val isSplit = transactionDetails.transaction.isSplit
     val isUncategorized = transactionDetails.categoryName == null || transactionDetails.categoryName == "Uncategorized"
 
+    val clickModifier = if (isSelectionMode) {
+        Modifier.clickable { onToggleSelection() }
+    } else {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onEnterSelectionMode
+        )
+    }
+
     GlassPanel(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(clickModifier)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // --- NEW: Show checkbox in selection mode ---
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelection() },
+                    modifier = Modifier.padding(end = 16.dp)
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .clickable(enabled = !isSplit) { onCategoryClick(transactionDetails) }
+                    .clickable(enabled = !isSplit && !isSelectionMode) { onCategoryClick(transactionDetails) }
                     .background(
                         CategoryIconHelper.getIconBackgroundColor(
                             when {
@@ -79,7 +105,7 @@ fun TransactionItem(
                 when {
                     isSplit -> {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.CallSplit, // --- FIX: Use AutoMirrored icon
+                            imageVector = Icons.AutoMirrored.Filled.CallSplit,
                             contentDescription = "Split Transaction",
                             tint = Color.Black.copy(alpha = contentAlpha),
                             modifier = Modifier.size(22.dp)
@@ -124,7 +150,7 @@ fun TransactionItem(
                     style = MaterialTheme.typography.bodyMedium,
                     fontStyle = FontStyle.Italic,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
-                    modifier = Modifier.clickable(enabled = !isSplit) { onCategoryClick(transactionDetails) }
+                    modifier = Modifier.clickable(enabled = !isSplit && !isSelectionMode) { onCategoryClick(transactionDetails) }
                 )
                 Text(
                     text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
@@ -165,7 +191,12 @@ fun TransactionItem(
 fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
-    onCategoryClick: (TransactionDetails) -> Unit
+    onCategoryClick: (TransactionDetails) -> Unit,
+    // --- NEW: Parameters for selection mode ---
+    isSelectionMode: Boolean,
+    selectedIds: Set<Int>,
+    onEnterSelectionMode: (Int) -> Unit,
+    onToggleSelection: (Int) -> Unit
 ) {
     if (transactions.isEmpty()) {
         Box(
@@ -187,9 +218,18 @@ fun TransactionList(
                     modifier = Modifier.animateItemPlacement(),
                     transactionDetails = details,
                     onClick = {
-                        navController.navigate("transaction_detail/${details.transaction.id}")
+                        if (isSelectionMode) {
+                            onToggleSelection(details.transaction.id)
+                        } else {
+                            navController.navigate("transaction_detail/${details.transaction.id}")
+                        }
                     },
-                    onCategoryClick = onCategoryClick
+                    onCategoryClick = onCategoryClick,
+                    // --- NEW: Pass selection state and handlers ---
+                    isSelectionMode = isSelectionMode,
+                    isSelected = details.transaction.id in selectedIds,
+                    onEnterSelectionMode = { onEnterSelectionMode(details.transaction.id) },
+                    onToggleSelection = { onToggleSelection(details.transaction.id) }
                 )
             }
         }

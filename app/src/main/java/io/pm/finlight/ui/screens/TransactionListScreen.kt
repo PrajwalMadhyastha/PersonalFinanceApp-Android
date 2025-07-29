@@ -1,7 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: REVERT - Reverted changes that added filtering logic. The screen now
-// navigates to a dedicated drilldown screen instead of filtering in place.
+// REASON: FEATURE (Share Snapshot) - The screen now supports a "selection mode".
+// A long-press on a transaction item activates this mode, displaying checkboxes
+// and a contextual top app bar. Users can select multiple items, and the top
+// bar provides actions to share or cancel the selection, laying the groundwork
+// for the image sharing feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -68,6 +71,18 @@ fun TransactionListScreen(
     val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
     val showFilterSheet by viewModel.showFilterSheet.collectAsState()
 
+    // --- NEW: Collect selection state from ViewModel ---
+    val isSelectionMode by viewModel.isSelectionModeActive.collectAsState()
+    val selectedIds by viewModel.selectedTransactionIds.collectAsState()
+
+    // --- NEW: Clear selection when the screen is left ---
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearSelectionMode()
+        }
+    }
+
+
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -108,7 +123,12 @@ fun TransactionListScreen(
                 0 -> TransactionList(
                     transactions = transactions,
                     navController = navController,
-                    onCategoryClick = { viewModel.requestCategoryChange(it) }
+                    onCategoryClick = { viewModel.requestCategoryChange(it) },
+                    // --- NEW: Pass selection state and handlers ---
+                    isSelectionMode = isSelectionMode,
+                    selectedIds = selectedIds,
+                    onEnterSelectionMode = { viewModel.enterSelectionMode(it) },
+                    onToggleSelection = { viewModel.toggleTransactionSelection(it) }
                 )
                 1 -> CategorySpendingScreen(
                     spendingList = categorySpending,
