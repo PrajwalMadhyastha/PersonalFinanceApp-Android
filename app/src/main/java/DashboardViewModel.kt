@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FIX - The logic for the yearly consistency heatmap on the dashboard has
-// been corrected. It now calculates a single "safe to spend" average based on
-// the total budget and days elapsed in the year so far. This ensures the daily
-// cell colors accurately reflect the yearly aggregate stats, fixing the
-// discrepancy.
+// REASON: FEATURE - Replaced the static "Monthly Budget" title with a dynamic
+// "Budget Health Summary". This new logic calculates if the user is on track
+// with their spending for the month and provides a context-aware summary string
+// to the UI, making the dashboard hero card more informative.
 // =================================================================================
 package io.pm.finlight
 
@@ -54,6 +53,9 @@ class DashboardViewModel(
     val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
 
     val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
+
+    // --- NEW: StateFlow for the dynamic budget summary ---
+    val budgetHealthSummary: StateFlow<String>
 
     init {
         userName = settingsRepository.getUserName()
@@ -155,6 +157,31 @@ class DashboardViewModel(
 
                 if (remaining > 0) remaining / remainingDays else 0f
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+        // --- NEW: Logic for the dynamic budget health summary ---
+        budgetHealthSummary = combine(
+            monthlyExpenses,
+            overallMonthlyBudget
+        ) { expenses, budget ->
+            if (budget <= 0f) {
+                "Set a budget to see insights"
+            } else {
+                val cal = Calendar.getInstance()
+                val dayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
+                val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+                val percentOfMonthPassed = dayOfMonth.toFloat() / daysInMonth.toFloat()
+                val percentOfBudgetSpent = (expenses / budget).toFloat()
+
+                when {
+                    percentOfBudgetSpent > 1 -> "Budget Exceeded"
+                    percentOfBudgetSpent > percentOfMonthPassed + 0.2 -> "Spending High"
+                    percentOfBudgetSpent < percentOfMonthPassed - 0.2 -> "Spending Low"
+                    else -> "You're On Track"
+                }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Monthly Budget")
+
 
         netWorth =
             accountRepository.accountsWithBalance.map { list ->

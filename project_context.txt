@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul 29 15:08:38 IST 2025
+Generated on: Tue Jul 29 16:30:40 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -2976,11 +2976,10 @@ interface GoalDao {
 ================== FILE: ./app/src/main/java/ManageIgnoreRulesViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ManageIgnoreRulesViewModel.kt
-// REASON: FEATURE - The ViewModel is updated to handle the new distinction
-// between default and user-added rules. It now includes a method to update a
-// rule's `isEnabled` status, allowing users to toggle the default rules.
-// BUG FIX - Renamed `updateRule` to `updateIgnoreRule` to provide a more
-// specific function name and resolve a persistent compilation error.
+// REASON: FEATURE - The ViewModel has been updated to support creating
+// different types of ignore rules. The `addIgnoreRule` function now accepts a
+// `RuleType`, allowing the UI to specify whether a new rule should apply to
+// the sender or the message body.
 // =================================================================================
 package io.pm.finlight
 
@@ -3007,14 +3006,15 @@ class ManageIgnoreRulesViewModel(application: Application) : AndroidViewModel(ap
         )
 
     /**
-     * Adds a new ignore phrase to the database.
-     * @param phrase The phrase to be added.
+     * Adds a new ignore rule to the database.
+     * @param pattern The pattern to be added (e.g., a sender name or a body phrase).
+     * @param type The type of the rule (SENDER or BODY_PHRASE).
      */
-    fun addIgnoreRule(phrase: String) {
-        if (phrase.isNotBlank()) {
+    fun addIgnoreRule(pattern: String, type: RuleType) {
+        if (pattern.isNotBlank()) {
             viewModelScope.launch {
                 // User-added rules are not default rules
-                ignoreRuleDao.insert(IgnoreRule(phrase = phrase.trim(), isDefault = false))
+                ignoreRuleDao.insert(IgnoreRule(pattern = pattern.trim(), type = type, isDefault = false))
             }
         }
     }
@@ -5887,18 +5887,10 @@ fun AddEditBudgetScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt
-// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with the
-// "Project Aurora" vision. All list items and input fields are now housed in
-// GlassPanel components.
-// BUG FIX: All text and component colors have been explicitly set using
-// MaterialTheme.colorScheme to ensure high contrast and legibility in dark
-// mode, resolving the visibility issues.
-// BUG FIX - The AlertDialog now correctly derives its background color from
-// the app's MaterialTheme, ensuring it matches the selected theme (e.g.,
-// Aurora) instead of defaulting to the system's light/dark mode.
-// ANIMATION - Added `animateItemPlacement()` to the ListItems in the
-// LazyColumn. This makes the lists fluidly animate changes when ignore rules
-// are added, deleted, or toggled.
+// REASON: FEATURE - The UI is now capable of managing both sender and body-based
+// ignore rules. A segmented button has been added to allow the user to select
+// the rule type. The list items now display the rule type and pattern, providing
+// clear context for each rule.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -5919,6 +5911,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.pm.finlight.IgnoreRule
 import io.pm.finlight.ManageIgnoreRulesViewModel
+import io.pm.finlight.RuleType
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
@@ -5926,14 +5919,15 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 // Helper function to determine if a color is 'dark' based on luminance.
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ManageIgnoreRulesScreen(
     viewModel: ManageIgnoreRulesViewModel = viewModel()
 ) {
     val rules by viewModel.allRules.collectAsState()
-    var newPhrase by remember { mutableStateOf("") }
+    var newPattern by remember { mutableStateOf("") }
     var ruleToDelete by remember { mutableStateOf<IgnoreRule?>(null) }
+    var selectedRuleType by remember { mutableStateOf(RuleType.BODY_PHRASE) }
 
     val (defaultRules, customRules) = rules.partition { it.isDefault }
 
@@ -5945,14 +5939,14 @@ fun ManageIgnoreRulesScreen(
         item {
             Column {
                 Text(
-                    "Manage Ignore Phrases",
+                    "Manage Ignore Rules",
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Add phrases to ignore messages from the SMS parser. You can also toggle the app's default rules.",
+                    "Ignore SMS messages based on the sender's name or phrases in the message body. Use '*' as a wildcard for sender patterns.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -5961,38 +5955,59 @@ fun ManageIgnoreRulesScreen(
 
         item {
             GlassPanel {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedTextField(
-                        value = newPhrase,
-                        onValueChange = { newPhrase = it },
-                        label = { Text("Add custom phrase") },
-                        modifier = Modifier.weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                            focusedLabelColor = MaterialTheme.colorScheme.primary,
-                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            cursorColor = MaterialTheme.colorScheme.primary,
-                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                        )
-                    )
-                    Button(
-                        onClick = {
-                            viewModel.addIgnoreRule(newPhrase)
-                            newPhrase = "" // Clear input
-                        },
-                        enabled = newPhrase.isNotBlank()
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = selectedRuleType == RuleType.BODY_PHRASE,
+                            onClick = { selectedRuleType = RuleType.BODY_PHRASE },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) {
+                            Text("Body Phrase")
+                        }
+                        SegmentedButton(
+                            selected = selectedRuleType == RuleType.SENDER,
+                            onClick = { selectedRuleType = RuleType.SENDER },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) {
+                            Text("Sender")
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Phrase")
+                        OutlinedTextField(
+                            value = newPattern,
+                            onValueChange = { newPattern = it },
+                            label = { Text(if (selectedRuleType == RuleType.BODY_PHRASE) "Phrase to ignore" else "Sender pattern to ignore") },
+                            modifier = Modifier.weight(1f),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                cursorColor = MaterialTheme.colorScheme.primary,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                            )
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.addIgnoreRule(newPattern, selectedRuleType)
+                                newPattern = "" // Clear input
+                            },
+                            enabled = newPattern.isNotBlank()
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Rule")
+                        }
                     }
                 }
             }
@@ -6010,7 +6025,14 @@ fun ManageIgnoreRulesScreen(
             items(customRules, key = { "custom-${it.id}" }) { rule ->
                 GlassPanel(modifier = Modifier.animateItemPlacement()) {
                     ListItem(
-                        headlineContent = { Text(rule.phrase, color = MaterialTheme.colorScheme.onSurface) },
+                        headlineContent = { Text(rule.pattern, color = MaterialTheme.colorScheme.onSurface) },
+                        supportingContent = {
+                            Text(
+                                text = if (rule.type == RuleType.SENDER) "Sender Rule" else "Body Phrase Rule",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
                         trailingContent = {
                             IconButton(onClick = { ruleToDelete = rule }) {
                                 Icon(
@@ -6038,7 +6060,14 @@ fun ManageIgnoreRulesScreen(
             items(defaultRules, key = { "default-${it.id}" }) { rule ->
                 GlassPanel(modifier = Modifier.animateItemPlacement()) {
                     ListItem(
-                        headlineContent = { Text(rule.phrase, color = MaterialTheme.colorScheme.onSurface) },
+                        headlineContent = { Text(rule.pattern, color = MaterialTheme.colorScheme.onSurface) },
+                        supportingContent = {
+                            Text(
+                                text = if (rule.type == RuleType.SENDER) "Sender Rule" else "Body Phrase Rule",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
                         trailingContent = {
                             Switch(
                                 checked = rule.isEnabled,
@@ -6060,8 +6089,8 @@ fun ManageIgnoreRulesScreen(
 
         AlertDialog(
             onDismissRequest = { ruleToDelete = null },
-            title = { Text("Delete Ignore Phrase?") },
-            text = { Text("Are you sure you want to delete the phrase \"${ruleToDelete!!.phrase}\"?") },
+            title = { Text("Delete Ignore Rule?") },
+            text = { Text("Are you sure you want to delete the rule for \"${ruleToDelete!!.pattern}\"?") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -12142,12 +12171,10 @@ private fun SelectableTransactionItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt
-// REASON: MAJOR REFACTOR - The MPAndroidChart PieChart has been completely
-// replaced with a custom DonutChart composable built with the Jetpack Compose
-// Canvas API. This provides full control over layout, sizing, and animation,
-// resolving the issue where the chart would not expand to fill its allocated
-// space. The new chart is now larger, animates smoothly, and perfectly matches
-// the desired modern UI.
+// REASON: FEATURE - The DonutChart is now interactive. It accepts an
+// onSliceClick lambda and uses a pointerInput modifier to detect taps. It
+// calculates the angle of the tap to determine which slice was clicked and
+// invokes the callback, allowing navigation to the category's drilldown screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12156,6 +12183,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12174,13 +12202,17 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.CategorySpending
 import io.pm.finlight.ui.components.GlassPanel
+import kotlin.math.atan2
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 @Composable
 fun CategorySpendingScreen(
@@ -12221,14 +12253,12 @@ fun CategorySpendingScreen(
                             .height(300.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // --- NEW: Use the custom Compose DonutChart ---
                         DonutChart(
-                            // --- UPDATED: Adjusted weight to give legend more space ---
                             modifier = Modifier.weight(1.6f),
-                            data = spendingList
+                            data = spendingList,
+                            onSliceClick = onCategoryClick // Pass the click handler down
                         )
                         ChartLegend(
-                            // --- UPDATED: Adjusted weight to give legend more space ---
                             modifier = Modifier.weight(1.6f),
                             spendingList = spendingList
                         )
@@ -12253,7 +12283,8 @@ fun CategorySpendingScreen(
 @Composable
 private fun DonutChart(
     modifier: Modifier = Modifier,
-    data: List<CategorySpending>
+    data: List<CategorySpending>,
+    onSliceClick: (CategorySpending) -> Unit
 ) {
     val totalAmount = remember(data) { data.sumOf { it.totalAmount }.toFloat() }
     val animationProgress = remember { Animatable(0f) }
@@ -12262,8 +12293,46 @@ private fun DonutChart(
         animationProgress.animateTo(1f, animationSpec = tween(durationMillis = 1000))
     }
 
-    Canvas(modifier = modifier.fillMaxSize()) {
-        // --- UPDATED: Increased stroke width for a thicker chart ---
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(data) { // Key to data to ensure the lambda has the latest list
+                detectTapGestures { tapOffset ->
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
+                    val diameter = min(size.width, size.height) * 0.8f
+                    val radius = diameter / 2f
+                    val strokeWidth = 32.dp.toPx()
+
+                    // Check if the tap is within the donut's bounds (not in the center hole or outside)
+                    val distance = sqrt((tapOffset.x - centerX).pow(2) + (tapOffset.y - centerY).pow(2))
+                    if (distance < radius - strokeWidth / 2 || distance > radius + strokeWidth / 2) {
+                        return@detectTapGestures
+                    }
+
+                    // Calculate the angle of the tap relative to the center
+                    val dx = tapOffset.x - centerX
+                    val dy = tapOffset.y - centerY
+                    val angleRad = atan2(dy.toDouble(), dx.toDouble())
+                    var angleDeg = Math.toDegrees(angleRad).toFloat()
+                    if (angleDeg < 0) angleDeg += 360
+
+                    // Convert the angle to the chart's coordinate system (starts at -90 degrees)
+                    val tapAngle = (angleDeg + 90) % 360
+
+                    // Find which slice corresponds to the tap angle
+                    var currentAngle = 0f
+                    for (item in data) {
+                        val sweepAngle = (item.totalAmount.toFloat() / totalAmount) * 360f
+                        if (tapAngle in currentAngle..(currentAngle + sweepAngle)) {
+                            onSliceClick(item)
+                            return@detectTapGestures
+                        }
+                        currentAngle += sweepAngle
+                    }
+                }
+            }
+    ) {
         val strokeWidth = 32.dp.toPx()
         val diameter = min(size.width, size.height) * 0.8f
         val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
@@ -13264,10 +13333,10 @@ private fun RecurringTransactionItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
-// REASON: FIX - The composable now accepts a TransactionViewModel instance, which
-// is passed to the TransactionItem component. This allows the UI to call the
-// `requestCategoryChange` function, fixing the "No value passed for parameter"
-// compilation error and enabling the feature on this screen.
+// REASON: FIX - The screen now accepts an `expandFilters` boolean. The
+// LaunchedEffect that automatically expands the filter panel now only runs if
+// this new flag is true. This prevents the panel from opening when navigating
+// from the ReportsScreen pie chart.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -13309,7 +13378,8 @@ fun SearchScreen(
     navController: NavController,
     searchViewModel: SearchViewModel,
     transactionViewModel: TransactionViewModel,
-    focusSearch: Boolean
+    focusSearch: Boolean,
+    expandFilters: Boolean
 ) {
     val searchUiState by searchViewModel.uiState.collectAsState()
     val searchResults by searchViewModel.searchResults.collectAsState()
@@ -13321,8 +13391,8 @@ fun SearchScreen(
     val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
-    LaunchedEffect(searchUiState.selectedCategory) {
-        if (searchUiState.selectedCategory != null) {
+    LaunchedEffect(searchUiState.selectedCategory, expandFilters) {
+        if (searchUiState.selectedCategory != null && expandFilters) {
             showFilters = true
         }
     }
@@ -15863,14 +15933,10 @@ private fun SettingsSection(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: MAJOR REFACTOR - Replaced the MPAndroidChart PieChart with a custom
-// animated DonutChart built with the Jetpack Compose Canvas API. This resolves
-// layout issues, allowing the chart to be properly sized.
-// REFINEMENT - Adjusted layout weights to give the legend more space and
-// increased the chart's stroke width to 32.dp for better visual balance and
-// legibility, per user feedback.
-// FIX - Corrected build errors in the custom DonutChart by properly iterating
-// through the PieDataSet and accessing entry values using the correct properties.
+// REASON: FIX - The navigation from the DonutChart now includes a
+// `focusSearch=false` argument. This tells the destination SearchScreen not
+// to automatically request focus for the search bar, resolving the unintended
+// UI behavior.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -15879,9 +15945,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewMonth
@@ -15898,14 +15964,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.data.PieEntry
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.ConsistencyCalendar
 import io.pm.finlight.ui.components.DetailedMonthlyCalendar
@@ -15913,7 +15980,10 @@ import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
 import java.util.*
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -16099,10 +16169,11 @@ fun ReportsScreen(
                                 modifier = Modifier.weight(1.6f),
                                 pieData = pieData,
                                 onSliceClick = { entry ->
-                                    val categoryName = entry.data as? String ?: return@DonutChart
+                                    val categoryName = entry.label
                                     val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
                                     category?.let {
-                                        navController.navigate("search_screen?categoryId=${it.id}")
+                                        // --- UPDATED: Add focusSearch=false to the navigation route ---
+                                        navController.navigate("search_screen?categoryId=${it.id}&expandFilters=false&focusSearch=false")
                                     }
                                 }
                             )
@@ -16193,10 +16264,9 @@ fun ReportsScreen(
 private fun DonutChart(
     modifier: Modifier = Modifier,
     pieData: PieData,
-    onSliceClick: (Entry) -> Unit
+    onSliceClick: (PieEntry) -> Unit
 ) {
     val dataSet = pieData.dataSet as? PieDataSet ?: return
-    // --- FIX: Iterate through entries using entryCount and getEntryForIndex ---
     val totalAmount = remember(dataSet) {
         (0 until dataSet.entryCount).sumOf { dataSet.getEntryForIndex(it).y.toDouble() }.toFloat()
     }
@@ -16206,13 +16276,42 @@ private fun DonutChart(
         animationProgress.animateTo(1f, animationSpec = tween(durationMillis = 1000))
     }
 
-    Canvas(modifier = modifier
-        .fillMaxSize()
-        .clickable {
-            if (dataSet.entryCount > 0) {
-                onSliceClick(dataSet.getEntryForIndex(0))
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(pieData) {
+                detectTapGestures { tapOffset ->
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
+                    val diameter = min(size.width, size.height) * 0.8f
+                    val radius = diameter / 2f
+                    val strokeWidth = 32.dp.toPx()
+
+                    val distance = sqrt((tapOffset.x - centerX).pow(2) + (tapOffset.y - centerY).pow(2))
+                    if (distance < radius - strokeWidth / 2 || distance > radius + strokeWidth / 2) {
+                        return@detectTapGestures
+                    }
+
+                    val dx = tapOffset.x - centerX
+                    val dy = tapOffset.y - centerY
+                    val angleRad = atan2(dy.toDouble(), dx.toDouble())
+                    var angleDeg = Math.toDegrees(angleRad).toFloat()
+                    if (angleDeg < 0) angleDeg += 360
+
+                    val tapAngle = (angleDeg + 90) % 360
+
+                    var currentAngle = 0f
+                    for (i in 0 until dataSet.entryCount) {
+                        val entry = dataSet.getEntryForIndex(i) as PieEntry
+                        val sweepAngle = (entry.y / totalAmount) * 360f
+                        if (tapAngle in currentAngle..(currentAngle + sweepAngle)) {
+                            onSliceClick(entry)
+                            return@detectTapGestures
+                        }
+                        currentAngle += sweepAngle
+                    }
+                }
             }
-        }
     ) {
         val strokeWidth = 32.dp.toPx()
         val diameter = min(size.width, size.height) * 0.8f
@@ -16342,7 +16441,6 @@ private fun StatItem(count: Int, label: String) {
 @Composable
 private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
     val dataSet = pieData?.dataSet as? PieDataSet ?: return
-    // --- FIX: Iterate through entries using entryCount and getEntryForIndex ---
     val totalValue = remember(dataSet) {
         (0 until dataSet.entryCount).sumOf { dataSet.getEntryForIndex(it).y.toDouble() }.toFloat()
     }
@@ -19333,9 +19431,10 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - Added NavHost entries for the new "category_detail" and
-// "merchant_detail" screens. This defines the navigation routes and connects
-// them to the new DrilldownScreen composable, passing the required arguments.
+// REASON: FIX - Added a new optional boolean NavArgument `expandFilters` to the
+// `search_screen` route. This allows calling screens to control whether the
+// filter panel on the SearchScreen should be expanded by default, which is
+// necessary to fix the pie chart click behavior.
 // =================================================================================
 package io.pm.finlight
 
@@ -19893,11 +19992,12 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            route = "search_screen?categoryId={categoryId}&date={date}&focusSearch={focusSearch}",
+            route = "search_screen?categoryId={categoryId}&date={date}&focusSearch={focusSearch}&expandFilters={expandFilters}",
             arguments = listOf(
                 navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 },
                 navArgument("date") { type = NavType.LongType; defaultValue = -1L },
-                navArgument("focusSearch") { type = NavType.BoolType; defaultValue = true }
+                navArgument("focusSearch") { type = NavType.BoolType; defaultValue = true },
+                navArgument("expandFilters") { type = NavType.BoolType; defaultValue = true }
             ),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
@@ -19907,6 +20007,7 @@ fun AppNavHost(
             val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
             val date = backStackEntry.arguments?.getLong("date") ?: -1L
             val focusSearch = backStackEntry.arguments?.getBoolean("focusSearch") ?: true
+            val expandFilters = backStackEntry.arguments?.getBoolean("expandFilters") ?: true
 
             val factory = SearchViewModelFactory(
                 activity.application,
@@ -19914,7 +20015,7 @@ fun AppNavHost(
                 if (date != -1L) date else null
             )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
-            SearchScreen(navController, searchViewModel, transactionViewModel, focusSearch)
+            SearchScreen(navController, searchViewModel, transactionViewModel, focusSearch, expandFilters)
         }
         composable(
             route = "review_sms_screen",
@@ -21198,10 +21299,10 @@ class SmsRepository(private val context: Context) {
 ================== FILE: ./app/src/main/java/IgnoreRuleDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/IgnoreRuleDao.kt
-// REASON: FEATURE - The DAO has been updated with new methods to support the
-// enhanced ignore rule management. It can now insert a list of default rules,
-// update the enabled status of a rule, and fetch only the active phrases for
-// the parser to use.
+// REASON: FEATURE - The `getEnabledPhrases` function has been replaced with
+// `getEnabledRules`, which returns the full IgnoreRule objects. This provides
+// the SmsParser with the necessary `type` information to distinguish between
+// sender and body phrase patterns.
 // =================================================================================
 package io.pm.finlight
 
@@ -21223,18 +21324,18 @@ interface IgnoreRuleDao {
      * Retrieves all ignore rules from the database, ordered alphabetically.
      * @return A Flow emitting a list of all IgnoreRule objects.
      */
-    @Query("SELECT * FROM ignore_rules ORDER BY phrase ASC")
+    @Query("SELECT * FROM ignore_rules ORDER BY pattern ASC")
     fun getAll(): Flow<List<IgnoreRule>>
 
     /**
-     * Retrieves all enabled ignore phrases.
-     * @return A list of strings containing the active ignore phrases.
+     * Retrieves all enabled ignore rules.
+     * @return A list of the active IgnoreRule objects.
      */
-    @Query("SELECT phrase FROM ignore_rules WHERE isEnabled = 1")
-    suspend fun getEnabledPhrases(): List<String>
+    @Query("SELECT * FROM ignore_rules WHERE isEnabled = 1")
+    suspend fun getEnabledRules(): List<IgnoreRule>
 
     /**
-     * Inserts a new ignore rule. If a rule with the same phrase already exists,
+     * Inserts a new ignore rule. If a rule with the same pattern already exists,
      * it will be ignored.
      * @param rule The IgnoreRule object to insert.
      */
@@ -21402,10 +21503,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 ================== FILE: ./app/src/main/java/AppDatabase.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE (Travel Mode Splitting) - Incremented database version to 30.
-// Added MIGRATION_29_30 to add the new `originalAmount` column to the
-// `split_transactions` table, which is required to support splitting foreign
-// currency transactions.
+// REASON: FEATURE - Incremented database version to 32. Added MIGRATION_31_32
+// to update the `ignore_rules` table: it renames `phrase` to `pattern` and adds
+// a `type` column, defaulting existing rules to `BODY_PHRASE` for backward
+// compatibility. The default ignore list is updated to use the new entity format.
 // =================================================================================
 package io.pm.finlight
 
@@ -21439,7 +21540,7 @@ import java.util.Calendar
         RecurringPattern::class,
         SplitTransaction::class
     ],
-    version = 30, // --- UPDATED: Incremented version number
+    version = 32, // --- UPDATED: Incremented version number
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -21468,8 +21569,12 @@ abstract class AppDatabase : RoomDatabase() {
             "has been credited to",
             "payment of.*has been received towards",
             "credited to your.*card",
-            "Payment of.*has been received on your.*Credit Card"
-        ).map { IgnoreRule(phrase = it, isDefault = true) }
+            "Payment of.*has been received on your.*Credit Card",
+            "We have received",
+            "has been initiated",
+            "redemption",
+            "requested money from you"
+        ).map { IgnoreRule(pattern = it, type = RuleType.BODY_PHRASE, isDefault = true) }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -21753,10 +21858,45 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration for adding originalAmount to splits ---
         val MIGRATION_29_30 = object : Migration(29, 30) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `split_transactions` ADD COLUMN `originalAmount` REAL")
+            }
+        }
+
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('We have received', 1, 1)")
+                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('has been initiated', 1, 1)")
+                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('redemption', 1, 1)")
+                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('requested money from you', 1, 1)")
+            }
+        }
+
+        // --- NEW: Migration to add `type` column and rename `phrase` to `pattern` ---
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Create a new table with the desired schema
+                db.execSQL("""
+                    CREATE TABLE `ignore_rules_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
+                        `type` TEXT NOT NULL DEFAULT 'BODY_PHRASE', 
+                        `pattern` TEXT NOT NULL, 
+                        `isEnabled` INTEGER NOT NULL DEFAULT 1, 
+                        `isDefault` INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+                // 2. Copy data from the old table to the new one
+                db.execSQL("""
+                    INSERT INTO `ignore_rules_new` (id, pattern, isEnabled, isDefault)
+                    SELECT id, phrase, isEnabled, isDefault FROM `ignore_rules`
+                """)
+                // 3. Create the unique index on the new table
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ignore_rules_pattern` ON `ignore_rules_new` (`pattern`)")
+                // 4. Drop the old table
+                db.execSQL("DROP TABLE `ignore_rules`")
+                // 5. Rename the new table to the original name
+                db.execSQL("ALTER TABLE `ignore_rules_new` RENAME TO `ignore_rules`")
             }
         }
 
@@ -21765,7 +21905,7 @@ abstract class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
@@ -21886,16 +22026,17 @@ data class CalendarDayStatus(
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - The parser now generates a "signature" for each SMS. This
-// is done by removing volatile data (amounts, dates, times, ref numbers) to
-// create a stable template of the message. This signature is the key to the new
-// proactive recurring transaction detection feature. It is now included in the
-// returned PotentialTransaction object.
+// REASON: FEATURE - The parsing logic is now more powerful. It fetches all
+// enabled ignore rules and separates them by type. It first checks the SMS
+// sender against all SENDER rules. If a match is found, parsing stops.
+// Otherwise, it proceeds to check the message body against BODY_PHRASE rules.
+// A new helper function converts wildcard patterns to valid regex.
 // =================================================================================
 package io.pm.finlight
 
 import android.util.Log
 import kotlinx.coroutines.flow.first
+import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 
 data class PotentialAccount(
@@ -21929,7 +22070,6 @@ object SmsParser {
             "Info:?\\s*([A-Za-z0-9\\s.&'-]+?)(?:\\.|$)".toRegex(RegexOption.IGNORE_CASE)
         )
 
-    // --- NEW: Regex to find and remove volatile parts of an SMS for signature generation ---
     private val VOLATILE_DATA_REGEX = listOf(
         "\\b(?:rs|inr)[\\s.]*\\d[\\d,.]*".toRegex(RegexOption.IGNORE_CASE), // Amounts (e.g., Rs. 1,234.56)
         "\\d{1,2}[-/]\\d{1,2}[-/]\\d{2,4}".toRegex(), // Dates (e.g., 31-12-2024)
@@ -21941,15 +22081,11 @@ object SmsParser {
         "\\b\\d{4,}\\b".toRegex() // Any number with 4 or more digits (likely IDs, etc.)
     )
 
-    /**
-     * Generates a stable "signature" from an SMS body by removing volatile data.
-     */
     private fun generateSmsSignature(body: String): String {
         var signature = body.lowercase()
         VOLATILE_DATA_REGEX.forEach { regex ->
             signature = regex.replace(signature, "")
         }
-        // Normalize whitespace and hash the result for a clean, unique key
         return signature.replace(Regex("\\s+"), " ").trim().hashCode().toString()
     }
 
@@ -21980,6 +22116,12 @@ object SmsParser {
         return null
     }
 
+    // --- NEW: Helper to convert wildcard patterns to regex ---
+    private fun wildcardToRegex(pattern: String): Regex {
+        val escaped = Pattern.quote(pattern).replace("*", "\\E.*\\Q")
+        return escaped.toRegex(RegexOption.IGNORE_CASE)
+    }
+
     suspend fun parse(
         sms: SmsMessage,
         mappings: Map<String, String>,
@@ -21988,18 +22130,33 @@ object SmsParser {
         ignoreRuleDao: IgnoreRuleDao,
         merchantCategoryMappingDao: MerchantCategoryMappingDao
     ): PotentialTransaction? {
-        val messageBody = sms.body
         Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
 
-        val ignorePhrases = ignoreRuleDao.getEnabledPhrases()
-        for (phrase in ignorePhrases) {
+        val allIgnoreRules = ignoreRuleDao.getEnabledRules()
+        val senderIgnoreRules = allIgnoreRules.filter { it.type == RuleType.SENDER }
+        val bodyIgnoreRules = allIgnoreRules.filter { it.type == RuleType.BODY_PHRASE }
+
+        // --- STEP 1: Check against sender ignore rules ---
+        for (rule in senderIgnoreRules) {
             try {
-                if (phrase.toRegex(RegexOption.IGNORE_CASE).containsMatchIn(messageBody)) {
-                    Log.d("SmsParser", "Message contains ignore phrase '$phrase'. Ignoring.")
+                if (wildcardToRegex(rule.pattern).matches(sms.sender)) {
+                    Log.d("SmsParser", "Message sender '${sms.sender}' matches ignore pattern '${rule.pattern}'. Ignoring.")
                     return null
                 }
             } catch (e: PatternSyntaxException) {
-                Log.e("SmsParser", "Invalid regex pattern in ignore phrase: '$phrase'", e)
+                Log.e("SmsParser", "Invalid regex from sender pattern: '${rule.pattern}'", e)
+            }
+        }
+
+        // --- STEP 2: Check against body phrase ignore rules ---
+        for (rule in bodyIgnoreRules) {
+            try {
+                if (rule.pattern.toRegex(RegexOption.IGNORE_CASE).containsMatchIn(sms.body)) {
+                    Log.d("SmsParser", "Message body contains ignore phrase '${rule.pattern}'. Ignoring.")
+                    return null
+                }
+            } catch (e: PatternSyntaxException) {
+                Log.e("SmsParser", "Invalid regex in body phrase: '${rule.pattern}'", e)
             }
         }
 
@@ -22013,12 +22170,12 @@ object SmsParser {
 
 
         for (rule in allRules) {
-            if (messageBody.contains(rule.triggerPhrase, ignoreCase = true)) {
+            if (sms.body.contains(rule.triggerPhrase, ignoreCase = true)) {
                 Log.d("SmsParser", "SUCCESS: Found matching trigger phrase '${rule.triggerPhrase}' for rule ID ${rule.id}.")
 
                 rule.merchantRegex?.let { regexStr ->
                     try {
-                        val match = regexStr.toRegex().find(messageBody)
+                        val match = regexStr.toRegex().find(sms.body)
                         if (match != null && match.groupValues.size > 1) {
                             extractedMerchant = match.groupValues[1].trim()
                         }
@@ -22027,7 +22184,7 @@ object SmsParser {
 
                 rule.amountRegex?.let { regexStr ->
                     try {
-                        val match = regexStr.toRegex().find(messageBody)
+                        val match = regexStr.toRegex().find(sms.body)
                         if (match != null && match.groupValues.size > 1) {
                             extractedAmount = match.groupValues[1].replace(",", "").toDoubleOrNull()
                         }
@@ -22036,7 +22193,7 @@ object SmsParser {
 
                 rule.accountRegex?.let { regexStr ->
                     try {
-                        val match = regexStr.toRegex().find(messageBody)
+                        val match = regexStr.toRegex().find(sms.body)
                         if (match != null && match.groupValues.size > 1) {
                             val accountName = match.groupValues[1].trim()
                             extractedAccount = PotentialAccount(formattedName = accountName, accountType = "Custom")
@@ -22051,14 +22208,14 @@ object SmsParser {
         }
 
         val amount = extractedAmount
-            ?: CURRENCY_AMOUNT_REGEX.find(messageBody)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
-            ?: KEYWORD_AMOUNT_REGEX.find(messageBody)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
+            ?: CURRENCY_AMOUNT_REGEX.find(sms.body)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
+            ?: KEYWORD_AMOUNT_REGEX.find(sms.body)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
             ?: return null
 
         val transactionType =
             when {
-                EXPENSE_KEYWORDS_REGEX.containsMatchIn(messageBody) -> "expense"
-                INCOME_KEYWORDS_REGEX.containsMatchIn(messageBody) -> "income"
+                EXPENSE_KEYWORDS_REGEX.containsMatchIn(sms.body) -> "expense"
+                INCOME_KEYWORDS_REGEX.containsMatchIn(sms.body) -> "income"
                 else -> return null
             }
 
@@ -22066,7 +22223,7 @@ object SmsParser {
 
         if (merchantName == null) {
             for (pattern in MERCHANT_REGEX_PATTERNS) {
-                val match = pattern.find(messageBody)
+                val match = pattern.find(sms.body)
                 if (match != null) {
                     val potentialName = match.groups[1]?.value?.replace("_", " ")?.replace(Regex("\\s+"), " ")?.trim()
                     if (!potentialName.isNullOrBlank() && !potentialName.contains("call", ignoreCase = true)) {
@@ -22093,11 +22250,10 @@ object SmsParser {
             }
         }
 
-        val potentialAccount = extractedAccount ?: parseAccount(messageBody, sms.sender)
+        val potentialAccount = extractedAccount ?: parseAccount(sms.body, sms.sender)
         val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
         val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
         val smsHash = (normalizedSender + normalizedBody).hashCode().toString()
-        // --- NEW: Generate and include the signature ---
         val smsSignature = generateSmsSignature(sms.body)
 
 
@@ -22107,11 +22263,11 @@ object SmsParser {
             amount = amount,
             transactionType = transactionType,
             merchantName = merchantName,
-            originalMessage = messageBody,
+            originalMessage = sms.body,
             potentialAccount = potentialAccount,
             sourceSmsHash = smsHash,
             categoryId = learnedCategoryId,
-            smsSignature = smsSignature // --- NEW
+            smsSignature = smsSignature
         )
     }
 }
@@ -24186,10 +24342,10 @@ class RecurringPatternWorker(
 ================== FILE: ./app/src/main/java/IgnoreRule.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/IgnoreRule.kt
-// REASON: FEATURE - The entity has been updated with `isEnabled` and `isDefault`
-// fields. This allows the app to distinguish between pre-populated default
-// rules and user-added rules, and gives users the ability to toggle the
-// default rules on or off without deleting them.
+// REASON: FEATURE - The entity has been enhanced to support different rule
+// types. A new `RuleType` enum (SENDER, BODY_PHRASE) and a corresponding `type`
+// column have been added. The `phrase` column has been renamed to `pattern` to
+// better reflect its new, more generic purpose.
 // =================================================================================
 package io.pm.finlight
 
@@ -24198,22 +24354,31 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * Represents a user-defined rule to ignore an SMS based on a specific phrase.
- * If this phrase is found in an SMS body, the parser will skip it.
+ * Enum to define the type of content an IgnoreRule should match against.
+ */
+enum class RuleType {
+    SENDER,
+    BODY_PHRASE
+}
+
+/**
+ * Represents a user-defined rule to ignore an SMS.
  *
  * @param id The unique identifier for the rule.
- * @param phrase The text that, if found, will cause the SMS to be ignored (e.g., "invoice of").
+ * @param type The type of rule (SENDER or BODY_PHRASE).
+ * @param pattern The text pattern to match against (e.g., "*JioBal*" for sender, "invoice of" for body).
  * @param isEnabled Whether this rule is currently active.
  * @param isDefault True if this is a pre-populated rule, false if user-added.
  */
 @Entity(
     tableName = "ignore_rules",
-    indices = [Index(value = ["phrase"], unique = true)]
+    indices = [Index(value = ["pattern"], unique = true)]
 )
 data class IgnoreRule(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val phrase: String,
+    val type: RuleType = RuleType.BODY_PHRASE,
+    val pattern: String,
     var isEnabled: Boolean = true,
     val isDefault: Boolean = false
 )

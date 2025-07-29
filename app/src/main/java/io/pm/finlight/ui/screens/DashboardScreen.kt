@@ -1,14 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FIX - Corrected an "Unresolved reference" error. The screen now
-// accepts a TransactionViewModel instance, which is passed down to the
-// DashboardCard. This allows the `onCategoryClick` callback to correctly call
-// `transactionViewModel.requestCategoryChange(it)` instead of incorrectly
-// calling it on the DashboardViewModel.
+// REASON: FEATURE - The screen now collects the new `budgetHealthSummary` state
+// from the ViewModel and passes it down to the `DashboardHeroCard` component,
+// completing the implementation of the dynamic summary feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.app.Application
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -36,16 +33,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import java.util.Date
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +53,9 @@ fun DashboardScreen(
     val showAddCardSheet by dashboardViewModel.showAddCardSheet.collectAsState()
     val hiddenCards by dashboardViewModel.hiddenCards.collectAsState()
     val yearlyConsistencyData by dashboardViewModel.yearlyConsistencyData.collectAsState()
+    // --- NEW: Collect the budget health summary state ---
+    val budgetHealthSummary by dashboardViewModel.budgetHealthSummary.collectAsState()
+
 
     val coroutineScope = rememberCoroutineScope()
     var overscrollJob by remember { mutableStateOf<Job?>(null) }
@@ -165,6 +162,8 @@ fun DashboardScreen(
                     isCustomizationMode = isCustomizationMode,
                     onHide = { dashboardViewModel.hideCard(cardType) },
                     yearlyConsistencyData = yearlyConsistencyData,
+                    // --- NEW: Pass the summary string to the Hero Card ---
+                    budgetHealthSummary = budgetHealthSummary
                 )
             }
         }
@@ -179,7 +178,8 @@ private fun DashboardCard(
     transactionViewModel: TransactionViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
-    yearlyConsistencyData: List<CalendarDayStatus>
+    yearlyConsistencyData: List<CalendarDayStatus>,
+    budgetHealthSummary: String // --- NEW: Add parameter to receive summary ---
 ) {
     val netWorth by dashboardViewModel.netWorth.collectAsState()
     val monthlyIncome by dashboardViewModel.monthlyIncome.collectAsState()
@@ -201,7 +201,9 @@ private fun DashboardCard(
                 income = monthlyIncome.toFloat(),
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,
-                monthYear = monthYear
+                monthYear = monthYear,
+                // --- NEW: Pass the summary string to the Hero Card ---
+                budgetHealthSummary = budgetHealthSummary
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)

@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FIX - The onClick handler for the "View Categories" quick action has
-// been updated to navigate to the transaction list screen with an argument
-// (`initialTab=1`) that directs it to open the Categories tab.
+// REASON: FEATURE - The DashboardHeroCard has been updated to accept and display
+// a dynamic "budgetHealthSummary" string. The static "Monthly Budget" text has
+// been removed and replaced with this context-aware summary, making the card
+// more informative at a glance.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -115,7 +116,8 @@ fun DashboardHeroCard(
     income: Float,
     safeToSpend: Float,
     navController: NavController,
-    monthYear: String
+    monthYear: String,
+    budgetHealthSummary: String // --- NEW: Add parameter for the dynamic summary ---
 ) {
     // --- FIX: Coerce the progress value to be between 0f and 1f ---
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
@@ -132,8 +134,9 @@ fun DashboardHeroCard(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
+        // --- UPDATED: Display the dynamic summary instead of the static title ---
         Text(
-            text = "Monthly Budget",
+            text = budgetHealthSummary,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
