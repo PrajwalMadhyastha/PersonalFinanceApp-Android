@@ -1,13 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: MAJOR REFACTOR - Replaced the MPAndroidChart PieChart with a custom
-// animated DonutChart built with the Jetpack Compose Canvas API. This resolves
-// layout issues, allowing the chart to be properly sized.
-// REFINEMENT - Adjusted layout weights to give the legend more space and
-// increased the chart's stroke width to 32.dp for better visual balance and
-// legibility, per user feedback.
-// FIX - Corrected build errors in the custom DonutChart by properly iterating
-// through the PieDataSet and accessing entry values using the correct properties.
+// REASON: FEATURE - The DonutChart is now interactive. The previous simple
+// clickable modifier has been replaced with a pointerInput that detects the
+// exact slice tapped by the user. The onSliceClick callback now navigates to
+// the SearchScreen, pre-filtered for the selected category.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -16,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,6 +41,7 @@ import androidx.navigation.NavController
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.data.PieEntry
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.ConsistencyCalendar
 import io.pm.finlight.ui.components.DetailedMonthlyCalendar
@@ -50,7 +49,10 @@ import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
 import java.util.*
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -236,7 +238,7 @@ fun ReportsScreen(
                                 modifier = Modifier.weight(1.6f),
                                 pieData = pieData,
                                 onSliceClick = { entry ->
-                                    val categoryName = entry.data as? String ?: return@DonutChart
+                                    val categoryName = entry.label
                                     val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
                                     category?.let {
                                         navController.navigate("search_screen?categoryId=${it.id}")
@@ -330,10 +332,9 @@ fun ReportsScreen(
 private fun DonutChart(
     modifier: Modifier = Modifier,
     pieData: PieData,
-    onSliceClick: (Entry) -> Unit
+    onSliceClick: (PieEntry) -> Unit
 ) {
     val dataSet = pieData.dataSet as? PieDataSet ?: return
-    // --- FIX: Iterate through entries using entryCount and getEntryForIndex ---
     val totalAmount = remember(dataSet) {
         (0 until dataSet.entryCount).sumOf { dataSet.getEntryForIndex(it).y.toDouble() }.toFloat()
     }
@@ -343,13 +344,42 @@ private fun DonutChart(
         animationProgress.animateTo(1f, animationSpec = tween(durationMillis = 1000))
     }
 
-    Canvas(modifier = modifier
-        .fillMaxSize()
-        .clickable {
-            if (dataSet.entryCount > 0) {
-                onSliceClick(dataSet.getEntryForIndex(0))
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(pieData) {
+                detectTapGestures { tapOffset ->
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
+                    val diameter = min(size.width, size.height) * 0.8f
+                    val radius = diameter / 2f
+                    val strokeWidth = 32.dp.toPx()
+
+                    val distance = sqrt((tapOffset.x - centerX).pow(2) + (tapOffset.y - centerY).pow(2))
+                    if (distance < radius - strokeWidth / 2 || distance > radius + strokeWidth / 2) {
+                        return@detectTapGestures
+                    }
+
+                    val dx = tapOffset.x - centerX
+                    val dy = tapOffset.y - centerY
+                    val angleRad = atan2(dy.toDouble(), dx.toDouble())
+                    var angleDeg = Math.toDegrees(angleRad).toFloat()
+                    if (angleDeg < 0) angleDeg += 360
+
+                    val tapAngle = (angleDeg + 90) % 360
+
+                    var currentAngle = 0f
+                    for (i in 0 until dataSet.entryCount) {
+                        val entry = dataSet.getEntryForIndex(i) as PieEntry
+                        val sweepAngle = (entry.y / totalAmount) * 360f
+                        if (tapAngle in currentAngle..(currentAngle + sweepAngle)) {
+                            onSliceClick(entry)
+                            return@detectTapGestures
+                        }
+                        currentAngle += sweepAngle
+                    }
+                }
             }
-        }
     ) {
         val strokeWidth = 32.dp.toPx()
         val diameter = min(size.width, size.height) * 0.8f
@@ -479,7 +509,6 @@ private fun StatItem(count: Int, label: String) {
 @Composable
 private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
     val dataSet = pieData?.dataSet as? PieDataSet ?: return
-    // --- FIX: Iterate through entries using entryCount and getEntryForIndex ---
     val totalValue = remember(dataSet) {
         (0 until dataSet.entryCount).sumOf { dataSet.getEntryForIndex(it).y.toDouble() }.toFloat()
     }

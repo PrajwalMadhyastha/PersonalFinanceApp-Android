@@ -1,11 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt
-// REASON: MAJOR REFACTOR - The MPAndroidChart PieChart has been completely
-// replaced with a custom DonutChart composable built with the Jetpack Compose
-// Canvas API. This provides full control over layout, sizing, and animation,
-// resolving the issue where the chart would not expand to fill its allocated
-// space. The new chart is now larger, animates smoothly, and perfectly matches
-// the desired modern UI.
+// REASON: FEATURE - The DonutChart is now interactive. It accepts an
+// onSliceClick lambda and uses a pointerInput modifier to detect taps. It
+// calculates the angle of the tap to determine which slice was clicked and
+// invokes the callback, allowing navigation to the category's drilldown screen.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -14,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,13 +31,17 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.CategorySpending
 import io.pm.finlight.ui.components.GlassPanel
+import kotlin.math.atan2
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 @Composable
 fun CategorySpendingScreen(
@@ -79,14 +82,12 @@ fun CategorySpendingScreen(
                             .height(300.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // --- NEW: Use the custom Compose DonutChart ---
                         DonutChart(
-                            // --- UPDATED: Adjusted weight to give legend more space ---
                             modifier = Modifier.weight(1.6f),
-                            data = spendingList
+                            data = spendingList,
+                            onSliceClick = onCategoryClick // Pass the click handler down
                         )
                         ChartLegend(
-                            // --- UPDATED: Adjusted weight to give legend more space ---
                             modifier = Modifier.weight(1.6f),
                             spendingList = spendingList
                         )
@@ -111,7 +112,8 @@ fun CategorySpendingScreen(
 @Composable
 private fun DonutChart(
     modifier: Modifier = Modifier,
-    data: List<CategorySpending>
+    data: List<CategorySpending>,
+    onSliceClick: (CategorySpending) -> Unit
 ) {
     val totalAmount = remember(data) { data.sumOf { it.totalAmount }.toFloat() }
     val animationProgress = remember { Animatable(0f) }
@@ -120,8 +122,46 @@ private fun DonutChart(
         animationProgress.animateTo(1f, animationSpec = tween(durationMillis = 1000))
     }
 
-    Canvas(modifier = modifier.fillMaxSize()) {
-        // --- UPDATED: Increased stroke width for a thicker chart ---
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(data) { // Key to data to ensure the lambda has the latest list
+                detectTapGestures { tapOffset ->
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
+                    val diameter = min(size.width, size.height) * 0.8f
+                    val radius = diameter / 2f
+                    val strokeWidth = 32.dp.toPx()
+
+                    // Check if the tap is within the donut's bounds (not in the center hole or outside)
+                    val distance = sqrt((tapOffset.x - centerX).pow(2) + (tapOffset.y - centerY).pow(2))
+                    if (distance < radius - strokeWidth / 2 || distance > radius + strokeWidth / 2) {
+                        return@detectTapGestures
+                    }
+
+                    // Calculate the angle of the tap relative to the center
+                    val dx = tapOffset.x - centerX
+                    val dy = tapOffset.y - centerY
+                    val angleRad = atan2(dy.toDouble(), dx.toDouble())
+                    var angleDeg = Math.toDegrees(angleRad).toFloat()
+                    if (angleDeg < 0) angleDeg += 360
+
+                    // Convert the angle to the chart's coordinate system (starts at -90 degrees)
+                    val tapAngle = (angleDeg + 90) % 360
+
+                    // Find which slice corresponds to the tap angle
+                    var currentAngle = 0f
+                    for (item in data) {
+                        val sweepAngle = (item.totalAmount.toFloat() / totalAmount) * 360f
+                        if (tapAngle in currentAngle..(currentAngle + sweepAngle)) {
+                            onSliceClick(item)
+                            return@detectTapGestures
+                        }
+                        currentAngle += sweepAngle
+                    }
+                }
+            }
+    ) {
         val strokeWidth = 32.dp.toPx()
         val diameter = min(size.width, size.height) * 0.8f
         val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
