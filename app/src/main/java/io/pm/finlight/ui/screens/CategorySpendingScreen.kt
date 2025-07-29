@@ -32,7 +32,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,11 +81,13 @@ fun CategorySpendingScreen(
                     ) {
                         // --- NEW: Use the custom Compose DonutChart ---
                         DonutChart(
-                            modifier = Modifier.weight(2.5f),
+                            // --- UPDATED: Adjusted weight to give legend more space ---
+                            modifier = Modifier.weight(1.6f),
                             data = spendingList
                         )
                         ChartLegend(
-                            modifier = Modifier.weight(1f),
+                            // --- UPDATED: Adjusted weight to give legend more space ---
+                            modifier = Modifier.weight(1.6f),
                             spendingList = spendingList
                         )
                     }
@@ -120,7 +121,8 @@ private fun DonutChart(
     }
 
     Canvas(modifier = modifier.fillMaxSize()) {
-        val strokeWidth = 20.dp.toPx()
+        // --- UPDATED: Increased stroke width for a thicker chart ---
+        val strokeWidth = 32.dp.toPx()
         val diameter = min(size.width, size.height) * 0.8f
         val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
         val size = Size(diameter, diameter)
