@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Mon Jul 28 15:10:49 IST 2025
+Generated on: Mon Jul 28 18:17:42 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -2389,9 +2389,9 @@ class MonthlySummaryWorker(
 ================== FILE: ./app/src/main/java/NavItems.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added a new entry for "currency_travel_settings" to the
-// screenTitles map. This provides the title for the new screen where users will
-// manage the multi-currency "Travel Mode" feature.
+// REASON: FEATURE - Added new entries for "category_detail" and
+// "merchant_detail" to the screenTitles map. This provides the titles for the
+// new drilldown screens.
 // =================================================================================
 package io.pm.finlight
 
@@ -2410,7 +2410,7 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
 }
 val screenTitles = mapOf(
     BottomNavItem.Dashboard.route to "Dashboard",
-    BottomNavItem.Transactions.route to "All Transactions",
+    "transaction_list?initialTab={initialTab}" to "All Transactions",
     BottomNavItem.Reports.route to "Reports",
     BottomNavItem.Profile.route to "Profile",
     "settings_screen" to "App Settings",
@@ -2438,16 +2438,16 @@ val screenTitles = mapOf(
     "link_transaction_screen/{potentialTransactionJson}" to "Link to Existing Transaction",
     "retrospective_update_screen/{transactionId}/{originalDescription}?newDescription={newDescription}&newCategoryId={newCategoryId}" to "Update Similar",
     "goals_screen" to "Savings Goals",
-    // --- NEW: Titles for reorganized settings screens ---
     "appearance_settings" to "Theme & Appearance",
     "automation_settings" to "Automation & AI",
     "notification_settings" to "Notifications",
     "data_settings" to "Security & Data",
-    // --- NEW: Title for the new currency screen ---
     "currency_travel_settings" to "Currency & Travel",
-    // --- NEW: Titles for the dedicated goal screen ---
     "add_edit_goal" to "New Savings Goal",
-    "add_edit_goal/{goalId}" to "Edit Savings Goal"
+    "add_edit_goal/{goalId}" to "Edit Savings Goal",
+    // --- NEW: Titles for the new drilldown screens ---
+    "category_detail/{categoryName}/{month}/{year}" to "Category Details",
+    "merchant_detail/{merchantName}/{month}/{year}" to "Merchant Details"
 )
 -e 
 
@@ -5640,8 +5640,14 @@ private fun DeleteGoalDialog(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt
+// REASON: REVERT - Reverted changes to make the items clickable. Navigation is
+// now handled by the parent screen.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -5657,7 +5663,10 @@ import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.ExpenseRedDark
 
 @Composable
-fun MerchantSpendingScreen(merchantList: List<MerchantSpendingSummary>) {
+fun MerchantSpendingScreen(
+    merchantList: List<MerchantSpendingSummary>,
+    onMerchantClick: (MerchantSpendingSummary) -> Unit
+) {
     if (merchantList.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -5673,15 +5682,23 @@ fun MerchantSpendingScreen(merchantList: List<MerchantSpendingSummary>) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(merchantList) { merchant ->
-            MerchantSpendingCard(merchant = merchant)
+            MerchantSpendingCard(
+                merchant = merchant,
+                onClick = { onMerchantClick(merchant) }
+            )
         }
     }
 }
 
 @Composable
-fun MerchantSpendingCard(merchant: MerchantSpendingSummary) {
+fun MerchantSpendingCard(
+    merchant: MerchantSpendingSummary,
+    onClick: () -> Unit
+) {
     GlassPanel(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -8774,6 +8791,189 @@ private fun TransactionTypeToggle(
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DrilldownScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DrilldownScreen.kt
+// REASON: NEW FILE - This composable defines the UI for the new drilldown
+// screens. It displays a title, a monthly trend bar chart, and a list of
+// transactions for the specified entity (category or merchant) and month,
+// all styled according to the "Project Aurora" vision.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import android.app.Application
+import android.graphics.Typeface
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.github.mikephil.charting.charts.BarChart
+import com.github.mikephil.charting.components.XAxis
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
+import io.pm.finlight.DrilldownType
+import io.pm.finlight.DrilldownViewModel
+import io.pm.finlight.DrilldownViewModelFactory
+import io.pm.finlight.TransactionViewModel
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.components.TransactionItem
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DrilldownScreen(
+    navController: NavController,
+    drilldownType: DrilldownType,
+    entityName: String,
+    month: Int,
+    year: Int
+) {
+    val application = LocalContext.current.applicationContext as Application
+    val factory = DrilldownViewModelFactory(application, drilldownType, entityName, month, year)
+    val viewModel: DrilldownViewModel = viewModel(factory = factory)
+    val transactionViewModel: TransactionViewModel = viewModel()
+
+    val transactions by viewModel.transactionsForMonth.collectAsState()
+    val chartData by viewModel.monthlyTrendChartData.collectAsState()
+    val title = when (drilldownType) {
+        DrilldownType.CATEGORY -> "Category: ${viewModel.entityName}"
+        DrilldownType.MERCHANT -> "Merchant: ${viewModel.entityName}"
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                GlassPanel {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "6-Month Spending Trend",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        if (chartData != null) {
+                            SpendingBarChart(chartData = chartData!!)
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Not enough data for a trend chart.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (transactions.isNotEmpty()) {
+                item {
+                    Text(
+                        "Transactions this month",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                items(transactions, key = { it.transaction.id }) { transaction ->
+                    TransactionItem(
+                        transactionDetails = transaction,
+                        onClick = { navController.navigate("transaction_detail/${transaction.transaction.id}") },
+                        onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
+    val (barData, labels) = chartData
+    val axisTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val valueTextColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+
+    AndroidView(
+        factory = { context ->
+            BarChart(context).apply {
+                description.isEnabled = false
+                legend.isEnabled = false
+                setDrawGridBackground(false)
+                setDrawValueAboveBar(true)
+                setTouchEnabled(false)
+
+                xAxis.apply {
+                    position = XAxis.XAxisPosition.BOTTOM
+                    setDrawGridLines(false)
+                    setDrawAxisLine(false)
+                    granularity = 1f
+                    valueFormatter = IndexAxisValueFormatter(labels)
+                    textColor = axisTextColor
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
+                }
+                axisLeft.apply {
+                    setDrawGridLines(true)
+                    gridColor = axisTextColor and 0x22FFFFFF
+                    setDrawLabels(false)
+                    setDrawAxisLine(false)
+                    axisMinimum = 0f
+                }
+                axisRight.isEnabled = false
+            }
+        },
+        update = { chart ->
+            chart.data = barData
+            (chart.data.dataSets.first()).valueTextColor = valueTextColor
+            chart.invalidate()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+    )
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditAccountScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditAccountScreen.kt
@@ -9768,10 +9968,8 @@ private fun RuleSummaryItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FEATURE - The TransactionList composable is now passed the
-// `onCategoryClick` lambda. This connects the UI action of clicking a category
-// in the list to the ViewModel's `requestCategoryChange` function, completing
-// the feature's workflow for this screen.
+// REASON: REVERT - Reverted changes that added filtering logic. The screen now
+// navigates to a dedicated drilldown screen instead of filtering in place.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -9809,6 +10007,7 @@ import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -9817,9 +10016,10 @@ import java.util.*
 fun TransactionListScreen(
     navController: NavController,
     viewModel: TransactionViewModel,
+    initialTab: Int = 0
 ) {
     val tabs = listOf("Transactions", "Categories", "Merchants")
-    val pagerState = rememberPagerState { tabs.size }
+    val pagerState = rememberPagerState(initialPage = initialTab) { tabs.size }
     val scope = rememberCoroutineScope()
 
     val transactions by viewModel.transactionsForSelectedMonth.collectAsState()
@@ -9878,8 +10078,24 @@ fun TransactionListScreen(
                     navController = navController,
                     onCategoryClick = { viewModel.requestCategoryChange(it) }
                 )
-                1 -> CategorySpendingScreen(spendingList = categorySpending)
-                2 -> MerchantSpendingScreen(merchantList = merchantSpending)
+                1 -> CategorySpendingScreen(
+                    spendingList = categorySpending,
+                    onCategoryClick = { categorySpendingItem ->
+                        val month = selectedMonth.get(Calendar.MONTH) + 1
+                        val year = selectedMonth.get(Calendar.YEAR)
+                        val encodedCategoryName = URLEncoder.encode(categorySpendingItem.categoryName, "UTF-8")
+                        navController.navigate("category_detail/$encodedCategoryName/$month/$year")
+                    }
+                )
+                2 -> MerchantSpendingScreen(
+                    merchantList = merchantSpending,
+                    onMerchantClick = { merchantSpendingSummary ->
+                        val month = selectedMonth.get(Calendar.MONTH) + 1
+                        val year = selectedMonth.get(Calendar.YEAR)
+                        val encodedMerchantName = URLEncoder.encode(merchantSpendingSummary.merchantName, "UTF-8")
+                        navController.navigate("merchant_detail/$encodedMerchantName/$month/$year")
+                    }
+                )
             }
         }
     }
@@ -11924,10 +12140,18 @@ private fun SelectableTransactionItem(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt
+// REASON: FEATURE - The pie chart layout has been updated to display a detailed
+// legend to the right of the chart, showing each category's color, name, and
+// percentage of the total. The chart itself no longer displays labels on
+// the slices for a cleaner look.
+// =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.graphics.Color
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11941,6 +12165,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.github.mikephil.charting.charts.PieChart
@@ -11953,7 +12178,10 @@ import io.pm.finlight.CategorySpending
 import io.pm.finlight.ui.components.GlassPanel
 
 @Composable
-fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
+fun CategorySpendingScreen(
+    spendingList: List<CategorySpending>,
+    onCategoryClick: (CategorySpending) -> Unit
+) {
     if (spendingList.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -11984,26 +12212,37 @@ fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(16.dp))
-                    AndroidView(
-                        factory = { context ->
-                            PieChart(context).apply {
-                                description.isEnabled = false
-                                isDrawHoleEnabled = true
-                                setHoleColor(Color.TRANSPARENT)
-                                setEntryLabelColor(pieChartLabelColor)
-                                setEntryLabelTextSize(12f)
-                                legend.isEnabled = false
-                                setUsePercentValues(true)
-                            }
-                        },
-                        update = { chart ->
-                            chart.data = pieData
-                            chart.invalidate()
-                        },
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(250.dp)
-                    )
+                            .height(250.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AndroidView(
+                            modifier = Modifier.weight(1f),
+                            factory = { context ->
+                                PieChart(context).apply {
+                                    description.isEnabled = false
+                                    isDrawHoleEnabled = true
+                                    setHoleColor(Color.TRANSPARENT)
+                                    holeRadius = 70f
+                                    setEntryLabelColor(pieChartLabelColor)
+                                    setEntryLabelTextSize(12f)
+                                    legend.isEnabled = false
+                                    setUsePercentValues(true)
+                                    setDrawEntryLabels(false) // Hide labels on slices
+                                }
+                            },
+                            update = { chart ->
+                                chart.data = pieData
+                                chart.invalidate()
+                            }
+                        )
+                        ChartLegend(
+                            modifier = Modifier.weight(1f),
+                            pieData = pieData
+                        )
+                    }
                 }
             }
         }
@@ -12011,18 +12250,25 @@ fun CategorySpendingScreen(spendingList: List<CategorySpending>) {
         items(spendingList) { categorySpending ->
             CategorySpendingCard(
                 categorySpending = categorySpending,
-                totalSpending = totalSpending
+                totalSpending = totalSpending,
+                onClick = { onCategoryClick(categorySpending) }
             )
         }
     }
 }
 
 @Composable
-fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Double) {
+fun CategorySpendingCard(
+    categorySpending: CategorySpending,
+    totalSpending: Double,
+    onClick: () -> Unit
+) {
     val percentage = if (totalSpending > 0) (categorySpending.totalAmount / totalSpending * 100) else 0.0
 
     GlassPanel(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -12065,6 +12311,52 @@ fun CategorySpendingCard(categorySpending: CategorySpending, totalSpending: Doub
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+        }
+    }
+}
+
+@Composable
+private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
+    val dataSet = pieData?.dataSet as? PieDataSet ?: return
+    var sumOfValues = 0f
+    for (i in 0 until dataSet.entryCount) {
+        sumOfValues += dataSet.getEntryForIndex(i).value
+    }
+    val totalValue = sumOfValues
+    LazyColumn(
+        modifier = modifier.padding(start = 16.dp),
+    ) {
+        items(dataSet.entryCount) { i ->
+            val entry = dataSet.getEntryForIndex(i)
+            val color = dataSet.getColor(i)
+            val percentage = if (totalValue > 0) (entry.value / totalValue * 100) else 0f
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(androidx.compose.ui.graphics.Color(color)),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = entry.label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${"%.1f".format(percentage)}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }
@@ -14331,10 +14623,9 @@ private fun CurrencyPickerDialog(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
-// REASON: FIX - The composable now accepts a TransactionViewModel instance. This
-// is passed to the TransactionList component, allowing it to call the necessary
-// `requestCategoryChange` function and fixing the "No value passed for parameter"
-// compilation error.
+// REASON: FIX - The call to CategorySpendingScreen has been updated to include
+// the onCategoryClick handler. This resolves the compilation error and enables
+// users to filter the income transaction list by clicking on a category.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -14474,7 +14765,14 @@ fun IncomeScreen(
                         navController = navController,
                         onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
                     )
-                    1 -> CategorySpendingScreen(spendingList = incomeByCategory)
+                    1 -> CategorySpendingScreen(
+                        spendingList = incomeByCategory,
+                        onCategoryClick = { categorySpendingItem ->
+                            val category = allCategories.find { it.name == categorySpendingItem.categoryName }
+                            incomeViewModel.updateFilterCategory(category)
+                            scope.launch { pagerState.animateScrollToPage(0) }
+                        }
+                    )
                 }
             }
         }
@@ -15555,16 +15853,10 @@ private fun SettingsSection(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FEATURE - The "Spending Consistency" card has been updated with a
-// SegmentedButton to toggle between "Yearly" and "Monthly" views. It now
-// conditionally displays either the yearly heatmap or the new detailed monthly
-// calendar, using the new state and data flows from the ViewModel.
-// FIX - Corrected the usage of the experimental SegmentedButton API to resolve
-// compilation errors.
-// FIX - Wrapped the calendar views in a Box with a fixed height to prevent
-// layout shifts when toggling between the yearly and monthly views.
-// UX REFINEMENT - Updated the navigation calls from both the yearly and monthly
-// calendars to prevent the keyboard from automatically showing on the search screen.
+// REASON: FEATURE - The pie chart layout has been updated to display a detailed
+// legend to the right of the chart, showing each category's color, name, and
+// percentage. The chart itself no longer displays labels on slices, and the
+// old legend component has been removed.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -15581,7 +15873,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewMonth
@@ -15608,12 +15902,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.data.Entry
+import com.github.mikephil.charting.data.PieData
+import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.highlight.Highlight
 import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import io.pm.finlight.CategoryIconHelper
@@ -15622,7 +15919,6 @@ import io.pm.finlight.ReportPeriod
 import io.pm.finlight.ReportViewType
 import io.pm.finlight.ReportsViewModel
 import io.pm.finlight.TimePeriod
-import io.pm.finlight.ui.components.ChartLegend
 import io.pm.finlight.ui.components.ConsistencyCalendar
 import io.pm.finlight.ui.components.DetailedMonthlyCalendar
 import io.pm.finlight.ui.components.GlassPanel
@@ -15805,38 +16101,47 @@ fun ReportsScreen(
                             )
                         }
                     } else {
-                        AndroidView(
-                            factory = { context ->
-                                PieChart(context).apply {
-                                    description.isEnabled = false
-                                    isDrawHoleEnabled = true
-                                    setHoleColor(android.graphics.Color.TRANSPARENT)
-                                    setEntryLabelColor(pieChartLabelColor)
-                                    setEntryLabelTextSize(12f)
-                                    legend.isEnabled = false
-                                    setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
-                                        override fun onValueSelected(e: Entry?, h: Highlight?) {
-                                            val categoryName = e?.data as? String ?: return
-                                            val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
-                                            category?.let {
-                                                navController.navigate("search_screen?categoryId=${it.id}")
-                                            }
-                                        }
-
-                                        override fun onNothingSelected() {}
-                                    })
-                                }
-                            },
-                            update = { chart ->
-                                chart.data = pieData
-                                chart.invalidate()
-                            },
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(300.dp),
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        ChartLegend(pieData)
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AndroidView(
+                                modifier = Modifier.weight(1f),
+                                factory = { context ->
+                                    PieChart(context).apply {
+                                        description.isEnabled = false
+                                        isDrawHoleEnabled = true
+                                        setHoleColor(android.graphics.Color.TRANSPARENT)
+                                        holeRadius = 70f
+                                        setEntryLabelColor(pieChartLabelColor)
+                                        setEntryLabelTextSize(12f)
+                                        legend.isEnabled = false
+                                        setDrawEntryLabels(false) // Hide labels on slices
+                                        setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                                            override fun onValueSelected(e: Entry?, h: Highlight?) {
+                                                val categoryName = e?.data as? String ?: return
+                                                val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
+                                                category?.let {
+                                                    navController.navigate("search_screen?categoryId=${it.id}")
+                                                }
+                                            }
+
+                                            override fun onNothingSelected() {}
+                                        })
+                                    }
+                                },
+                                update = { chart ->
+                                    chart.data = pieData
+                                    chart.invalidate()
+                                }
+                            )
+                            ChartLegend(
+                                modifier = Modifier.weight(1f),
+                                pieData = pieData
+                            )
+                        }
                     }
                 }
             }
@@ -16014,6 +16319,53 @@ private fun StatItem(count: Int, label: String) {
         )
     }
 }
+
+@Composable
+private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
+    val dataSet = pieData?.dataSet as? PieDataSet ?: return
+    var sumOfValues = 0f
+    for (i in 0 until dataSet.entryCount) {
+        sumOfValues += dataSet.getEntryForIndex(i).value
+    }
+    val totalValue = sumOfValues
+
+    LazyColumn(
+        modifier = modifier.padding(start = 16.dp),
+    ) {
+        items(dataSet.entryCount) { i ->
+            val entry = dataSet.getEntryForIndex(i)
+            val color = dataSet.getColor(i)
+            val percentage = if (totalValue > 0) (entry.value / totalValue * 100) else 0f
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(androidx.compose.ui.graphics.Color(color)),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = entry.label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${"%.1f".format(percentage)}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
 -e 
 
 
@@ -16135,10 +16487,9 @@ fun AuroraAnimatedBackground() {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FIX - The progress calculation in the DashboardHeroCard is now clamped
-// using .coerceIn(0f, 1f). This ensures that if spending exceeds the budget, the
-// progress value remains at a maximum of 1.0, preventing the AuroraProgressBar
-// from breaking visually.
+// REASON: FIX - The onClick handler for the "View Categories" quick action has
+// been updated to navigate to the transaction list screen with an argument
+// (`initialTab=1`) that directs it to open the Categories tab.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -16772,7 +17123,8 @@ fun AuroraQuickActionsCard(navController: NavController) {
                 icon = Icons.Default.PieChart,
                 text = "View Categories",
                 onClick = {
-                    navController.navigate(BottomNavItem.Reports.route) {
+                    // --- UPDATED: Navigate to the transaction list with the correct tab index ---
+                    navController.navigate("transaction_list?initialTab=1") {
                         popUpTo(BottomNavItem.Dashboard.route) {
                             saveState = true
                         }
@@ -18963,10 +19315,9 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE (Travel Mode SMS) - The NavHost entry for the approval screen
-// has been updated. It now accepts a new optional boolean argument, `isForeign`,
-// which will be passed from the new travel mode notification to indicate the
-// user's currency choice.
+// REASON: FEATURE - Added NavHost entries for the new "category_detail" and
+// "merchant_detail" screens. This defines the navigation routes and connects
+// them to the new DrilldownScreen composable, passing the required arguments.
 // =================================================================================
 package io.pm.finlight
 
@@ -19213,7 +19564,9 @@ fun MainAppScreen() {
         "data_settings",
         "add_edit_goal",
         "currency_travel_settings",
-        "split_transaction"
+        "split_transaction",
+        "category_detail",
+        "merchant_detail"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -19469,15 +19822,21 @@ fun AppNavHost(
             )
         }
         composable(
-            route = BottomNavItem.Transactions.route,
+            route = "transaction_list?initialTab={initialTab}",
+            arguments = listOf(navArgument("initialTab") {
+                type = NavType.IntType
+                defaultValue = 0
+            }),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
             popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
+        ) { backStackEntry ->
+            val initialTab = backStackEntry.arguments?.getInt("initialTab") ?: 0
             TransactionListScreen(
                 navController = navController,
-                viewModel = transactionViewModel
+                viewModel = transactionViewModel,
+                initialTab = initialTab
             )
         }
         composable(
@@ -19559,7 +19918,6 @@ fun AppNavHost(
         }
 
         composable(
-            // --- UPDATED: Add new optional argument and update deep link ---
             route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
             arguments = listOf(
                 navArgument("potentialTxnJson") { type = NavType.StringType }
@@ -19867,6 +20225,45 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) {
             CurrencyTravelScreen(navController)
+        }
+        // --- NEW: NavHost entries for the drilldown screens ---
+        composable(
+            "category_detail/{categoryName}/{month}/{year}",
+            arguments = listOf(
+                navArgument("categoryName") { type = NavType.StringType },
+                navArgument("month") { type = NavType.IntType },
+                navArgument("year") { type = NavType.IntType }
+            )
+        ) { backStackEntry ->
+            val categoryName = URLDecoder.decode(backStackEntry.arguments?.getString("categoryName"), "UTF-8")
+            val month = backStackEntry.arguments?.getInt("month") ?: 0
+            val year = backStackEntry.arguments?.getInt("year") ?: 0
+            DrilldownScreen(
+                navController = navController,
+                drilldownType = DrilldownType.CATEGORY,
+                entityName = categoryName,
+                month = month,
+                year = year
+            )
+        }
+        composable(
+            "merchant_detail/{merchantName}/{month}/{year}",
+            arguments = listOf(
+                navArgument("merchantName") { type = NavType.StringType },
+                navArgument("month") { type = NavType.IntType },
+                navArgument("year") { type = NavType.IntType }
+            )
+        ) { backStackEntry ->
+            val merchantName = URLDecoder.decode(backStackEntry.arguments?.getString("merchantName"), "UTF-8")
+            val month = backStackEntry.arguments?.getInt("month") ?: 0
+            val year = backStackEntry.arguments?.getInt("year") ?: 0
+            DrilldownScreen(
+                navController = navController,
+                drilldownType = DrilldownType.MERCHANT,
+                entityName = merchantName,
+                month = month,
+                year = year
+            )
         }
     }
 }
@@ -21721,6 +22118,129 @@ data class PeriodTotal(
     val period: String,
     val totalAmount: Double
 )
+-e 
+
+
+================== FILE: ./app/src/main/java/DrilldownViewModel.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DrilldownViewModel.kt
+// REASON: NEW FILE - This ViewModel and its associated factory power the new
+// Category and Merchant detail screens. It provides a monthly spending trend
+// chart and a list of transactions for a specific entity (category or merchant)
+// within a given month.
+// =================================================================================
+package io.pm.finlight
+
+import android.app.Application
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
+import kotlinx.coroutines.flow.*
+import java.text.SimpleDateFormat
+import java.util.*
+
+enum class DrilldownType {
+    CATEGORY,
+    MERCHANT
+}
+
+class DrilldownViewModelFactory(
+    private val application: Application,
+    private val drilldownType: DrilldownType,
+    private val entityName: String,
+    private val month: Int,
+    private val year: Int
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(DrilldownViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return DrilldownViewModel(
+                application = application,
+                drilldownType = drilldownType,
+                entityName = entityName,
+                month = month,
+                year = year
+            ) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+class DrilldownViewModel(
+    application: Application,
+    private val drilldownType: DrilldownType,
+    val entityName: String,
+    private val month: Int,
+    private val year: Int
+) : ViewModel() {
+
+    private val transactionDao = AppDatabase.getInstance(application).transactionDao()
+
+    val transactionsForMonth: StateFlow<List<TransactionDetails>>
+    val monthlyTrendChartData: StateFlow<Pair<BarData, List<String>>?>
+
+    init {
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month - 1)
+        }
+        val monthStart = (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0) }.timeInMillis
+        val monthEnd = (calendar.clone() as Calendar).apply { add(Calendar.MONTH, 1); add(Calendar.DAY_OF_MONTH, -1); set(Calendar.HOUR_OF_DAY, 23) }.timeInMillis
+
+        transactionsForMonth = when (drilldownType) {
+            DrilldownType.CATEGORY -> transactionDao.getTransactionsForCategoryName(entityName, monthStart, monthEnd)
+            DrilldownType.MERCHANT -> transactionDao.getTransactionsForMerchantName(entityName, monthStart, monthEnd)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        monthlyTrendChartData = flow {
+            val endCal = Calendar.getInstance().apply {
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month - 1)
+                set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+            }
+            val startCal = (endCal.clone() as Calendar).apply {
+                add(Calendar.MONTH, -5)
+                set(Calendar.DAY_OF_MONTH, 1)
+            }
+
+            val monthlyTotals = when (drilldownType) {
+                DrilldownType.CATEGORY -> transactionDao.getMonthlySpendingForCategory(entityName, startCal.timeInMillis, endCal.timeInMillis)
+                DrilldownType.MERCHANT -> transactionDao.getMonthlySpendingForMerchant(entityName, startCal.timeInMillis, endCal.timeInMillis)
+            }.first()
+
+            if (monthlyTotals.isEmpty()) {
+                emit(null)
+                return@flow
+            }
+
+            val entries = mutableListOf<BarEntry>()
+            val labels = mutableListOf<String>()
+            val monthFormat = SimpleDateFormat("MMM", Locale.getDefault())
+            val yearMonthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+            val totalsMap = monthlyTotals.associateBy { it.period }
+
+            for (i in 0..5) {
+                val monthCal = (startCal.clone() as Calendar).apply { add(Calendar.MONTH, i) }
+                val yearMonth = yearMonthFormat.format(monthCal.time)
+
+                val total = totalsMap[yearMonth]?.totalAmount?.toFloat() ?: 0f
+                entries.add(BarEntry(i.toFloat(), total))
+                labels.add(monthFormat.format(monthCal.time))
+            }
+
+            val dataSet = BarDataSet(entries, "Monthly Spending").apply {
+                color = 0xFF4DB6AC.toInt() // Teal
+                setDrawValues(true)
+                valueTextColor = 0xFFFFFFFF.toInt()
+            }
+            emit(Pair(BarData(dataSet), labels))
+
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }
+}
 -e 
 
 
@@ -23685,10 +24205,11 @@ data class IgnoreRule(
 ================== FILE: ./app/src/main/java/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FIX - Corrected a SQL query ambiguity in `getIncomeByCategoryForMonth`.
-// The `WHERE` clause was updated to filter by `C.id` (the joined category table's
-// ID) instead of `AI.categoryId` (the subquery's column). This resolves the
-// "no such column" compilation error from Room's query parser.
+// REASON: FEATURE - Added new queries to support the drilldown screens:
+// - getTransactionsForCategoryName: Fetches all transactions for a specific category in a date range.
+// - getTransactionsForMerchantName: Fetches all transactions for a specific merchant in a date range.
+// - getMonthlySpendingForCategory: Gets historical monthly spending for a single category.
+// - getMonthlySpendingForMerchant: Gets historical monthly spending for a single merchant.
 // =================================================================================
 package io.pm.finlight
 
@@ -23860,6 +24381,71 @@ interface TransactionDao {
         ORDER BY totalAmount DESC
     """)
     fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>>
+
+    // --- NEW: Query for category drilldown transaction list ---
+    @Query("""
+        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
+        FROM transactions AS T
+        LEFT JOIN accounts AS A ON T.accountId = A.id
+        LEFT JOIN categories AS C ON T.categoryId = C.id
+        WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate
+        ORDER BY T.date DESC
+    """)
+    fun getTransactionsForCategoryName(categoryName: String, startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
+
+    // --- NEW: Query for merchant drilldown transaction list ---
+    @Query("""
+        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
+        FROM transactions AS T
+        LEFT JOIN accounts AS A ON T.accountId = A.id
+        LEFT JOIN categories AS C ON T.categoryId = C.id
+        WHERE T.description = :merchantName AND T.date BETWEEN :startDate AND :endDate
+        ORDER BY T.date DESC
+    """)
+    fun getTransactionsForMerchantName(merchantName: String, startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
+
+    // --- NEW: Query for category drilldown monthly trend chart ---
+    @Query("""
+        WITH AtomicExpenses AS (
+            SELECT P.date, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            JOIN categories AS C ON S.categoryId = C.id
+            WHERE P.transactionType = 'expense' AND P.isExcluded = 0 AND C.name = :categoryName
+            UNION ALL
+            SELECT T.date, T.amount FROM transactions AS T
+            JOIN categories AS C ON T.categoryId = C.id
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0 AND C.name = :categoryName
+        )
+        SELECT
+            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
+            SUM(amount) as totalAmount
+        FROM AtomicExpenses
+        WHERE date BETWEEN :startDate AND :endDate
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getMonthlySpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
+
+    // --- NEW: Query for merchant drilldown monthly trend chart ---
+    @Query("""
+        WITH AtomicExpenses AS (
+            SELECT P.date, S.amount FROM split_transactions AS S
+            JOIN transactions AS P ON S.parentTransactionId = P.id
+            WHERE P.transactionType = 'expense' AND P.isExcluded = 0 AND P.description = :merchantName
+            UNION ALL
+            SELECT T.date, T.amount FROM transactions AS T
+            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0 AND T.description = :merchantName
+        )
+        SELECT
+            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
+            SUM(amount) as totalAmount
+        FROM AtomicExpenses
+        WHERE date BETWEEN :startDate AND :endDate
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getMonthlySpendingForMerchant(merchantName: String, startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
+
 
     @Insert
     suspend fun insertImage(transactionImage: TransactionImage)

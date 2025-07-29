@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FEATURE - The pie chart layout has been updated to display a detailed
-// legend to the right of the chart, showing each category's color, name, and
-// percentage. The chart itself no longer displays labels on slices, and the
-// old legend component has been removed.
+// REASON: FIX - Adjusted the layout weights to give the pie chart more space
+// (60%) and the legend less (40%), making the chart larger. Reduced the chart's
+// holeRadius from 70f to 58f to make the donut ring thicker and more visible.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -255,13 +254,13 @@ fun ReportsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             AndroidView(
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1.5f), // --- UPDATED: Give chart more weight
                                 factory = { context ->
                                     PieChart(context).apply {
                                         description.isEnabled = false
                                         isDrawHoleEnabled = true
                                         setHoleColor(android.graphics.Color.TRANSPARENT)
-                                        holeRadius = 70f
+                                        holeRadius = 58f // --- UPDATED: Make ring thicker
                                         setEntryLabelColor(pieChartLabelColor)
                                         setEntryLabelTextSize(12f)
                                         legend.isEnabled = false
@@ -285,7 +284,7 @@ fun ReportsScreen(
                                 }
                             )
                             ChartLegend(
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f), // --- UPDATED: Give legend less weight
                                 pieData = pieData
                             )
                         }
