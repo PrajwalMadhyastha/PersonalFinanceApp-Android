@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
-// REASON: FIX - The composable now accepts a TransactionViewModel instance, which
-// is passed to the TransactionItem component. This allows the UI to call the
-// `requestCategoryChange` function, fixing the "No value passed for parameter"
-// compilation error and enabling the feature on this screen.
+// REASON: FIX - The screen now accepts an `expandFilters` boolean. The
+// LaunchedEffect that automatically expands the filter panel now only runs if
+// this new flag is true. This prevents the panel from opening when navigating
+// from the ReportsScreen pie chart.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -45,7 +45,8 @@ fun SearchScreen(
     navController: NavController,
     searchViewModel: SearchViewModel,
     transactionViewModel: TransactionViewModel,
-    focusSearch: Boolean
+    focusSearch: Boolean,
+    expandFilters: Boolean
 ) {
     val searchUiState by searchViewModel.uiState.collectAsState()
     val searchResults by searchViewModel.searchResults.collectAsState()
@@ -57,8 +58,8 @@ fun SearchScreen(
     val focusRequester = remember { FocusRequester() }
     val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
-    LaunchedEffect(searchUiState.selectedCategory) {
-        if (searchUiState.selectedCategory != null) {
+    LaunchedEffect(searchUiState.selectedCategory, expandFilters) {
+        if (searchUiState.selectedCategory != null && expandFilters) {
             showFilters = true
         }
     }

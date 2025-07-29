@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE - Added NavHost entries for the new "category_detail" and
-// "merchant_detail" screens. This defines the navigation routes and connects
-// them to the new DrilldownScreen composable, passing the required arguments.
+// REASON: FIX - Added a new optional boolean NavArgument `expandFilters` to the
+// `search_screen` route. This allows calling screens to control whether the
+// filter panel on the SearchScreen should be expanded by default, which is
+// necessary to fix the pie chart click behavior.
 // =================================================================================
 package io.pm.finlight
 
@@ -560,11 +561,12 @@ fun AppNavHost(
             popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
         ) { CsvValidationScreen(navController, settingsViewModel) }
         composable(
-            route = "search_screen?categoryId={categoryId}&date={date}&focusSearch={focusSearch}",
+            route = "search_screen?categoryId={categoryId}&date={date}&focusSearch={focusSearch}&expandFilters={expandFilters}",
             arguments = listOf(
                 navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 },
                 navArgument("date") { type = NavType.LongType; defaultValue = -1L },
-                navArgument("focusSearch") { type = NavType.BoolType; defaultValue = true }
+                navArgument("focusSearch") { type = NavType.BoolType; defaultValue = true },
+                navArgument("expandFilters") { type = NavType.BoolType; defaultValue = true }
             ),
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
@@ -574,6 +576,7 @@ fun AppNavHost(
             val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
             val date = backStackEntry.arguments?.getLong("date") ?: -1L
             val focusSearch = backStackEntry.arguments?.getBoolean("focusSearch") ?: true
+            val expandFilters = backStackEntry.arguments?.getBoolean("expandFilters") ?: true
 
             val factory = SearchViewModelFactory(
                 activity.application,
@@ -581,7 +584,7 @@ fun AppNavHost(
                 if (date != -1L) date else null
             )
             val searchViewModel: SearchViewModel = viewModel(factory = factory)
-            SearchScreen(navController, searchViewModel, transactionViewModel, focusSearch)
+            SearchScreen(navController, searchViewModel, transactionViewModel, focusSearch, expandFilters)
         }
         composable(
             route = "review_sms_screen",

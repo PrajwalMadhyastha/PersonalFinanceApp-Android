@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FEATURE - The DonutChart is now interactive. The previous simple
-// clickable modifier has been replaced with a pointerInput that detects the
-// exact slice tapped by the user. The onSliceClick callback now navigates to
-// the SearchScreen, pre-filtered for the selected category.
+// REASON: FIX - The navigation from the DonutChart now includes an
+// `expandFilters=false` argument. This tells the destination SearchScreen not
+// to automatically expand its filter view, resolving the unintended UI behavior
+// while keeping the filtering logic intact.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -241,7 +241,8 @@ fun ReportsScreen(
                                     val categoryName = entry.label
                                     val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
                                     category?.let {
-                                        navController.navigate("search_screen?categoryId=${it.id}")
+                                        // --- UPDATED: Add expandFilters=false to the navigation route ---
+                                        navController.navigate("search_screen?categoryId=${it.id}&expandFilters=false")
                                     }
                                 }
                             )
