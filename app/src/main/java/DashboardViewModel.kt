@@ -1,10 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FEATURE - Enhanced the "Budget Health Summary" to be more dynamic.
-// Instead of a single static phrase for each spending scenario, the ViewModel
-// now contains lists of encouraging phrases. It randomly selects one from the
-// appropriate list, making the dashboard feel more interactive and less
-// repetitive for the user.
+// REASON: FIX - Added a refresh trigger to the budget health summary. A new
+// `refreshBudgetSummary` function updates a trigger StateFlow, which is now
+// included in the `combine` logic for the summary. This forces the ViewModel
+// to re-select a random phrase every time the dashboard is viewed, making the
+// summary feel more dynamic.
 // =================================================================================
 package io.pm.finlight
 
@@ -56,6 +56,9 @@ class DashboardViewModel(
     val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
 
     val budgetHealthSummary: StateFlow<String>
+
+    // --- NEW: A trigger to force the summary to be re-calculated ---
+    private val _summaryRefreshTrigger = MutableStateFlow(System.currentTimeMillis())
 
     init {
         userName = settingsRepository.getUserName()
@@ -158,10 +161,12 @@ class DashboardViewModel(
                 if (remaining > 0) remaining / remainingDays else 0f
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
+        // --- UPDATED: Combine with the refresh trigger ---
         budgetHealthSummary = combine(
             monthlyExpenses,
-            overallMonthlyBudget
-        ) { expenses, budget ->
+            overallMonthlyBudget,
+            _summaryRefreshTrigger
+        ) { expenses, budget, _ -> // The trigger's value is ignored, its change is what matters
             if (budget <= 0f) {
                 "Set a budget to see insights"
             } else {
@@ -173,7 +178,6 @@ class DashboardViewModel(
                 val percentOfMonthPassed = dayOfMonth.toFloat() / daysInMonth.toFloat()
                 val percentOfBudgetSpent = (expenses / budget).toFloat()
 
-                // --- UPDATED: Use lists of phrases and select one randomly ---
                 when {
                     percentOfBudgetSpent > 1 -> listOf(
                         "You've gone over for $monthName.",
@@ -229,6 +233,11 @@ class DashboardViewModel(
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
+    }
+
+    // --- NEW: Public function to be called from the UI ---
+    fun refreshBudgetSummary() {
+        _summaryRefreshTrigger.value = System.currentTimeMillis()
     }
 
     private suspend fun generateYearlyConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {

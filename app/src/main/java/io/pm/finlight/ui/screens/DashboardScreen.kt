@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FEATURE - The screen now collects the new `budgetHealthSummary` state
-// from the ViewModel and passes it down to the `DashboardHeroCard` component,
-// completing the implementation of the dynamic summary feature.
+// REASON: FIX - Added a `LaunchedEffect` that calls the ViewModel's new
+// `refreshBudgetSummary` function when the screen is composed. This ensures
+// that a new random summary phrase is selected each time the user navigates
+// to the dashboard, fixing the stale text issue.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -57,13 +58,17 @@ fun DashboardScreen(
     val showAddCardSheet by dashboardViewModel.showAddCardSheet.collectAsState()
     val hiddenCards by dashboardViewModel.hiddenCards.collectAsState()
     val yearlyConsistencyData by dashboardViewModel.yearlyConsistencyData.collectAsState()
-    // --- NEW: Collect the budget health summary state ---
     val budgetHealthSummary by dashboardViewModel.budgetHealthSummary.collectAsState()
 
 
     val coroutineScope = rememberCoroutineScope()
     var overscrollJob by remember { mutableStateOf<Job?>(null) }
     val dragDropState = rememberDragDropState(onMove = dashboardViewModel::updateCardOrder)
+
+    // --- NEW: Trigger a refresh of the summary phrase when the screen is displayed ---
+    LaunchedEffect(Unit) {
+        dashboardViewModel.refreshBudgetSummary()
+    }
 
     if (showAddCardSheet) {
         val sheetContainerColor = if (isSystemInDarkTheme()) {
@@ -166,7 +171,6 @@ fun DashboardScreen(
                     isCustomizationMode = isCustomizationMode,
                     onHide = { dashboardViewModel.hideCard(cardType) },
                     yearlyConsistencyData = yearlyConsistencyData,
-                    // --- NEW: Pass the summary string to the Hero Card ---
                     budgetHealthSummary = budgetHealthSummary
                 )
             }
@@ -183,7 +187,7 @@ private fun DashboardCard(
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
     yearlyConsistencyData: List<CalendarDayStatus>,
-    budgetHealthSummary: String // --- NEW: Add parameter to receive summary ---
+    budgetHealthSummary: String
 ) {
     val netWorth by dashboardViewModel.netWorth.collectAsState()
     val monthlyIncome by dashboardViewModel.monthlyIncome.collectAsState()
@@ -206,7 +210,6 @@ private fun DashboardCard(
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,
                 monthYear = monthYear,
-                // --- NEW: Pass the summary string to the Hero Card ---
                 budgetHealthSummary = budgetHealthSummary
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
