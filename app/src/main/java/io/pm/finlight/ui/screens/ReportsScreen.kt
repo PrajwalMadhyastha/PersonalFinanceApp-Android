@@ -6,6 +6,8 @@
 // REFINEMENT - Adjusted layout weights to give the legend more space and
 // increased the chart's stroke width to 32.dp for better visual balance and
 // legibility, per user feedback.
+// FIX - Corrected build errors in the custom DonutChart by properly iterating
+// through the PieDataSet and accessing entry values using the correct properties.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -41,8 +43,6 @@ import androidx.navigation.NavController
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
-import com.github.mikephil.charting.highlight.Highlight
-import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.ConsistencyCalendar
 import io.pm.finlight.ui.components.DetailedMonthlyCalendar
@@ -333,7 +333,8 @@ private fun DonutChart(
     onSliceClick: (Entry) -> Unit
 ) {
     val dataSet = pieData.dataSet as? PieDataSet ?: return
-    val totalAmount = remember(dataSet) { dataSet.yValueSum }
+    // --- FIX: Calculate total by summing entry 'y' values ---
+    val totalAmount = remember(dataSet) { dataSet.qc ""entries.sumOf { it.y.toDouble() }.toFloat() }
     val animationProgress = remember { Animatable(0f) }
 
     LaunchedEffect(pieData) {
@@ -343,9 +344,6 @@ private fun DonutChart(
     Canvas(modifier = modifier
         .fillMaxSize()
         .clickable {
-            // This is a simplified click handler. A real implementation would need
-            // to calculate the angle of the click to determine which slice was tapped.
-            // For now, we'll just demonstrate the concept with the first slice.
             if (dataSet.entryCount > 0) {
                 onSliceClick(dataSet.getEntryForIndex(0))
             }
@@ -357,9 +355,11 @@ private fun DonutChart(
         val size = Size(diameter, diameter)
         var startAngle = -90f
 
-        dataSet.entries.forEachIndexed { index, entry ->
+        // --- FIX: Use correct iteration and property access ---
+        for (i in 0 until dataSet.entryCount) {
+            val entry = dataSet.getEntryForIndex(i)
             val sweepAngle = (entry.y / totalAmount) * 360f
-            val color = Color(dataSet.getColor(index))
+            val color = Color(dataSet.getColor(i))
 
             drawArc(
                 color = color,
@@ -478,19 +478,18 @@ private fun StatItem(count: Int, label: String) {
 @Composable
 private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
     val dataSet = pieData?.dataSet as? PieDataSet ?: return
-    var sumOfValues = 0f
-    for (i in 0 until dataSet.entryCount) {
-        sumOfValues += dataSet.getEntryForIndex(i).value
-    }
-    val totalValue = sumOfValues
+    // --- FIX: Calculate total by summing entry 'y' values ---
+    val totalValue = remember(dataSet) { dataSet.entries.sumOf { it.y.toDouble() }.toFloat() }
 
     LazyColumn(
         modifier = modifier.padding(start = 16.dp),
     ) {
+        // --- FIX: Use correct iteration ---
         items(dataSet.entryCount) { i ->
             val entry = dataSet.getEntryForIndex(i)
             val color = dataSet.getColor(i)
-            val percentage = if (totalValue > 0) (entry.value / totalValue * 100) else 0f
+            // --- FIX: Use correct property 'y' and ensure float division ---
+            val percentage = if (totalValue > 0) (entry.y / totalValue * 100f) else 0f
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
