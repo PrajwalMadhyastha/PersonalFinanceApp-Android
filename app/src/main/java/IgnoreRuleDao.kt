@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/IgnoreRuleDao.kt
-// REASON: FEATURE - The DAO has been updated with new methods to support the
-// enhanced ignore rule management. It can now insert a list of default rules,
-// update the enabled status of a rule, and fetch only the active phrases for
-// the parser to use.
+// REASON: FEATURE - The `getEnabledPhrases` function has been replaced with
+// `getEnabledRules`, which returns the full IgnoreRule objects. This provides
+// the SmsParser with the necessary `type` information to distinguish between
+// sender and body phrase patterns.
 // =================================================================================
 package io.pm.finlight
 
@@ -25,18 +25,18 @@ interface IgnoreRuleDao {
      * Retrieves all ignore rules from the database, ordered alphabetically.
      * @return A Flow emitting a list of all IgnoreRule objects.
      */
-    @Query("SELECT * FROM ignore_rules ORDER BY phrase ASC")
+    @Query("SELECT * FROM ignore_rules ORDER BY pattern ASC")
     fun getAll(): Flow<List<IgnoreRule>>
 
     /**
-     * Retrieves all enabled ignore phrases.
-     * @return A list of strings containing the active ignore phrases.
+     * Retrieves all enabled ignore rules.
+     * @return A list of the active IgnoreRule objects.
      */
-    @Query("SELECT phrase FROM ignore_rules WHERE isEnabled = 1")
-    suspend fun getEnabledPhrases(): List<String>
+    @Query("SELECT * FROM ignore_rules WHERE isEnabled = 1")
+    suspend fun getEnabledRules(): List<IgnoreRule>
 
     /**
-     * Inserts a new ignore rule. If a rule with the same phrase already exists,
+     * Inserts a new ignore rule. If a rule with the same pattern already exists,
      * it will be ignored.
      * @param rule The IgnoreRule object to insert.
      */

@@ -1,15 +1,16 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - The parser now generates a "signature" for each SMS. This
-// is done by removing volatile data (amounts, dates, times, ref numbers) to
-// create a stable template of the message. This signature is the key to the new
-// proactive recurring transaction detection feature. It is now included in the
-// returned PotentialTransaction object.
+// REASON: FEATURE - The parsing logic is now more powerful. It fetches all
+// enabled ignore rules and separates them by type. It first checks the SMS
+// sender against all SENDER rules. If a match is found, parsing stops.
+// Otherwise, it proceeds to check the message body against BODY_PHRASE rules.
+// A new helper function converts wildcard patterns to valid regex.
 // =================================================================================
 package io.pm.finlight
 
 import android.util.Log
 import kotlinx.coroutines.flow.first
+import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 
 data class PotentialAccount(
@@ -43,7 +44,6 @@ object SmsParser {
             "Info:?\\s*([A-Za-z0-9\\s.&'-]+?)(?:\\.|$)".toRegex(RegexOption.IGNORE_CASE)
         )
 
-    // --- NEW: Regex to find and remove volatile parts of an SMS for signature generation ---
     private val VOLATILE_DATA_REGEX = listOf(
         "\\b(?:rs|inr)[\\s.]*\\d[\\d,.]*".toRegex(RegexOption.IGNORE_CASE), // Amounts (e.g., Rs. 1,234.56)
         "\\d{1,2}[-/]\\d{1,2}[-/]\\d{2,4}".toRegex(), // Dates (e.g., 31-12-2024)
@@ -55,15 +55,11 @@ object SmsParser {
         "\\b\\d{4,}\\b".toRegex() // Any number with 4 or more digits (likely IDs, etc.)
     )
 
-    /**
-     * Generates a stable "signature" from an SMS body by removing volatile data.
-     */
     private fun generateSmsSignature(body: String): String {
         var signature = body.lowercase()
         VOLATILE_DATA_REGEX.forEach { regex ->
             signature = regex.replace(signature, "")
         }
-        // Normalize whitespace and hash the result for a clean, unique key
         return signature.replace(Regex("\\s+"), " ").trim().hashCode().toString()
     }
 
@@ -94,6 +90,12 @@ object SmsParser {
         return null
     }
 
+    // --- NEW: Helper to convert wildcard patterns to regex ---
+    private fun wildcardToRegex(pattern: String): Regex {
+        val escaped = Pattern.quote(pattern).replace("*", "\\E.*\\Q")
+        return escaped.toRegex(RegexOption.IGNORE_CASE)
+    }
+
     suspend fun parse(
         sms: SmsMessage,
         mappings: Map<String, String>,
@@ -102,18 +104,33 @@ object SmsParser {
         ignoreRuleDao: IgnoreRuleDao,
         merchantCategoryMappingDao: MerchantCategoryMappingDao
     ): PotentialTransaction? {
-        val messageBody = sms.body
         Log.d("SmsParser", "--- Parsing SMS from: ${sms.sender} ---")
 
-        val ignorePhrases = ignoreRuleDao.getEnabledPhrases()
-        for (phrase in ignorePhrases) {
+        val allIgnoreRules = ignoreRuleDao.getEnabledRules()
+        val senderIgnoreRules = allIgnoreRules.filter { it.type == RuleType.SENDER }
+        val bodyIgnoreRules = allIgnoreRules.filter { it.type == RuleType.BODY_PHRASE }
+
+        // --- STEP 1: Check against sender ignore rules ---
+        for (rule in senderIgnoreRules) {
             try {
-                if (phrase.toRegex(RegexOption.IGNORE_CASE).containsMatchIn(messageBody)) {
-                    Log.d("SmsParser", "Message contains ignore phrase '$phrase'. Ignoring.")
+                if (wildcardToRegex(rule.pattern).matches(sms.sender)) {
+                    Log.d("SmsParser", "Message sender '${sms.sender}' matches ignore pattern '${rule.pattern}'. Ignoring.")
                     return null
                 }
             } catch (e: PatternSyntaxException) {
-                Log.e("SmsParser", "Invalid regex pattern in ignore phrase: '$phrase'", e)
+                Log.e("SmsParser", "Invalid regex from sender pattern: '${rule.pattern}'", e)
+            }
+        }
+
+        // --- STEP 2: Check against body phrase ignore rules ---
+        for (rule in bodyIgnoreRules) {
+            try {
+                if (rule.pattern.toRegex(RegexOption.IGNORE_CASE).containsMatchIn(sms.body)) {
+                    Log.d("SmsParser", "Message body contains ignore phrase '${rule.pattern}'. Ignoring.")
+                    return null
+                }
+            } catch (e: PatternSyntaxException) {
+                Log.e("SmsParser", "Invalid regex in body phrase: '${rule.pattern}'", e)
             }
         }
 
@@ -127,12 +144,12 @@ object SmsParser {
 
 
         for (rule in allRules) {
-            if (messageBody.contains(rule.triggerPhrase, ignoreCase = true)) {
+            if (sms.body.contains(rule.triggerPhrase, ignoreCase = true)) {
                 Log.d("SmsParser", "SUCCESS: Found matching trigger phrase '${rule.triggerPhrase}' for rule ID ${rule.id}.")
 
                 rule.merchantRegex?.let { regexStr ->
                     try {
-                        val match = regexStr.toRegex().find(messageBody)
+                        val match = regexStr.toRegex().find(sms.body)
                         if (match != null && match.groupValues.size > 1) {
                             extractedMerchant = match.groupValues[1].trim()
                         }
@@ -141,7 +158,7 @@ object SmsParser {
 
                 rule.amountRegex?.let { regexStr ->
                     try {
-                        val match = regexStr.toRegex().find(messageBody)
+                        val match = regexStr.toRegex().find(sms.body)
                         if (match != null && match.groupValues.size > 1) {
                             extractedAmount = match.groupValues[1].replace(",", "").toDoubleOrNull()
                         }
@@ -150,7 +167,7 @@ object SmsParser {
 
                 rule.accountRegex?.let { regexStr ->
                     try {
-                        val match = regexStr.toRegex().find(messageBody)
+                        val match = regexStr.toRegex().find(sms.body)
                         if (match != null && match.groupValues.size > 1) {
                             val accountName = match.groupValues[1].trim()
                             extractedAccount = PotentialAccount(formattedName = accountName, accountType = "Custom")
@@ -165,14 +182,14 @@ object SmsParser {
         }
 
         val amount = extractedAmount
-            ?: CURRENCY_AMOUNT_REGEX.find(messageBody)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
-            ?: KEYWORD_AMOUNT_REGEX.find(messageBody)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
+            ?: CURRENCY_AMOUNT_REGEX.find(sms.body)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
+            ?: KEYWORD_AMOUNT_REGEX.find(sms.body)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
             ?: return null
 
         val transactionType =
             when {
-                EXPENSE_KEYWORDS_REGEX.containsMatchIn(messageBody) -> "expense"
-                INCOME_KEYWORDS_REGEX.containsMatchIn(messageBody) -> "income"
+                EXPENSE_KEYWORDS_REGEX.containsMatchIn(sms.body) -> "expense"
+                INCOME_KEYWORDS_REGEX.containsMatchIn(sms.body) -> "income"
                 else -> return null
             }
 
@@ -180,7 +197,7 @@ object SmsParser {
 
         if (merchantName == null) {
             for (pattern in MERCHANT_REGEX_PATTERNS) {
-                val match = pattern.find(messageBody)
+                val match = pattern.find(sms.body)
                 if (match != null) {
                     val potentialName = match.groups[1]?.value?.replace("_", " ")?.replace(Regex("\\s+"), " ")?.trim()
                     if (!potentialName.isNullOrBlank() && !potentialName.contains("call", ignoreCase = true)) {
@@ -207,11 +224,10 @@ object SmsParser {
             }
         }
 
-        val potentialAccount = extractedAccount ?: parseAccount(messageBody, sms.sender)
+        val potentialAccount = extractedAccount ?: parseAccount(sms.body, sms.sender)
         val normalizedSender = sms.sender.filter { it.isDigit() }.takeLast(10)
         val normalizedBody = sms.body.trim().replace(Regex("\\s+"), " ")
         val smsHash = (normalizedSender + normalizedBody).hashCode().toString()
-        // --- NEW: Generate and include the signature ---
         val smsSignature = generateSmsSignature(sms.body)
 
 
@@ -221,11 +237,11 @@ object SmsParser {
             amount = amount,
             transactionType = transactionType,
             merchantName = merchantName,
-            originalMessage = messageBody,
+            originalMessage = sms.body,
             potentialAccount = potentialAccount,
             sourceSmsHash = smsHash,
             categoryId = learnedCategoryId,
-            smsSignature = smsSignature // --- NEW
+            smsSignature = smsSignature
         )
     }
 }
