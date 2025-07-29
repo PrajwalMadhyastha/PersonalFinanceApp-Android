@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FIX - The navigation from the DonutChart now includes an
-// `expandFilters=false` argument. This tells the destination SearchScreen not
-// to automatically expand its filter view, resolving the unintended UI behavior
-// while keeping the filtering logic intact.
+// REASON: FIX - The navigation from the DonutChart now includes a
+// `focusSearch=false` argument. This tells the destination SearchScreen not
+// to automatically request focus for the search bar, resolving the unintended
+// UI behavior.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -15,7 +15,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewMonth
@@ -38,7 +37,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
@@ -241,8 +239,8 @@ fun ReportsScreen(
                                     val categoryName = entry.label
                                     val category = allCategories.find { it.name.equals(categoryName, ignoreCase = true) }
                                     category?.let {
-                                        // --- UPDATED: Add expandFilters=false to the navigation route ---
-                                        navController.navigate("search_screen?categoryId=${it.id}&expandFilters=false")
+                                        // --- UPDATED: Add focusSearch=false to the navigation route ---
+                                        navController.navigate("search_screen?categoryId=${it.id}&expandFilters=false&focusSearch=false")
                                     }
                                 }
                             )
