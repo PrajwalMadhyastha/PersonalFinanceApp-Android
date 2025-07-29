@@ -1,11 +1,12 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FEATURE - The screen now collects the new `budgetHealthSummary` state
-// from the ViewModel and passes it down to the `DashboardHeroCard` component,
-// completing the implementation of the dynamic summary feature.
+// REASON: FEATURE - The screen now collects the new `sparklineData` state from
+// the ViewModel and passes it down to the `DashboardHeroCard` component,
+// completing the implementation of the mini-trend chart feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.app.Application
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -33,13 +34,16 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.util.Date
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -53,8 +57,8 @@ fun DashboardScreen(
     val showAddCardSheet by dashboardViewModel.showAddCardSheet.collectAsState()
     val hiddenCards by dashboardViewModel.hiddenCards.collectAsState()
     val yearlyConsistencyData by dashboardViewModel.yearlyConsistencyData.collectAsState()
-    // --- NEW: Collect the budget health summary state ---
-    val budgetHealthSummary by dashboardViewModel.budgetHealthSummary.collectAsState()
+    // --- NEW: Collect the sparkline data state ---
+    val sparklineData by dashboardViewModel.sparklineData.collectAsState()
 
 
     val coroutineScope = rememberCoroutineScope()
@@ -162,8 +166,8 @@ fun DashboardScreen(
                     isCustomizationMode = isCustomizationMode,
                     onHide = { dashboardViewModel.hideCard(cardType) },
                     yearlyConsistencyData = yearlyConsistencyData,
-                    // --- NEW: Pass the summary string to the Hero Card ---
-                    budgetHealthSummary = budgetHealthSummary
+                    // --- NEW: Pass the sparkline data to the Hero Card ---
+                    sparklineData = sparklineData
                 )
             }
         }
@@ -179,7 +183,7 @@ private fun DashboardCard(
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
     yearlyConsistencyData: List<CalendarDayStatus>,
-    budgetHealthSummary: String // --- NEW: Add parameter to receive summary ---
+    sparklineData: List<Float> // --- NEW: Add parameter to receive sparkline data ---
 ) {
     val netWorth by dashboardViewModel.netWorth.collectAsState()
     val monthlyIncome by dashboardViewModel.monthlyIncome.collectAsState()
@@ -202,8 +206,8 @@ private fun DashboardCard(
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,
                 monthYear = monthYear,
-                // --- NEW: Pass the summary string to the Hero Card ---
-                budgetHealthSummary = budgetHealthSummary
+                // --- NEW: Pass the sparkline data to the Hero Card ---
+                sparklineData = sparklineData
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)

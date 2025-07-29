@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FEATURE - The DashboardHeroCard has been updated to accept and display
-// a dynamic "budgetHealthSummary" string. The static "Monthly Budget" text has
-// been removed and replaced with this context-aware summary, making the card
-// more informative at a glance.
+// REASON: FEATURE - The DashboardHeroCard has been redesigned to include a
+// mini-trend sparkline chart. A new `SparklineChart` composable, built with
+// Canvas, replaces the static title, providing a visual summary of the last 7
+// days of spending directly on the dashboard's main card.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -117,12 +117,11 @@ fun DashboardHeroCard(
     safeToSpend: Float,
     navController: NavController,
     monthYear: String,
-    budgetHealthSummary: String // --- NEW: Add parameter for the dynamic summary ---
+    sparklineData: List<Float> // --- NEW: Add parameter for sparkline data ---
 ) {
-    // --- FIX: Coerce the progress value to be between 0f and 1f ---
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f), // This ensures the value doesn't exceed 1.0
+        targetValue = progress.coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 400, easing = EaseOutCubic),
         label = "BudgetProgressAnimation"
     )
@@ -132,14 +131,15 @@ fun DashboardHeroCard(
             .fillMaxWidth()
             .padding(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // --- UPDATED: Display the dynamic summary instead of the static title ---
-        Text(
-            text = budgetHealthSummary,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+        // --- NEW: Sparkline chart replaces the static title ---
+        SparklineChart(
+            data = sparklineData,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .padding(horizontal = 16.dp)
         )
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -197,6 +197,58 @@ fun DashboardHeroCard(
         }
     }
 }
+
+// --- NEW: Sparkline Chart Composable ---
+@Composable
+private fun SparklineChart(
+    modifier: Modifier = Modifier,
+    data: List<Float>
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Canvas(modifier = modifier) {
+        if (data.size < 2) return@Canvas
+
+        val maxVal = data.maxOrNull() ?: 0f
+        val minVal = data.minOrNull() ?: 0f
+        val range = (maxVal - minVal).coerceAtLeast(1f)
+
+        val path = Path()
+        val pathGradient = Path()
+
+        data.forEachIndexed { index, value ->
+            val x = (index.toFloat() / (data.size - 1)) * size.width
+            val y = size.height - ((value - minVal) / range) * size.height
+
+            if (index == 0) {
+                path.moveTo(x, y)
+                pathGradient.moveTo(x, size.height)
+                pathGradient.lineTo(x, y)
+            } else {
+                path.lineTo(x, y)
+                pathGradient.lineTo(x, y)
+            }
+        }
+
+        // Draw the gradient fill below the line
+        pathGradient.lineTo(size.width, size.height)
+        pathGradient.close()
+        drawPath(
+            path = pathGradient,
+            brush = Brush.verticalGradient(
+                colors = listOf(primaryColor.copy(alpha = 0.2f), Color.Transparent)
+            )
+        )
+
+        // Draw the main sparkline
+        drawPath(
+            path = path,
+            color = primaryColor,
+            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+    }
+}
+
 
 @Composable
 private fun StatItem(label: String, amount: Float, isCurrency: Boolean = true, isPerDay: Boolean = false, onClick: (() -> Unit)? = null) {

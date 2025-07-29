@@ -1,9 +1,9 @@
-// =================================================================================
+// = =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FEATURE - Replaced the static "Monthly Budget" title with a dynamic
-// "Budget Health Summary". This new logic calculates if the user is on track
-// with their spending for the month and provides a context-aware summary string
-// to the UI, making the dashboard hero card more informative.
+// REASON: FEATURE - Added logic to fetch and process data for a new 7-day
+// spending sparkline chart. A new `sparklineData` StateFlow is exposed, which
+// queries for daily spending totals and normalizes them for easy consumption
+// by the UI, enabling a mini-trend visualization on the dashboard hero card.
 // =================================================================================
 package io.pm.finlight
 
@@ -54,8 +54,8 @@ class DashboardViewModel(
 
     val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
 
-    // --- NEW: StateFlow for the dynamic budget summary ---
-    val budgetHealthSummary: StateFlow<String>
+    // --- NEW: StateFlow for the 7-day sparkline chart data ---
+    val sparklineData: StateFlow<List<Float>>
 
     init {
         userName = settingsRepository.getUserName()
@@ -158,31 +158,6 @@ class DashboardViewModel(
                 if (remaining > 0) remaining / remainingDays else 0f
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-        // --- NEW: Logic for the dynamic budget health summary ---
-        budgetHealthSummary = combine(
-            monthlyExpenses,
-            overallMonthlyBudget
-        ) { expenses, budget ->
-            if (budget <= 0f) {
-                "Set a budget to see insights"
-            } else {
-                val cal = Calendar.getInstance()
-                val dayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
-                val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-
-                val percentOfMonthPassed = dayOfMonth.toFloat() / daysInMonth.toFloat()
-                val percentOfBudgetSpent = (expenses / budget).toFloat()
-
-                when {
-                    percentOfBudgetSpent > 1 -> "Budget Exceeded"
-                    percentOfBudgetSpent > percentOfMonthPassed + 0.2 -> "Spending High"
-                    percentOfBudgetSpent < percentOfMonthPassed - 0.2 -> "Spending Low"
-                    else -> "You're On Track"
-                }
-            }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Monthly Budget")
-
-
         netWorth =
             accountRepository.accountsWithBalance.map { list ->
                 list.sumOf { it.balance }
@@ -212,6 +187,26 @@ class DashboardViewModel(
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
+
+        // --- NEW: Logic to fetch and prepare sparkline data ---
+        sparklineData = flow {
+            val endCal = Calendar.getInstance()
+            val startCal = (endCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -6) }
+
+            transactionRepository.getDailySpendingForDateRange(startCal.timeInMillis, endCal.timeInMillis)
+                .collect { dailyTotals ->
+                    val fullDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                    val totalsMap = dailyTotals.associateBy { it.date }
+                    val result = mutableListOf<Float>()
+
+                    for (i in 0..6) {
+                        val dayCal = (startCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, i) }
+                        val dateString = fullDateFormat.format(dayCal.time)
+                        result.add(totalsMap[dateString]?.totalAmount?.toFloat() ?: 0f)
+                    }
+                    emit(result)
+                }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     }
 
     private suspend fun generateYearlyConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
@@ -220,7 +215,6 @@ class DashboardViewModel(
         val currentMonthIndex = today.get(Calendar.MONTH)
         val daysSoFar = today.get(Calendar.DAY_OF_YEAR)
 
-        // --- FIX: Calculate total budget for the year up to the current month ---
         var totalBudgetSoFar = 0f
         for (month in 0..currentMonthIndex) {
             totalBudgetSoFar += settingsRepository.getOverallBudgetForMonthBlocking(year, month + 1)
@@ -251,7 +245,6 @@ class DashboardViewModel(
             val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", dayIterator.get(Calendar.YEAR), dayIterator.get(Calendar.MONTH) + 1, dayIterator.get(Calendar.DAY_OF_MONTH))
             val amountSpent = spendingMap[dateKey] ?: 0.0
 
-            // --- FIX: Use the consistent yearly average for status calculation ---
             val status = when {
                 amountSpent == 0.0 -> SpendingStatus.NO_SPEND
                 yearlySafeToSpend > 0 && amountSpent > yearlySafeToSpend -> SpendingStatus.OVER_LIMIT
