@@ -333,8 +333,10 @@ private fun DonutChart(
     onSliceClick: (Entry) -> Unit
 ) {
     val dataSet = pieData.dataSet as? PieDataSet ?: return
-    // --- FIX: Calculate total by summing entry 'y' values ---
-    val totalAmount = remember(dataSet) { dataSet.qc ""entries.sumOf { it.y.toDouble() }.toFloat() }
+    // --- FIX: Iterate through entries using entryCount and getEntryForIndex ---
+    val totalAmount = remember(dataSet) {
+        (0 until dataSet.entryCount).sumOf { dataSet.getEntryForIndex(it).y.toDouble() }.toFloat()
+    }
     val animationProgress = remember { Animatable(0f) }
 
     LaunchedEffect(pieData) {
@@ -355,7 +357,6 @@ private fun DonutChart(
         val size = Size(diameter, diameter)
         var startAngle = -90f
 
-        // --- FIX: Use correct iteration and property access ---
         for (i in 0 until dataSet.entryCount) {
             val entry = dataSet.getEntryForIndex(i)
             val sweepAngle = (entry.y / totalAmount) * 360f
@@ -478,17 +479,17 @@ private fun StatItem(count: Int, label: String) {
 @Composable
 private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
     val dataSet = pieData?.dataSet as? PieDataSet ?: return
-    // --- FIX: Calculate total by summing entry 'y' values ---
-    val totalValue = remember(dataSet) { dataSet.entries.sumOf { it.y.toDouble() }.toFloat() }
+    // --- FIX: Iterate through entries using entryCount and getEntryForIndex ---
+    val totalValue = remember(dataSet) {
+        (0 until dataSet.entryCount).sumOf { dataSet.getEntryForIndex(it).y.toDouble() }.toFloat()
+    }
 
     LazyColumn(
         modifier = modifier.padding(start = 16.dp),
     ) {
-        // --- FIX: Use correct iteration ---
         items(dataSet.entryCount) { i ->
             val entry = dataSet.getEntryForIndex(i)
             val color = dataSet.getColor(i)
-            // --- FIX: Use correct property 'y' and ensure float division ---
             val percentage = if (totalValue > 0) (entry.y / totalValue * 100f) else 0f
 
             Row(
