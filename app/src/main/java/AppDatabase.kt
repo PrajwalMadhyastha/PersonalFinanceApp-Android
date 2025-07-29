@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AppDatabase.kt
-// REASON: FEATURE (Travel Mode Splitting) - Incremented database version to 30.
-// Added MIGRATION_29_30 to add the new `originalAmount` column to the
-// `split_transactions` table, which is required to support splitting foreign
-// currency transactions.
+// REASON: FEATURE - Added new default SMS ignore phrases to improve parsing
+// accuracy. A new migration (30 to 31) has been added to insert these rules
+// for existing users, and the default list has been updated for new installs.
 // =================================================================================
 package io.pm.finlight
 
@@ -37,7 +36,7 @@ import java.util.Calendar
         RecurringPattern::class,
         SplitTransaction::class
     ],
-    version = 30, // --- UPDATED: Incremented version number
+    version = 31, // --- UPDATED: Incremented version number
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -60,13 +59,18 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        // --- UPDATED: Added new default ignore phrases ---
         private val DEFAULT_IGNORE_PHRASES = listOf(
             "invoice of",
             "payment of.*is successful",
             "has been credited to",
             "payment of.*has been received towards",
             "credited to your.*card",
-            "Payment of.*has been received on your.*Credit Card"
+            "Payment of.*has been received on your.*Credit Card",
+            "We have received",
+            "has been initiated",
+            "redemption",
+            "requested money from you"
         ).map { IgnoreRule(phrase = it, isDefault = true) }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -351,10 +355,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // --- NEW: Migration for adding originalAmount to splits ---
         val MIGRATION_29_30 = object : Migration(29, 30) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `split_transactions` ADD COLUMN `originalAmount` REAL")
+            }
+        }
+
+        // --- NEW: Migration to add new default ignore rules for existing users ---
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('We have received', 1, 1)")
+                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('has been initiated', 1, 1)")
+                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('redemption', 1, 1)")
+                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('requested money from you', 1, 1)")
             }
         }
 
@@ -363,7 +376,7 @@ abstract class AppDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance =
                     Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
                         .addCallback(DatabaseCallback(context))
                         .build()
                 INSTANCE = instance
