@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ManageIgnoreRulesViewModel.kt
-// REASON: FEATURE - The ViewModel is updated to handle the new distinction
-// between default and user-added rules. It now includes a method to update a
-// rule's `isEnabled` status, allowing users to toggle the default rules.
-// BUG FIX - Renamed `updateRule` to `updateIgnoreRule` to provide a more
-// specific function name and resolve a persistent compilation error.
+// REASON: FEATURE - The ViewModel has been updated to support creating
+// different types of ignore rules. The `addIgnoreRule` function now accepts a
+// `RuleType`, allowing the UI to specify whether a new rule should apply to
+// the sender or the message body.
 // =================================================================================
 package io.pm.finlight
 
@@ -31,14 +30,15 @@ class ManageIgnoreRulesViewModel(application: Application) : AndroidViewModel(ap
         )
 
     /**
-     * Adds a new ignore phrase to the database.
-     * @param phrase The phrase to be added.
+     * Adds a new ignore rule to the database.
+     * @param pattern The pattern to be added (e.g., a sender name or a body phrase).
+     * @param type The type of the rule (SENDER or BODY_PHRASE).
      */
-    fun addIgnoreRule(phrase: String) {
-        if (phrase.isNotBlank()) {
+    fun addIgnoreRule(pattern: String, type: RuleType) {
+        if (pattern.isNotBlank()) {
             viewModelScope.launch {
                 // User-added rules are not default rules
-                ignoreRuleDao.insert(IgnoreRule(phrase = phrase.trim(), isDefault = false))
+                ignoreRuleDao.insert(IgnoreRule(pattern = pattern.trim(), type = type, isDefault = false))
             }
         }
     }

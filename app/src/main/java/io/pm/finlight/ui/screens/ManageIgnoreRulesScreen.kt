@@ -1,17 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt
-// REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with the
-// "Project Aurora" vision. All list items and input fields are now housed in
-// GlassPanel components.
-// BUG FIX: All text and component colors have been explicitly set using
-// MaterialTheme.colorScheme to ensure high contrast and legibility in dark
-// mode, resolving the visibility issues.
-// BUG FIX - The AlertDialog now correctly derives its background color from
-// the app's MaterialTheme, ensuring it matches the selected theme (e.g.,
-// Aurora) instead of defaulting to the system's light/dark mode.
-// ANIMATION - Added `animateItemPlacement()` to the ListItems in the
-// LazyColumn. This makes the lists fluidly animate changes when ignore rules
-// are added, deleted, or toggled.
+// REASON: FEATURE - The UI is now capable of managing both sender and body-based
+// ignore rules. A segmented button has been added to allow the user to select
+// the rule type. The list items now display the rule type and pattern, providing
+// clear context for each rule.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -32,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.pm.finlight.IgnoreRule
 import io.pm.finlight.ManageIgnoreRulesViewModel
+import io.pm.finlight.RuleType
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
@@ -39,14 +32,15 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 // Helper function to determine if a color is 'dark' based on luminance.
 private fun Color.isDark() = (red * 0.299 + green * 0.587 + blue * 0.114) < 0.5
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ManageIgnoreRulesScreen(
     viewModel: ManageIgnoreRulesViewModel = viewModel()
 ) {
     val rules by viewModel.allRules.collectAsState()
-    var newPhrase by remember { mutableStateOf("") }
+    var newPattern by remember { mutableStateOf("") }
     var ruleToDelete by remember { mutableStateOf<IgnoreRule?>(null) }
+    var selectedRuleType by remember { mutableStateOf(RuleType.BODY_PHRASE) }
 
     val (defaultRules, customRules) = rules.partition { it.isDefault }
 
@@ -58,14 +52,14 @@ fun ManageIgnoreRulesScreen(
         item {
             Column {
                 Text(
-                    "Manage Ignore Phrases",
+                    "Manage Ignore Rules",
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Add phrases to ignore messages from the SMS parser. You can also toggle the app's default rules.",
+                    "Ignore SMS messages based on the sender's name or phrases in the message body. Use '*' as a wildcard for sender patterns.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -74,38 +68,59 @@ fun ManageIgnoreRulesScreen(
 
         item {
             GlassPanel {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedTextField(
-                        value = newPhrase,
-                        onValueChange = { newPhrase = it },
-                        label = { Text("Add custom phrase") },
-                        modifier = Modifier.weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                            focusedLabelColor = MaterialTheme.colorScheme.primary,
-                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            cursorColor = MaterialTheme.colorScheme.primary,
-                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                        )
-                    )
-                    Button(
-                        onClick = {
-                            viewModel.addIgnoreRule(newPhrase)
-                            newPhrase = "" // Clear input
-                        },
-                        enabled = newPhrase.isNotBlank()
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = selectedRuleType == RuleType.BODY_PHRASE,
+                            onClick = { selectedRuleType = RuleType.BODY_PHRASE },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) {
+                            Text("Body Phrase")
+                        }
+                        SegmentedButton(
+                            selected = selectedRuleType == RuleType.SENDER,
+                            onClick = { selectedRuleType = RuleType.SENDER },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) {
+                            Text("Sender")
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Phrase")
+                        OutlinedTextField(
+                            value = newPattern,
+                            onValueChange = { newPattern = it },
+                            label = { Text(if (selectedRuleType == RuleType.BODY_PHRASE) "Phrase to ignore" else "Sender pattern to ignore") },
+                            modifier = Modifier.weight(1f),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                cursorColor = MaterialTheme.colorScheme.primary,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                            )
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.addIgnoreRule(newPattern, selectedRuleType)
+                                newPattern = "" // Clear input
+                            },
+                            enabled = newPattern.isNotBlank()
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Rule")
+                        }
                     }
                 }
             }
@@ -123,7 +138,14 @@ fun ManageIgnoreRulesScreen(
             items(customRules, key = { "custom-${it.id}" }) { rule ->
                 GlassPanel(modifier = Modifier.animateItemPlacement()) {
                     ListItem(
-                        headlineContent = { Text(rule.phrase, color = MaterialTheme.colorScheme.onSurface) },
+                        headlineContent = { Text(rule.pattern, color = MaterialTheme.colorScheme.onSurface) },
+                        supportingContent = {
+                            Text(
+                                text = if (rule.type == RuleType.SENDER) "Sender Rule" else "Body Phrase Rule",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
                         trailingContent = {
                             IconButton(onClick = { ruleToDelete = rule }) {
                                 Icon(
@@ -151,7 +173,14 @@ fun ManageIgnoreRulesScreen(
             items(defaultRules, key = { "default-${it.id}" }) { rule ->
                 GlassPanel(modifier = Modifier.animateItemPlacement()) {
                     ListItem(
-                        headlineContent = { Text(rule.phrase, color = MaterialTheme.colorScheme.onSurface) },
+                        headlineContent = { Text(rule.pattern, color = MaterialTheme.colorScheme.onSurface) },
+                        supportingContent = {
+                            Text(
+                                text = if (rule.type == RuleType.SENDER) "Sender Rule" else "Body Phrase Rule",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
                         trailingContent = {
                             Switch(
                                 checked = rule.isEnabled,
@@ -173,8 +202,8 @@ fun ManageIgnoreRulesScreen(
 
         AlertDialog(
             onDismissRequest = { ruleToDelete = null },
-            title = { Text("Delete Ignore Phrase?") },
-            text = { Text("Are you sure you want to delete the phrase \"${ruleToDelete!!.phrase}\"?") },
+            title = { Text("Delete Ignore Rule?") },
+            text = { Text("Are you sure you want to delete the rule for \"${ruleToDelete!!.pattern}\"?") },
             confirmButton = {
                 Button(
                     onClick = {
