@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FEATURE - Re-added the dynamic "Budget Health Summary". This logic
-// calculates if the user is on track with their spending for the month and
-// provides a context-aware summary string to the UI, making the dashboard
-// hero card more informative.
+// REASON: FEATURE - Enhanced the "Budget Health Summary" to be more dynamic.
+// Instead of a single static phrase for each spending scenario, the ViewModel
+// now contains lists of encouraging phrases. It randomly selects one from the
+// appropriate list, making the dashboard feel more interactive and less
+// repetitive for the user.
 // =================================================================================
 package io.pm.finlight
 
@@ -54,7 +55,6 @@ class DashboardViewModel(
 
     val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
 
-    // --- NEW: StateFlow for the dynamic budget summary ---
     val budgetHealthSummary: StateFlow<String>
 
     init {
@@ -158,7 +158,6 @@ class DashboardViewModel(
                 if (remaining > 0) remaining / remainingDays else 0f
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-        // --- NEW: Logic for the dynamic budget health summary ---
         budgetHealthSummary = combine(
             monthlyExpenses,
             overallMonthlyBudget
@@ -167,17 +166,35 @@ class DashboardViewModel(
                 "Set a budget to see insights"
             } else {
                 val cal = Calendar.getInstance()
+                val monthName = cal.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
                 val dayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
                 val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
 
                 val percentOfMonthPassed = dayOfMonth.toFloat() / daysInMonth.toFloat()
                 val percentOfBudgetSpent = (expenses / budget).toFloat()
 
+                // --- UPDATED: Use lists of phrases and select one randomly ---
                 when {
-                    percentOfBudgetSpent > 1 -> "Budget Exceeded"
-                    percentOfBudgetSpent > percentOfMonthPassed + 0.2 -> "Spending High"
-                    percentOfBudgetSpent < percentOfMonthPassed - 0.2 -> "Spending Low"
-                    else -> "You're On Track"
+                    percentOfBudgetSpent > 1 -> listOf(
+                        "You've gone over for $monthName.",
+                        "Let's get back on track next month.",
+                        "Budget exceeded for the month."
+                    ).random()
+                    percentOfBudgetSpent > percentOfMonthPassed + 0.2 -> listOf(
+                        "A little ahead of schedule.",
+                        "Watch your spending for the rest of $monthName.",
+                        "Heads up: spending is a bit high."
+                    ).random()
+                    percentOfBudgetSpent < percentOfMonthPassed - 0.2 -> listOf(
+                        "Well under budget so far!",
+                        "You're saving more this month.",
+                        "Plenty of room in the budget."
+                    ).random()
+                    else -> listOf(
+                        "Looking good for $monthName!",
+                        "Great job staying on budget!",
+                        "Your spending is right on track."
+                    ).random()
                 }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Monthly Budget")
