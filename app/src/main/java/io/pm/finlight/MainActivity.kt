@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - Added a new optional boolean NavArgument `expandFilters` to the
-// `search_screen` route. This allows calling screens to control whether the
-// filter panel on the SearchScreen should be expanded by default, which is
-// necessary to fix the pie chart click behavior.
+// REASON: FEATURE (Share Snapshot) - The main top app bar logic has been updated.
+// When the `TransactionListScreen` is in selection mode, a contextual app bar
+// is now displayed, showing the number of selected items and providing actions
+// to initiate the share workflow or cancel the selection.
 // =================================================================================
 package io.pm.finlight
 
@@ -68,6 +68,7 @@ import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+import kotlinx.coroutines.flow.map
 import java.net.URLDecoder
 import java.util.concurrent.Executor
 
@@ -223,6 +224,10 @@ fun MainAppScreen() {
 
     val transactionForCategoryChange by transactionViewModel.transactionForCategoryChange.collectAsState()
 
+    // --- NEW: Collect selection state for contextual top bar ---
+    val isSelectionMode by transactionViewModel.isSelectionModeActive.collectAsState()
+    val selectedIdsCount by transactionViewModel.selectedTransactionIds.map { it.size }.collectAsState(initial = 0)
+
 
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
@@ -291,7 +296,26 @@ fun MainAppScreen() {
 
         Scaffold(
             topBar = {
-                if (showMainTopBar) {
+                // --- NEW: Conditional TopAppBar for selection mode ---
+                if (isSelectionMode && baseCurrentRoute == BottomNavItem.Transactions.route) {
+                    TopAppBar(
+                        title = { Text("$selectedIdsCount Selected") },
+                        navigationIcon = {
+                            IconButton(onClick = { transactionViewModel.clearSelectionMode() }) {
+                                Icon(Icons.Default.Close, contentDescription = "Cancel Selection")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = { transactionViewModel.onShareClick() }) {
+                                Icon(Icons.Default.Share, contentDescription = "Share")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
+                } else if (showMainTopBar) {
                     TopAppBar(
                         title = { Text(currentTitle) },
                         navigationIcon = {

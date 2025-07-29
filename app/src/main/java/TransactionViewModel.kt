@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Share Snapshot) - Added state management for the new
-// transaction selection feature. This includes a boolean StateFlow
-// `isSelectionModeActive` to toggle the UI, a `selectedTransactionIds` set to
-// track selections, and functions (`enterSelectionMode`, `toggleSelection`,
-// `clearSelection`) to manage the selection state from the UI.
+// REASON: FEATURE (Share Snapshot) - Added state management for the share
+// customization sheet. This includes a boolean `showShareSheet` to control
+// visibility and a `shareableFields` StateFlow to track which data columns
+// the user wants to include in the generated image.
 // =================================================================================
 package io.pm.finlight
 
@@ -14,6 +13,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
+import io.pm.finlight.ui.components.ShareableField
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -72,12 +72,20 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _transactionForCategoryChange = MutableStateFlow<TransactionDetails?>(null)
     val transactionForCategoryChange: StateFlow<TransactionDetails?> = _transactionForCategoryChange.asStateFlow()
 
-    // --- NEW: State for selection mode ---
     private val _isSelectionModeActive = MutableStateFlow(false)
     val isSelectionModeActive: StateFlow<Boolean> = _isSelectionModeActive.asStateFlow()
 
     private val _selectedTransactionIds = MutableStateFlow<Set<Int>>(emptySet())
     val selectedTransactionIds: StateFlow<Set<Int>> = _selectedTransactionIds.asStateFlow()
+
+    // --- NEW: State for the share snapshot sheet ---
+    private val _showShareSheet = MutableStateFlow(false)
+    val showShareSheet: StateFlow<Boolean> = _showShareSheet.asStateFlow()
+
+    private val _shareableFields = MutableStateFlow(
+        setOf(ShareableField.Date, ShareableField.Description, ShareableField.Amount)
+    )
+    val shareableFields: StateFlow<Set<ShareableField>> = _shareableFields.asStateFlow()
 
 
     private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
@@ -228,7 +236,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- NEW: Functions to manage selection mode ---
     fun enterSelectionMode(initialTransactionId: Int) {
         _isSelectionModeActive.value = true
         _selectedTransactionIds.value = setOf(initialTransactionId)
@@ -247,6 +254,25 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun clearSelectionMode() {
         _isSelectionModeActive.value = false
         _selectedTransactionIds.value = emptySet()
+    }
+
+    // --- NEW: Functions to manage the share sheet ---
+    fun onShareClick() {
+        _showShareSheet.value = true
+    }
+
+    fun onShareSheetDismiss() {
+        _showShareSheet.value = false
+    }
+
+    fun onShareableFieldToggled(field: ShareableField) {
+        _shareableFields.update { currentFields ->
+            if (field in currentFields) {
+                currentFields - field
+            } else {
+                currentFields + field
+            }
+        }
     }
 
 

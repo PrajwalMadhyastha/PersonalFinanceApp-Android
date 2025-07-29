@@ -1,10 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FEATURE (Share Snapshot) - The screen now supports a "selection mode".
-// A long-press on a transaction item activates this mode, displaying checkboxes
-// and a contextual top app bar. Users can select multiple items, and the top
-// bar provides actions to share or cancel the selection, laying the groundwork
-// for the image sharing feature.
+// REASON: FEATURE (Share Snapshot) - The screen now displays a ModalBottomSheet
+// containing the `ShareSnapshotSheet` when the user clicks the share action in
+// selection mode. This completes the UI flow for customizing the shared image.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -14,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -37,6 +36,7 @@ import androidx.navigation.NavController
 import io.pm.finlight.MonthlySummaryItem
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.FilterBottomSheet
+import io.pm.finlight.ui.components.ShareSnapshotSheet
 import io.pm.finlight.ui.components.TransactionList
 import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import io.pm.finlight.ui.theme.PopupSurfaceDark
@@ -71,11 +71,14 @@ fun TransactionListScreen(
     val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
     val showFilterSheet by viewModel.showFilterSheet.collectAsState()
 
-    // --- NEW: Collect selection state from ViewModel ---
     val isSelectionMode by viewModel.isSelectionModeActive.collectAsState()
     val selectedIds by viewModel.selectedTransactionIds.collectAsState()
 
-    // --- NEW: Clear selection when the screen is left ---
+    // --- NEW: Collect state for the share sheet ---
+    val showShareSheet by viewModel.showShareSheet.collectAsState()
+    val shareableFields by viewModel.shareableFields.collectAsState()
+
+
     DisposableEffect(Unit) {
         onDispose {
             viewModel.clearSelectionMode()
@@ -124,7 +127,6 @@ fun TransactionListScreen(
                     transactions = transactions,
                     navController = navController,
                     onCategoryClick = { viewModel.requestCategoryChange(it) },
-                    // --- NEW: Pass selection state and handlers ---
                     isSelectionMode = isSelectionMode,
                     selectedIds = selectedIds,
                     onEnterSelectionMode = { viewModel.enterSelectionMode(it) },
@@ -166,6 +168,25 @@ fun TransactionListScreen(
                 onAccountChange = viewModel::updateFilterAccount,
                 onCategoryChange = viewModel::updateFilterCategory,
                 onClearFilters = viewModel::clearFilters
+            )
+        }
+    }
+
+    // --- NEW: Show the share sheet when triggered ---
+    if (showShareSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.onShareSheetDismiss() },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        ) {
+            ShareSnapshotSheet(
+                selectedFields = shareableFields,
+                onFieldToggle = { viewModel.onShareableFieldToggled(it) },
+                onGenerateClick = {
+                    // TODO: Implement image generation and sharing logic
+                    viewModel.onShareSheetDismiss()
+                    viewModel.clearSelectionMode()
+                },
+                onCancelClick = { viewModel.onShareSheetDismiss() }
             )
         }
     }

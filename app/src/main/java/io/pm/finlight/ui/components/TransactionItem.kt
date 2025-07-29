@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: FEATURE (Share Snapshot) - The `TransactionItem` and `TransactionList`
-// composables have been updated to support selection mode. Items now respond to
-// long-press gestures to initiate selection and display a checkbox when in
-// selection mode. The click behavior is now conditional based on whether
-// selection mode is active.
+// REASON: FIX - Added default values to the new selection mode parameters in
+// the `TransactionItem` composable. This resolves build errors by making the
+// parameters optional for screens that don't use the selection feature, such
+// as the dashboard and search results.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -48,11 +47,11 @@ fun TransactionItem(
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
     onCategoryClick: (TransactionDetails) -> Unit,
-    // --- NEW: Parameters for selection mode ---
-    isSelectionMode: Boolean,
-    isSelected: Boolean,
-    onEnterSelectionMode: () -> Unit,
-    onToggleSelection: () -> Unit
+    // --- FIX: Provide default values for selection parameters ---
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onEnterSelectionMode: () -> Unit = {},
+    onToggleSelection: () -> Unit = {}
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
     val isSplit = transactionDetails.transaction.isSplit
@@ -76,7 +75,6 @@ fun TransactionItem(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // --- NEW: Show checkbox in selection mode ---
             if (isSelectionMode) {
                 Checkbox(
                     checked = isSelected,
@@ -192,7 +190,6 @@ fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
     onCategoryClick: (TransactionDetails) -> Unit,
-    // --- NEW: Parameters for selection mode ---
     isSelectionMode: Boolean,
     selectedIds: Set<Int>,
     onEnterSelectionMode: (Int) -> Unit,
@@ -225,7 +222,6 @@ fun TransactionList(
                         }
                     },
                     onCategoryClick = onCategoryClick,
-                    // --- NEW: Pass selection state and handlers ---
                     isSelectionMode = isSelectionMode,
                     isSelected = details.transaction.id in selectedIds,
                     onEnterSelectionMode = { onEnterSelectionMode(details.transaction.id) },
