@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/IgnoreRule.kt
-// REASON: FEATURE - The entity has been updated with `isEnabled` and `isDefault`
-// fields. This allows the app to distinguish between pre-populated default
-// rules and user-added rules, and gives users the ability to toggle the
-// default rules on or off without deleting them.
+// REASON: FEATURE - The entity has been enhanced to support different rule
+// types. A new `RuleType` enum (SENDER, BODY_PHRASE) and a corresponding `type`
+// column have been added. The `phrase` column has been renamed to `pattern` to
+// better reflect its new, more generic purpose.
 // =================================================================================
 package io.pm.finlight
 
@@ -12,22 +12,31 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * Represents a user-defined rule to ignore an SMS based on a specific phrase.
- * If this phrase is found in an SMS body, the parser will skip it.
+ * Enum to define the type of content an IgnoreRule should match against.
+ */
+enum class RuleType {
+    SENDER,
+    BODY_PHRASE
+}
+
+/**
+ * Represents a user-defined rule to ignore an SMS.
  *
  * @param id The unique identifier for the rule.
- * @param phrase The text that, if found, will cause the SMS to be ignored (e.g., "invoice of").
+ * @param type The type of rule (SENDER or BODY_PHRASE).
+ * @param pattern The text pattern to match against (e.g., "*JioBal*" for sender, "invoice of" for body).
  * @param isEnabled Whether this rule is currently active.
  * @param isDefault True if this is a pre-populated rule, false if user-added.
  */
 @Entity(
     tableName = "ignore_rules",
-    indices = [Index(value = ["phrase"], unique = true)]
+    indices = [Index(value = ["pattern"], unique = true)]
 )
 data class IgnoreRule(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val phrase: String,
+    val type: RuleType = RuleType.BODY_PHRASE,
+    val pattern: String,
     var isEnabled: Boolean = true,
     val isDefault: Boolean = false
 )
