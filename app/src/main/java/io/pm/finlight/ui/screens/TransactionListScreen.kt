@@ -2,7 +2,8 @@
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
 // REASON: FEATURE (Share Snapshot) - The screen now displays a ModalBottomSheet
 // containing the `ShareSnapshotSheet` when the user clicks the share action in
-// selection mode. This completes the UI flow for customizing the shared image.
+// selection mode. The "Generate Image" button is now wired to call the
+// ViewModel's `generateAndShareSnapshot` function, completing the feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -74,7 +75,6 @@ fun TransactionListScreen(
     val isSelectionMode by viewModel.isSelectionModeActive.collectAsState()
     val selectedIds by viewModel.selectedTransactionIds.collectAsState()
 
-    // --- NEW: Collect state for the share sheet ---
     val showShareSheet by viewModel.showShareSheet.collectAsState()
     val shareableFields by viewModel.shareableFields.collectAsState()
 
@@ -172,7 +172,6 @@ fun TransactionListScreen(
         }
     }
 
-    // --- NEW: Show the share sheet when triggered ---
     if (showShareSheet) {
         ModalBottomSheet(
             onDismissRequest = { viewModel.onShareSheetDismiss() },
@@ -182,9 +181,8 @@ fun TransactionListScreen(
                 selectedFields = shareableFields,
                 onFieldToggle = { viewModel.onShareableFieldToggled(it) },
                 onGenerateClick = {
-                    // TODO: Implement image generation and sharing logic
-                    viewModel.onShareSheetDismiss()
-                    viewModel.clearSelectionMode()
+                    // --- UPDATED: Call the ViewModel to generate and share ---
+                    viewModel.generateAndShareSnapshot()
                 },
                 onCancelClick = { viewModel.onShareSheetDismiss() }
             )

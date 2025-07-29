@@ -1,17 +1,16 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul 29 16:30:40 IST 2025
+Generated on: Tue Jul 29 22:16:59 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
 // =================================================================================
 // FILE: ./app/build.gradle.kts
-// REASON: FIX - Added @Suppress("UnstableApiUsage") to the testOptions block.
-// This resolves the lint warning about using an incubating API without affecting
-// the build's functionality, as this API is standard practice for configuring
-// unit tests.
+// REASON: FIX - Corrected ktlint code style violations. Imports are now ordered
+// alphabetically, and an unnecessary blank line has been removed to satisfy
+// the linter.
 // =================================================================================
-import java.util.Properties
 import java.io.FileInputStream
+import java.util.Properties
 
 // It's good practice to define versions in one place.
 val roomVersion = "2.6.1"
@@ -37,7 +36,6 @@ val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
-
 
 plugins {
     id("com.android.application")
@@ -326,6 +324,109 @@ class TimePeriodReportViewModelFactory(
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/ShareSnapshotSheet.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/ShareSnapshotSheet.kt
+// REASON: NEW FILE - This file defines the UI for the "Customize Your Snapshot"
+// bottom sheet. It provides a list of selectable fields (Date, Amount, etc.)
+// and a button to proceed with generating the shareable image.
+// =================================================================================
+package io.pm.finlight.ui.components
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+
+/**
+ * An enum representing the fields that can be included in a shared transaction snapshot.
+ */
+enum class ShareableField(val displayName: String) {
+    Date("Date"),
+    Description("Description"),
+    Amount("Amount"),
+    Category("Category"),
+    Account("Account"),
+    Notes("Notes"),
+    Tags("Tags")
+}
+
+@Composable
+fun ShareSnapshotSheet(
+    selectedFields: Set<ShareableField>,
+    onFieldToggle: (ShareableField) -> Unit,
+    onGenerateClick: () -> Unit,
+    onCancelClick: () -> Unit
+) {
+    val allFields = ShareableField.entries
+
+    Column(
+        modifier = Modifier
+            .padding(16.dp)
+            .navigationBarsPadding()
+    ) {
+        Text(
+            "Customize Your Snapshot",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Text(
+            "Select the fields you want to include in the shared image.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        LazyColumn(
+            modifier = Modifier.weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(allFields) { field ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Checkbox(
+                        checked = field in selectedFields,
+                        onCheckedChange = { onFieldToggle(field) }
+                    )
+                    Text(
+                        text = field.displayName,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedButton(
+                onClick = onCancelClick,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Cancel")
+            }
+            Button(
+                onClick = onGenerateClick,
+                modifier = Modifier.weight(1f),
+                enabled = selectedFields.isNotEmpty()
+            ) {
+                Text("Generate Image")
+            }
+        }
     }
 }
 -e 
@@ -1317,10 +1418,9 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Travel Mode SMS) - The `approveSmsTransaction` function now
-// accepts an `isForeign` flag. If true, it fetches the current travel settings,
-// applies the conversion rate to the transaction amount, and saves both the
-// original and converted amounts, fully integrating SMS capture with Travel Mode.
+// REASON: FIX - Re-added the `generateAndShareSnapshot` function which was
+// missing, causing an "Unresolved reference" error. This function is essential
+// for the share feature to work.
 // =================================================================================
 package io.pm.finlight
 
@@ -1330,6 +1430,8 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
+import io.pm.finlight.ui.components.ShareableField
+import io.pm.finlight.utils.ShareImageGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -1387,6 +1489,20 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _transactionForCategoryChange = MutableStateFlow<TransactionDetails?>(null)
     val transactionForCategoryChange: StateFlow<TransactionDetails?> = _transactionForCategoryChange.asStateFlow()
+
+    private val _isSelectionModeActive = MutableStateFlow(false)
+    val isSelectionModeActive: StateFlow<Boolean> = _isSelectionModeActive.asStateFlow()
+
+    private val _selectedTransactionIds = MutableStateFlow<Set<Int>>(emptySet())
+    val selectedTransactionIds: StateFlow<Set<Int>> = _selectedTransactionIds.asStateFlow()
+
+    private val _showShareSheet = MutableStateFlow(false)
+    val showShareSheet: StateFlow<Boolean> = _showShareSheet.asStateFlow()
+
+    private val _shareableFields = MutableStateFlow(
+        setOf(ShareableField.Date, ShareableField.Description, ShareableField.Amount)
+    )
+    val shareableFields: StateFlow<Set<ShareableField>> = _shareableFields.asStateFlow()
 
 
     private val combinedState: Flow<Pair<Calendar, TransactionFilterState>> =
@@ -1536,6 +1652,65 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             _defaultAccount.value = db.accountDao().findByName("Cash Spends")
         }
     }
+
+    fun enterSelectionMode(initialTransactionId: Int) {
+        _isSelectionModeActive.value = true
+        _selectedTransactionIds.value = setOf(initialTransactionId)
+    }
+
+    fun toggleTransactionSelection(transactionId: Int) {
+        _selectedTransactionIds.update { currentSelection ->
+            if (transactionId in currentSelection) {
+                currentSelection - transactionId
+            } else {
+                currentSelection + transactionId
+            }
+        }
+    }
+
+    fun clearSelectionMode() {
+        _isSelectionModeActive.value = false
+        _selectedTransactionIds.value = emptySet()
+    }
+
+    fun onShareClick() {
+        _showShareSheet.value = true
+    }
+
+    fun onShareSheetDismiss() {
+        _showShareSheet.value = false
+    }
+
+    fun onShareableFieldToggled(field: ShareableField) {
+        _shareableFields.update { currentFields ->
+            if (field in currentFields) {
+                currentFields - field
+            } else {
+                currentFields + field
+            }
+        }
+    }
+
+    fun generateAndShareSnapshot() {
+        viewModelScope.launch {
+            val selectedIds = _selectedTransactionIds.value
+            if (selectedIds.isEmpty()) return@launch
+
+            val allTransactions = transactionsForSelectedMonth.first()
+            val selectedTransactions = allTransactions.filter { it.transaction.id in selectedIds }
+
+            if (selectedTransactions.isNotEmpty()) {
+                ShareImageGenerator.shareTransactionsAsImage(
+                    context = getApplication(),
+                    transactions = selectedTransactions,
+                    fields = _shareableFields.value
+                )
+            }
+            onShareSheetDismiss()
+            clearSelectionMode()
+        }
+    }
+
 
     fun requestCategoryChange(details: TransactionDetails) {
         _transactionForCategoryChange.value = details
@@ -2023,7 +2198,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         currentTxnIdForTags = null
     }
 
-    // --- UPDATED: Function now accepts an `isForeign` flag ---
     suspend fun approveSmsTransaction(
         potentialTxn: PotentialTransaction,
         description: String,
@@ -2046,7 +2220,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
                 if (account == null) return@withContext false
 
-                // --- NEW: Handle currency conversion if needed ---
                 val transactionToSave = if (isForeign) {
                     val travelSettings = settingsRepository.getTravelModeSettings().first()
                     if (travelSettings == null) {
@@ -2057,7 +2230,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         description = description,
                         originalDescription = potentialTxn.merchantName,
                         categoryId = categoryId,
-                        amount = potentialTxn.amount * travelSettings.conversionRate, // Converted amount
+                        amount = potentialTxn.amount * travelSettings.conversionRate,
                         date = System.currentTimeMillis(),
                         accountId = account.id,
                         notes = notes,
@@ -2065,7 +2238,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         sourceSmsId = potentialTxn.sourceSmsId,
                         sourceSmsHash = potentialTxn.sourceSmsHash,
                         source = "Imported",
-                        originalAmount = potentialTxn.amount, // Original foreign amount
+                        originalAmount = potentialTxn.amount,
                         currencyCode = travelSettings.currencyCode,
                         conversionRate = travelSettings.conversionRate.toDouble()
                     )
@@ -2074,7 +2247,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         description = description,
                         originalDescription = potentialTxn.merchantName,
                         categoryId = categoryId,
-                        amount = potentialTxn.amount, // Home currency amount
+                        amount = potentialTxn.amount,
                         date = System.currentTimeMillis(),
                         accountId = account.id,
                         notes = notes,
@@ -9997,8 +10170,10 @@ private fun RuleSummaryItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: REVERT - Reverted changes that added filtering logic. The screen now
-// navigates to a dedicated drilldown screen instead of filtering in place.
+// REASON: FEATURE (Share Snapshot) - The screen now displays a ModalBottomSheet
+// containing the `ShareSnapshotSheet` when the user clicks the share action in
+// selection mode. The "Generate Image" button is now wired to call the
+// ViewModel's `generateAndShareSnapshot` function, completing the feature.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -10008,6 +10183,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -10031,6 +10207,7 @@ import androidx.navigation.NavController
 import io.pm.finlight.MonthlySummaryItem
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.ui.components.FilterBottomSheet
+import io.pm.finlight.ui.components.ShareSnapshotSheet
 import io.pm.finlight.ui.components.TransactionList
 import io.pm.finlight.ui.components.pagerTabIndicatorOffset
 import io.pm.finlight.ui.theme.PopupSurfaceDark
@@ -10064,6 +10241,20 @@ fun TransactionListScreen(
     val allAccounts by viewModel.allAccounts.collectAsState()
     val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
     val showFilterSheet by viewModel.showFilterSheet.collectAsState()
+
+    val isSelectionMode by viewModel.isSelectionModeActive.collectAsState()
+    val selectedIds by viewModel.selectedTransactionIds.collectAsState()
+
+    val showShareSheet by viewModel.showShareSheet.collectAsState()
+    val shareableFields by viewModel.shareableFields.collectAsState()
+
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearSelectionMode()
+        }
+    }
+
 
     Column(
         modifier = Modifier.fillMaxSize()
@@ -10105,7 +10296,11 @@ fun TransactionListScreen(
                 0 -> TransactionList(
                     transactions = transactions,
                     navController = navController,
-                    onCategoryClick = { viewModel.requestCategoryChange(it) }
+                    onCategoryClick = { viewModel.requestCategoryChange(it) },
+                    isSelectionMode = isSelectionMode,
+                    selectedIds = selectedIds,
+                    onEnterSelectionMode = { viewModel.enterSelectionMode(it) },
+                    onToggleSelection = { viewModel.toggleTransactionSelection(it) }
                 )
                 1 -> CategorySpendingScreen(
                     spendingList = categorySpending,
@@ -10143,6 +10338,23 @@ fun TransactionListScreen(
                 onAccountChange = viewModel::updateFilterAccount,
                 onCategoryChange = viewModel::updateFilterCategory,
                 onClearFilters = viewModel::clearFilters
+            )
+        }
+    }
+
+    if (showShareSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.onShareSheetDismiss() },
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+        ) {
+            ShareSnapshotSheet(
+                selectedFields = shareableFields,
+                onFieldToggle = { viewModel.onShareableFieldToggled(it) },
+                onGenerateClick = {
+                    // --- UPDATED: Call the ViewModel to generate and share ---
+                    viewModel.generateAndShareSnapshot()
+                },
+                onCancelClick = { viewModel.onShareSheetDismiss() }
             )
         }
     }
@@ -12642,11 +12854,10 @@ private fun AccountDetailTransactionItem(transactionDetails: TransactionDetails)
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FIX - Corrected an "Unresolved reference" error. The screen now
-// accepts a TransactionViewModel instance, which is passed down to the
-// DashboardCard. This allows the `onCategoryClick` callback to correctly call
-// `transactionViewModel.requestCategoryChange(it)` instead of incorrectly
-// calling it on the DashboardViewModel.
+// REASON: FIX - Added a `LaunchedEffect` that calls the ViewModel's new
+// `refreshBudgetSummary` function when the screen is composed. This ensures
+// that a new random summary phrase is selected each time the user navigates
+// to the dashboard, fixing the stale text issue.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12701,10 +12912,17 @@ fun DashboardScreen(
     val showAddCardSheet by dashboardViewModel.showAddCardSheet.collectAsState()
     val hiddenCards by dashboardViewModel.hiddenCards.collectAsState()
     val yearlyConsistencyData by dashboardViewModel.yearlyConsistencyData.collectAsState()
+    val budgetHealthSummary by dashboardViewModel.budgetHealthSummary.collectAsState()
+
 
     val coroutineScope = rememberCoroutineScope()
     var overscrollJob by remember { mutableStateOf<Job?>(null) }
     val dragDropState = rememberDragDropState(onMove = dashboardViewModel::updateCardOrder)
+
+    // --- NEW: Trigger a refresh of the summary phrase when the screen is displayed ---
+    LaunchedEffect(Unit) {
+        dashboardViewModel.refreshBudgetSummary()
+    }
 
     if (showAddCardSheet) {
         val sheetContainerColor = if (isSystemInDarkTheme()) {
@@ -12807,6 +13025,7 @@ fun DashboardScreen(
                     isCustomizationMode = isCustomizationMode,
                     onHide = { dashboardViewModel.hideCard(cardType) },
                     yearlyConsistencyData = yearlyConsistencyData,
+                    budgetHealthSummary = budgetHealthSummary
                 )
             }
         }
@@ -12821,7 +13040,8 @@ private fun DashboardCard(
     transactionViewModel: TransactionViewModel,
     isCustomizationMode: Boolean,
     onHide: () -> Unit,
-    yearlyConsistencyData: List<CalendarDayStatus>
+    yearlyConsistencyData: List<CalendarDayStatus>,
+    budgetHealthSummary: String
 ) {
     val netWorth by dashboardViewModel.netWorth.collectAsState()
     val monthlyIncome by dashboardViewModel.monthlyIncome.collectAsState()
@@ -12843,7 +13063,8 @@ private fun DashboardCard(
                 income = monthlyIncome.toFloat(),
                 safeToSpend = safeToSpendPerDay,
                 navController = navController,
-                monthYear = monthYear
+                monthYear = monthYear,
+                budgetHealthSummary = budgetHealthSummary
             )
             DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
             DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
@@ -16603,9 +16824,10 @@ fun AuroraAnimatedBackground() {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FIX - The onClick handler for the "View Categories" quick action has
-// been updated to navigate to the transaction list screen with an argument
-// (`initialTab=1`) that directs it to open the Categories tab.
+// REASON: FEATURE - The DashboardHeroCard has been updated to accept and display
+// a dynamic "budgetHealthSummary" string. The static "Monthly Budget" text has
+// been removed and replaced with this context-aware summary, making the card
+// more informative at a glance.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -16718,12 +16940,12 @@ fun DashboardHeroCard(
     income: Float,
     safeToSpend: Float,
     navController: NavController,
-    monthYear: String
+    monthYear: String,
+    budgetHealthSummary: String // --- NEW: Add parameter for the dynamic summary ---
 ) {
-    // --- FIX: Coerce the progress value to be between 0f and 1f ---
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f), // This ensures the value doesn't exceed 1.0
+        targetValue = progress.coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 400, easing = EaseOutCubic),
         label = "BudgetProgressAnimation"
     )
@@ -16735,8 +16957,9 @@ fun DashboardHeroCard(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
+        // --- UPDATED: Display the dynamic summary instead of the static title ---
         Text(
-            text = "Monthly Budget",
+            text = budgetHealthSummary,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
@@ -17239,7 +17462,6 @@ fun AuroraQuickActionsCard(navController: NavController) {
                 icon = Icons.Default.PieChart,
                 text = "View Categories",
                 onClick = {
-                    // --- UPDATED: Navigate to the transaction list with the correct tab index ---
                     navController.navigate("transaction_list?initialTab=1") {
                         popUpTo(BottomNavItem.Dashboard.route) {
                             saveState = true
@@ -17504,9 +17726,10 @@ fun Modifier.pagerTabIndicatorOffset(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
-// REASON: FIX - Replaced the deprecated `Icons.Filled.CallSplit` with the
-// recommended `Icons.AutoMirrored.Filled.CallSplit` to resolve the lint warning
-// and ensure proper support for right-to-left layouts.
+// REASON: FIX - Added default values to the new selection mode parameters in
+// the `TransactionItem` and `TransactionList` composables. This resolves build
+// errors by making the parameters optional for screens that don't use the
+// selection feature, such as the dashboard and search results.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -17541,33 +17764,55 @@ import io.pm.finlight.ui.theme.IncomeGreenLight
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransactionItem(
     modifier: Modifier = Modifier,
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
-    onCategoryClick: (TransactionDetails) -> Unit
+    onCategoryClick: (TransactionDetails) -> Unit,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onEnterSelectionMode: () -> Unit = {},
+    onToggleSelection: () -> Unit = {}
 ) {
     val contentAlpha = if (transactionDetails.transaction.isExcluded) 0.5f else 1f
     val isSplit = transactionDetails.transaction.isSplit
     val isUncategorized = transactionDetails.categoryName == null || transactionDetails.categoryName == "Uncategorized"
 
+    val clickModifier = if (isSelectionMode) {
+        Modifier.clickable { onToggleSelection() }
+    } else {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onEnterSelectionMode
+        )
+    }
+
     GlassPanel(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(clickModifier)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelection() },
+                    modifier = Modifier.padding(end = 16.dp)
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .clickable(enabled = !isSplit) { onCategoryClick(transactionDetails) }
+                    .clickable(enabled = !isSplit && !isSelectionMode) { onCategoryClick(transactionDetails) }
                     .background(
                         CategoryIconHelper.getIconBackgroundColor(
                             when {
@@ -17583,7 +17828,7 @@ fun TransactionItem(
                 when {
                     isSplit -> {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.CallSplit, // --- FIX: Use AutoMirrored icon
+                            imageVector = Icons.AutoMirrored.Filled.CallSplit,
                             contentDescription = "Split Transaction",
                             tint = Color.Black.copy(alpha = contentAlpha),
                             modifier = Modifier.size(22.dp)
@@ -17628,7 +17873,7 @@ fun TransactionItem(
                     style = MaterialTheme.typography.bodyMedium,
                     fontStyle = FontStyle.Italic,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
-                    modifier = Modifier.clickable(enabled = !isSplit) { onCategoryClick(transactionDetails) }
+                    modifier = Modifier.clickable(enabled = !isSplit && !isSelectionMode) { onCategoryClick(transactionDetails) }
                 )
                 Text(
                     text = SimpleDateFormat("dd MMM yy, h:mm a", Locale.getDefault()).format(Date(transactionDetails.transaction.date)),
@@ -17669,7 +17914,12 @@ fun TransactionItem(
 fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
-    onCategoryClick: (TransactionDetails) -> Unit
+    onCategoryClick: (TransactionDetails) -> Unit,
+    // --- FIX: Provide default values for selection parameters ---
+    isSelectionMode: Boolean = false,
+    selectedIds: Set<Int> = emptySet(),
+    onEnterSelectionMode: (Int) -> Unit = {},
+    onToggleSelection: (Int) -> Unit = {}
 ) {
     if (transactions.isEmpty()) {
         Box(
@@ -17691,9 +17941,17 @@ fun TransactionList(
                     modifier = Modifier.animateItemPlacement(),
                     transactionDetails = details,
                     onClick = {
-                        navController.navigate("transaction_detail/${details.transaction.id}")
+                        if (isSelectionMode) {
+                            onToggleSelection(details.transaction.id)
+                        } else {
+                            navController.navigate("transaction_detail/${details.transaction.id}")
+                        }
                     },
-                    onCategoryClick = onCategoryClick
+                    onCategoryClick = onCategoryClick,
+                    isSelectionMode = isSelectionMode,
+                    isSelected = details.transaction.id in selectedIds,
+                    onEnterSelectionMode = { onEnterSelectionMode(details.transaction.id) },
+                    onToggleSelection = { onToggleSelection(details.transaction.id) }
                 )
             }
         }
@@ -19431,10 +19689,10 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - Added a new optional boolean NavArgument `expandFilters` to the
-// `search_screen` route. This allows calling screens to control whether the
-// filter panel on the SearchScreen should be expanded by default, which is
-// necessary to fix the pie chart click behavior.
+// REASON: FEATURE (Share Snapshot) - The main top app bar logic has been updated.
+// When the `TransactionListScreen` is in selection mode, a contextual app bar
+// is now displayed, showing the number of selected items and providing actions
+// to initiate the share workflow or cancel the selection.
 // =================================================================================
 package io.pm.finlight
 
@@ -19499,6 +19757,7 @@ import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+import kotlinx.coroutines.flow.map
 import java.net.URLDecoder
 import java.util.concurrent.Executor
 
@@ -19654,6 +19913,10 @@ fun MainAppScreen() {
 
     val transactionForCategoryChange by transactionViewModel.transactionForCategoryChange.collectAsState()
 
+    // --- NEW: Collect selection state for contextual top bar ---
+    val isSelectionMode by transactionViewModel.isSelectionModeActive.collectAsState()
+    val selectedIdsCount by transactionViewModel.selectedTransactionIds.map { it.size }.collectAsState(initial = 0)
+
 
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
@@ -19722,7 +19985,26 @@ fun MainAppScreen() {
 
         Scaffold(
             topBar = {
-                if (showMainTopBar) {
+                // --- NEW: Conditional TopAppBar for selection mode ---
+                if (isSelectionMode && baseCurrentRoute == BottomNavItem.Transactions.route) {
+                    TopAppBar(
+                        title = { Text("$selectedIdsCount Selected") },
+                        navigationIcon = {
+                            IconButton(onClick = { transactionViewModel.clearSelectionMode() }) {
+                                Icon(Icons.Default.Close, contentDescription = "Cancel Selection")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = { transactionViewModel.onShareClick() }) {
+                                Icon(Icons.Default.Share, contentDescription = "Share")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
+                } else if (showMainTopBar) {
                     TopAppBar(
                         title = { Text(currentTitle) },
                         navigationIcon = {
@@ -25566,6 +25848,219 @@ class MerchantRenameRuleRepository(private val dao: MerchantRenameRuleDao) {
 -e 
 
 
+================== FILE: ./app/src/main/java/ShareImageGenerator.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/utils/ShareImageGenerator.kt
+// REASON: FIX - Added the missing import for the BuildConfig class to resolve
+// the "Unresolved reference" build error.
+// =================================================================================
+package io.pm.finlight.utils
+
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.view.View
+import android.widget.LinearLayout
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import io.pm.finlight.BuildConfig
+import io.pm.finlight.TransactionDetails
+import io.pm.finlight.ui.components.ShareableField
+import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
+import java.io.File
+import java.io.FileOutputStream
+import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.*
+
+object ShareImageGenerator {
+
+    /**
+     * Renders the TransactionSnapshotContent composable to a Bitmap.
+     */
+    private fun createBitmapFromComposable(
+        context: Context,
+        transactions: List<TransactionDetails>,
+        fields: Set<ShareableField>
+    ): Bitmap {
+        val composeView = ComposeView(context).apply {
+            setContent {
+                PersonalFinanceAppTheme { // Apply the app's theme
+                    TransactionSnapshotContent(transactions = transactions, fields = fields)
+                }
+            }
+        }
+
+        // Measure and layout the composable to get its dimensions
+        composeView.measure(
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        composeView.layout(0, 0, composeView.measuredWidth, composeView.measuredHeight)
+
+        // Create a bitmap and draw the composable onto it
+        val bitmap = Bitmap.createBitmap(composeView.measuredWidth, composeView.measuredHeight, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        composeView.draw(canvas)
+        return bitmap
+    }
+
+    /**
+     * Saves the bitmap to a file and triggers the Android share sheet.
+     */
+    fun shareTransactionsAsImage(
+        context: Context,
+        transactions: List<TransactionDetails>,
+        fields: Set<ShareableField>
+    ) {
+        // 1. Generate the Bitmap
+        val bitmap = createBitmapFromComposable(context, transactions, fields)
+
+        // 2. Save the Bitmap to a temporary file
+        val cachePath = File(context.cacheDir, "images")
+        cachePath.mkdirs()
+        val file = File(cachePath, "transaction_snapshot.png")
+        val fileOutputStream = FileOutputStream(file)
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, fileOutputStream)
+        fileOutputStream.close()
+
+        // 3. Get a content URI using FileProvider
+        val contentUri = FileProvider.getUriForFile(context, "${BuildConfig.APPLICATION_ID}.provider", file)
+
+        // 4. Trigger the share intent
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, contentUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(shareIntent, "Share Transactions"))
+    }
+}
+
+/**
+ * The Composable that defines the layout of the shareable image.
+ */
+@Composable
+private fun TransactionSnapshotContent(
+    transactions: List<TransactionDetails>,
+    fields: Set<ShareableField>
+) {
+    val totalAmount = transactions.sumOf {
+        if (it.transaction.transactionType == "income") it.transaction.amount else -it.transaction.amount
+    }
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
+    val dateFormat = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+
+    Column(
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(16.dp)
+            .width(IntrinsicSize.Max) // Adjust width to content
+    ) {
+        // Header
+        Text(
+            "Transaction Summary",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            "Generated by Finlight",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(16.dp))
+
+        // Table Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            fields.forEach { field ->
+                Text(
+                    text = field.displayName,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(if (field == ShareableField.Description) 1.5f else 1f),
+                    textAlign = if (field == ShareableField.Amount) TextAlign.End else TextAlign.Start
+                )
+            }
+        }
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        // Table Rows
+        transactions.forEach { details ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                fields.forEach { field ->
+                    val text = when (field) {
+                        ShareableField.Date -> dateFormat.format(Date(details.transaction.date))
+                        ShareableField.Description -> details.transaction.description
+                        ShareableField.Amount -> currencyFormat.format(details.transaction.amount)
+                        ShareableField.Category -> details.categoryName ?: "N/A"
+                        ShareableField.Account -> details.accountName ?: "N/A"
+                        ShareableField.Notes -> details.transaction.notes ?: ""
+                        ShareableField.Tags -> "Tags..." // Placeholder for now
+                    }
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(if (field == ShareableField.Description) 1.5f else 1f),
+                        textAlign = if (field == ShareableField.Amount) TextAlign.End else TextAlign.Start,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        // Footer (Total)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End
+        ) {
+            Text(
+                "Total:",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 16.dp)
+            )
+            Text(
+                currencyFormat.format(totalAmount),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/MerchantCategoryMapping.kt ==================
 package io.pm.finlight
 
@@ -27180,11 +27675,11 @@ data class DailyTotal(
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FIX - The logic for the yearly consistency heatmap on the dashboard has
-// been corrected. It now calculates a single "safe to spend" average based on
-// the total budget and days elapsed in the year so far. This ensures the daily
-// cell colors accurately reflect the yearly aggregate stats, fixing the
-// discrepancy.
+// REASON: FIX - Added a refresh trigger to the budget health summary. A new
+// `refreshBudgetSummary` function updates a trigger StateFlow, which is now
+// included in the `combine` logic for the summary. This forces the ViewModel
+// to re-select a random phrase every time the dashboard is viewed, making the
+// summary feel more dynamic.
 // =================================================================================
 package io.pm.finlight
 
@@ -27234,6 +27729,11 @@ class DashboardViewModel(
     val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
 
     val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
+
+    val budgetHealthSummary: StateFlow<String>
+
+    // --- NEW: A trigger to force the summary to be re-calculated ---
+    private val _summaryRefreshTrigger = MutableStateFlow(System.currentTimeMillis())
 
     init {
         userName = settingsRepository.getUserName()
@@ -27336,6 +27836,49 @@ class DashboardViewModel(
                 if (remaining > 0) remaining / remainingDays else 0f
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
+        // --- UPDATED: Combine with the refresh trigger ---
+        budgetHealthSummary = combine(
+            monthlyExpenses,
+            overallMonthlyBudget,
+            _summaryRefreshTrigger
+        ) { expenses, budget, _ -> // The trigger's value is ignored, its change is what matters
+            if (budget <= 0f) {
+                "Set a budget to see insights"
+            } else {
+                val cal = Calendar.getInstance()
+                val monthName = cal.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
+                val dayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
+                val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+                val percentOfMonthPassed = dayOfMonth.toFloat() / daysInMonth.toFloat()
+                val percentOfBudgetSpent = (expenses / budget).toFloat()
+
+                when {
+                    percentOfBudgetSpent > 1 -> listOf(
+                        "You've gone over for $monthName.",
+                        "Let's get back on track next month.",
+                        "Budget exceeded for the month."
+                    ).random()
+                    percentOfBudgetSpent > percentOfMonthPassed + 0.2 -> listOf(
+                        "A little ahead of schedule.",
+                        "Watch your spending for the rest of $monthName.",
+                        "Heads up: spending is a bit high."
+                    ).random()
+                    percentOfBudgetSpent < percentOfMonthPassed - 0.2 -> listOf(
+                        "Well under budget so far!",
+                        "You're saving more this month.",
+                        "Plenty of room in the budget."
+                    ).random()
+                    else -> listOf(
+                        "Looking good for $monthName!",
+                        "Great job staying on budget!",
+                        "Your spending is right on track."
+                    ).random()
+                }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Monthly Budget")
+
+
         netWorth =
             accountRepository.accountsWithBalance.map { list ->
                 list.sumOf { it.balance }
@@ -27367,13 +27910,17 @@ class DashboardViewModel(
             )
     }
 
+    // --- NEW: Public function to be called from the UI ---
+    fun refreshBudgetSummary() {
+        _summaryRefreshTrigger.value = System.currentTimeMillis()
+    }
+
     private suspend fun generateYearlyConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
         val today = Calendar.getInstance()
         val year = today.get(Calendar.YEAR)
         val currentMonthIndex = today.get(Calendar.MONTH)
         val daysSoFar = today.get(Calendar.DAY_OF_YEAR)
 
-        // --- FIX: Calculate total budget for the year up to the current month ---
         var totalBudgetSoFar = 0f
         for (month in 0..currentMonthIndex) {
             totalBudgetSoFar += settingsRepository.getOverallBudgetForMonthBlocking(year, month + 1)
@@ -27404,7 +27951,6 @@ class DashboardViewModel(
             val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", dayIterator.get(Calendar.YEAR), dayIterator.get(Calendar.MONTH) + 1, dayIterator.get(Calendar.DAY_OF_MONTH))
             val amountSpent = spendingMap[dateKey] ?: 0.0
 
-            // --- FIX: Use the consistent yearly average for status calculation ---
             val status = when {
                 amountSpent == 0.0 -> SpendingStatus.NO_SPEND
                 yearlySafeToSpend > 0 && amountSpent > yearlySafeToSpend -> SpendingStatus.OVER_LIMIT

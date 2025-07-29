@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
 // REASON: FIX - Added default values to the new selection mode parameters in
-// the `TransactionItem` composable. This resolves build errors by making the
-// parameters optional for screens that don't use the selection feature, such
-// as the dashboard and search results.
+// the `TransactionItem` and `TransactionList` composables. This resolves build
+// errors by making the parameters optional for screens that don't use the
+// selection feature, such as the dashboard and search results.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -47,7 +47,6 @@ fun TransactionItem(
     transactionDetails: TransactionDetails,
     onClick: () -> Unit,
     onCategoryClick: (TransactionDetails) -> Unit,
-    // --- FIX: Provide default values for selection parameters ---
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
     onEnterSelectionMode: () -> Unit = {},
@@ -190,10 +189,11 @@ fun TransactionList(
     transactions: List<TransactionDetails>,
     navController: NavController,
     onCategoryClick: (TransactionDetails) -> Unit,
-    isSelectionMode: Boolean,
-    selectedIds: Set<Int>,
-    onEnterSelectionMode: (Int) -> Unit,
-    onToggleSelection: (Int) -> Unit
+    // --- FIX: Provide default values for selection parameters ---
+    isSelectionMode: Boolean = false,
+    selectedIds: Set<Int> = emptySet(),
+    onEnterSelectionMode: (Int) -> Unit = {},
+    onToggleSelection: (Int) -> Unit = {}
 ) {
     if (transactions.isEmpty()) {
         Box(

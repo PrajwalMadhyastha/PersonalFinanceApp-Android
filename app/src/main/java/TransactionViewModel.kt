@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FEATURE (Share Snapshot) - Added state management for the share
-// customization sheet. This includes a boolean `showShareSheet` to control
-// visibility and a `shareableFields` StateFlow to track which data columns
-// the user wants to include in the generated image.
+// REASON: FIX - Re-added the `generateAndShareSnapshot` function which was
+// missing, causing an "Unresolved reference" error. This function is essential
+// for the share feature to work.
 // =================================================================================
 package io.pm.finlight
 
@@ -14,6 +13,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import io.pm.finlight.ui.components.ShareableField
+import io.pm.finlight.utils.ShareImageGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -78,7 +78,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedTransactionIds = MutableStateFlow<Set<Int>>(emptySet())
     val selectedTransactionIds: StateFlow<Set<Int>> = _selectedTransactionIds.asStateFlow()
 
-    // --- NEW: State for the share snapshot sheet ---
     private val _showShareSheet = MutableStateFlow(false)
     val showShareSheet: StateFlow<Boolean> = _showShareSheet.asStateFlow()
 
@@ -256,7 +255,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         _selectedTransactionIds.value = emptySet()
     }
 
-    // --- NEW: Functions to manage the share sheet ---
     fun onShareClick() {
         _showShareSheet.value = true
     }
@@ -272,6 +270,26 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             } else {
                 currentFields + field
             }
+        }
+    }
+
+    fun generateAndShareSnapshot() {
+        viewModelScope.launch {
+            val selectedIds = _selectedTransactionIds.value
+            if (selectedIds.isEmpty()) return@launch
+
+            val allTransactions = transactionsForSelectedMonth.first()
+            val selectedTransactions = allTransactions.filter { it.transaction.id in selectedIds }
+
+            if (selectedTransactions.isNotEmpty()) {
+                ShareImageGenerator.shareTransactionsAsImage(
+                    context = getApplication(),
+                    transactions = selectedTransactions,
+                    fields = _shareableFields.value
+                )
+            }
+            onShareSheetDismiss()
+            clearSelectionMode()
         }
     }
 

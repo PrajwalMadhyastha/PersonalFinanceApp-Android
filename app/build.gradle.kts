@@ -1,12 +1,11 @@
 // =================================================================================
 // FILE: ./app/build.gradle.kts
-// REASON: FIX - Added @Suppress("UnstableApiUsage") to the testOptions block.
-// This resolves the lint warning about using an incubating API without affecting
-// the build's functionality, as this API is standard practice for configuring
-// unit tests.
+// REASON: FIX - Re-enabled the generation of the BuildConfig file by adding
+// `buildConfig = true` to the `buildFeatures` block. This resolves the
+// "Unresolved reference: BuildConfig" error that was causing the build to fail.
 // =================================================================================
-import java.util.Properties
 import java.io.FileInputStream
+import java.util.Properties
 
 // It's good practice to define versions in one place.
 val roomVersion = "2.6.1"
@@ -32,7 +31,6 @@ val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
-
 
 plugins {
     id("com.android.application")
@@ -96,6 +94,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // --- FIX: Enable BuildConfig generation ---
+        buildConfig = true
     }
     packaging {
         resources {
