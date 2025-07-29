@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
-// REASON: FIX - Adjusted the layout weights to give the pie chart more space
-// (60%) and the legend less (40%), making the chart larger. Reduced the chart's
-// holeRadius from 70f to 58f to make the donut ring thicker and more visible.
+// REASON: FIX - The layout weight for the PieChart has been increased from 1.5f
+// to 2.5f, allocating more horizontal space to it. The holeRadius has been
+// increased to 75f to create a larger, thinner donut ring. These changes allow
+// the chart to be significantly larger and more visually prominent, matching the
+// desired design.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -254,17 +256,20 @@ fun ReportsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             AndroidView(
-                                modifier = Modifier.weight(1.5f), // --- UPDATED: Give chart more weight
+                                // --- UPDATED: Increased weight to give chart more space ---
+                                modifier = Modifier.weight(2.5f),
                                 factory = { context ->
                                     PieChart(context).apply {
                                         description.isEnabled = false
                                         isDrawHoleEnabled = true
                                         setHoleColor(android.graphics.Color.TRANSPARENT)
-                                        holeRadius = 58f // --- UPDATED: Make ring thicker
-                                        setEntryLabelColor(pieChartLabelColor)
-                                        setEntryLabelTextSize(12f)
+                                        // --- UPDATED: Increase hole radius for a larger donut hole ---
+                                        holeRadius = 75f
                                         legend.isEnabled = false
-                                        setDrawEntryLabels(false) // Hide labels on slices
+                                        setUsePercentValues(true)
+                                        setDrawEntryLabels(false)
+                                        setTransparentCircleAlpha(0)
+                                        setExtraOffsets(0f, 0f, 0f, 0f)
                                         setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
                                             override fun onValueSelected(e: Entry?, h: Highlight?) {
                                                 val categoryName = e?.data as? String ?: return
@@ -284,7 +289,7 @@ fun ReportsScreen(
                                 }
                             )
                             ChartLegend(
-                                modifier = Modifier.weight(1f), // --- UPDATED: Give legend less weight
+                                modifier = Modifier.weight(1f),
                                 pieData = pieData
                             )
                         }
