@@ -1,14 +1,17 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt
-// REASON: FIX - The layout weight for the PieChart has been increased from 1.5f
-// to 2.5f, allocating more horizontal space to it. The holeRadius has been
-// increased to 75f to create a larger, thinner donut ring. These changes allow
-// the chart to be significantly larger and more visually prominent, matching the
-// desired design.
+// REASON: MAJOR REFACTOR - The MPAndroidChart PieChart has been completely
+// replaced with a custom DonutChart composable built with the Jetpack Compose
+// Canvas API. This provides full control over layout, sizing, and animation,
+// resolving the issue where the chart would not expand to fill its allocated
+// space. The new chart is now larger, animates smoothly, and perfectly matches
+// the desired modern UI.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.graphics.Color
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,22 +22,24 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.github.mikephil.charting.charts.PieChart
-import com.github.mikephil.charting.data.PieData
-import com.github.mikephil.charting.data.PieDataSet
-import com.github.mikephil.charting.data.PieEntry
-import com.github.mikephil.charting.formatter.PercentFormatter
 import io.pm.finlight.CategoryIconHelper
 import io.pm.finlight.CategorySpending
 import io.pm.finlight.ui.components.GlassPanel
+import kotlin.math.min
 
 @Composable
 fun CategorySpendingScreen(
@@ -52,8 +57,6 @@ fun CategorySpendingScreen(
     }
 
     val totalSpending = spendingList.sumOf { it.totalAmount }
-    val pieData = createPieData(spendingList)
-    val pieChartLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -77,31 +80,14 @@ fun CategorySpendingScreen(
                             .height(300.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        AndroidView(
-                            // --- UPDATED: Increased weight to give chart more space ---
+                        // --- NEW: Use the custom Compose DonutChart ---
+                        DonutChart(
                             modifier = Modifier.weight(2.5f),
-                            factory = { context ->
-                                PieChart(context).apply {
-                                    description.isEnabled = false
-                                    isDrawHoleEnabled = true
-                                    setHoleColor(Color.TRANSPARENT)
-                                    // --- UPDATED: Increase hole radius for a larger donut hole ---
-                                    holeRadius = 75f
-                                    legend.isEnabled = false
-                                    setUsePercentValues(true)
-                                    setDrawEntryLabels(false)
-                                    setTransparentCircleAlpha(0)
-                                    setExtraOffsets(0f, 0f, 0f, 0f)
-                                }
-                            },
-                            update = { chart ->
-                                chart.data = pieData
-                                chart.invalidate()
-                            }
+                            data = spendingList
                         )
                         ChartLegend(
                             modifier = Modifier.weight(1f),
-                            pieData = pieData
+                            spendingList = spendingList
                         )
                     }
                 }
@@ -117,6 +103,47 @@ fun CategorySpendingScreen(
         }
     }
 }
+
+/**
+ * A custom composable that draws an animated donut chart using the Canvas API.
+ */
+@Composable
+private fun DonutChart(
+    modifier: Modifier = Modifier,
+    data: List<CategorySpending>
+) {
+    val totalAmount = remember(data) { data.sumOf { it.totalAmount }.toFloat() }
+    val animationProgress = remember { Animatable(0f) }
+
+    LaunchedEffect(data) {
+        animationProgress.animateTo(1f, animationSpec = tween(durationMillis = 1000))
+    }
+
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val strokeWidth = 20.dp.toPx()
+        val diameter = min(size.width, size.height) * 0.8f
+        val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
+        val size = Size(diameter, diameter)
+        var startAngle = -90f
+
+        data.forEach { item ->
+            val sweepAngle = (item.totalAmount.toFloat() / totalAmount) * 360f
+            val color = CategoryIconHelper.getIconBackgroundColor(item.colorKey ?: "gray_light")
+
+            drawArc(
+                color = color,
+                startAngle = startAngle,
+                sweepAngle = sweepAngle * animationProgress.value,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Butt),
+                topLeft = topLeft,
+                size = size
+            )
+            startAngle += sweepAngle
+        }
+    }
+}
+
 
 @Composable
 fun CategorySpendingCard(
@@ -150,7 +177,7 @@ fun CategorySpendingCard(
                 Icon(
                     imageVector = CategoryIconHelper.getIcon(categorySpending.iconKey ?: "category"),
                     contentDescription = categorySpending.categoryName,
-                    tint = androidx.compose.ui.graphics.Color.Black,
+                    tint = Color.Black,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -177,20 +204,15 @@ fun CategorySpendingCard(
 }
 
 @Composable
-private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
-    val dataSet = pieData?.dataSet as? PieDataSet ?: return
-    var sumOfValues = 0f
-    for (i in 0 until dataSet.entryCount) {
-        sumOfValues += dataSet.getEntryForIndex(i).value
-    }
-    val totalValue = sumOfValues
+private fun ChartLegend(modifier: Modifier = Modifier, spendingList: List<CategorySpending>) {
+    val totalValue = remember(spendingList) { spendingList.sumOf { it.totalAmount } }
+
     LazyColumn(
         modifier = modifier.padding(start = 16.dp),
     ) {
-        items(dataSet.entryCount) { i ->
-            val entry = dataSet.getEntryForIndex(i)
-            val color = dataSet.getColor(i)
-            val percentage = if (totalValue > 0) (entry.value / totalValue * 100) else 0f
+        items(spendingList) { item ->
+            val color = CategoryIconHelper.getIconBackgroundColor(item.colorKey ?: "gray_light")
+            val percentage = if (totalValue > 0) (item.totalAmount / totalValue * 100) else 0.0
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -200,11 +222,11 @@ private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
                     modifier = Modifier
                         .size(12.dp)
                         .clip(CircleShape)
-                        .background(androidx.compose.ui.graphics.Color(color)),
+                        .background(color),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = entry.label,
+                    text = item.categoryName,
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -220,21 +242,4 @@ private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
             }
         }
     }
-}
-
-fun createPieData(spendingList: List<CategorySpending>): PieData {
-    val entries = spendingList.map {
-        PieEntry(it.totalAmount.toFloat(), it.categoryName)
-    }
-    val colors = spendingList.map {
-        (CategoryIconHelper.getIconBackgroundColor(it.colorKey ?: "gray_light")).toArgb()
-    }
-    val dataSet = PieDataSet(entries, "Spending").apply {
-        this.colors = colors
-        valueFormatter = PercentFormatter()
-        valueTextSize = 12f
-        valueTextColor = Color.BLACK
-        setDrawValues(false) // Hiding values on the chart itself for a cleaner look
-    }
-    return PieData(dataSet)
 }
