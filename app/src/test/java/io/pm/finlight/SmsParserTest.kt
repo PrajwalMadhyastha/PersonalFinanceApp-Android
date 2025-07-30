@@ -4,6 +4,8 @@
 // The tests now cover scenarios where an SMS contains a foreign currency code
 // (MYR), the home currency code (INR), or the home currency symbol (Rs),
 // ensuring the parser correctly extracts both the amount and the currency.
+// FIX - Added a new test case for the specific ICICI debit message format that
+// was failing, ensuring the improved regex correctly handles it.
 // =================================================================================
 package io.pm.finlight
 
@@ -101,6 +103,21 @@ class SmsParserTest {
         assertNotNull("Parser should return a result", result)
         assertEquals(500.00, result?.amount)
         assertNull("Detected currency should be null", result?.detectedCurrencyCode)
+    }
+
+    // --- NEW: Test case for the specific failing SMS ---
+    @Test
+    fun `test parses ICICI debit message with Rs symbol correctly`() = runBlocking {
+        setupTest()
+        val smsBody = "ICICI Bank Acct XX823 debited for Rs 240.00 on 28-Jul-25; DAKSHIN CAFE credited. UPI: 552200221100. Call 18002661 for dispute. SMS BLOCK 823 to 123123123"
+        val mockSms = SmsMessage(id = 15L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(240.00, result?.amount)
+        assertEquals("INR", result?.detectedCurrencyCode)
+        assertEquals("expense", result?.transactionType)
+        assertEquals("DAKSHIN CAFE", result?.merchantName)
     }
 
 

@@ -5,6 +5,8 @@
 // and any adjacent currency codes (e.g., "MYR", "INR", "Rs"). The parsing logic
 // now populates the new `detectedCurrencyCode` field in the PotentialTransaction,
 // enabling the SmsReceiver to make smarter decisions in Travel Mode.
+// FIX - The amount/currency regex has been made more robust to correctly
+// capture currency symbols like "Rs" that are preceded by a space.
 // =================================================================================
 package io.pm.finlight
 
@@ -20,7 +22,7 @@ data class PotentialAccount(
 
 object SmsParser {
     // --- UPDATED: A more robust regex to capture an optional currency code/symbol along with the amount ---
-    private val AMOUNT_WITH_CURRENCY_REGEX = "(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b\\.?\\s*)?([\\d,]+\\.?\\d*)|([\\d,]+\\.?\\d*)\\s*(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b)".toRegex(RegexOption.IGNORE_CASE)
+    private val AMOUNT_WITH_CURRENCY_REGEX = "(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b[ .]*)?([\\d,]+\\.?\\d*)|([\\d,]+\\.?\\d*)\\s*(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val ACCOUNT_PATTERNS =
