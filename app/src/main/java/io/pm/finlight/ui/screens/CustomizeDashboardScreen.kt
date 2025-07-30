@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CustomizeDashboardScreen.kt
-// REASON: NEW FILE - This screen provides a dedicated UI for managing the
-// dashboard layout. It allows users to reorder cards via drag-and-drop and
-// toggle their visibility with switches, decoupling this complex logic from the
-// main dashboard view for better performance and a cleaner user experience.
+// REASON: FIX - The `graphicsLayer` modifier now correctly applies the translation
+// from the rewritten DragDropState. This change, combined with the new state
+// logic, ensures a smooth and stable drag-and-drop experience without any
+// visual jumping or glitches.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -91,6 +91,7 @@ fun CustomizeDashboardScreen(
 
                 GlassPanel(
                     modifier = Modifier
+                        .animateItemPlacement()
                         .graphicsLayer {
                             translationY = if (isBeingDragged) dragDropState.draggingItemTranslationY else 0f
                         }
