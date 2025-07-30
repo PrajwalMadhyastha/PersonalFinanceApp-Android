@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
-// REASON: FIX - The ApproveTransactionScreen now uses a LaunchedEffect to check
-// if the incoming PotentialTransaction has a learned categoryId. If it does,
-// the screen automatically finds and sets the correct category, restoring the
-// auto-categorization feature for SMS transactions in Travel Mode.
+// REASON: FEATURE - The Category and Tag picker bottom sheets on the approval
+// screen are now configured to open in a full-screen, edge-to-edge layout.
+// This provides a more immersive and user-friendly experience for selecting
+// items from potentially long lists.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -49,7 +49,6 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 import java.text.NumberFormat
-import java.util.*
 
 private sealed class ApproveSheetContent {
     object Category : ApproveSheetContent()
@@ -236,7 +235,6 @@ fun ApproveTransactionScreen(
         }
     }
 
-    // --- FIX: Pre-select the category if the parser found a learned one ---
     LaunchedEffect(potentialTxn.categoryId, categories) {
         if (categories.isNotEmpty()) {
             potentialTxn.categoryId?.let { learnedCategoryId ->
@@ -427,6 +425,7 @@ fun ApproveTransactionScreen(
         ModalBottomSheet(
             onDismissRequest = { activeSheetContent = null },
             sheetState = sheetState,
+            windowInsets = WindowInsets(0),
             containerColor = popupContainerColor
         ) {
             when (activeSheetContent) {
@@ -557,7 +556,8 @@ private fun ApproveTagPickerSheet(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Manage Tags", style = MaterialTheme.typography.titleLarge)

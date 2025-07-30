@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: REFACTOR - The "Split" / "Edit Splits" button has been moved from the
-// secondary actions row into the main TransactionSpotlightHeader. This makes the
-// action more prominent and improves the user workflow.
-// UX REFINEMENT - The text for the split button has been made more explicit,
-// changing from "Split" to "Split Transaction" for better clarity.
+// REASON: FEATURE - The Account, Category, Tag, and Retrospective Update bottom
+// sheets are now configured to open in a full-screen, edge-to-edge layout. This
+// provides a more immersive and user-friendly experience for selecting items
+// from potentially long lists.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -216,8 +215,11 @@ fun TransactionDetailScreen(
             }
 
             if (retroUpdateSheetState != null) {
+                val retroSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
                 ModalBottomSheet(
                     onDismissRequest = { viewModel.dismissRetroUpdateSheet() },
+                    sheetState = retroSheetState,
+                    windowInsets = WindowInsets(0),
                     containerColor = popupContainerColor,
                     dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 ) {
@@ -445,6 +447,7 @@ fun TransactionDetailScreen(
                         ModalBottomSheet(
                             onDismissRequest = { activeSheetContent = null },
                             sheetState = sheetState,
+                            windowInsets = WindowInsets(0),
                             containerColor = popupContainerColor,
                             dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         ) {
@@ -1238,7 +1241,7 @@ private fun AccountPickerSheet(
     val currentAccount = items.find { it.id == currentAccountId }
     val otherAccounts = items.filter { it.id != currentAccountId }
 
-    Column(modifier = Modifier.navigationBarsPadding()) {
+    Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
@@ -1448,7 +1451,7 @@ private fun CategoryPickerSheet(
     onDismiss: () -> Unit,
     onAddNew: (() -> Unit)? = null
 ) {
-    Column(modifier = Modifier.navigationBarsPadding()) {
+    Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
@@ -1528,7 +1531,8 @@ private fun TagPickerSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(16.dp)
+            .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Manage Tags", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
@@ -1706,6 +1710,7 @@ private fun RetrospectiveUpdateSheetContent(
 
     Column(
         modifier = Modifier
+            .fillMaxHeight()
             .navigationBarsPadding()
             .padding(16.dp)
     ) {
@@ -1753,7 +1758,7 @@ private fun RetrospectiveUpdateSheetContent(
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
             LazyColumn(
-                modifier = Modifier.heightIn(max = 250.dp),
+                modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(state.similarTransactions, key = { it.id }) { transaction ->

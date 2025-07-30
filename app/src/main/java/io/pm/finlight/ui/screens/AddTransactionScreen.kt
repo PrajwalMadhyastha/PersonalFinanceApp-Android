@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: FEATURE - The screen now observes the TravelModeSettings. If travel
-// mode is active, it updates the currency symbol in the UI and displays a
-// real-time conversion helper text. The save action is updated to pass the
-// foreign currency amount to the ViewModel for conversion.
+// REASON: FEATURE - The Account and Tag picker bottom sheets are now configured
+// to open in a full-screen, edge-to-edge layout. This provides a more immersive
+// and user-friendly experience for selecting items from potentially long lists.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -183,7 +182,6 @@ fun AddTransactionScreen(
         label = "CategoryColorAnimation"
     )
 
-    // --- NEW: Determine if travel mode is active for the selected date ---
     val isTravelModeActive = remember(travelModeSettings, selectedDateTime) {
         travelModeSettings?.let {
             it.isEnabled &&
@@ -283,6 +281,7 @@ fun AddTransactionScreen(
         ModalBottomSheet(
             onDismissRequest = { activeSheet = null },
             sheetState = sheetState,
+            windowInsets = WindowInsets(0),
             containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         ) {
             when (val sheet = activeSheet) {
@@ -461,7 +460,6 @@ private fun AmountComposer(
                 maxLines = 1
             )
         }
-        // --- NEW: Conversion helper text ---
         if (isTravelMode && travelModeSettings != null) {
             val enteredAmount = amount.toDoubleOrNull() ?: 0.0
             val convertedAmount = enteredAmount * travelModeSettings.conversionRate
@@ -711,7 +709,7 @@ private fun <T> PickerSheet(
     onAddNew: (() -> Unit)? = null,
     itemContent: @Composable (T) -> Unit
 ) {
-    Column(modifier = Modifier.navigationBarsPadding()) {
+    Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
@@ -817,7 +815,8 @@ private fun TagPickerSheet(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Manage Tags", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
@@ -834,7 +833,7 @@ private fun TagPickerSheet(
                 )
             }
         }
-        HorizontalDivider(color = GlassPanelBorder)
+        HorizontalDivider()
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
