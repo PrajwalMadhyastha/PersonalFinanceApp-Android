@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FEATURE - The DashboardHeroCard has been updated to accept and display
-// a dynamic "budgetHealthSummary" string. The static "Monthly Budget" text has
-// been removed and replaced with this context-aware summary, making the card
-// more informative at a glance.
+// REASON: REFACTOR - Renamed `AuroraRecentActivityCard` to
+// `AuroraRecentTransactionsCard` to align with the updated `DashboardCardType`
+// enum and improve code consistency.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -60,13 +59,6 @@ import java.util.Locale
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/**
- * A reusable composable that creates a "glassmorphism" effect panel.
- *
- * @param modifier The modifier to be applied to the panel.
- * @param isCustomizationMode If true, a dashed border is shown.
- * @param content The content to be placed inside the panel.
- */
 @Composable
 fun GlassPanel(
     modifier: Modifier = Modifier,
@@ -98,16 +90,6 @@ fun GlassPanel(
     )
 }
 
-/**
- * The new hero card for the dashboard, displaying the monthly budget status
- * with a visually rich "Aurora" theme and glassmorphism effect.
- *
- * @param totalBudget The total budget for the month.
- * @param amountSpent The amount spent so far in the month.
- * @param amountRemaining The amount remaining in the budget.
- * @param monthYear The name of the current month.
- * @param navController The NavController for navigation.
- */
 @Composable
 fun DashboardHeroCard(
     totalBudget: Float,
@@ -117,7 +99,7 @@ fun DashboardHeroCard(
     safeToSpend: Float,
     navController: NavController,
     monthYear: String,
-    budgetHealthSummary: String // --- NEW: Add parameter for the dynamic summary ---
+    budgetHealthSummary: String
 ) {
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
@@ -133,7 +115,6 @@ fun DashboardHeroCard(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // --- UPDATED: Display the dynamic summary instead of the static title ---
         Text(
             text = budgetHealthSummary,
             style = MaterialTheme.typography.headlineSmall,
@@ -241,12 +222,6 @@ private fun StatItem(label: String, amount: Float, isCurrency: Boolean = true, i
     }
 }
 
-
-/**
- * A custom styled Progress Bar that includes a percentage indicator.
- *
- * @param progress The progress to display, from 0.0 to 1.0.
- */
 @Composable
 private fun AuroraProgressBar(progress: Float) {
     val animatedPercentage = (progress * 100).roundToInt()
@@ -311,12 +286,6 @@ private fun AuroraProgressBar(progress: Float) {
     }
 }
 
-/**
- * A dashboard card that displays a horizontally scrolling carousel of user accounts.
- *
- * @param accounts The list of accounts with their balances.
- * @param navController The NavController for navigation.
- */
 @Composable
 fun AccountsCarouselCard(
     accounts: List<AccountWithBalance>,
@@ -343,12 +312,6 @@ fun AccountsCarouselCard(
     }
 }
 
-/**
- * An individual item in the AccountsCarouselCard, styled to look like a mini glass credit card.
- *
- * @param account The account data to display.
- * @param navController The NavController for navigation.
- */
 @Composable
 private fun AccountItem(account: AccountWithBalance, navController: NavController) {
     GlassPanel(
@@ -385,12 +348,6 @@ private fun AccountItem(account: AccountWithBalance, navController: NavControlle
     }
 }
 
-/**
- * A dashboard card that displays radial gauges for individual category budgets.
- *
- * @param budgetStatus A list of budgets with their current spending.
- * @param navController The NavController for navigation.
- */
 @Composable
 fun BudgetWatchCard(
     budgetStatus: List<BudgetWithSpending>,
@@ -430,12 +387,6 @@ fun BudgetWatchCard(
     }
 }
 
-/**
- * A radial gauge for displaying the status of a single category budget.
- *
- * @param budget The budget data with spending information.
- * @param navController The NavController for navigation.
- */
 @Composable
 private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavController) {
     val progress = if (budget.budget.amount > 0) (budget.spent / budget.budget.amount).toFloat() else 0f
@@ -498,38 +449,8 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
     }
 }
 
-/**
- * A dashboard card for displaying the user's net worth.
- *
- * @param netWorth The calculated net worth.
- */
 @Composable
-fun AuroraNetWorthCard(netWorth: Double) {
-    GlassPanel {
-        Column(modifier = Modifier.padding(24.dp)) {
-            Text(
-                "Net Worth",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(netWorth)}",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-}
-
-/**
- * A dashboard card for displaying recent transactions.
- *
- * @param transactions The list of recent transactions.
- * @param navController The NavController for navigation.
- */
-@Composable
-fun AuroraRecentActivityCard(
+fun AuroraRecentTransactionsCard(
     transactions: List<TransactionDetails>,
     navController: NavController,
     onCategoryClick: (TransactionDetails) -> Unit
@@ -598,19 +519,13 @@ fun AuroraRecentActivityCard(
     }
 }
 
-/**
- * --- NEW ---
- * A dashboard card that provides quick navigation actions.
- *
- * @param navController The NavController for navigation.
- */
 @Composable
 fun AuroraQuickActionsCard(navController: NavController) {
     GlassPanel(
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.height(IntrinsicSize.Min), // Ensures divider stretches
+            modifier = Modifier.height(IntrinsicSize.Min),
             verticalAlignment = Alignment.CenterVertically
         ) {
             QuickActionItem(

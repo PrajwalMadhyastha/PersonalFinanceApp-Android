@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: REFACTOR - Updated the default dashboard card order in `loadCardOrder`
-// to match the new preferred layout. Removed the NET_WORTH card from the
-// default list.
+// REASON: FIX - Added backward compatibility for dashboard layout loading. The
+// `loadCardOrder` and `loadVisibleCards` functions now correctly map the old
+// "RECENT_ACTIVITY" enum name to the new "RECENT_TRANSACTIONS" name. This
+// prevents the card from disappearing for users with a previously saved layout.
 // =================================================================================
 package io.pm.finlight
 
@@ -189,9 +190,16 @@ class SettingsRepository(context: Context) {
         return if (json != null) {
             val type = object : TypeToken<List<String>>() {}.type
             val names: List<String> = gson.fromJson(json, type)
-            names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
+            names.mapNotNull { name ->
+                runCatching {
+                    if (name == "RECENT_ACTIVITY") {
+                        DashboardCardType.RECENT_TRANSACTIONS
+                    } else {
+                        DashboardCardType.valueOf(name)
+                    }
+                }.getOrNull()
+            }
         } else {
-            // --- UPDATED: Set the new default card order ---
             listOf(
                 DashboardCardType.HERO_BUDGET,
                 DashboardCardType.QUICK_ACTIONS,
@@ -208,11 +216,20 @@ class SettingsRepository(context: Context) {
         return if (json != null) {
             val type = object : TypeToken<Set<String>>() {}.type
             val names: Set<String> = gson.fromJson(json, type)
-            names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }.toSet()
+            names.mapNotNull { name ->
+                runCatching {
+                    if (name == "RECENT_ACTIVITY") {
+                        DashboardCardType.RECENT_TRANSACTIONS
+                    } else {
+                        DashboardCardType.valueOf(name)
+                    }
+                }.getOrNull()
+            }.toSet()
         } else {
             DashboardCardType.entries.toSet()
         }
     }
+
 
     fun saveBackupEnabled(isEnabled: Boolean) {
         prefs.edit {

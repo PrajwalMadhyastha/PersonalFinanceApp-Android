@@ -1,23 +1,26 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
 // REASON: REFACTOR - Updated the `when` block in the `DashboardCard` composable
-// to reflect the changes in the `DashboardCardType` enum. It now uses the new
-// `RECENT_TRANSACTIONS` name and has removed the case for the deleted `NET_WORTH`
-// card.
+// to call the renamed `AuroraRecentTransactionsCard` component.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
+import android.app.Application
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
@@ -88,7 +91,7 @@ private fun DashboardCard(
             budgetHealthSummary = budgetHealthSummary
         )
         DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
-        DashboardCardType.RECENT_TRANSACTIONS -> AuroraRecentActivityCard(
+        DashboardCardType.RECENT_TRANSACTIONS -> AuroraRecentTransactionsCard(
             transactions = recentTransactions,
             navController = navController,
             onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
