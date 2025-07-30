@@ -1,19 +1,21 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FIX - Added a `LaunchedEffect` that calls the ViewModel's new
-// `refreshBudgetSummary` function when the screen is composed. This ensures
-// that a new random summary phrase is selected each time the user navigates
-// to the dashboard, fixing the stale text issue.
+// REASON: REFACTOR - The drag-and-drop animation has been smoothed out. The
+// `graphicsLayer` modifier now uses the improved `draggingItemTranslationY` from
+// the refactored DragDropState. Additionally, `animateItemPlacement` now uses a
+// `spring` animation for a more natural and fluid movement of cards as they
+// reorder.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.app.Application
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -35,16 +37,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import java.util.Date
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -156,8 +155,15 @@ fun DashboardScreen(
 
             Box(
                 modifier = Modifier
-                    .animateItemPlacement()
+                    .animateItemPlacement(
+                        // --- UPDATED: Use a spring animation for a more natural feel ---
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    )
                     .graphicsLayer {
+                        // --- UPDATED: Use the new, smoother translation logic ---
                         translationY = if (isBeingDragged) dragDropState.draggingItemTranslationY else 0f
                         rotationZ = finalRotation
                     }

@@ -1,9 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt
-// REASON: FIX - The `draggingItemIndex` property has been refactored to use an
-// explicit private backing property (`_draggingItemIndex`). This resolves the
-// "EmptyMethod" and "unused" warnings by making the state mutations clearer to
-// the linter, without changing the component's behavior.
+// REASON: REFACTOR - The entire drag-and-drop state logic has been rewritten to
+// provide a smooth, jank-free reordering experience on the dashboard. The new
+// implementation decouples the dragged item's visual translation from the
+// LazyColumn's recomposition, making it stick to the user's finger while other
+// items animate smoothly into place.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -30,15 +31,16 @@ class DragDropState(
     val lazyListState: LazyListState,
     private val onMove: (Int, Int) -> Unit
 ) {
-    // --- FIX: Refactored to use a private backing property ---
-    private val _draggingItemIndex = mutableStateOf<Int?>(null)
-    val draggingItemIndex: Int? get() = _draggingItemIndex.value
+    // Index of the item being dragged.
+    private var _draggingItemIndex by mutableStateOf<Int?>(null)
+    val draggingItemIndex: Int? get() = _draggingItemIndex
 
-    // This is the total displacement of the user's finger since the drag started.
+    // The total offset of the finger from the start of the drag.
     private var draggingItemOffset by mutableFloatStateOf(0f)
 
-    // We need to store the initial offset of the item being dragged.
-    private var initialDraggingItemOffset by mutableStateOf<Int?>(null)
+    // The initial offset of the item when the drag started. This is now adjusted
+    // during swaps to ensure smoothness.
+    private var initialDraggingItemOffset by mutableFloatStateOf(0f)
 
     // A reference to the LazyListItemInfo of the item currently being dragged.
     private val currentDraggingItem: LazyListItemInfo?
@@ -47,11 +49,9 @@ class DragDropState(
         }
 
     // The calculated translationY to be applied in the graphicsLayer.
-    // This is the magic that makes the drag smooth.
+    // This is now purely based on the user's finger movement.
     val draggingItemTranslationY: Float
-        get() = currentDraggingItem?.let {
-            (initialDraggingItemOffset ?: 0) + draggingItemOffset - it.offset
-        } ?: 0f
+        get() = draggingItemOffset
 
     /**
      * Called when a drag gesture starts.
@@ -65,8 +65,8 @@ class DragDropState(
                 // Prevent dragging the hero card at index 0
                 if (it.index == 0) return
 
-                _draggingItemIndex.value = it.index
-                initialDraggingItemOffset = it.offset
+                _draggingItemIndex = it.index
+                initialDraggingItemOffset = it.offset.toFloat()
             }
     }
 
@@ -77,26 +77,31 @@ class DragDropState(
     fun onDrag(offset: Offset) {
         draggingItemOffset += offset.y
 
-        val currentDraggingIndex = draggingItemIndex ?: return
-        val initialOffset = initialDraggingItemOffset ?: return
+        val draggingIndex = draggingItemIndex ?: return
+        val draggingItem = currentDraggingItem ?: return
 
-        // Calculate the absolute visual position of the item's center.
-        val itemCenter = initialOffset + draggingItemOffset + (currentDraggingItem?.size ?: 0) / 2
+        // Calculate the current visual center of the dragged item.
+        val draggedItemCenter = initialDraggingItemOffset + draggingItemOffset + (draggingItem.size / 2f)
 
         // Find the item that the dragging item is hovering over.
         val targetItem = lazyListState.layoutInfo.visibleItemsInfo.find {
-            // Exclude the item being dragged and the non-movable hero card at index 0.
-            it.index != currentDraggingIndex && it.index != 0 &&
-                    // Check if the center of the dragging item is within the bounds of the target item.
-                    itemCenter.toInt() in it.offset..(it.offset + it.size)
+            it.index != draggingIndex && it.index != 0 && // Not itself, not the hero card
+                    draggedItemCenter in (it.offset.toFloat()..(it.offset + it.size).toFloat())
         }
 
         if (targetItem != null) {
-            val from = currentDraggingIndex
+            val from = draggingIndex
             val to = targetItem.index
+
+            // When a swap occurs, we adjust the initial offset. This prevents a visual jump
+            // because the item's "natural" position in the list is about to change.
+            val diff = lazyListState.layoutInfo.visibleItemsInfo.find { it.index == from }!!.offset -
+                    lazyListState.layoutInfo.visibleItemsInfo.find { it.index == to }!!.offset
+            initialDraggingItemOffset -= diff
+
+            // Update the index and notify the caller of the move.
+            _draggingItemIndex = to
             onMove(from, to)
-            // Only update the index. The offset logic will handle the visual position.
-            _draggingItemIndex.value = to
         }
     }
 
@@ -104,9 +109,9 @@ class DragDropState(
      * Called when the drag gesture ends. Resets the state.
      */
     fun onDragEnd() {
-        _draggingItemIndex.value = null
+        _draggingItemIndex = null
         draggingItemOffset = 0f
-        initialDraggingItemOffset = null
+        initialDraggingItemOffset = 0f
     }
 
     /**
@@ -117,10 +122,11 @@ class DragDropState(
         val viewportStartOffset = lazyListState.layoutInfo.viewportStartOffset
         val viewportEndOffset = lazyListState.layoutInfo.viewportEndOffset
 
-        val itemTop = draggingItem.offset + draggingItemTranslationY
+        // The item's visual top position, including the drag offset.
+        val itemTop = initialDraggingItemOffset + draggingItemOffset
         val itemBottom = itemTop + draggingItem.size
 
-        val scrollAmount = 20f
+        val scrollAmount = 40f // Increased for a slightly faster scroll
 
         return when {
             itemBottom > viewportEndOffset -> scrollAmount
