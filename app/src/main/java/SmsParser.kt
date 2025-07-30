@@ -10,6 +10,8 @@
 // FIX - The amount parsing logic now finds all potential numbers and prioritizes
 // the one explicitly associated with a currency symbol, preventing it from
 // incorrectly picking up account or reference numbers as the amount.
+// FIX - Added "purchase" as a standalone keyword to the expense regex to
+// correctly parse messages that use it without "of".
 // =================================================================================
 package io.pm.finlight
 
@@ -25,7 +27,8 @@ data class PotentialAccount(
 
 object SmsParser {
     private val AMOUNT_WITH_CURRENCY_REGEX = "(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b[ .]*)?([\\d,]+\\.?\\d*)|([\\d,]+\\.?\\d*)\\s*(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b)".toRegex(RegexOption.IGNORE_CASE)
-    private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
+    // --- UPDATED: Added "purchase" as a standalone keyword ---
+    private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of|purchase)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val ACCOUNT_PATTERNS =
         listOf(
