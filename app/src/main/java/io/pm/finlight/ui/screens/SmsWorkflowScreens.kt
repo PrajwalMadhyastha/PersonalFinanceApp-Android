@@ -4,6 +4,9 @@
 // screen are now configured to open in a full-screen, edge-to-edge layout.
 // This provides a more immersive and user-friendly experience for selecting
 // items from potentially long lists.
+// FIX - The travel mode notification is now correctly dismissed as soon as the
+// user taps an action and navigates to the approval screen, instead of waiting
+// until the transaction is saved.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -229,6 +232,11 @@ fun ApproveTransactionScreen(
 
     val isSaveEnabled = description.isNotBlank() && selectedCategory != null
 
+    // --- FIX: Cancel the notification as soon as the screen is displayed ---
+    LaunchedEffect(key1 = potentialTxn.sourceSmsId) {
+        NotificationManagerCompat.from(context).cancel(potentialTxn.sourceSmsId.toInt())
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             transactionViewModel.clearSelectedTags()
@@ -401,8 +409,6 @@ fun ApproveTransactionScreen(
                                     potentialTxn.merchantName?.let { originalName ->
                                         settingsViewModel.saveMerchantRenameRule(originalName, description)
                                     }
-                                    val notificationManager = NotificationManagerCompat.from(context)
-                                    notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
                                     navController.navigate("dashboard") {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             inclusive = true
