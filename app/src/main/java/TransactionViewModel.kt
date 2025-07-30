@@ -4,6 +4,8 @@
 // fetch and provide the existing merchant mappings to the SmsParser. This
 // resolves a bug where re-parsing would fail because it lacked the necessary
 // context, making the "Fix Parser" feature fully operational.
+// FIX - Re-added the missing `updateTransactionExclusion` function, which was
+// causing an "Unresolved reference" compilation error in TransactionDetailScreen.
 // =================================================================================
 package io.pm.finlight
 
@@ -743,6 +745,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun updateTransactionDate(id: Int, date: Long) = viewModelScope.launch {
         transactionRepository.updateDate(id, date)
+    }
+
+    fun updateTransactionExclusion(id: Int, isExcluded: Boolean) = viewModelScope.launch {
+        transactionRepository.updateExclusionStatus(id, isExcluded)
     }
 
     fun updateTagsForTransaction(transactionId: Int) = viewModelScope.launch {
