@@ -1,10 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: REFACTOR - Decoupled dashboard customization logic.
-// - The `TopAppBar` logic has been updated to remove the customization mode UI.
-// - A new "Customize" `IconButton` is now shown on the dashboard, which
-//   navigates to the new `customize_dashboard` route.
-// - Added the `CustomizeDashboardScreen` composable to the NavHost.
+// REASON: FIX - Removed the deep link handling logic from the SplashScreen's
+// LaunchedEffect. The NavHost now acts as the single source of truth for
+// automatically handling deep links from intents, which resolves the race
+// condition that caused the destination to be pushed onto the back stack twice.
 // =================================================================================
 package io.pm.finlight
 
@@ -14,6 +13,7 @@ import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -256,7 +256,7 @@ fun MainAppScreen() {
         "split_transaction",
         "category_detail",
         "merchant_detail",
-        "customize_dashboard" // --- NEW: Add new screen to exclusion list ---
+        "customize_dashboard"
     )
 
     val currentTitle = if (showBottomBar) {
@@ -337,7 +337,6 @@ fun MainAppScreen() {
                         actions = {
                             when (baseCurrentRoute) {
                                 BottomNavItem.Dashboard.route -> {
-                                    // --- NEW: Add Customize button ---
                                     IconButton(onClick = { navController.navigate("customize_dashboard") }) {
                                         Icon(Icons.Default.Edit, contentDescription = "Customize Dashboard")
                                     }
@@ -479,7 +478,6 @@ fun AppNavHost(
         startDestination = "splash_screen",
         modifier = modifier
     ) {
-        // --- NEW: Add composable route for the customization screen ---
         composable(
             "customize_dashboard",
             enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
@@ -982,18 +980,12 @@ fun AppNavHost(
 
 @Composable
 fun SplashScreen(navController: NavHostController, activity: Activity) {
+    // --- FIX: This LaunchedEffect now ONLY handles the initial navigation. ---
+    // It no longer inspects the activity's intent for deep links.
+    // The NavHost is now solely responsible for this.
     LaunchedEffect(key1 = Unit) {
-        val deepLinkUri = activity.intent?.data
-        if (deepLinkUri != null) {
-            navController.navigate(BottomNavItem.Dashboard.route) {
-                popUpTo("splash_screen") { inclusive = true }
-            }
-            navController.navigate(deepLinkUri)
-            activity.intent.data = null
-        } else {
-            navController.navigate(BottomNavItem.Dashboard.route) {
-                popUpTo("splash_screen") { inclusive = true }
-            }
+        navController.navigate(BottomNavItem.Dashboard.route) {
+            popUpTo("splash_screen") { inclusive = true }
         }
     }
 

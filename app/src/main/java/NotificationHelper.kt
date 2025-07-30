@@ -97,8 +97,10 @@ object NotificationHelper {
             return
         }
 
+        // --- DEBUG: Add a unique extra to trace this specific intent ---
         val intent = Intent(Intent.ACTION_VIEW, "$DEEP_LINK_URI_EDIT/${details.transaction.id}".toUri()).apply {
             `package` = context.packageName
+            putExtra("source", "NotificationHelper")
         }
         val pendingIntent: PendingIntent? = TaskStackBuilder.create(context).run {
             addNextIntentWithParentStack(intent)
