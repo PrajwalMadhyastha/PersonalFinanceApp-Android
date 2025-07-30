@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/PotentialTransaction.kt
-// REASON: FEATURE (Travel Mode SMS) - Added a new nullable `isForeignCurrency`
-// field. This will be used in the deep link from the new travel mode notification
-// to tell the approval screen whether the transaction amount should be treated
-// as foreign currency and converted.
+// REASON: FEATURE - Added a new nullable `detectedCurrencyCode` field. This will
+// be populated by the SmsParser if it can confidently identify a currency code
+// (e.g., "INR", "MYR") next to the amount in an SMS, forming the basis for the
+// new smart currency detection feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -19,6 +19,7 @@ package io.pm.finlight
  * @param categoryId The ID of a learned category, if a mapping exists for the merchant.
  * @param smsSignature A stable hash of the SMS body used for pattern detection.
  * @param isForeignCurrency A flag passed from the notification to indicate user's currency choice.
+ * @param detectedCurrencyCode The currency code (e.g., "INR", "USD") found in the SMS.
  */
 data class PotentialTransaction(
     val sourceSmsId: Long,
@@ -31,6 +32,7 @@ data class PotentialTransaction(
     val sourceSmsHash: String? = null,
     val categoryId: Int? = null,
     val smsSignature: String? = null,
-    // --- NEW: Flag to indicate if this is a foreign currency transaction ---
-    val isForeignCurrency: Boolean? = null
+    val isForeignCurrency: Boolean? = null,
+    // --- NEW: Field to store the currency code found in the SMS ---
+    val detectedCurrencyCode: String? = null
 )

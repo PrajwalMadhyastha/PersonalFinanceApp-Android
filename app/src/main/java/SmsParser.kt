@@ -1,10 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - The parsing logic is now more powerful. It fetches all
-// enabled ignore rules and separates them by type. It first checks the SMS
-// sender against all SENDER rules. If a match is found, parsing stops.
-// Otherwise, it proceeds to check the message body against BODY_PHRASE rules.
-// A new helper function converts wildcard patterns to valid regex.
+// REASON: FEATURE - The parser is now currency-aware. A new, more powerful
+// regex, `AMOUNT_WITH_CURRENCY_REGEX`, has been added to capture both the amount
+// and any adjacent currency codes (e.g., "MYR", "INR", "Rs"). The parsing logic
+// now populates the new `detectedCurrencyCode` field in the PotentialTransaction,
+// enabling the SmsReceiver to make smarter decisions in Travel Mode.
 // =================================================================================
 package io.pm.finlight
 
@@ -19,8 +19,8 @@ data class PotentialAccount(
 )
 
 object SmsParser {
-    private val CURRENCY_AMOUNT_REGEX = "(?:rs|inr|rs\\.?)\\s*([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
-    private val KEYWORD_AMOUNT_REGEX = "(?:purchase of|payment of|spent|charged|credited with|debited for|credit of|for)\\s+([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
+    // --- UPDATED: A more robust regex to capture an optional currency code/symbol along with the amount ---
+    private val AMOUNT_WITH_CURRENCY_REGEX = "(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b\\.?\\s*)?([\\d,]+\\.?\\d*)|([\\d,]+\\.?\\d*)\\s*(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val ACCOUNT_PATTERNS =
@@ -90,7 +90,6 @@ object SmsParser {
         return null
     }
 
-    // --- NEW: Helper to convert wildcard patterns to regex ---
     private fun wildcardToRegex(pattern: String): Regex {
         val escaped = Pattern.quote(pattern).replace("*", "\\E.*\\Q")
         return escaped.toRegex(RegexOption.IGNORE_CASE)
@@ -110,7 +109,6 @@ object SmsParser {
         val senderIgnoreRules = allIgnoreRules.filter { it.type == RuleType.SENDER }
         val bodyIgnoreRules = allIgnoreRules.filter { it.type == RuleType.BODY_PHRASE }
 
-        // --- STEP 1: Check against sender ignore rules ---
         for (rule in senderIgnoreRules) {
             try {
                 if (wildcardToRegex(rule.pattern).matches(sms.sender)) {
@@ -122,7 +120,6 @@ object SmsParser {
             }
         }
 
-        // --- STEP 2: Check against body phrase ignore rules ---
         for (rule in bodyIgnoreRules) {
             try {
                 if (rule.pattern.toRegex(RegexOption.IGNORE_CASE).containsMatchIn(sms.body)) {
@@ -137,6 +134,7 @@ object SmsParser {
         var extractedMerchant: String? = null
         var extractedAmount: Double? = null
         var extractedAccount: PotentialAccount? = null
+        var detectedCurrency: String? = null
 
         val allRules = customSmsRuleDao.getAllRules().first()
         val renameRules = merchantRenameRuleDao.getAllRules().first().associateBy({ it.originalName }, { it.newName })
@@ -160,7 +158,12 @@ object SmsParser {
                     try {
                         val match = regexStr.toRegex().find(sms.body)
                         if (match != null && match.groupValues.size > 1) {
-                            extractedAmount = match.groupValues[1].replace(",", "").toDoubleOrNull()
+                            val amountMatch = AMOUNT_WITH_CURRENCY_REGEX.find(match.groupValues[1])
+                            if (amountMatch != null) {
+                                val (amount, currency) = parseAmountAndCurrency(amountMatch)
+                                extractedAmount = amount
+                                detectedCurrency = currency
+                            }
                         }
                     } catch (e: PatternSyntaxException) { /* Ignore */ }
                 }
@@ -181,10 +184,16 @@ object SmsParser {
             }
         }
 
-        val amount = extractedAmount
-            ?: CURRENCY_AMOUNT_REGEX.find(sms.body)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
-            ?: KEYWORD_AMOUNT_REGEX.find(sms.body)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
-            ?: return null
+        if (extractedAmount == null) {
+            val amountMatch = AMOUNT_WITH_CURRENCY_REGEX.find(sms.body)
+            if (amountMatch != null) {
+                val (amount, currency) = parseAmountAndCurrency(amountMatch)
+                extractedAmount = amount
+                detectedCurrency = currency
+            }
+        }
+
+        val amount = extractedAmount ?: return null
 
         val transactionType =
             when {
@@ -241,7 +250,16 @@ object SmsParser {
             potentialAccount = potentialAccount,
             sourceSmsHash = smsHash,
             categoryId = learnedCategoryId,
-            smsSignature = smsSignature
+            smsSignature = smsSignature,
+            detectedCurrencyCode = detectedCurrency
         )
+    }
+
+    private fun parseAmountAndCurrency(matchResult: MatchResult): Pair<Double?, String?> {
+        val groups = matchResult.groupValues
+        val amount = (groups[2].ifEmpty { groups[3] }).replace(",", "").toDoubleOrNull()
+        var currency = (groups[1].ifEmpty { groups[4] }).uppercase()
+        if (currency == "RS") currency = "INR"
+        return Pair(amount, currency.ifEmpty { null })
     }
 }

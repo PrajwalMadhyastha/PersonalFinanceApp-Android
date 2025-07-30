@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt
-// REASON: FIX - The unit test has been updated to align with the new IgnoreRule
-// entity and DAO. The mock setup now uses `getEnabledRules()` instead of the
-// removed `getEnabledPhrases()`. All instantiations of IgnoreRule now correctly
-// use the `pattern` property instead of `phrase`, resolving all compilation errors.
+// REASON: FEATURE - Added new unit tests to verify the currency detection logic.
+// The tests now cover scenarios where an SMS contains a foreign currency code
+// (MYR), the home currency code (INR), or the home currency symbol (Rs),
+// ensuring the parser correctly extracts both the amount and the currency.
 // =================================================================================
 package io.pm.finlight
 
@@ -29,7 +29,6 @@ class SmsParserTest {
     @Mock
     private lateinit var mockIgnoreRuleDao: IgnoreRuleDao
 
-    // --- NEW: Mock for the new dependency ---
     @Mock
     private lateinit var mockMerchantCategoryMappingDao: MerchantCategoryMappingDao
 
@@ -47,9 +46,63 @@ class SmsParserTest {
     ) {
         `when`(mockCustomSmsRuleDao.getAllRules()).thenReturn(flowOf(customRules))
         `when`(mockMerchantRenameRuleDao.getAllRules()).thenReturn(flowOf(renameRules))
-        // --- UPDATED: Mock the new getEnabledRules() method ---
         `when`(mockIgnoreRuleDao.getEnabledRules()).thenReturn(ignoreRules.filter { it.isEnabled })
     }
+
+    @Test
+    fun `test parses debit message with foreign currency code`() = runBlocking {
+        setupTest()
+        val smsBody = "You have spent MYR 55.50 at STARBUCKS."
+        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(55.50, result?.amount)
+        assertEquals("expense", result?.transactionType)
+        assertEquals("STARBUCKS", result?.merchantName)
+        assertEquals("MYR", result?.detectedCurrencyCode)
+    }
+
+    @Test
+    fun `test parses debit message with home currency code`() = runBlocking {
+        setupTest()
+        val smsBody = "You have spent INR 120.00 at CCD."
+        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(120.00, result?.amount)
+        assertEquals("INR", result?.detectedCurrencyCode)
+    }
+
+    @Test
+    fun `test parses debit message with home currency symbol`() = runBlocking {
+        setupTest()
+        val smsBody = "You have spent Rs. 300 at a local store."
+        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(300.0, result?.amount)
+        assertEquals("INR", result?.detectedCurrencyCode) // Rs should be normalized to INR
+    }
+
+    @Test
+    fun `test parses debit message with no currency`() = runBlocking {
+        setupTest()
+        val smsBody = "A purchase of 500.00 was made at some store."
+        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(500.00, result?.amount)
+        assertNull("Detected currency should be null", result?.detectedCurrencyCode)
+    }
+
 
     @Test
     fun `test parses debit message successfully`() = runBlocking {
