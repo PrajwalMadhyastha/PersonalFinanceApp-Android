@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    This drawable is a simplified, single-color version of the app's logo,
+    specifically designed for use in notifications. Android requires notification
+    icons to be white with a transparent background. This version uses a custom
+    path for reliable rendering.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+
+    <!-- A custom, clean 'F' shape optimized for the status bar -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M9,4 L17,4 L17,6 L11,6 L11,11 L15,11 L15,13 L11,13 L11,20 L9,20 L9,4 Z" />
+
+</vector>

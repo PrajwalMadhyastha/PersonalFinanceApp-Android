@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: FEATURE (Travel Mode SMS) - Added a new function
-// `showTravelModeSmsNotification`. This creates a notification with two actions
-// that deep link to the approval screen, allowing the user to specify whether
-// an SMS transaction was in the foreign or home currency.
+// REASON: FIX - All notifications now use the new, dedicated `ic_notification_logo`
+// for the small icon. This is a single-color, transparent vector required by
+// Android for correct rendering in the status bar, ensuring brand consistency.
 // =================================================================================
 package io.pm.finlight
 
@@ -36,11 +35,9 @@ object NotificationHelper {
     private const val DEEP_LINK_URI_REPORT_BASE = "app://finlight.pm.io/report"
     private const val DEEP_LINK_URI_LINK_RECURRING = "app://finlight.pm.io/link_recurring"
     private const val DEEP_LINK_URI_ADD_RECURRING = "app://finlight.pm.io/add_recurring_transaction"
-    // --- NEW: A base URI for the approval screen ---
     private const val DEEP_LINK_URI_APPROVE = "app://finlight.pm.io/approve_transaction_screen"
 
 
-    // --- NEW: Notification for SMS received during Travel Mode ---
     fun showTravelModeSmsNotification(
         context: Context,
         potentialTxn: PotentialTransaction,
@@ -50,12 +47,11 @@ object NotificationHelper {
             return
         }
 
-        val homeCurrencySymbol = CurrencyHelper.getCurrencySymbol("INR") // Assuming home is INR
+        val homeCurrencySymbol = CurrencyHelper.getCurrencySymbol("INR")
         val foreignCurrencyCode = travelSettings.currencyCode
         val contentTitle = "Transaction while traveling?"
         val contentText = "Was this transaction in $foreignCurrencyCode or $homeCurrencySymbol?"
 
-        // Action 1: This was in the FOREIGN currency
         val foreignTxn = potentialTxn.copy(isForeignCurrency = true)
         val foreignJson = URLEncoder.encode(Gson().toJson(foreignTxn), "UTF-8")
         val foreignIntent = Intent(Intent.ACTION_VIEW, "$DEEP_LINK_URI_APPROVE?potentialTxnJson=$foreignJson".toUri()).apply {
@@ -66,7 +62,6 @@ object NotificationHelper {
             getPendingIntent(potentialTxn.sourceSmsId.toInt() + 1, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
-        // Action 2: This was in the HOME currency
         val homeTxn = potentialTxn.copy(isForeignCurrency = false)
         val homeJson = URLEncoder.encode(Gson().toJson(homeTxn), "UTF-8")
         val homeIntent = Intent(Intent.ACTION_VIEW, "$DEEP_LINK_URI_APPROVE?potentialTxnJson=$homeJson".toUri()).apply {
@@ -78,7 +73,7 @@ object NotificationHelper {
         }
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification_logo)
             .setContentTitle(contentTitle)
             .setContentText(contentText)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -135,7 +130,7 @@ object NotificationHelper {
         }
 
         val builder = NotificationCompat.Builder(context, MainApplication.RICH_TRANSACTION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification_logo)
             .setContentTitle(title)
             .setContentText(contentText)
             .setLargeIcon(categoryBitmap)
@@ -258,7 +253,7 @@ object NotificationHelper {
         val contentText = "We noticed a recurring ${rule.transactionType} for '${rule.description}'. We've created a rule for you. Tap to review."
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification_logo)
             .setContentTitle("New Recurring Transaction Found")
             .setContentText(contentText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
@@ -298,7 +293,7 @@ object NotificationHelper {
         val contentText = "Your payment of ${currencyFormat.format(potentialTxn.amount)} for ${potentialTxn.merchantName} is due. Tap to confirm."
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification_logo)
             .setContentTitle("Recurring Payment Due")
             .setContentText(contentText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
@@ -351,7 +346,7 @@ object NotificationHelper {
         }
 
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification_logo)
             .setContentTitle(title)
             .setContentText(bigContentText)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -464,7 +459,7 @@ object NotificationHelper {
         val groupKey = "finlight_transaction_group_${transaction.id}"
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification_logo)
             .setContentTitle("Transaction Auto-Saved")
             .setContentText("Saved ${transaction.description} (₹${"%.2f".format(transaction.amount)}). Tap to edit or categorize.")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -497,19 +492,18 @@ object NotificationHelper {
             getPendingIntent(transaction.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
-        val notificationIcon = android.R.drawable.ic_dialog_info
         val typeText = transaction.transactionType.replaceFirstChar { it.uppercase() }
         val bigText = "$typeText of ₹${"%.2f".format(transaction.amount)} from ${transaction.description} detected. Tap to review and categorize."
 
         val builder = NotificationCompat.Builder(context, MainApplication.TRANSACTION_CHANNEL_ID)
-            .setSmallIcon(notificationIcon)
+            .setSmallIcon(R.drawable.ic_notification_logo)
             .setContentTitle("New Transaction Found")
             .setContentText("Tap to review a transaction from ${transaction.description}.")
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
-            .addAction(notificationIcon, "Review & Categorize", pendingIntent)
+            .addAction(R.drawable.ic_notification_logo, "Review & Categorize", pendingIntent)
 
         with(NotificationManagerCompat.from(context)) {
             notify(transaction.id, builder.build())
