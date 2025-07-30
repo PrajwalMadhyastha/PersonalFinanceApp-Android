@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NotificationHelper.kt
-// REASON: FIX - All notifications now use the new, dedicated `ic_notification_logo`
-// for the small icon. This is a single-color, transparent vector required by
-// Android for correct rendering in the status bar, ensuring brand consistency.
+// REASON: UX - The rich transaction notification has been updated to be more
+// informative at a glance. The account name is now in the header, and the main
+// content title shows the amount and merchant, as requested.
 // =================================================================================
 package io.pm.finlight
 
@@ -97,7 +97,6 @@ object NotificationHelper {
             return
         }
 
-        // --- DEBUG: Add a unique extra to trace this specific intent ---
         val intent = Intent(Intent.ACTION_VIEW, "$DEEP_LINK_URI_EDIT/${details.transaction.id}".toUri()).apply {
             `package` = context.packageName
             putExtra("source", "NotificationHelper")
@@ -109,14 +108,17 @@ object NotificationHelper {
 
         val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
         val amountStr = currencyFormat.format(details.transaction.amount)
-        val title = "Finlight · ${details.accountName}"
-        val contentText = "$amountStr at ${details.transaction.description}"
+
+        // --- UPDATED: Rearrange content for better readability ---
+        val title = "$amountStr at ${details.transaction.description}"
+        val contentText = details.categoryName ?: "Uncategorized"
+        val summaryText = details.accountName ?: "Finlight"
 
         val categoryBitmap = createCategoryIconBitmap(context, details)
 
         val inboxStyle = NotificationCompat.InboxStyle()
             .setBigContentTitle(title)
-            .setSummaryText(details.categoryName ?: "Uncategorized")
+            .setSummaryText(summaryText) // This appears in the header
 
         val totalLabel = if (details.transaction.transactionType == "income") "income this month" else "spent this month"
         inboxStyle.addLine("${currencyFormat.format(monthlyTotal)} $totalLabel")
