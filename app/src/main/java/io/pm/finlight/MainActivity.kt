@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE (Share Snapshot) - The main top app bar logic has been updated.
-// When the `TransactionListScreen` is in selection mode, a contextual app bar
-// is now displayed, showing the number of selected items and providing actions
-// to initiate the share workflow or cancel the selection.
+// REASON: FIX - The contextual TopAppBar shown during transaction selection mode
+// now uses `surfaceColorAtElevation` for its background. This makes its color
+// theme-aware, resolving the bug where it would appear purple even in non-purple
+// themes like "Midnight".
 // =================================================================================
 package io.pm.finlight
 
@@ -296,7 +296,6 @@ fun MainAppScreen() {
 
         Scaffold(
             topBar = {
-                // --- NEW: Conditional TopAppBar for selection mode ---
                 if (isSelectionMode && baseCurrentRoute == BottomNavItem.Transactions.route) {
                     TopAppBar(
                         title = { Text("$selectedIdsCount Selected") },
@@ -311,8 +310,9 @@ fun MainAppScreen() {
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            // --- FIX: Use a theme-aware surface color instead of a hardcoded one ---
+                            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
+                            titleContentColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 } else if (showMainTopBar) {
