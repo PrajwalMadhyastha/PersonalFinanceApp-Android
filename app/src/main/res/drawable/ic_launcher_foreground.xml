@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     This drawable defines the foreground layer of the adaptive icon.
-    It contains vector paths for a custom, geometric letter 'F' and a stylized
-    ray of light, symbolizing the clarity and insight the app provides.
-    A shadow layer has been added to ensure visibility on light backgrounds.
+    It contains a single, clean vector path for a custom, stylized letter 'F'.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -11,23 +9,9 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Shadow Layer: A copy of the 'F' shape, slightly offset and colored dark -->
-    <group
-        android:translateX="1"
-        android:translateY="1">
-        <path
-            android:fillColor="#4D000000"
-            android:pathData="M 42,80 L 42,35 C 42,30 46,28 50,28 L 72,28 L 72,36 L 50,36 L 50,50 L 66,50 L 66,58 L 50,58 L 50,80 Z" />
-    </group>
-
     <!-- The main, stylish white 'F' shape with a curved top -->
     <path
         android:fillColor="#FFFFFFFF"
         android:pathData="M 42,80 L 42,35 C 42,30 46,28 50,28 L 72,28 L 72,36 L 50,36 L 50,50 L 66,50 L 66,58 L 50,58 L 50,80 Z" />
-
-    <!-- The translucent ray of light extending from the 'F' -->
-    <path
-        android:fillColor="#4DFFFFFF"
-        android:pathData="M 72,36 L 82,32 L 82,62 L 66,58 Z" />
 
 </vector>
