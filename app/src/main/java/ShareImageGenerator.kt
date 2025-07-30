@@ -1,10 +1,11 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/utils/ShareImageGenerator.kt
-// REASON: FIX - Resolved a runtime crash (IllegalStateException: Cannot locate
-// windowRecomposer) by properly attaching the off-screen ComposeView to the
-// Activity's window before rendering it to a bitmap. The view is now added to
-// a temporary container within the root view hierarchy, measured, drawn, and
-// then immediately removed in a 'finally' block to prevent memory leaks.
+// REASON: FIX - Resolved a runtime crash by attaching the ComposeView to the
+// Activity's window before rendering.
+// FEATURE - The snapshot content now correctly renders transaction tags.
+// UX REFINEMENT - Implemented a weighted column layout for the generated image
+// to provide better spacing and prevent awkward text wrapping, especially for
+// columns with variable content length like Description and Category.
 // =================================================================================
 package io.pm.finlight.utils
 
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import io.pm.finlight.BuildConfig
+import io.pm.finlight.Tag
 import io.pm.finlight.TransactionDetails
 import io.pm.finlight.ui.components.ShareableField
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
@@ -44,29 +46,34 @@ import java.util.*
 object ShareImageGenerator {
 
     /**
+     * A data class to bundle a transaction with its associated tags for rendering.
+     */
+    data class TransactionSnapshotData(
+        val details: TransactionDetails,
+        val tags: List<Tag>
+    )
+
+    /**
      * Renders the TransactionSnapshotContent composable to a Bitmap.
      */
     private fun createBitmapFromComposable(
         context: Context,
-        transactions: List<TransactionDetails>,
+        transactionsWithData: List<TransactionSnapshotData>,
         fields: Set<ShareableField>
     ): Bitmap {
-        // Ensure the context is an Activity to get the window
         val activity = context as? Activity
             ?: throw IllegalArgumentException("A valid Activity context is required to generate an image.")
 
-        // The root view to which we'll temporarily attach our composable
         val root = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content)
 
         val composeView = ComposeView(context).apply {
             setContent {
-                PersonalFinanceAppTheme { // Apply the app's theme
-                    TransactionSnapshotContent(transactions = transactions, fields = fields)
+                PersonalFinanceAppTheme {
+                    TransactionSnapshotContent(transactionsWithData = transactionsWithData, fields = fields)
                 }
             }
         }
 
-        // A temporary container for the ComposeView
         val container = LinearLayout(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -76,23 +83,18 @@ object ShareImageGenerator {
         }
 
         try {
-            // Add the container to the view hierarchy to attach it to the window
             root.addView(container)
-
-            // Measure and layout the container
             container.measure(
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
             )
             container.layout(0, 0, container.measuredWidth, container.measuredHeight)
 
-            // Create the bitmap and draw the view onto it
             val bitmap = Bitmap.createBitmap(container.measuredWidth, container.measuredHeight, Bitmap.Config.ARGB_8888)
             val canvas = android.graphics.Canvas(bitmap)
             container.draw(canvas)
             return bitmap
         } finally {
-            // CRITICAL: Always remove the temporary view to avoid memory leaks
             root.removeView(container)
         }
     }
@@ -102,13 +104,11 @@ object ShareImageGenerator {
      */
     fun shareTransactionsAsImage(
         context: Context,
-        transactions: List<TransactionDetails>,
+        transactionsWithData: List<TransactionSnapshotData>,
         fields: Set<ShareableField>
     ) {
-        // 1. Generate the Bitmap
-        val bitmap = createBitmapFromComposable(context, transactions, fields)
+        val bitmap = createBitmapFromComposable(context, transactionsWithData, fields)
 
-        // 2. Save the Bitmap to a temporary file
         val cachePath = File(context.cacheDir, "images")
         cachePath.mkdirs()
         val file = File(cachePath, "transaction_snapshot.png")
@@ -116,10 +116,8 @@ object ShareImageGenerator {
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, fileOutputStream)
         fileOutputStream.close()
 
-        // 3. Get a content URI using FileProvider
         val contentUri = FileProvider.getUriForFile(context, "${BuildConfig.APPLICATION_ID}.provider", file)
 
-        // 4. Trigger the share intent
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, contentUri)
@@ -130,15 +128,30 @@ object ShareImageGenerator {
 }
 
 /**
+ * Determines the appropriate layout weight for each shareable field.
+ */
+private fun getFieldWeight(field: ShareableField): Float {
+    return when (field) {
+        ShareableField.Description -> 2.5f
+        ShareableField.Notes -> 2.0f
+        ShareableField.Tags -> 1.8f
+        ShareableField.Category -> 1.5f
+        ShareableField.Account -> 1.5f
+        ShareableField.Date -> 1.2f
+        ShareableField.Amount -> 1.0f
+    }
+}
+
+/**
  * The Composable that defines the layout of the shareable image.
  */
 @Composable
 private fun TransactionSnapshotContent(
-    transactions: List<TransactionDetails>,
+    transactionsWithData: List<ShareImageGenerator.TransactionSnapshotData>,
     fields: Set<ShareableField>
 ) {
-    val totalAmount = transactions.sumOf {
-        if (it.transaction.transactionType == "income") it.transaction.amount else -it.transaction.amount
+    val totalAmount = transactionsWithData.sumOf {
+        if (it.details.transaction.transactionType == "income") it.details.transaction.amount else -it.details.transaction.amount
     }
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
     val dateFormat = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
@@ -147,9 +160,8 @@ private fun TransactionSnapshotContent(
         modifier = Modifier
             .background(MaterialTheme.colorScheme.surface)
             .padding(16.dp)
-            .width(IntrinsicSize.Max) // Adjust width to content
+            .width(IntrinsicSize.Max)
     ) {
-        // Header
         Text(
             "Transaction Summary",
             style = MaterialTheme.typography.headlineSmall,
@@ -163,7 +175,6 @@ private fun TransactionSnapshotContent(
         )
         Spacer(Modifier.height(16.dp))
 
-        // Table Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -174,15 +185,16 @@ private fun TransactionSnapshotContent(
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(if (field == ShareableField.Description) 1.5f else 1f),
+                    modifier = Modifier.weight(getFieldWeight(field)),
                     textAlign = if (field == ShareableField.Amount) TextAlign.End else TextAlign.Start
                 )
             }
         }
         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-        // Table Rows
-        transactions.forEach { details ->
+        transactionsWithData.forEach { data ->
+            val details = data.details
+            val tags = data.tags
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -197,13 +209,13 @@ private fun TransactionSnapshotContent(
                         ShareableField.Category -> details.categoryName ?: "N/A"
                         ShareableField.Account -> details.accountName ?: "N/A"
                         ShareableField.Notes -> details.transaction.notes ?: ""
-                        ShareableField.Tags -> "Tags..." // Placeholder for now
+                        ShareableField.Tags -> tags.joinToString(", ") { it.name }.ifEmpty { "-" }
                     }
                     Text(
                         text = text,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(if (field == ShareableField.Description) 1.5f else 1f),
+                        modifier = Modifier.weight(getFieldWeight(field)),
                         textAlign = if (field == ShareableField.Amount) TextAlign.End else TextAlign.Start,
                         fontSize = 12.sp
                     )
@@ -212,7 +224,6 @@ private fun TransactionSnapshotContent(
         }
         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-        // Footer (Total)
         Row(
             modifier = Modifier
                 .fillMaxWidth()

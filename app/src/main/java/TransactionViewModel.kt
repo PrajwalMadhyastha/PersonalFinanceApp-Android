@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
 // REASON: FIX - The `generateAndShareSnapshot` function now accepts an Activity
-// context as a parameter. This is necessary to pass the correct context to the
-// ShareImageGenerator, allowing it to access the window and resolve the runtime
-// crash during image generation.
+// context. It also correctly fetches the tags for each selected transaction and
+// constructs the `TransactionSnapshotData` object required by the image generator,
+// resolving a data type mismatch and ensuring tags are displayed.
 // =================================================================================
 package io.pm.finlight
 
@@ -84,7 +84,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val showShareSheet: StateFlow<Boolean> = _showShareSheet.asStateFlow()
 
     private val _shareableFields = MutableStateFlow(
-        setOf(ShareableField.Date, ShareableField.Description, ShareableField.Amount)
+        setOf(ShareableField.Date, ShareableField.Description, ShareableField.Amount, ShareableField.Category, ShareableField.Tags)
     )
     val shareableFields: StateFlow<Set<ShareableField>> = _shareableFields.asStateFlow()
 
@@ -281,12 +281,20 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             if (selectedIds.isEmpty()) return@launch
 
             val allTransactions = transactionsForSelectedMonth.first()
-            val selectedTransactions = allTransactions.filter { it.transaction.id in selectedIds }
+            val selectedTransactionsDetails = allTransactions.filter { it.transaction.id in selectedIds }
 
-            if (selectedTransactions.isNotEmpty()) {
+            if (selectedTransactionsDetails.isNotEmpty()) {
+                // Fetch tags for each selected transaction and create the data payload
+                val transactionsWithData = withContext(Dispatchers.IO) {
+                    selectedTransactionsDetails.map { details ->
+                        val tags = transactionRepository.getTagsForTransactionSimple(details.transaction.id)
+                        ShareImageGenerator.TransactionSnapshotData(details = details, tags = tags)
+                    }
+                }
+
                 ShareImageGenerator.shareTransactionsAsImage(
                     context = context,
-                    transactions = selectedTransactions,
+                    transactionsWithData = transactionsWithData,
                     fields = _shareableFields.value
                 )
             }
