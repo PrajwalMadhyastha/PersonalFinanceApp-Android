@@ -6,6 +6,8 @@
 // ensuring the parser correctly extracts both the amount and the currency.
 // FIX - Added a new test case for the specific ICICI debit message format that
 // was failing, ensuring the improved regex correctly handles it.
+// FIX - Added a new test case to ensure the parser prioritizes amounts with
+// currency symbols over other numbers in an SMS, like account numbers.
 // =================================================================================
 package io.pm.finlight
 
@@ -105,7 +107,6 @@ class SmsParserTest {
         assertNull("Detected currency should be null", result?.detectedCurrencyCode)
     }
 
-    // --- NEW: Test case for the specific failing SMS ---
     @Test
     fun `test parses ICICI debit message with Rs symbol correctly`() = runBlocking {
         setupTest()
@@ -118,6 +119,20 @@ class SmsParserTest {
         assertEquals("INR", result?.detectedCurrencyCode)
         assertEquals("expense", result?.transactionType)
         assertEquals("DAKSHIN CAFE", result?.merchantName)
+    }
+
+    @Test
+    fun `test prioritizes amount with currency over other numbers`() = runBlocking {
+        setupTest()
+        // This SMS has multiple numbers: an account number (823) and the actual amount (240.00)
+        val smsBody = "ICICI Bank Acct XX823 debited for Rs 240.00 on 28-Jul-25; DAKSHIN CAFE credited."
+        val mockSms = SmsMessage(id = 16L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        // CRITICAL: Assert that it picked the correct amount, not the account number part.
+        assertEquals(240.00, result?.amount)
+        assertEquals("INR", result?.detectedCurrencyCode)
     }
 
 

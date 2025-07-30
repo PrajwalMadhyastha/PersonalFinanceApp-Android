@@ -7,6 +7,9 @@
 // enabling the SmsReceiver to make smarter decisions in Travel Mode.
 // FIX - The amount/currency regex has been made more robust to correctly
 // capture currency symbols like "Rs" that are preceded by a space.
+// FIX - The amount parsing logic now finds all potential numbers and prioritizes
+// the one explicitly associated with a currency symbol, preventing it from
+// incorrectly picking up account or reference numbers as the amount.
 // =================================================================================
 package io.pm.finlight
 
@@ -21,7 +24,6 @@ data class PotentialAccount(
 )
 
 object SmsParser {
-    // --- UPDATED: A more robust regex to capture an optional currency code/symbol along with the amount ---
     private val AMOUNT_WITH_CURRENCY_REGEX = "(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b[ .]*)?([\\d,]+\\.?\\d*)|([\\d,]+\\.?\\d*)\\s*(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b)".toRegex(RegexOption.IGNORE_CASE)
     private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
@@ -187,9 +189,16 @@ object SmsParser {
         }
 
         if (extractedAmount == null) {
-            val amountMatch = AMOUNT_WITH_CURRENCY_REGEX.find(sms.body)
-            if (amountMatch != null) {
-                val (amount, currency) = parseAmountAndCurrency(amountMatch)
+            val allAmountMatches = AMOUNT_WITH_CURRENCY_REGEX.findAll(sms.body).toList()
+            val matchWithCurrency = allAmountMatches.firstOrNull {
+                val currencyPart1 = it.groups[1]?.value?.ifEmpty { null }
+                val currencyPart2 = it.groups[4]?.value?.ifEmpty { null }
+                currencyPart1 != null || currencyPart2 != null
+            }
+            val bestMatch = matchWithCurrency ?: allAmountMatches.firstOrNull()
+
+            if (bestMatch != null) {
+                val (amount, currency) = parseAmountAndCurrency(bestMatch)
                 extractedAmount = amount
                 detectedCurrency = currency
             }
