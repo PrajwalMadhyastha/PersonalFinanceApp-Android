@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt
-// REASON: REFINEMENT - The opacity of the popup surfaces has been increased
-// from 80% to 85%. This makes the popups more solid, reducing the distraction
-// from background text and improving overall legibility on both light and dark
-// themes.
+// REASON: UX REFINEMENT - The opacity of the popup surfaces has been increased
+// from 85% (0xD9) to 95% (0xF2). This makes popups and bottom sheets more
+// solid, reducing distraction from the background and improving overall
+// legibility on both light and dark themes.
 // =================================================================================
 package io.pm.finlight.ui.theme
 
@@ -17,7 +17,6 @@ val AuroraDarkOnSurface = Color(0xFFE6E1E5) // Off-white for text
 val AuroraDarkOnSurfaceVariant = Color(0xFFC4C7C5) // Brighter gray for secondary text
 
 // --- Daybreak Theme (Light Purple) ---
-// --- UPDATED: New, more mature and professional color palette based on user feedback ---
 val DaybreakPrimary = Color(0xFF6750A4)       // Muted, professional purple
 val DaybreakSecondary = Color(0xFF81D4FA)      // Soft, light blue for secondary accents
 val DaybreakBackground = Color(0xFFEADDFF)      // Light lavender background
@@ -43,9 +42,9 @@ val PaperOnSurfaceVariant = Color(0xFF555555) // Dark gray for secondary text
 // --- Shared Colors ---
 val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
 val AuroraNumpadHighlight = Color(0x29FFFFFF) // White with 16% opacity
-// --- UPDATED: Increased opacity from 80% (0xCC) to 85% (0xD9) ---
-val PopupSurfaceDark = Color(0xD9212125) // 85% opaque dark charcoal
-val PopupSurfaceLight = Color(0xD9FFFFFF) // 85% opaque white
+// --- UPDATED: Increased opacity from 85% (0xD9) to 95% (0xF2) ---
+val PopupSurfaceDark = Color(0xF2212125) // 95% opaque dark charcoal
+val PopupSurfaceLight = Color(0xF2FFFFFF) // 95% opaque white
 
 // High-contrast colors for transaction amounts
 val IncomeGreenDark = Color(0xFF66BB6A)
