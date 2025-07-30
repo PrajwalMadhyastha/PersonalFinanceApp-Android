@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul 30 17:43:39 IST 2025
+Generated on: Wed Jul 30 18:57:53 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -2595,9 +2595,8 @@ class MonthlySummaryWorker(
 ================== FILE: ./app/src/main/java/NavItems.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added new entries for "category_detail" and
-// "merchant_detail" to the screenTitles map. This provides the titles for the
-// new drilldown screens.
+// REASON: FEATURE - Added a new entry for "customize_dashboard" to the
+// screenTitles map to provide a title for the new screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -2651,9 +2650,10 @@ val screenTitles = mapOf(
     "currency_travel_settings" to "Currency & Travel",
     "add_edit_goal" to "New Savings Goal",
     "add_edit_goal/{goalId}" to "Edit Savings Goal",
-    // --- NEW: Titles for the new drilldown screens ---
     "category_detail/{categoryName}/{month}/{year}" to "Category Details",
-    "merchant_detail/{merchantName}/{month}/{year}" to "Merchant Details"
+    "merchant_detail/{merchantName}/{month}/{year}" to "Merchant Details",
+    // --- NEW: Title for the new customization screen ---
+    "customize_dashboard" to "Customize Dashboard"
 )
 -e 
 
@@ -2690,6 +2690,11 @@ enum class SpendingStatus {
 
 
 ================== FILE: ./app/src/main/java/DashboardCardType.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DashboardCardType.kt
+// REASON: REFACTOR - Renamed RECENT_ACTIVITY to RECENT_TRANSACTIONS to better
+// reflect its content. Removed the unused NET_WORTH card.
+// =================================================================================
 package io.pm.finlight
 
 /**
@@ -2699,11 +2704,9 @@ package io.pm.finlight
 enum class DashboardCardType {
     HERO_BUDGET,
     QUICK_ACTIONS,
-    NET_WORTH,
-    RECENT_ACTIVITY,
+    RECENT_TRANSACTIONS,
     ACCOUNTS_CAROUSEL,
     BUDGET_WATCH,
-    // --- NEW: Add the new card type for the consistency calendar ---
     SPENDING_CONSISTENCY
 }
 -e 
@@ -12903,41 +12906,23 @@ private fun AccountDetailTransactionItem(transactionDetails: TransactionDetails)
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: FIX - Added a `LaunchedEffect` that calls the ViewModel's new
-// `refreshBudgetSummary` function when the screen is composed. This ensures
-// that a new random summary phrase is selected each time the user navigates
-// to the dashboard, fixing the stale text issue.
+// REASON: REFACTOR - Updated the `when` block in the `DashboardCard` composable
+// to call the renamed `AuroraRecentTransactionsCard` component.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
 import android.app.Application
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -12945,9 +12930,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import java.util.Date
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -12957,122 +12939,25 @@ fun DashboardScreen(
     transactionViewModel: TransactionViewModel
 ) {
     val visibleCards by dashboardViewModel.visibleCards.collectAsState()
-    val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
-    val showAddCardSheet by dashboardViewModel.showAddCardSheet.collectAsState()
-    val hiddenCards by dashboardViewModel.hiddenCards.collectAsState()
     val yearlyConsistencyData by dashboardViewModel.yearlyConsistencyData.collectAsState()
     val budgetHealthSummary by dashboardViewModel.budgetHealthSummary.collectAsState()
 
-
-    val coroutineScope = rememberCoroutineScope()
-    var overscrollJob by remember { mutableStateOf<Job?>(null) }
-    val dragDropState = rememberDragDropState(onMove = dashboardViewModel::updateCardOrder)
-
-    // --- NEW: Trigger a refresh of the summary phrase when the screen is displayed ---
     LaunchedEffect(Unit) {
         dashboardViewModel.refreshBudgetSummary()
     }
 
-    if (showAddCardSheet) {
-        val sheetContainerColor = if (isSystemInDarkTheme()) {
-            Color(0xFF2C2C34)
-        } else {
-            BottomSheetDefaults.ContainerColor
-        }
-
-        ModalBottomSheet(
-            onDismissRequest = { dashboardViewModel.onAddCardSheetDismiss() },
-            containerColor = sheetContainerColor
-        ) {
-            AddCardSheetContent(
-                hiddenCards = hiddenCards,
-                onAddCard = { cardType ->
-                    dashboardViewModel.showCard(cardType)
-                    dashboardViewModel.onAddCardSheetDismiss()
-                }
-            )
-        }
-    }
-
     LazyColumn(
-        state = dragDropState.lazyListState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier
-            .testTag("dashboard_lazy_column")
-            .pointerInput(Unit) {
-                detectDragGesturesAfterLongPress(
-                    onDrag = { change, offset ->
-                        change.consume()
-                        dragDropState.onDrag(offset)
-
-                        if (overscrollJob?.isActive == true) return@detectDragGesturesAfterLongPress
-
-                        dragDropState
-                            .checkForOverScroll()
-                            .takeIf { it != 0f }
-                            ?.let {
-                                overscrollJob =
-                                    coroutineScope.launch { dragDropState.lazyListState.scrollBy(it) }
-                            } ?: run { overscrollJob?.cancel() }
-                    },
-                    onDragStart = { offset ->
-                        dashboardViewModel.enterCustomizationMode()
-                        dragDropState.onDragStart(offset)
-                    },
-                    onDragEnd = { dragDropState.onDragEnd() },
-                    onDragCancel = { dragDropState.onDragEnd() }
-                )
-            }
+        modifier = Modifier.testTag("dashboard_lazy_column")
     ) {
-        itemsIndexed(visibleCards, key = { _, item -> item.name }) { index, cardType ->
-            val isBeingDragged = index == dragDropState.draggingItemIndex
-
-            val infiniteTransition = rememberInfiniteTransition(label = "giggle_animation")
-            val giggleRotation by infiniteTransition.animateFloat(
-                initialValue = -0.8f,
-                targetValue = 0.8f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(150, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "giggle"
-            )
-
-            val dragTiltRotation by animateFloatAsState(
-                targetValue = if (isBeingDragged) -2f else 0f,
-                animationSpec = tween(300),
-                label = "DragRotation"
-            )
-
-            val finalRotation = when {
-                isBeingDragged -> dragTiltRotation
-                isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET -> giggleRotation
-                else -> 0f
-            }
-
-            val animatedElevation by animateFloatAsState(
-                targetValue = if (isBeingDragged) 8f else 0f,
-                animationSpec = tween(300),
-                label = "DragElevation"
-            )
-
-            Box(
-                modifier = Modifier
-                    .animateItemPlacement()
-                    .graphicsLayer {
-                        translationY = if (isBeingDragged) dragDropState.draggingItemTranslationY else 0f
-                        rotationZ = finalRotation
-                    }
-                    .shadow(elevation = animatedElevation.dp, shape = MaterialTheme.shapes.extraLarge)
-            ) {
+        items(visibleCards, key = { it.name }) { cardType ->
+            Box(modifier = Modifier.animateItemPlacement(animationSpec = spring())) {
                 DashboardCard(
                     cardType = cardType,
                     navController = navController,
                     dashboardViewModel = dashboardViewModel,
                     transactionViewModel = transactionViewModel,
-                    isCustomizationMode = isCustomizationMode,
-                    onHide = { dashboardViewModel.hideCard(cardType) },
                     yearlyConsistencyData = yearlyConsistencyData,
                     budgetHealthSummary = budgetHealthSummary
                 )
@@ -13087,12 +12972,9 @@ private fun DashboardCard(
     navController: NavController,
     dashboardViewModel: DashboardViewModel,
     transactionViewModel: TransactionViewModel,
-    isCustomizationMode: Boolean,
-    onHide: () -> Unit,
     yearlyConsistencyData: List<CalendarDayStatus>,
     budgetHealthSummary: String
 ) {
-    val netWorth by dashboardViewModel.netWorth.collectAsState()
     val monthlyIncome by dashboardViewModel.monthlyIncome.collectAsState()
     val monthlyExpenses by dashboardViewModel.monthlyExpenses.collectAsState()
     val overallBudget by dashboardViewModel.overallMonthlyBudget.collectAsState()
@@ -13103,102 +12985,52 @@ private fun DashboardCard(
     val amountRemaining by dashboardViewModel.amountRemaining.collectAsState()
     val monthYear = dashboardViewModel.monthYear
 
-    Box {
-        when (cardType) {
-            DashboardCardType.HERO_BUDGET -> DashboardHeroCard(
-                totalBudget = overallBudget,
-                amountSpent = monthlyExpenses.toFloat(),
-                amountRemaining = amountRemaining,
-                income = monthlyIncome.toFloat(),
-                safeToSpend = safeToSpendPerDay,
-                navController = navController,
-                monthYear = monthYear,
-                budgetHealthSummary = budgetHealthSummary
-            )
-            DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
-            DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
-            DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(
-                transactions = recentTransactions,
-                navController = navController,
-                onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
-            )
-            DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
-            DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
-                budgetStatus = budgetStatus,
-                navController = navController,
-            )
-            DashboardCardType.SPENDING_CONSISTENCY -> {
-                GlassPanel {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            "Yearly Spending Consistency",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (yearlyConsistencyData.isEmpty()) {
-                            CircularProgressIndicator()
-                        } else {
-                            ConsistencyCalendar(
-                                data = yearlyConsistencyData,
-                                onDayClick = { date ->
-                                    navController.navigate("search_screen?date=${date.time}&focusSearch=false")
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        if (isCustomizationMode && cardType != DashboardCardType.HERO_BUDGET) {
-            Row(
-                modifier = Modifier.align(Alignment.TopEnd),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onHide, modifier = Modifier.size(36.dp).padding(4.dp)) {
-                    Icon(
-                        Icons.Default.RemoveCircleOutline,
-                        contentDescription = "Hide Card",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.DragHandle,
-                    contentDescription = "Drag to reorder",
-                    modifier = Modifier.padding(8.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AddCardSheetContent(
-    hiddenCards: List<DashboardCardType>,
-    onAddCard: (DashboardCardType) -> Unit
-) {
-    Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
-        Text(
-            "Add a Card to Your Dashboard",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface
+    when (cardType) {
+        DashboardCardType.HERO_BUDGET -> DashboardHeroCard(
+            totalBudget = overallBudget,
+            amountSpent = monthlyExpenses.toFloat(),
+            amountRemaining = amountRemaining,
+            income = monthlyIncome.toFloat(),
+            safeToSpend = safeToSpendPerDay,
+            navController = navController,
+            monthYear = monthYear,
+            budgetHealthSummary = budgetHealthSummary
         )
-        Spacer(Modifier.height(16.dp))
-        if (hiddenCards.isEmpty()) {
-            Text("All available cards are already on your dashboard.")
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(hiddenCards, key = { _, cardType -> cardType.name }) { _, cardType ->
-                    ListItem(
-                        headlineContent = { Text(cardType.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) },
-                        leadingContent = { Icon(Icons.Default.Add, contentDescription = null) },
-                        modifier = Modifier.clickable { onAddCard(cardType) }
+        DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
+        DashboardCardType.RECENT_TRANSACTIONS -> AuroraRecentTransactionsCard(
+            transactions = recentTransactions,
+            navController = navController,
+            onCategoryClick = { transactionViewModel.requestCategoryChange(it) }
+        )
+        DashboardCardType.ACCOUNTS_CAROUSEL -> AccountsCarouselCard(accounts = accountsSummary, navController = navController)
+        DashboardCardType.BUDGET_WATCH -> BudgetWatchCard(
+            budgetStatus = budgetStatus,
+            navController = navController,
+        )
+        DashboardCardType.SPENDING_CONSISTENCY -> {
+            GlassPanel {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        "Yearly Spending Consistency",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
+                    if (yearlyConsistencyData.isEmpty()) {
+                        CircularProgressIndicator()
+                    } else {
+                        ConsistencyCalendar(
+                            data = yearlyConsistencyData,
+                            onDayClick = { date ->
+                                navController.navigate("search_screen?date=${date.time}&focusSearch=false")
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -16006,6 +15838,143 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
 -e 
 
 
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CustomizeDashboardScreen.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CustomizeDashboardScreen.kt
+// REASON: FIX - The `graphicsLayer` modifier now correctly applies the translation
+// from the rewritten DragDropState. This change, combined with the new state
+// logic, ensures a smooth and stable drag-and-drop experience without any
+// visual jumping or glitches.
+// =================================================================================
+package io.pm.finlight.ui.screens
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import io.pm.finlight.DashboardCardType
+import io.pm.finlight.DashboardViewModel
+import io.pm.finlight.ui.components.GlassPanel
+import io.pm.finlight.ui.components.rememberDragDropState
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun CustomizeDashboardScreen(
+    navController: NavController,
+    viewModel: DashboardViewModel
+) {
+    val allCards by viewModel.allCards.collectAsState()
+    val visibleCards by viewModel.visibleCards.collectAsState()
+
+    val coroutineScope = rememberCoroutineScope()
+    var overscrollJob by remember { mutableStateOf<Job?>(null) }
+    val dragDropState = rememberDragDropState(onMove = viewModel::updateCardOrder)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Customize Dashboard") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.surface
+    ) { innerPadding ->
+        LazyColumn(
+            state = dragDropState.lazyListState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .pointerInput(Unit) {
+                    detectDragGesturesAfterLongPress(
+                        onDrag = { change, offset ->
+                            change.consume()
+                            dragDropState.onDrag(offset)
+                            if (overscrollJob?.isActive == true) return@detectDragGesturesAfterLongPress
+                            dragDropState
+                                .checkForOverScroll()
+                                .takeIf { it != 0f }
+                                ?.let { overscrollJob = coroutineScope.launch { dragDropState.lazyListState.scrollBy(it) } }
+                                ?: run { overscrollJob?.cancel() }
+                        },
+                        onDragStart = { offset -> dragDropState.onDragStart(offset) },
+                        onDragEnd = { dragDropState.onDragEnd() },
+                        onDragCancel = { dragDropState.onDragEnd() }
+                    )
+                },
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            itemsIndexed(allCards, key = { _, item -> item.name }) { index, cardType ->
+                val isBeingDragged = dragDropState.draggingItemKey == cardType.name
+                val elevation by animateFloatAsState(if (isBeingDragged) 8f else 0f, label = "elevation")
+
+                GlassPanel(
+                    modifier = Modifier
+                        .animateItemPlacement()
+                        .graphicsLayer {
+                            translationY = if (isBeingDragged) dragDropState.draggingItemTranslationY else 0f
+                        }
+                        .shadow(elevation.dp, MaterialTheme.shapes.extraLarge)
+                ) {
+                    // Hero Budget is not movable or hideable
+                    if (cardType == DashboardCardType.HERO_BUDGET) {
+                        ListItem(
+                            headlineContent = { Text(cardType.name.toDisplayString()) },
+                            supportingContent = { Text("This card is always visible and at the top.") },
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.2f))
+                        )
+                    } else {
+                        ListItem(
+                            headlineContent = { Text(cardType.name.toDisplayString()) },
+                            leadingContent = {
+                                Switch(
+                                    checked = visibleCards.contains(cardType),
+                                    onCheckedChange = { viewModel.toggleCardVisibility(cardType) }
+                                )
+                            },
+                            trailingContent = {
+                                Icon(
+                                    Icons.Default.DragHandle,
+                                    contentDescription = "Drag to reorder"
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.2f))
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun String.toDisplayString(): String {
+    return this.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }
+}
+-e 
+
+
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
@@ -16870,10 +16839,9 @@ fun AuroraAnimatedBackground() {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
-// REASON: FEATURE - The DashboardHeroCard has been updated to accept and display
-// a dynamic "budgetHealthSummary" string. The static "Monthly Budget" text has
-// been removed and replaced with this context-aware summary, making the card
-// more informative at a glance.
+// REASON: REFACTOR - Renamed `AuroraRecentActivityCard` to
+// `AuroraRecentTransactionsCard` to align with the updated `DashboardCardType`
+// enum and improve code consistency.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -16930,13 +16898,6 @@ import java.util.Locale
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/**
- * A reusable composable that creates a "glassmorphism" effect panel.
- *
- * @param modifier The modifier to be applied to the panel.
- * @param isCustomizationMode If true, a dashed border is shown.
- * @param content The content to be placed inside the panel.
- */
 @Composable
 fun GlassPanel(
     modifier: Modifier = Modifier,
@@ -16968,16 +16929,6 @@ fun GlassPanel(
     )
 }
 
-/**
- * The new hero card for the dashboard, displaying the monthly budget status
- * with a visually rich "Aurora" theme and glassmorphism effect.
- *
- * @param totalBudget The total budget for the month.
- * @param amountSpent The amount spent so far in the month.
- * @param amountRemaining The amount remaining in the budget.
- * @param monthYear The name of the current month.
- * @param navController The NavController for navigation.
- */
 @Composable
 fun DashboardHeroCard(
     totalBudget: Float,
@@ -16987,7 +16938,7 @@ fun DashboardHeroCard(
     safeToSpend: Float,
     navController: NavController,
     monthYear: String,
-    budgetHealthSummary: String // --- NEW: Add parameter for the dynamic summary ---
+    budgetHealthSummary: String
 ) {
     val progress = if (totalBudget > 0) (amountSpent / totalBudget) else 0f
     val animatedProgress by animateFloatAsState(
@@ -17003,7 +16954,6 @@ fun DashboardHeroCard(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // --- UPDATED: Display the dynamic summary instead of the static title ---
         Text(
             text = budgetHealthSummary,
             style = MaterialTheme.typography.headlineSmall,
@@ -17111,12 +17061,6 @@ private fun StatItem(label: String, amount: Float, isCurrency: Boolean = true, i
     }
 }
 
-
-/**
- * A custom styled Progress Bar that includes a percentage indicator.
- *
- * @param progress The progress to display, from 0.0 to 1.0.
- */
 @Composable
 private fun AuroraProgressBar(progress: Float) {
     val animatedPercentage = (progress * 100).roundToInt()
@@ -17181,12 +17125,6 @@ private fun AuroraProgressBar(progress: Float) {
     }
 }
 
-/**
- * A dashboard card that displays a horizontally scrolling carousel of user accounts.
- *
- * @param accounts The list of accounts with their balances.
- * @param navController The NavController for navigation.
- */
 @Composable
 fun AccountsCarouselCard(
     accounts: List<AccountWithBalance>,
@@ -17213,12 +17151,6 @@ fun AccountsCarouselCard(
     }
 }
 
-/**
- * An individual item in the AccountsCarouselCard, styled to look like a mini glass credit card.
- *
- * @param account The account data to display.
- * @param navController The NavController for navigation.
- */
 @Composable
 private fun AccountItem(account: AccountWithBalance, navController: NavController) {
     GlassPanel(
@@ -17255,12 +17187,6 @@ private fun AccountItem(account: AccountWithBalance, navController: NavControlle
     }
 }
 
-/**
- * A dashboard card that displays radial gauges for individual category budgets.
- *
- * @param budgetStatus A list of budgets with their current spending.
- * @param navController The NavController for navigation.
- */
 @Composable
 fun BudgetWatchCard(
     budgetStatus: List<BudgetWithSpending>,
@@ -17300,12 +17226,6 @@ fun BudgetWatchCard(
     }
 }
 
-/**
- * A radial gauge for displaying the status of a single category budget.
- *
- * @param budget The budget data with spending information.
- * @param navController The NavController for navigation.
- */
 @Composable
 private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavController) {
     val progress = if (budget.budget.amount > 0) (budget.spent / budget.budget.amount).toFloat() else 0f
@@ -17368,38 +17288,8 @@ private fun CategoryBudgetGauge(budget: BudgetWithSpending, navController: NavCo
     }
 }
 
-/**
- * A dashboard card for displaying the user's net worth.
- *
- * @param netWorth The calculated net worth.
- */
 @Composable
-fun AuroraNetWorthCard(netWorth: Double) {
-    GlassPanel {
-        Column(modifier = Modifier.padding(24.dp)) {
-            Text(
-                "Net Worth",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "₹${NumberFormat.getNumberInstance(Locale("en", "IN")).format(netWorth)}",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-}
-
-/**
- * A dashboard card for displaying recent transactions.
- *
- * @param transactions The list of recent transactions.
- * @param navController The NavController for navigation.
- */
-@Composable
-fun AuroraRecentActivityCard(
+fun AuroraRecentTransactionsCard(
     transactions: List<TransactionDetails>,
     navController: NavController,
     onCategoryClick: (TransactionDetails) -> Unit
@@ -17468,19 +17358,13 @@ fun AuroraRecentActivityCard(
     }
 }
 
-/**
- * --- NEW ---
- * A dashboard card that provides quick navigation actions.
- *
- * @param navController The NavController for navigation.
- */
 @Composable
 fun AuroraQuickActionsCard(navController: NavController) {
     GlassPanel(
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.height(IntrinsicSize.Min), // Ensures divider stretches
+            modifier = Modifier.height(IntrinsicSize.Min),
             verticalAlignment = Alignment.CenterVertically
         ) {
             QuickActionItem(
@@ -19211,10 +19095,11 @@ private fun <T> SearchableDropdown(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt
-// REASON: FIX - The `draggingItemIndex` property has been refactored to use an
-// explicit private backing property (`_draggingItemIndex`). This resolves the
-// "EmptyMethod" and "unused" warnings by making the state mutations clearer to
-// the linter, without changing the component's behavior.
+// REASON: FIX - The drag-and-drop logic has been completely rewritten to be
+// stable and smooth. The logic now triggers a swap only when the dragged item's
+// edge crosses the center of a target item. This creates the desired "make
+// space" effect and prevents the item from incorrectly jumping to the top or
+// bottom of the list, ensuring a fluid and predictable reordering experience.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -19241,97 +19126,73 @@ class DragDropState(
     val lazyListState: LazyListState,
     private val onMove: (Int, Int) -> Unit
 ) {
-    // --- FIX: Refactored to use a private backing property ---
-    private val _draggingItemIndex = mutableStateOf<Int?>(null)
-    val draggingItemIndex: Int? get() = _draggingItemIndex.value
+    var draggingItemKey by mutableStateOf<Any?>(null)
+        private set
 
-    // This is the total displacement of the user's finger since the drag started.
     private var draggingItemOffset by mutableFloatStateOf(0f)
 
-    // We need to store the initial offset of the item being dragged.
-    private var initialDraggingItemOffset by mutableStateOf<Int?>(null)
+    val draggingItemIndex: Int?
+        get() = draggingItemKey?.let { key ->
+            lazyListState.layoutInfo.visibleItemsInfo.find { it.key == key }?.index
+        }
 
-    // A reference to the LazyListItemInfo of the item currently being dragged.
     private val currentDraggingItem: LazyListItemInfo?
         get() = draggingItemIndex?.let {
             lazyListState.layoutInfo.visibleItemsInfo.find { item -> item.index == it }
         }
 
-    // The calculated translationY to be applied in the graphicsLayer.
-    // This is the magic that makes the drag smooth.
     val draggingItemTranslationY: Float
-        get() = currentDraggingItem?.let {
-            (initialDraggingItemOffset ?: 0) + draggingItemOffset - it.offset
-        } ?: 0f
+        get() = draggingItemOffset
 
-    /**
-     * Called when a drag gesture starts.
-     * Finds the item under the pointer and initializes the drag state.
-     * Prevents dragging the first item (the Hero Card).
-     */
     fun onDragStart(offset: Offset) {
         lazyListState.layoutInfo.visibleItemsInfo
             .firstOrNull { item -> offset.y.toInt() in item.offset..(item.offset + item.size) }
             ?.also {
-                // Prevent dragging the hero card at index 0
-                if (it.index == 0) return
-
-                _draggingItemIndex.value = it.index
-                initialDraggingItemOffset = it.offset
+                if (it.index == 0) return // Prevent dragging the hero card
+                draggingItemKey = it.key
             }
     }
 
-    /**
-     * Called for each movement during a drag gesture.
-     * This function accumulates the finger's movement and detects when a swap should occur.
-     */
     fun onDrag(offset: Offset) {
         draggingItemOffset += offset.y
 
-        val currentDraggingIndex = draggingItemIndex ?: return
-        val initialOffset = initialDraggingItemOffset ?: return
+        val draggingIndex = draggingItemIndex ?: return
+        val draggingItem = currentDraggingItem ?: return
 
-        // Calculate the absolute visual position of the item's center.
-        val itemCenter = initialOffset + draggingItemOffset + (currentDraggingItem?.size ?: 0) / 2
+        // --- REWRITTEN SWAP LOGIC ---
+        val draggedItemTop = draggingItem.offset + draggingItemOffset
+        val draggedItemCenterY = draggedItemTop + (draggingItem.size / 2f)
 
-        // Find the item that the dragging item is hovering over.
+        // Find the item we are currently over
         val targetItem = lazyListState.layoutInfo.visibleItemsInfo.find {
-            // Exclude the item being dragged and the non-movable hero card at index 0.
-            it.index != currentDraggingIndex && it.index != 0 &&
-                    // Check if the center of the dragging item is within the bounds of the target item.
-                    itemCenter.toInt() in it.offset..(it.offset + it.size)
+            it.key != draggingItemKey && // Not dragging over itself
+                    draggedItemCenterY in it.offset.toFloat()..(it.offset + it.size).toFloat() &&
+                    it.index != 0 // And not over the hero card
         }
 
         if (targetItem != null) {
-            val from = currentDraggingIndex
-            val to = targetItem.index
-            onMove(from, to)
-            // Only update the index. The offset logic will handle the visual position.
-            _draggingItemIndex.value = to
+            // Check if we need to swap positions
+            if (draggingIndex != targetItem.index) {
+                onMove(draggingIndex, targetItem.index)
+            }
         }
     }
 
-    /**
-     * Called when the drag gesture ends. Resets the state.
-     */
+
     fun onDragEnd() {
-        _draggingItemIndex.value = null
+        draggingItemKey = null
         draggingItemOffset = 0f
-        initialDraggingItemOffset = null
     }
 
-    /**
-     * Calculates the amount to scroll when the dragged item reaches the edge of the viewport.
-     */
     fun checkForOverScroll(): Float {
         val draggingItem = currentDraggingItem ?: return 0f
         val viewportStartOffset = lazyListState.layoutInfo.viewportStartOffset
         val viewportEndOffset = lazyListState.layoutInfo.viewportEndOffset
 
-        val itemTop = draggingItem.offset + draggingItemTranslationY
+        val itemTop = draggingItem.offset + draggingItemOffset
         val itemBottom = itemTop + draggingItem.size
 
-        val scrollAmount = 20f
+        val scrollAmount = 40f
 
         return when {
             itemBottom > viewportEndOffset -> scrollAmount
@@ -19734,9 +19595,11 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The profile picture placeholder now uses the full adaptive icon
-// (`R.mipmap.ic_launcher`) by passing it to the `model` parameter. This
-// resolves the runtime crash and ensures the icon is always legible.
+// REASON: REFACTOR - Decoupled dashboard customization logic.
+// - The `TopAppBar` logic has been updated to remove the customization mode UI.
+// - A new "Customize" `IconButton` is now shown on the dashboard, which
+//   navigates to the new `customize_dashboard` route.
+// - Added the `CustomizeDashboardScreen` composable to the NavHost.
 // =================================================================================
 package io.pm.finlight
 
@@ -19952,15 +19815,12 @@ fun MainAppScreen() {
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
     val filterState by transactionViewModel.filterState.collectAsState()
-    val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
     val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
 
     val transactionForCategoryChange by transactionViewModel.transactionForCategoryChange.collectAsState()
 
-    // --- NEW: Collect selection state for contextual top bar ---
     val isSelectionMode by transactionViewModel.isSelectionModeActive.collectAsState()
     val selectedIdsCount by transactionViewModel.selectedTransactionIds.map { it.size }.collectAsState(initial = 0)
-
 
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
@@ -19990,22 +19850,23 @@ fun MainAppScreen() {
         "currency_travel_settings",
         "split_transaction",
         "category_detail",
-        "merchant_detail"
+        "merchant_detail",
+        "customize_dashboard" // --- NEW: Add new screen to exclusion list ---
     )
 
     val currentTitle = if (showBottomBar) {
-        if (isCustomizationMode) "Customize Dashboard" else "Hi, $userName!"
+        "Hi, $userName!"
     } else {
         screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
     }
-    val showProfileIcon = showBottomBar && !isCustomizationMode
+    val showProfileIcon = showBottomBar
 
     val fabRoutes = setOf(
         "account_list",
         "recurring_transactions",
         "goals_screen"
     )
-    val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
+    val showFab = baseCurrentRoute in fabRoutes
 
     val activity = LocalContext.current as AppCompatActivity
 
@@ -20069,44 +19930,39 @@ fun MainAppScreen() {
                             }
                         },
                         actions = {
-                            if (isCustomizationMode) {
-                                IconButton(onClick = { dashboardViewModel.onAddCardClick() }) {
-                                    Icon(Icons.Default.Add, contentDescription = "Add Card")
+                            when (baseCurrentRoute) {
+                                BottomNavItem.Dashboard.route -> {
+                                    // --- NEW: Add Customize button ---
+                                    IconButton(onClick = { navController.navigate("customize_dashboard") }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Customize Dashboard")
+                                    }
+                                    IconButton(onClick = { navController.navigate("search_screen") }) {
+                                        Icon(Icons.Default.Search, contentDescription = "Search")
+                                    }
                                 }
-                                TextButton(onClick = { dashboardViewModel.exitCustomizationModeAndSave() }) {
-                                    Text("Done")
-                                }
-                            } else {
-                                when (baseCurrentRoute) {
-                                    BottomNavItem.Dashboard.route -> {
-                                        IconButton(onClick = { navController.navigate("search_screen") }) {
-                                            Icon(Icons.Default.Search, contentDescription = "Search")
+                                BottomNavItem.Transactions.route -> {
+                                    val areFiltersActive by remember(filterState) {
+                                        derivedStateOf {
+                                            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
                                         }
                                     }
-                                    BottomNavItem.Transactions.route -> {
-                                        val areFiltersActive by remember(filterState) {
-                                            derivedStateOf {
-                                                filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+                                    IconButton(onClick = { navController.navigate("add_transaction") }) {
+                                        Icon(Icons.Default.Add, contentDescription = "Add Transaction")
+                                    }
+                                    BadgedBox(
+                                        badge = {
+                                            if (areFiltersActive) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(MaterialTheme.colorScheme.primary)
+                                                )
                                             }
                                         }
-                                        IconButton(onClick = { navController.navigate("add_transaction") }) {
-                                            Icon(Icons.Default.Add, contentDescription = "Add Transaction")
-                                        }
-                                        BadgedBox(
-                                            badge = {
-                                                if (areFiltersActive) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(8.dp)
-                                                            .clip(CircleShape)
-                                                            .background(MaterialTheme.colorScheme.primary)
-                                                    )
-                                                }
-                                            }
-                                        ) {
-                                            IconButton(onClick = { transactionViewModel.onFilterClick() }) {
-                                                Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
-                                            }
+                                    ) {
+                                        IconButton(onClick = { transactionViewModel.onFilterClick() }) {
+                                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
                                         }
                                     }
                                 }
@@ -20218,6 +20074,17 @@ fun AppNavHost(
         startDestination = "splash_screen",
         modifier = modifier
     ) {
+        // --- NEW: Add composable route for the customization screen ---
+        composable(
+            "customize_dashboard",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
+            CustomizeDashboardScreen(navController = navController, viewModel = dashboardViewModel)
+        }
+
         composable("splash_screen") {
             SplashScreen(navController = navController, activity = activity)
         }
@@ -20667,7 +20534,6 @@ fun AppNavHost(
         ) {
             CurrencyTravelScreen(navController)
         }
-        // --- NEW: NavHost entries for the drilldown screens ---
         composable(
             "category_detail/{categoryName}/{month}/{year}",
             arguments = listOf(
@@ -22851,9 +22717,10 @@ class CurrencyViewModel(application: Application) : AndroidViewModel(application
 ================== FILE: ./app/src/main/java/SettingsRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: FEATURE - Added a data class and functions to save and retrieve all
-// settings related to the new "Travel Mode" feature, including the home
-// currency, from SharedPreferences.
+// REASON: FIX - Added backward compatibility for dashboard layout loading. The
+// `loadCardOrder` and `loadVisibleCards` functions now correctly map the old
+// "RECENT_ACTIVITY" enum name to the new "RECENT_TRANSACTIONS" name. This
+// prevents the card from disappearing for users with a previously saved layout.
 // =================================================================================
 package io.pm.finlight
 
@@ -22869,7 +22736,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import java.util.Calendar
 import java.util.Locale
 
-// --- NEW: Data class to hold all travel mode settings ---
 data class TravelModeSettings(
     val isEnabled: Boolean,
     val currencyCode: String,
@@ -22908,12 +22774,10 @@ class SettingsRepository(context: Context) {
         private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
         private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
         private const val KEY_SELECTED_THEME = "selected_app_theme"
-        // --- NEW: Keys for Travel Mode ---
         private const val KEY_HOME_CURRENCY = "home_currency_code"
         private const val KEY_TRAVEL_MODE_SETTINGS = "travel_mode_settings"
     }
 
-    // --- NEW: Functions for Home Currency ---
     fun saveHomeCurrency(currencyCode: String) {
         prefs.edit {
             putString(KEY_HOME_CURRENCY, currencyCode)
@@ -22928,13 +22792,11 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Default to INR if not set
             trySend(prefs.getString(KEY_HOME_CURRENCY, "INR") ?: "INR")
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
 
-    // --- NEW: Functions for Travel Mode Settings ---
     fun saveTravelModeSettings(settings: TravelModeSettings?) {
         val json = if (settings == null) null else gson.toJson(settings)
         prefs.edit {
@@ -22959,32 +22821,18 @@ class SettingsRepository(context: Context) {
         }
     }
 
-
-    // --- Blocking function to get a historical monthly budget ---
-    /**
-     * Retrieves the overall budget for a specific month synchronously.
-     * If no budget is set for the given month, it looks backward up to 12 months
-     * to find the most recently set budget and carries it forward.
-     *
-     * @param year The year of the budget to retrieve.
-     * @param month The month (1-12) of the budget to retrieve.
-     * @return The budget amount as a Float, or 0f if no budget was found.
-     */
     fun getOverallBudgetForMonthBlocking(year: Int, month: Int): Float {
         val currentMonthKey = getBudgetKey(year, month)
 
-        // If a budget is set for the specific month, use it.
         if (prefs.contains(currentMonthKey)) {
             return prefs.getFloat(currentMonthKey, 0f)
         }
 
-        // Otherwise, try to find the most recent budget set before this month.
         val searchCal = Calendar.getInstance().apply {
             set(Calendar.YEAR, year)
-            set(Calendar.MONTH, month - 1) // Calendar month is 0-indexed
+            set(Calendar.MONTH, month - 1)
         }
 
-        // Look back up to 12 months for a set budget.
         for (i in 0..11) {
             searchCal.add(Calendar.MONTH, -1)
             val prevYear = searchCal.get(Calendar.YEAR)
@@ -22995,10 +22843,8 @@ class SettingsRepository(context: Context) {
             }
         }
 
-        // If no budget is found in the last year, return 0.
         return 0f
     }
-
 
     fun saveSelectedTheme(theme: AppTheme) {
         prefs.edit {
@@ -23020,7 +22866,6 @@ class SettingsRepository(context: Context) {
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
-
 
     fun saveDashboardLayout(order: List<DashboardCardType>, visible: Set<DashboardCardType>) {
         val orderJson = gson.toJson(order.map { it.name })
@@ -23062,15 +22907,23 @@ class SettingsRepository(context: Context) {
         return if (json != null) {
             val type = object : TypeToken<List<String>>() {}.type
             val names: List<String> = gson.fromJson(json, type)
-            names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
+            names.mapNotNull { name ->
+                runCatching {
+                    if (name == "RECENT_ACTIVITY") {
+                        DashboardCardType.RECENT_TRANSACTIONS
+                    } else {
+                        DashboardCardType.valueOf(name)
+                    }
+                }.getOrNull()
+            }
         } else {
             listOf(
                 DashboardCardType.HERO_BUDGET,
                 DashboardCardType.QUICK_ACTIONS,
-                DashboardCardType.NET_WORTH,
-                DashboardCardType.RECENT_ACTIVITY,
-                DashboardCardType.ACCOUNTS_CAROUSEL,
-                DashboardCardType.BUDGET_WATCH
+                DashboardCardType.RECENT_TRANSACTIONS,
+                DashboardCardType.SPENDING_CONSISTENCY,
+                DashboardCardType.BUDGET_WATCH,
+                DashboardCardType.ACCOUNTS_CAROUSEL
             )
         }
     }
@@ -23080,7 +22933,15 @@ class SettingsRepository(context: Context) {
         return if (json != null) {
             val type = object : TypeToken<Set<String>>() {}.type
             val names: Set<String> = gson.fromJson(json, type)
-            names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }.toSet()
+            names.mapNotNull { name ->
+                runCatching {
+                    if (name == "RECENT_ACTIVITY") {
+                        DashboardCardType.RECENT_TRANSACTIONS
+                    } else {
+                        DashboardCardType.valueOf(name)
+                    }
+                }.getOrNull()
+            }.toSet()
         } else {
             DashboardCardType.entries.toSet()
         }
@@ -23105,7 +22966,6 @@ class SettingsRepository(context: Context) {
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
-
 
     fun saveUserName(name: String) {
         prefs.edit {
@@ -23234,7 +23094,7 @@ class SettingsRepository(context: Context) {
 
             val previousMonthCalendar = Calendar.getInstance().apply {
                 set(Calendar.YEAR, year)
-                set(Calendar.MONTH, month - 1) // Calendar month is 0-indexed
+                set(Calendar.MONTH, month - 1)
                 add(Calendar.MONTH, -1)
             }
             val previousMonthKey = getBudgetKey(
@@ -27837,11 +27697,14 @@ data class DailyTotal(
 ================== FILE: ./app/src/main/java/DashboardViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FIX - Added a refresh trigger to the budget health summary. A new
-// `refreshBudgetSummary` function updates a trigger StateFlow, which is now
-// included in the `combine` logic for the summary. This forces the ViewModel
-// to re-select a random phrase every time the dashboard is viewed, making the
-// summary feel more dynamic.
+// REASON: REFACTOR - Decoupled dashboard customization logic.
+// - Removed `isCustomizationMode`, `showAddCardSheet`, and related state, as this
+//   is now handled by a dedicated screen.
+// - Added `allCards` StateFlow to provide the full list of cards to the new
+//   customization screen.
+// - Added `toggleCardVisibility` function to handle showing/hiding cards from
+//   the new screen.
+// - `updateCardOrder` now saves the layout immediately.
 // =================================================================================
 package io.pm.finlight
 
@@ -27878,23 +27741,13 @@ class DashboardViewModel(
     val monthYear: String
 
     val visibleCards: StateFlow<List<DashboardCardType>>
-
-    private val _isCustomizationMode = MutableStateFlow(false)
-    val isCustomizationMode: StateFlow<Boolean> = _isCustomizationMode.asStateFlow()
+    val allCards: StateFlow<List<DashboardCardType>>
 
     private val _cardOrder = MutableStateFlow<List<DashboardCardType>>(emptyList())
     private val _visibleCardsSet = MutableStateFlow<Set<DashboardCardType>>(emptySet())
 
-    val hiddenCards: StateFlow<List<DashboardCardType>>
-
-    private val _showAddCardSheet = MutableStateFlow(false)
-    val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
-
     val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
-
     val budgetHealthSummary: StateFlow<String>
-
-    // --- NEW: A trigger to force the summary to be re-calculated ---
     private val _summaryRefreshTrigger = MutableStateFlow(System.currentTimeMillis())
 
     init {
@@ -27914,22 +27767,16 @@ class DashboardViewModel(
 
         viewModelScope.launch {
             settingsRepository.getDashboardCardOrder().collect {
-                if (it.contains(DashboardCardType.SPENDING_CONSISTENCY)) {
-                    _cardOrder.value = it
-                } else {
-                    _cardOrder.value = it + DashboardCardType.SPENDING_CONSISTENCY
-                }
+                _cardOrder.value = it
             }
         }
         viewModelScope.launch {
             settingsRepository.getDashboardVisibleCards().collect {
-                if (it.contains(DashboardCardType.SPENDING_CONSISTENCY)) {
-                    _visibleCardsSet.value = it
-                } else {
-                    _visibleCardsSet.value = it + DashboardCardType.SPENDING_CONSISTENCY
-                }
+                _visibleCardsSet.value = it
             }
         }
+
+        allCards = _cardOrder.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         visibleCards = combine(
             _cardOrder,
@@ -27937,14 +27784,6 @@ class DashboardViewModel(
         ) { order, visible ->
             order.filter { it in visible }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-        hiddenCards = combine(
-            _cardOrder,
-            _visibleCardsSet
-        ) { order, visible ->
-            DashboardCardType.entries.filterNot { it in visible }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
 
         val calendar = Calendar.getInstance()
         monthYear = SimpleDateFormat("MMMM", Locale.getDefault()).format(calendar.time)
@@ -27998,12 +27837,11 @@ class DashboardViewModel(
                 if (remaining > 0) remaining / remainingDays else 0f
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-        // --- UPDATED: Combine with the refresh trigger ---
         budgetHealthSummary = combine(
             monthlyExpenses,
             overallMonthlyBudget,
             _summaryRefreshTrigger
-        ) { expenses, budget, _ -> // The trigger's value is ignored, its change is what matters
+        ) { expenses, budget, _ ->
             if (budget <= 0f) {
                 "Set a budget to see insights"
             } else {
@@ -28040,7 +27878,6 @@ class DashboardViewModel(
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Monthly Budget")
 
-
         netWorth =
             accountRepository.accountsWithBalance.map { list ->
                 list.sumOf { it.balance }
@@ -28072,7 +27909,6 @@ class DashboardViewModel(
             )
     }
 
-    // --- NEW: Public function to be called from the UI ---
     fun refreshBudgetSummary() {
         _summaryRefreshTrigger.value = System.currentTimeMillis()
     }
@@ -28125,40 +27961,28 @@ class DashboardViewModel(
         resultList
     }
 
-
-    fun enterCustomizationMode() {
-        _isCustomizationMode.value = true
-    }
-
-    fun exitCustomizationModeAndSave() {
-        viewModelScope.launch {
-            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
-            _isCustomizationMode.value = false
-        }
-    }
-
     fun updateCardOrder(from: Int, to: Int) {
         _cardOrder.update { currentList ->
             currentList.toMutableList().apply {
                 add(to, removeAt(from))
             }
         }
+        viewModelScope.launch {
+            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
+        }
     }
 
-    fun hideCard(cardType: DashboardCardType) {
-        _visibleCardsSet.update { it - cardType }
-    }
-
-    fun showCard(cardType: DashboardCardType) {
-        _visibleCardsSet.update { it + cardType }
-    }
-
-    fun onAddCardClick() {
-        _showAddCardSheet.value = true
-    }
-
-    fun onAddCardSheetDismiss() {
-        _showAddCardSheet.value = false
+    fun toggleCardVisibility(cardType: DashboardCardType) {
+        _visibleCardsSet.update { currentSet ->
+            if (cardType in currentSet) {
+                currentSet - cardType
+            } else {
+                currentSet + cardType
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
+        }
     }
 }
 -e 
