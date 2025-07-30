@@ -4,6 +4,8 @@
 // now uses `WindowInsets(0)` to remove default padding. This allows the sheet's
 // content to expand to be truly full-screen and edge-to-edge, improving the
 // user experience.
+// FIX - The sheet state is now configured with `skipPartiallyExpanded = true`
+// to ensure it opens in a fully expanded state by default.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -174,8 +176,10 @@ fun TransactionListScreen(
     }
 
     if (showShareSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = { viewModel.onShareSheetDismiss() },
+            sheetState = sheetState,
             containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
             windowInsets = WindowInsets(0)
         ) {
