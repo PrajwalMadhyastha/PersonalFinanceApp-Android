@@ -1,11 +1,13 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ShareSnapshotSheet.kt
-// REASON: NEW FILE - This file defines the UI for the "Customize Your Snapshot"
-// bottom sheet. It provides a list of selectable fields (Date, Amount, etc.)
-// and a button to proceed with generating the shareable image.
+// REASON: FEATURE - The bottom sheet for customizing a transaction snapshot has
+// been updated to be full-screen. The root Column now fills the maximum height,
+// and the LazyColumn of fields expands to fill all available space, providing a
+// more immersive and user-friendly experience for selecting fields.
 // =================================================================================
 package io.pm.finlight.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,15 +39,18 @@ fun ShareSnapshotSheet(
 ) {
     val allFields = ShareableField.entries
 
+    // The root Column now fills the entire height of the bottom sheet.
     Column(
         modifier = Modifier
+            .fillMaxHeight()
             .padding(16.dp)
             .navigationBarsPadding()
     ) {
         Text(
             "Customize Your Snapshot",
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.padding(bottom = 8.dp),
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             "Select the fields you want to include in the shared image.",
@@ -54,22 +59,32 @@ fun ShareSnapshotSheet(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
+        // The LazyColumn now takes up all available vertical space.
         LazyColumn(
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(allFields) { field ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onFieldToggle(field) }
+                        .padding(vertical = 4.dp)
                 ) {
                     Checkbox(
                         checked = field in selectedFields,
-                        onCheckedChange = { onFieldToggle(field) }
+                        onCheckedChange = { onFieldToggle(field) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            checkmarkColor = MaterialTheme.colorScheme.surface
+                        )
                     )
                     Text(
                         text = field.displayName,
-                        modifier = Modifier.padding(start = 8.dp)
+                        modifier = Modifier.padding(start = 8.dp),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }

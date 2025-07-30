@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FIX - The call to `viewModel.generateAndShareSnapshot` has been updated
-// to pass the local Activity context. This provides the ShareImageGenerator with
-// the necessary window context, resolving the runtime crash.
+// REASON: FEATURE - The ModalBottomSheet for the snapshot customization screen
+// now uses `WindowInsets(0)` to remove default padding. This allows the sheet's
+// content to expand to be truly full-screen and edge-to-edge, improving the
+// user experience.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -12,7 +13,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -78,7 +78,6 @@ fun TransactionListScreen(
     val showShareSheet by viewModel.showShareSheet.collectAsState()
     val shareableFields by viewModel.shareableFields.collectAsState()
 
-    // --- NEW: Get the local context to pass to the ViewModel ---
     val context = LocalContext.current
 
     DisposableEffect(Unit) {
@@ -177,13 +176,13 @@ fun TransactionListScreen(
     if (showShareSheet) {
         ModalBottomSheet(
             onDismissRequest = { viewModel.onShareSheetDismiss() },
-            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+            windowInsets = WindowInsets(0)
         ) {
             ShareSnapshotSheet(
                 selectedFields = shareableFields,
                 onFieldToggle = { viewModel.onShareableFieldToggled(it) },
                 onGenerateClick = {
-                    // --- UPDATED: Pass the context to the ViewModel ---
                     viewModel.generateAndShareSnapshot(context)
                 },
                 onCancelClick = { viewModel.onShareSheetDismiss() }
