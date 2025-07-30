@@ -1,13 +1,13 @@
 Project Context for Personal Finance App
-Generated on: Tue Jul 29 22:16:59 IST 2025
+Generated on: Wed Jul 30 11:52:50 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
 // =================================================================================
 // FILE: ./app/build.gradle.kts
-// REASON: FIX - Corrected ktlint code style violations. Imports are now ordered
-// alphabetically, and an unnecessary blank line has been removed to satisfy
-// the linter.
+// REASON: FIX - Re-enabled the generation of the BuildConfig file by adding
+// `buildConfig = true` to the `buildFeatures` block. This resolves the
+// "Unresolved reference: BuildConfig" error that was causing the build to fail.
 // =================================================================================
 import java.io.FileInputStream
 import java.util.Properties
@@ -99,6 +99,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // --- FIX: Enable BuildConfig generation ---
+        buildConfig = true
     }
     packaging {
         resources {
@@ -1418,13 +1420,15 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - Re-added the `generateAndShareSnapshot` function which was
-// missing, causing an "Unresolved reference" error. This function is essential
-// for the share feature to work.
+// REASON: FIX - The `generateAndShareSnapshot` function now accepts an Activity
+// context. It also correctly fetches the tags for each selected transaction and
+// constructs the `TransactionSnapshotData` object required by the image generator,
+// resolving a data type mismatch and ensuring tags are displayed.
 // =================================================================================
 package io.pm.finlight
 
 import android.app.Application
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -1500,7 +1504,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     val showShareSheet: StateFlow<Boolean> = _showShareSheet.asStateFlow()
 
     private val _shareableFields = MutableStateFlow(
-        setOf(ShareableField.Date, ShareableField.Description, ShareableField.Amount)
+        setOf(ShareableField.Date, ShareableField.Description, ShareableField.Amount, ShareableField.Category, ShareableField.Tags)
     )
     val shareableFields: StateFlow<Set<ShareableField>> = _shareableFields.asStateFlow()
 
@@ -1691,18 +1695,26 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun generateAndShareSnapshot() {
+    fun generateAndShareSnapshot(context: Context) {
         viewModelScope.launch {
             val selectedIds = _selectedTransactionIds.value
             if (selectedIds.isEmpty()) return@launch
 
             val allTransactions = transactionsForSelectedMonth.first()
-            val selectedTransactions = allTransactions.filter { it.transaction.id in selectedIds }
+            val selectedTransactionsDetails = allTransactions.filter { it.transaction.id in selectedIds }
 
-            if (selectedTransactions.isNotEmpty()) {
+            if (selectedTransactionsDetails.isNotEmpty()) {
+                // Fetch tags for each selected transaction and create the data payload
+                val transactionsWithData = withContext(Dispatchers.IO) {
+                    selectedTransactionsDetails.map { details ->
+                        val tags = transactionRepository.getTagsForTransactionSimple(details.transaction.id)
+                        ShareImageGenerator.TransactionSnapshotData(details = details, tags = tags)
+                    }
+                }
+
                 ShareImageGenerator.shareTransactionsAsImage(
-                    context = getApplication(),
-                    transactions = selectedTransactions,
+                    context = context,
+                    transactionsWithData = transactionsWithData,
                     fields = _shareableFields.value
                 )
             }
@@ -10170,10 +10182,9 @@ private fun RuleSummaryItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FEATURE (Share Snapshot) - The screen now displays a ModalBottomSheet
-// containing the `ShareSnapshotSheet` when the user clicks the share action in
-// selection mode. The "Generate Image" button is now wired to call the
-// ViewModel's `generateAndShareSnapshot` function, completing the feature.
+// REASON: FIX - The call to `viewModel.generateAndShareSnapshot` has been updated
+// to pass the local Activity context. This provides the ShareImageGenerator with
+// the necessary window context, resolving the runtime crash.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -10200,6 +10211,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -10248,6 +10260,8 @@ fun TransactionListScreen(
     val showShareSheet by viewModel.showShareSheet.collectAsState()
     val shareableFields by viewModel.shareableFields.collectAsState()
 
+    // --- NEW: Get the local context to pass to the ViewModel ---
+    val context = LocalContext.current
 
     DisposableEffect(Unit) {
         onDispose {
@@ -10351,8 +10365,8 @@ fun TransactionListScreen(
                 selectedFields = shareableFields,
                 onFieldToggle = { viewModel.onShareableFieldToggled(it) },
                 onGenerateClick = {
-                    // --- UPDATED: Call the ViewModel to generate and share ---
-                    viewModel.generateAndShareSnapshot()
+                    // --- UPDATED: Pass the context to the ViewModel ---
+                    viewModel.generateAndShareSnapshot(context)
                 },
                 onCancelClick = { viewModel.onShareSheetDismiss() }
             )
@@ -25851,15 +25865,21 @@ class MerchantRenameRuleRepository(private val dao: MerchantRenameRuleDao) {
 ================== FILE: ./app/src/main/java/ShareImageGenerator.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/utils/ShareImageGenerator.kt
-// REASON: FIX - Added the missing import for the BuildConfig class to resolve
-// the "Unresolved reference" build error.
+// REASON: FIX - Resolved a runtime crash by attaching the ComposeView to the
+// Activity's window before rendering.
+// FEATURE - The snapshot content now correctly renders transaction tags.
+// UX REFINEMENT - Implemented a weighted column layout for the generated image
+// to provide better spacing and prevent awkward text wrapping, especially for
+// columns with variable content length like Description and Category.
 // =================================================================================
 package io.pm.finlight.utils
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -25878,6 +25898,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import io.pm.finlight.BuildConfig
+import io.pm.finlight.Tag
 import io.pm.finlight.TransactionDetails
 import io.pm.finlight.ui.components.ShareableField
 import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
@@ -25890,33 +25911,57 @@ import java.util.*
 object ShareImageGenerator {
 
     /**
+     * A data class to bundle a transaction with its associated tags for rendering.
+     */
+    data class TransactionSnapshotData(
+        val details: TransactionDetails,
+        val tags: List<Tag>
+    )
+
+    /**
      * Renders the TransactionSnapshotContent composable to a Bitmap.
      */
     private fun createBitmapFromComposable(
         context: Context,
-        transactions: List<TransactionDetails>,
+        transactionsWithData: List<TransactionSnapshotData>,
         fields: Set<ShareableField>
     ): Bitmap {
+        val activity = context as? Activity
+            ?: throw IllegalArgumentException("A valid Activity context is required to generate an image.")
+
+        val root = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content)
+
         val composeView = ComposeView(context).apply {
             setContent {
-                PersonalFinanceAppTheme { // Apply the app's theme
-                    TransactionSnapshotContent(transactions = transactions, fields = fields)
+                PersonalFinanceAppTheme {
+                    TransactionSnapshotContent(transactionsWithData = transactionsWithData, fields = fields)
                 }
             }
         }
 
-        // Measure and layout the composable to get its dimensions
-        composeView.measure(
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-        )
-        composeView.layout(0, 0, composeView.measuredWidth, composeView.measuredHeight)
+        val container = LinearLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            addView(composeView)
+        }
 
-        // Create a bitmap and draw the composable onto it
-        val bitmap = Bitmap.createBitmap(composeView.measuredWidth, composeView.measuredHeight, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bitmap)
-        composeView.draw(canvas)
-        return bitmap
+        try {
+            root.addView(container)
+            container.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            container.layout(0, 0, container.measuredWidth, container.measuredHeight)
+
+            val bitmap = Bitmap.createBitmap(container.measuredWidth, container.measuredHeight, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            container.draw(canvas)
+            return bitmap
+        } finally {
+            root.removeView(container)
+        }
     }
 
     /**
@@ -25924,13 +25969,11 @@ object ShareImageGenerator {
      */
     fun shareTransactionsAsImage(
         context: Context,
-        transactions: List<TransactionDetails>,
+        transactionsWithData: List<TransactionSnapshotData>,
         fields: Set<ShareableField>
     ) {
-        // 1. Generate the Bitmap
-        val bitmap = createBitmapFromComposable(context, transactions, fields)
+        val bitmap = createBitmapFromComposable(context, transactionsWithData, fields)
 
-        // 2. Save the Bitmap to a temporary file
         val cachePath = File(context.cacheDir, "images")
         cachePath.mkdirs()
         val file = File(cachePath, "transaction_snapshot.png")
@@ -25938,10 +25981,8 @@ object ShareImageGenerator {
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, fileOutputStream)
         fileOutputStream.close()
 
-        // 3. Get a content URI using FileProvider
         val contentUri = FileProvider.getUriForFile(context, "${BuildConfig.APPLICATION_ID}.provider", file)
 
-        // 4. Trigger the share intent
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, contentUri)
@@ -25952,15 +25993,30 @@ object ShareImageGenerator {
 }
 
 /**
+ * Determines the appropriate layout weight for each shareable field.
+ */
+private fun getFieldWeight(field: ShareableField): Float {
+    return when (field) {
+        ShareableField.Description -> 2.5f
+        ShareableField.Notes -> 2.0f
+        ShareableField.Tags -> 1.8f
+        ShareableField.Category -> 1.5f
+        ShareableField.Account -> 1.5f
+        ShareableField.Date -> 1.2f
+        ShareableField.Amount -> 1.0f
+    }
+}
+
+/**
  * The Composable that defines the layout of the shareable image.
  */
 @Composable
 private fun TransactionSnapshotContent(
-    transactions: List<TransactionDetails>,
+    transactionsWithData: List<ShareImageGenerator.TransactionSnapshotData>,
     fields: Set<ShareableField>
 ) {
-    val totalAmount = transactions.sumOf {
-        if (it.transaction.transactionType == "income") it.transaction.amount else -it.transaction.amount
+    val totalAmount = transactionsWithData.sumOf {
+        if (it.details.transaction.transactionType == "income") it.details.transaction.amount else -it.details.transaction.amount
     }
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
     val dateFormat = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
@@ -25969,9 +26025,8 @@ private fun TransactionSnapshotContent(
         modifier = Modifier
             .background(MaterialTheme.colorScheme.surface)
             .padding(16.dp)
-            .width(IntrinsicSize.Max) // Adjust width to content
+            .width(IntrinsicSize.Max)
     ) {
-        // Header
         Text(
             "Transaction Summary",
             style = MaterialTheme.typography.headlineSmall,
@@ -25985,7 +26040,6 @@ private fun TransactionSnapshotContent(
         )
         Spacer(Modifier.height(16.dp))
 
-        // Table Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -25996,15 +26050,16 @@ private fun TransactionSnapshotContent(
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(if (field == ShareableField.Description) 1.5f else 1f),
+                    modifier = Modifier.weight(getFieldWeight(field)),
                     textAlign = if (field == ShareableField.Amount) TextAlign.End else TextAlign.Start
                 )
             }
         }
         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-        // Table Rows
-        transactions.forEach { details ->
+        transactionsWithData.forEach { data ->
+            val details = data.details
+            val tags = data.tags
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -26019,13 +26074,13 @@ private fun TransactionSnapshotContent(
                         ShareableField.Category -> details.categoryName ?: "N/A"
                         ShareableField.Account -> details.accountName ?: "N/A"
                         ShareableField.Notes -> details.transaction.notes ?: ""
-                        ShareableField.Tags -> "Tags..." // Placeholder for now
+                        ShareableField.Tags -> tags.joinToString(", ") { it.name }.ifEmpty { "-" }
                     }
                     Text(
                         text = text,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(if (field == ShareableField.Description) 1.5f else 1f),
+                        modifier = Modifier.weight(getFieldWeight(field)),
                         textAlign = if (field == ShareableField.Amount) TextAlign.End else TextAlign.Start,
                         fontSize = 12.sp
                     )
@@ -26034,7 +26089,6 @@ private fun TransactionSnapshotContent(
         }
         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-        // Footer (Total)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -27440,9 +27494,10 @@ class SplitTransactionViewModel(
 ================== FILE: ./app/src/main/java/TransactionRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: FEATURE (Splitting) - Added a new function `getTransactionWithSplits`
-// to expose the corresponding DAO method. This will be used by the ViewModel
-// to fetch all the data needed for the splitting UI.
+// REASON: FIX - Added the missing `getTagsForTransactionSimple` function. This
+// function was already defined in the DAO but was not exposed by the repository,
+// causing an "Unresolved reference" error in the TransactionViewModel when
+// trying to generate a shareable image with tags.
 // =================================================================================
 package io.pm.finlight
 
@@ -27572,6 +27627,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
         return transactionDao.getTagsForTransaction(transactionId)
+    }
+
+    suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag> {
+        return transactionDao.getTagsForTransactionSimple(transactionId)
     }
 
     suspend fun updateTagsForTransaction(transactionId: Int, tags: Set<Tag>) {
@@ -28634,10 +28693,10 @@ class ExampleUnitTest {
 ================== FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt ==================
 // =================================================================================
 // FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt
-// REASON: BUG FIX - The test setup has been updated to mock the new
-// `MerchantCategoryMappingDao` dependency. All calls to `SmsParser.parse`
-// throughout the test file have been updated to pass this new mock, resolving
-// all compilation errors.
+// REASON: FIX - The unit test has been updated to align with the new IgnoreRule
+// entity and DAO. The mock setup now uses `getEnabledRules()` instead of the
+// removed `getEnabledPhrases()`. All instantiations of IgnoreRule now correctly
+// use the `pattern` property instead of `phrase`, resolving all compilation errors.
 // =================================================================================
 package io.pm.finlight
 
@@ -28681,8 +28740,8 @@ class SmsParserTest {
     ) {
         `when`(mockCustomSmsRuleDao.getAllRules()).thenReturn(flowOf(customRules))
         `when`(mockMerchantRenameRuleDao.getAllRules()).thenReturn(flowOf(renameRules))
-        // --- UPDATED: Mock the enabled phrases for the ignore rule dao ---
-        `when`(mockIgnoreRuleDao.getEnabledPhrases()).thenReturn(ignoreRules.filter { it.isEnabled }.map { it.phrase })
+        // --- UPDATED: Mock the new getEnabledRules() method ---
+        `when`(mockIgnoreRuleDao.getEnabledRules()).thenReturn(ignoreRules.filter { it.isEnabled })
     }
 
     @Test
@@ -28806,7 +28865,7 @@ class SmsParserTest {
 
     @Test
     fun `test ignores successful payment confirmation`() = runBlocking {
-        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "payment of.*is successful", isEnabled = true)))
+        setupTest(ignoreRules = listOf(IgnoreRule(pattern = "payment of.*is successful", isEnabled = true)))
         val smsBody = "Your payment of Rs.330.80 for A4-108 against Water Charges is successful. Regards NoBrokerHood"
         val mockSms = SmsMessage(id = 10L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
@@ -28831,7 +28890,7 @@ class SmsParserTest {
 
     @Test
     fun `test ignores HDFC NEFT credit message`() = runBlocking {
-        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "has been credited to", isEnabled = true)))
+        setupTest(ignoreRules = listOf(IgnoreRule(pattern = "has been credited to", isEnabled = true)))
         val smsBody = "HDFC Bank : NEFT money transfer Txn No HDFCN520253454560344 for Rs INR 1,500.00 has been credited to Manga Penga on 01-07-2025 at 08:05:30"
         val mockSms = SmsMessage(id = 12L, sender = "VM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
@@ -28840,7 +28899,7 @@ class SmsParserTest {
 
     @Test
     fun `test ignores credit card payment confirmation`() = runBlocking {
-        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "payment of.*has been received towards", isEnabled = true)))
+        setupTest(ignoreRules = listOf(IgnoreRule(pattern = "payment of.*has been received towards", isEnabled = true)))
         val smsBody = "Payment of INR 1180.01 has been received towards your SBI card XX1121"
         val mockSms = SmsMessage(id = 13L, sender = "DM-SBICRD", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
@@ -28849,7 +28908,7 @@ class SmsParserTest {
 
     @Test
     fun `test ignores bharat bill pay confirmation`() = runBlocking {
-        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "Payment of.*has been received on your.*Credit Card", isEnabled = true)))
+        setupTest(ignoreRules = listOf(IgnoreRule(pattern = "Payment of.*has been received on your.*Credit Card", isEnabled = true)))
         val smsBody = "Payment of Rs 356.33 has been received on your ICICI Bank Credit Card XX2529 through Bharat Bill Payment System on 03-JUL-25."
         val mockSms = SmsMessage(id = 14L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
@@ -28858,13 +28917,14 @@ class SmsParserTest {
 
     @Test
     fun `test ignores message with user-defined ignore phrase`() = runBlocking {
-        val ignoreRules = listOf(IgnoreRule(id = 1, phrase = "invoice of", isEnabled = true))
+        val ignoreRules = listOf(IgnoreRule(id = 1, pattern = "invoice of", isEnabled = true))
         setupTest(ignoreRules = ignoreRules)
         val smsBody = "An Invoice of Rs.330.8 for A4 Block-108 is raised."
         val mockSms = SmsMessage(id = 9L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
         assertNull("Parser should ignore messages with user-defined phrases", result)
     }
-}-e 
+}
+-e 
 
 

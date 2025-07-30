@@ -1,8 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: FEATURE (Splitting) - Added a new function `getTransactionWithSplits`
-// to expose the corresponding DAO method. This will be used by the ViewModel
-// to fetch all the data needed for the splitting UI.
+// REASON: FIX - Added the missing `getTagsForTransactionSimple` function. This
+// function was already defined in the DAO but was not exposed by the repository,
+// causing an "Unresolved reference" error in the TransactionViewModel when
+// trying to generate a shareable image with tags.
 // =================================================================================
 package io.pm.finlight
 
@@ -132,6 +133,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
 
     fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
         return transactionDao.getTagsForTransaction(transactionId)
+    }
+
+    suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag> {
+        return transactionDao.getTagsForTransactionSimple(transactionId)
     }
 
     suspend fun updateTagsForTransaction(transactionId: Int, tags: Set<Tag>) {
