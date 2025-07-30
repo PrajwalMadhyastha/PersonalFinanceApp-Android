@@ -1,10 +1,13 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: FIX - Added a refresh trigger to the budget health summary. A new
-// `refreshBudgetSummary` function updates a trigger StateFlow, which is now
-// included in the `combine` logic for the summary. This forces the ViewModel
-// to re-select a random phrase every time the dashboard is viewed, making the
-// summary feel more dynamic.
+// REASON: REFACTOR - Decoupled dashboard customization logic.
+// - Removed `isCustomizationMode`, `showAddCardSheet`, and related state, as this
+//   is now handled by a dedicated screen.
+// - Added `allCards` StateFlow to provide the full list of cards to the new
+//   customization screen.
+// - Added `toggleCardVisibility` function to handle showing/hiding cards from
+//   the new screen.
+// - `updateCardOrder` now saves the layout immediately.
 // =================================================================================
 package io.pm.finlight
 
@@ -41,23 +44,13 @@ class DashboardViewModel(
     val monthYear: String
 
     val visibleCards: StateFlow<List<DashboardCardType>>
-
-    private val _isCustomizationMode = MutableStateFlow(false)
-    val isCustomizationMode: StateFlow<Boolean> = _isCustomizationMode.asStateFlow()
+    val allCards: StateFlow<List<DashboardCardType>>
 
     private val _cardOrder = MutableStateFlow<List<DashboardCardType>>(emptyList())
     private val _visibleCardsSet = MutableStateFlow<Set<DashboardCardType>>(emptySet())
 
-    val hiddenCards: StateFlow<List<DashboardCardType>>
-
-    private val _showAddCardSheet = MutableStateFlow(false)
-    val showAddCardSheet: StateFlow<Boolean> = _showAddCardSheet.asStateFlow()
-
     val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
-
     val budgetHealthSummary: StateFlow<String>
-
-    // --- NEW: A trigger to force the summary to be re-calculated ---
     private val _summaryRefreshTrigger = MutableStateFlow(System.currentTimeMillis())
 
     init {
@@ -77,22 +70,16 @@ class DashboardViewModel(
 
         viewModelScope.launch {
             settingsRepository.getDashboardCardOrder().collect {
-                if (it.contains(DashboardCardType.SPENDING_CONSISTENCY)) {
-                    _cardOrder.value = it
-                } else {
-                    _cardOrder.value = it + DashboardCardType.SPENDING_CONSISTENCY
-                }
+                _cardOrder.value = it
             }
         }
         viewModelScope.launch {
             settingsRepository.getDashboardVisibleCards().collect {
-                if (it.contains(DashboardCardType.SPENDING_CONSISTENCY)) {
-                    _visibleCardsSet.value = it
-                } else {
-                    _visibleCardsSet.value = it + DashboardCardType.SPENDING_CONSISTENCY
-                }
+                _visibleCardsSet.value = it
             }
         }
+
+        allCards = _cardOrder.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         visibleCards = combine(
             _cardOrder,
@@ -100,14 +87,6 @@ class DashboardViewModel(
         ) { order, visible ->
             order.filter { it in visible }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-        hiddenCards = combine(
-            _cardOrder,
-            _visibleCardsSet
-        ) { order, visible ->
-            DashboardCardType.entries.filterNot { it in visible }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
 
         val calendar = Calendar.getInstance()
         monthYear = SimpleDateFormat("MMMM", Locale.getDefault()).format(calendar.time)
@@ -161,12 +140,11 @@ class DashboardViewModel(
                 if (remaining > 0) remaining / remainingDays else 0f
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-        // --- UPDATED: Combine with the refresh trigger ---
         budgetHealthSummary = combine(
             monthlyExpenses,
             overallMonthlyBudget,
             _summaryRefreshTrigger
-        ) { expenses, budget, _ -> // The trigger's value is ignored, its change is what matters
+        ) { expenses, budget, _ ->
             if (budget <= 0f) {
                 "Set a budget to see insights"
             } else {
@@ -203,7 +181,6 @@ class DashboardViewModel(
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Monthly Budget")
 
-
         netWorth =
             accountRepository.accountsWithBalance.map { list ->
                 list.sumOf { it.balance }
@@ -235,7 +212,6 @@ class DashboardViewModel(
             )
     }
 
-    // --- NEW: Public function to be called from the UI ---
     fun refreshBudgetSummary() {
         _summaryRefreshTrigger.value = System.currentTimeMillis()
     }
@@ -288,39 +264,27 @@ class DashboardViewModel(
         resultList
     }
 
-
-    fun enterCustomizationMode() {
-        _isCustomizationMode.value = true
-    }
-
-    fun exitCustomizationModeAndSave() {
-        viewModelScope.launch {
-            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
-            _isCustomizationMode.value = false
-        }
-    }
-
     fun updateCardOrder(from: Int, to: Int) {
         _cardOrder.update { currentList ->
             currentList.toMutableList().apply {
                 add(to, removeAt(from))
             }
         }
+        viewModelScope.launch {
+            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
+        }
     }
 
-    fun hideCard(cardType: DashboardCardType) {
-        _visibleCardsSet.update { it - cardType }
-    }
-
-    fun showCard(cardType: DashboardCardType) {
-        _visibleCardsSet.update { it + cardType }
-    }
-
-    fun onAddCardClick() {
-        _showAddCardSheet.value = true
-    }
-
-    fun onAddCardSheetDismiss() {
-        _showAddCardSheet.value = false
+    fun toggleCardVisibility(cardType: DashboardCardType) {
+        _visibleCardsSet.update { currentSet ->
+            if (cardType in currentSet) {
+                currentSet - cardType
+            } else {
+                currentSet + cardType
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
+        }
     }
 }

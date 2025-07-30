@@ -1,8 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The profile picture placeholder now uses the full adaptive icon
-// (`R.mipmap.ic_launcher`) by passing it to the `model` parameter. This
-// resolves the runtime crash and ensures the icon is always legible.
+// REASON: REFACTOR - Decoupled dashboard customization logic.
+// - The `TopAppBar` logic has been updated to remove the customization mode UI.
+// - A new "Customize" `IconButton` is now shown on the dashboard, which
+//   navigates to the new `customize_dashboard` route.
+// - Added the `CustomizeDashboardScreen` composable to the NavHost.
 // =================================================================================
 package io.pm.finlight
 
@@ -218,15 +220,12 @@ fun MainAppScreen() {
     val userName by dashboardViewModel.userName.collectAsState()
     val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
     val filterState by transactionViewModel.filterState.collectAsState()
-    val isCustomizationMode by dashboardViewModel.isCustomizationMode.collectAsState()
     val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
 
     val transactionForCategoryChange by transactionViewModel.transactionForCategoryChange.collectAsState()
 
-    // --- NEW: Collect selection state for contextual top bar ---
     val isSelectionMode by transactionViewModel.isSelectionModeActive.collectAsState()
     val selectedIdsCount by transactionViewModel.selectedTransactionIds.map { it.size }.collectAsState(initial = 0)
-
 
     val bottomNavItems = listOf(
         BottomNavItem.Dashboard,
@@ -256,22 +255,23 @@ fun MainAppScreen() {
         "currency_travel_settings",
         "split_transaction",
         "category_detail",
-        "merchant_detail"
+        "merchant_detail",
+        "customize_dashboard" // --- NEW: Add new screen to exclusion list ---
     )
 
     val currentTitle = if (showBottomBar) {
-        if (isCustomizationMode) "Customize Dashboard" else "Hi, $userName!"
+        "Hi, $userName!"
     } else {
         screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
     }
-    val showProfileIcon = showBottomBar && !isCustomizationMode
+    val showProfileIcon = showBottomBar
 
     val fabRoutes = setOf(
         "account_list",
         "recurring_transactions",
         "goals_screen"
     )
-    val showFab = baseCurrentRoute in fabRoutes && !isCustomizationMode
+    val showFab = baseCurrentRoute in fabRoutes
 
     val activity = LocalContext.current as AppCompatActivity
 
@@ -335,44 +335,39 @@ fun MainAppScreen() {
                             }
                         },
                         actions = {
-                            if (isCustomizationMode) {
-                                IconButton(onClick = { dashboardViewModel.onAddCardClick() }) {
-                                    Icon(Icons.Default.Add, contentDescription = "Add Card")
+                            when (baseCurrentRoute) {
+                                BottomNavItem.Dashboard.route -> {
+                                    // --- NEW: Add Customize button ---
+                                    IconButton(onClick = { navController.navigate("customize_dashboard") }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Customize Dashboard")
+                                    }
+                                    IconButton(onClick = { navController.navigate("search_screen") }) {
+                                        Icon(Icons.Default.Search, contentDescription = "Search")
+                                    }
                                 }
-                                TextButton(onClick = { dashboardViewModel.exitCustomizationModeAndSave() }) {
-                                    Text("Done")
-                                }
-                            } else {
-                                when (baseCurrentRoute) {
-                                    BottomNavItem.Dashboard.route -> {
-                                        IconButton(onClick = { navController.navigate("search_screen") }) {
-                                            Icon(Icons.Default.Search, contentDescription = "Search")
+                                BottomNavItem.Transactions.route -> {
+                                    val areFiltersActive by remember(filterState) {
+                                        derivedStateOf {
+                                            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
                                         }
                                     }
-                                    BottomNavItem.Transactions.route -> {
-                                        val areFiltersActive by remember(filterState) {
-                                            derivedStateOf {
-                                                filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
+                                    IconButton(onClick = { navController.navigate("add_transaction") }) {
+                                        Icon(Icons.Default.Add, contentDescription = "Add Transaction")
+                                    }
+                                    BadgedBox(
+                                        badge = {
+                                            if (areFiltersActive) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(MaterialTheme.colorScheme.primary)
+                                                )
                                             }
                                         }
-                                        IconButton(onClick = { navController.navigate("add_transaction") }) {
-                                            Icon(Icons.Default.Add, contentDescription = "Add Transaction")
-                                        }
-                                        BadgedBox(
-                                            badge = {
-                                                if (areFiltersActive) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(8.dp)
-                                                            .clip(CircleShape)
-                                                            .background(MaterialTheme.colorScheme.primary)
-                                                    )
-                                                }
-                                            }
-                                        ) {
-                                            IconButton(onClick = { transactionViewModel.onFilterClick() }) {
-                                                Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
-                                            }
+                                    ) {
+                                        IconButton(onClick = { transactionViewModel.onFilterClick() }) {
+                                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
                                         }
                                     }
                                 }
@@ -484,6 +479,17 @@ fun AppNavHost(
         startDestination = "splash_screen",
         modifier = modifier
     ) {
+        // --- NEW: Add composable route for the customization screen ---
+        composable(
+            "customize_dashboard",
+            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
+            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
+            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
+        ) {
+            CustomizeDashboardScreen(navController = navController, viewModel = dashboardViewModel)
+        }
+
         composable("splash_screen") {
             SplashScreen(navController = navController, activity = activity)
         }
@@ -933,7 +939,6 @@ fun AppNavHost(
         ) {
             CurrencyTravelScreen(navController)
         }
-        // --- NEW: NavHost entries for the drilldown screens ---
         composable(
             "category_detail/{categoryName}/{month}/{year}",
             arguments = listOf(

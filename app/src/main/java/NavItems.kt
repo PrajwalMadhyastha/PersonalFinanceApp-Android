@@ -1,8 +1,7 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/NavItems.kt
-// REASON: FEATURE - Added new entries for "category_detail" and
-// "merchant_detail" to the screenTitles map. This provides the titles for the
-// new drilldown screens.
+// REASON: FEATURE - Added a new entry for "customize_dashboard" to the
+// screenTitles map to provide a title for the new screen.
 // =================================================================================
 package io.pm.finlight
 
@@ -56,7 +55,8 @@ val screenTitles = mapOf(
     "currency_travel_settings" to "Currency & Travel",
     "add_edit_goal" to "New Savings Goal",
     "add_edit_goal/{goalId}" to "Edit Savings Goal",
-    // --- NEW: Titles for the new drilldown screens ---
     "category_detail/{categoryName}/{month}/{year}" to "Category Details",
-    "merchant_detail/{merchantName}/{month}/{year}" to "Merchant Details"
+    "merchant_detail/{merchantName}/{month}/{year}" to "Merchant Details",
+    // --- NEW: Title for the new customization screen ---
+    "customize_dashboard" to "Customize Dashboard"
 )
