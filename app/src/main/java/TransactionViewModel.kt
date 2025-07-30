@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - The `generateAndShareSnapshot` function now accepts an Activity
-// context. It also correctly fetches the tags for each selected transaction and
-// constructs the `TransactionSnapshotData` object required by the image generator,
-// resolving a data type mismatch and ensuring tags are displayed.
+// REASON: FIX - The `reparseTransactionFromSms` function has been corrected to
+// fetch and provide the existing merchant mappings to the SmsParser. This
+// resolves a bug where re-parsing would fail because it lacked the necessary
+// context, making the "Fix Parser" feature fully operational.
 // =================================================================================
 package io.pm.finlight
 
@@ -55,6 +55,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
     private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository
+    private val merchantMappingRepository: MerchantMappingRepository
     private val splitTransactionRepository: SplitTransactionRepository
     private val context = application
 
@@ -137,6 +138,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
+        merchantMappingRepository = MerchantMappingRepository(db.merchantMappingDao())
         splitTransactionRepository = SplitTransactionRepository(db.splitTransactionDao())
 
 
@@ -284,7 +286,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val selectedTransactionsDetails = allTransactions.filter { it.transaction.id in selectedIds }
 
             if (selectedTransactionsDetails.isNotEmpty()) {
-                // Fetch tags for each selected transaction and create the data payload
                 val transactionsWithData = withContext(Dispatchers.IO) {
                     selectedTransactionsDetails.map { details ->
                         val tags = transactionRepository.getTagsForTransactionSimple(details.transaction.id)
@@ -502,9 +503,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
+            // --- FIX: Fetch existing mappings before parsing ---
+            val existingMappings = merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
+
             val potentialTxn = SmsParser.parse(
                 smsMessage,
-                emptyMap(),
+                existingMappings, // Pass the correct mappings
                 db.customSmsRuleDao(),
                 db.merchantRenameRuleDao(),
                 db.ignoreRuleDao(),
@@ -739,10 +743,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun updateTransactionDate(id: Int, date: Long) = viewModelScope.launch {
         transactionRepository.updateDate(id, date)
-    }
-
-    fun updateTransactionExclusion(id: Int, isExcluded: Boolean) = viewModelScope.launch {
-        transactionRepository.updateExclusionStatus(id, isExcluded)
     }
 
     fun updateTagsForTransaction(transactionId: Int) = viewModelScope.launch {
