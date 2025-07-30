@@ -1,9 +1,9 @@
 // =================================================================================
 // FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt
-// REASON: BUG FIX - The test setup has been updated to mock the new
-// `MerchantCategoryMappingDao` dependency. All calls to `SmsParser.parse`
-// throughout the test file have been updated to pass this new mock, resolving
-// all compilation errors.
+// REASON: FIX - The unit test has been updated to align with the new IgnoreRule
+// entity and DAO. The mock setup now uses `getEnabledRules()` instead of the
+// removed `getEnabledPhrases()`. All instantiations of IgnoreRule now correctly
+// use the `pattern` property instead of `phrase`, resolving all compilation errors.
 // =================================================================================
 package io.pm.finlight
 
@@ -47,8 +47,8 @@ class SmsParserTest {
     ) {
         `when`(mockCustomSmsRuleDao.getAllRules()).thenReturn(flowOf(customRules))
         `when`(mockMerchantRenameRuleDao.getAllRules()).thenReturn(flowOf(renameRules))
-        // --- UPDATED: Mock the enabled phrases for the ignore rule dao ---
-        `when`(mockIgnoreRuleDao.getEnabledPhrases()).thenReturn(ignoreRules.filter { it.isEnabled }.map { it.phrase })
+        // --- UPDATED: Mock the new getEnabledRules() method ---
+        `when`(mockIgnoreRuleDao.getEnabledRules()).thenReturn(ignoreRules.filter { it.isEnabled })
     }
 
     @Test
@@ -172,7 +172,7 @@ class SmsParserTest {
 
     @Test
     fun `test ignores successful payment confirmation`() = runBlocking {
-        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "payment of.*is successful", isEnabled = true)))
+        setupTest(ignoreRules = listOf(IgnoreRule(pattern = "payment of.*is successful", isEnabled = true)))
         val smsBody = "Your payment of Rs.330.80 for A4-108 against Water Charges is successful. Regards NoBrokerHood"
         val mockSms = SmsMessage(id = 10L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
@@ -197,7 +197,7 @@ class SmsParserTest {
 
     @Test
     fun `test ignores HDFC NEFT credit message`() = runBlocking {
-        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "has been credited to", isEnabled = true)))
+        setupTest(ignoreRules = listOf(IgnoreRule(pattern = "has been credited to", isEnabled = true)))
         val smsBody = "HDFC Bank : NEFT money transfer Txn No HDFCN520253454560344 for Rs INR 1,500.00 has been credited to Manga Penga on 01-07-2025 at 08:05:30"
         val mockSms = SmsMessage(id = 12L, sender = "VM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
@@ -206,7 +206,7 @@ class SmsParserTest {
 
     @Test
     fun `test ignores credit card payment confirmation`() = runBlocking {
-        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "payment of.*has been received towards", isEnabled = true)))
+        setupTest(ignoreRules = listOf(IgnoreRule(pattern = "payment of.*has been received towards", isEnabled = true)))
         val smsBody = "Payment of INR 1180.01 has been received towards your SBI card XX1121"
         val mockSms = SmsMessage(id = 13L, sender = "DM-SBICRD", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
@@ -215,7 +215,7 @@ class SmsParserTest {
 
     @Test
     fun `test ignores bharat bill pay confirmation`() = runBlocking {
-        setupTest(ignoreRules = listOf(IgnoreRule(phrase = "Payment of.*has been received on your.*Credit Card", isEnabled = true)))
+        setupTest(ignoreRules = listOf(IgnoreRule(pattern = "Payment of.*has been received on your.*Credit Card", isEnabled = true)))
         val smsBody = "Payment of Rs 356.33 has been received on your ICICI Bank Credit Card XX2529 through Bharat Bill Payment System on 03-JUL-25."
         val mockSms = SmsMessage(id = 14L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
         val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
@@ -224,7 +224,7 @@ class SmsParserTest {
 
     @Test
     fun `test ignores message with user-defined ignore phrase`() = runBlocking {
-        val ignoreRules = listOf(IgnoreRule(id = 1, phrase = "invoice of", isEnabled = true))
+        val ignoreRules = listOf(IgnoreRule(id = 1, pattern = "invoice of", isEnabled = true))
         setupTest(ignoreRules = ignoreRules)
         val smsBody = "An Invoice of Rs.330.8 for A4 Block-108 is raised."
         val mockSms = SmsMessage(id = 9L, sender = "VM-NBHOOD", body = smsBody, date = System.currentTimeMillis())

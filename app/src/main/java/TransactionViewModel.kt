@@ -1,12 +1,14 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - Re-added the `generateAndShareSnapshot` function which was
-// missing, causing an "Unresolved reference" error. This function is essential
-// for the share feature to work.
+// REASON: FIX - The `generateAndShareSnapshot` function now accepts an Activity
+// context as a parameter. This is necessary to pass the correct context to the
+// ShareImageGenerator, allowing it to access the window and resolve the runtime
+// crash during image generation.
 // =================================================================================
 package io.pm.finlight
 
 import android.app.Application
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -273,7 +275,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun generateAndShareSnapshot() {
+    fun generateAndShareSnapshot(context: Context) {
         viewModelScope.launch {
             val selectedIds = _selectedTransactionIds.value
             if (selectedIds.isEmpty()) return@launch
@@ -283,7 +285,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
             if (selectedTransactions.isNotEmpty()) {
                 ShareImageGenerator.shareTransactionsAsImage(
-                    context = getApplication(),
+                    context = context,
                     transactions = selectedTransactions,
                     fields = _shareableFields.value
                 )

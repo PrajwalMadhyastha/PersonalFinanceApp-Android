@@ -1,14 +1,19 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/utils/ShareImageGenerator.kt
-// REASON: FIX - Added the missing import for the BuildConfig class to resolve
-// the "Unresolved reference" build error.
+// REASON: FIX - Resolved a runtime crash (IllegalStateException: Cannot locate
+// windowRecomposer) by properly attaching the off-screen ComposeView to the
+// Activity's window before rendering it to a bitmap. The view is now added to
+// a temporary container within the root view hierarchy, measured, drawn, and
+// then immediately removed in a 'finally' block to prevent memory leaks.
 // =================================================================================
 package io.pm.finlight.utils
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -46,6 +51,13 @@ object ShareImageGenerator {
         transactions: List<TransactionDetails>,
         fields: Set<ShareableField>
     ): Bitmap {
+        // Ensure the context is an Activity to get the window
+        val activity = context as? Activity
+            ?: throw IllegalArgumentException("A valid Activity context is required to generate an image.")
+
+        // The root view to which we'll temporarily attach our composable
+        val root = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content)
+
         val composeView = ComposeView(context).apply {
             setContent {
                 PersonalFinanceAppTheme { // Apply the app's theme
@@ -54,18 +66,35 @@ object ShareImageGenerator {
             }
         }
 
-        // Measure and layout the composable to get its dimensions
-        composeView.measure(
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-        )
-        composeView.layout(0, 0, composeView.measuredWidth, composeView.measuredHeight)
+        // A temporary container for the ComposeView
+        val container = LinearLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            addView(composeView)
+        }
 
-        // Create a bitmap and draw the composable onto it
-        val bitmap = Bitmap.createBitmap(composeView.measuredWidth, composeView.measuredHeight, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bitmap)
-        composeView.draw(canvas)
-        return bitmap
+        try {
+            // Add the container to the view hierarchy to attach it to the window
+            root.addView(container)
+
+            // Measure and layout the container
+            container.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            container.layout(0, 0, container.measuredWidth, container.measuredHeight)
+
+            // Create the bitmap and draw the view onto it
+            val bitmap = Bitmap.createBitmap(container.measuredWidth, container.measuredHeight, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            container.draw(canvas)
+            return bitmap
+        } finally {
+            // CRITICAL: Always remove the temporary view to avoid memory leaks
+            root.removeView(container)
+        }
     }
 
     /**

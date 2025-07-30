@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FEATURE (Share Snapshot) - The screen now displays a ModalBottomSheet
-// containing the `ShareSnapshotSheet` when the user clicks the share action in
-// selection mode. The "Generate Image" button is now wired to call the
-// ViewModel's `generateAndShareSnapshot` function, completing the feature.
+// REASON: FIX - The call to `viewModel.generateAndShareSnapshot` has been updated
+// to pass the local Activity context. This provides the ShareImageGenerator with
+// the necessary window context, resolving the runtime crash.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -30,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -78,6 +78,8 @@ fun TransactionListScreen(
     val showShareSheet by viewModel.showShareSheet.collectAsState()
     val shareableFields by viewModel.shareableFields.collectAsState()
 
+    // --- NEW: Get the local context to pass to the ViewModel ---
+    val context = LocalContext.current
 
     DisposableEffect(Unit) {
         onDispose {
@@ -181,8 +183,8 @@ fun TransactionListScreen(
                 selectedFields = shareableFields,
                 onFieldToggle = { viewModel.onShareableFieldToggled(it) },
                 onGenerateClick = {
-                    // --- UPDATED: Call the ViewModel to generate and share ---
-                    viewModel.generateAndShareSnapshot()
+                    // --- UPDATED: Pass the context to the ViewModel ---
+                    viewModel.generateAndShareSnapshot(context)
                 },
                 onCancelClick = { viewModel.onShareSheetDismiss() }
             )
