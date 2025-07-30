@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - The contextual TopAppBar shown during transaction selection mode
-// now uses `surfaceColorAtElevation` for its background. This makes its color
-// theme-aware, resolving the bug where it would appear purple even in non-purple
-// themes like "Midnight".
+// REASON: FIX - The profile picture placeholder now uses the full adaptive icon
+// (`R.mipmap.ic_launcher`) by passing it to the `model` parameter. This
+// resolves the runtime crash and ensures the icon is always legible.
 // =================================================================================
 package io.pm.finlight
 
@@ -310,7 +309,6 @@ fun MainAppScreen() {
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            // --- FIX: Use a theme-aware surface color instead of a hardcoded one ---
                             containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
                             titleContentColor = MaterialTheme.colorScheme.onSurface
                         )
@@ -321,16 +319,13 @@ fun MainAppScreen() {
                         navigationIcon = {
                             if (showProfileIcon) {
                                 AsyncImage(
-                                    model = profilePictureUri,
+                                    model = profilePictureUri ?: R.mipmap.ic_launcher,
                                     contentDescription = "User Profile Picture",
-                                    placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                                    error = painterResource(id = R.drawable.ic_launcher_foreground),
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
                                         .padding(start = 16.dp)
                                         .size(36.dp)
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
                                         .clickable { navController.navigate("profile") }
                                 )
                             } else if (!showBottomBar) {

@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Wed Jul 30 11:52:50 IST 2025
+Generated on: Wed Jul 30 16:07:13 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -334,12 +334,14 @@ class TimePeriodReportViewModelFactory(
 ================== FILE: ./app/src/main/java/ShareSnapshotSheet.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ShareSnapshotSheet.kt
-// REASON: NEW FILE - This file defines the UI for the "Customize Your Snapshot"
-// bottom sheet. It provides a list of selectable fields (Date, Amount, etc.)
-// and a button to proceed with generating the shareable image.
+// REASON: FEATURE - The bottom sheet for customizing a transaction snapshot has
+// been updated to be full-screen. The root Column now fills the maximum height,
+// and the LazyColumn of fields expands to fill all available space, providing a
+// more immersive and user-friendly experience for selecting fields.
 // =================================================================================
 package io.pm.finlight.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -371,15 +373,18 @@ fun ShareSnapshotSheet(
 ) {
     val allFields = ShareableField.entries
 
+    // The root Column now fills the entire height of the bottom sheet.
     Column(
         modifier = Modifier
+            .fillMaxHeight()
             .padding(16.dp)
             .navigationBarsPadding()
     ) {
         Text(
             "Customize Your Snapshot",
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.padding(bottom = 8.dp),
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             "Select the fields you want to include in the shared image.",
@@ -388,22 +393,32 @@ fun ShareSnapshotSheet(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
+        // The LazyColumn now takes up all available vertical space.
         LazyColumn(
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(allFields) { field ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onFieldToggle(field) }
+                        .padding(vertical = 4.dp)
                 ) {
                     Checkbox(
                         checked = field in selectedFields,
-                        onCheckedChange = { onFieldToggle(field) }
+                        onCheckedChange = { onFieldToggle(field) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            checkmarkColor = MaterialTheme.colorScheme.surface
+                        )
                     )
                     Text(
                         text = field.displayName,
-                        modifier = Modifier.padding(start = 8.dp)
+                        modifier = Modifier.padding(start = 8.dp),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -1420,10 +1435,12 @@ interface CustomSmsRuleDao {
 ================== FILE: ./app/src/main/java/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
-// REASON: FIX - The `generateAndShareSnapshot` function now accepts an Activity
-// context. It also correctly fetches the tags for each selected transaction and
-// constructs the `TransactionSnapshotData` object required by the image generator,
-// resolving a data type mismatch and ensuring tags are displayed.
+// REASON: FIX - The `reparseTransactionFromSms` function has been corrected to
+// fetch and provide the existing merchant mappings to the SmsParser. This
+// resolves a bug where re-parsing would fail because it lacked the necessary
+// context, making the "Fix Parser" feature fully operational.
+// FIX - Re-added the missing `updateTransactionExclusion` function, which was
+// causing an "Unresolved reference" compilation error in TransactionDetailScreen.
 // =================================================================================
 package io.pm.finlight
 
@@ -1475,6 +1492,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val smsRepository: SmsRepository
     private val merchantRenameRuleRepository: MerchantRenameRuleRepository
     private val merchantCategoryMappingRepository: MerchantCategoryMappingRepository
+    private val merchantMappingRepository: MerchantMappingRepository
     private val splitTransactionRepository: SplitTransactionRepository
     private val context = application
 
@@ -1557,6 +1575,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         smsRepository = SmsRepository(application)
         merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao())
         merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao())
+        merchantMappingRepository = MerchantMappingRepository(db.merchantMappingDao())
         splitTransactionRepository = SplitTransactionRepository(db.splitTransactionDao())
 
 
@@ -1704,7 +1723,6 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val selectedTransactionsDetails = allTransactions.filter { it.transaction.id in selectedIds }
 
             if (selectedTransactionsDetails.isNotEmpty()) {
-                // Fetch tags for each selected transaction and create the data payload
                 val transactionsWithData = withContext(Dispatchers.IO) {
                     selectedTransactionsDetails.map { details ->
                         val tags = transactionRepository.getTagsForTransactionSimple(details.transaction.id)
@@ -1922,9 +1940,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             Log.d(logTag, "Found original SMS: ${smsMessage.body}")
 
+            // --- FIX: Fetch existing mappings before parsing ---
+            val existingMappings = merchantMappingRepository.allMappings.first().associateBy({ it.smsSender }, { it.merchantName })
+
             val potentialTxn = SmsParser.parse(
                 smsMessage,
-                emptyMap(),
+                existingMappings, // Pass the correct mappings
                 db.customSmsRuleDao(),
                 db.merchantRenameRuleDao(),
                 db.ignoreRuleDao(),
@@ -6298,10 +6319,13 @@ fun ManageIgnoreRulesScreen(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
-// REASON: FIX - The ApproveTransactionScreen now uses a LaunchedEffect to check
-// if the incoming PotentialTransaction has a learned categoryId. If it does,
-// the screen automatically finds and sets the correct category, restoring the
-// auto-categorization feature for SMS transactions in Travel Mode.
+// REASON: FEATURE - The Category and Tag picker bottom sheets on the approval
+// screen are now configured to open in a full-screen, edge-to-edge layout.
+// This provides a more immersive and user-friendly experience for selecting
+// items from potentially long lists.
+// FIX - The travel mode notification is now correctly dismissed as soon as the
+// user taps an action and navigates to the approval screen, instead of waiting
+// until the transaction is saved.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -6347,7 +6371,6 @@ import io.pm.finlight.ui.theme.PopupSurfaceLight
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 import java.text.NumberFormat
-import java.util.*
 
 private sealed class ApproveSheetContent {
     object Category : ApproveSheetContent()
@@ -6528,13 +6551,17 @@ fun ApproveTransactionScreen(
 
     val isSaveEnabled = description.isNotBlank() && selectedCategory != null
 
+    // --- FIX: Cancel the notification as soon as the screen is displayed ---
+    LaunchedEffect(key1 = potentialTxn.sourceSmsId) {
+        NotificationManagerCompat.from(context).cancel(potentialTxn.sourceSmsId.toInt())
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             transactionViewModel.clearSelectedTags()
         }
     }
 
-    // --- FIX: Pre-select the category if the parser found a learned one ---
     LaunchedEffect(potentialTxn.categoryId, categories) {
         if (categories.isNotEmpty()) {
             potentialTxn.categoryId?.let { learnedCategoryId ->
@@ -6701,8 +6728,6 @@ fun ApproveTransactionScreen(
                                     potentialTxn.merchantName?.let { originalName ->
                                         settingsViewModel.saveMerchantRenameRule(originalName, description)
                                     }
-                                    val notificationManager = NotificationManagerCompat.from(context)
-                                    notificationManager.cancel(potentialTxn.sourceSmsId.toInt())
                                     navController.navigate("dashboard") {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             inclusive = true
@@ -6725,6 +6750,7 @@ fun ApproveTransactionScreen(
         ModalBottomSheet(
             onDismissRequest = { activeSheetContent = null },
             sheetState = sheetState,
+            windowInsets = WindowInsets(0),
             containerColor = popupContainerColor
         ) {
             when (activeSheetContent) {
@@ -6855,7 +6881,8 @@ private fun ApproveTagPickerSheet(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Manage Tags", style = MaterialTheme.typography.titleLarge)
@@ -6935,7 +6962,8 @@ private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
             )
         }
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt ==================
@@ -8035,10 +8063,9 @@ private fun CsvInfoDialog(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
-// REASON: FEATURE - The screen now observes the TravelModeSettings. If travel
-// mode is active, it updates the currency symbol in the UI and displays a
-// real-time conversion helper text. The save action is updated to pass the
-// foreign currency amount to the ViewModel for conversion.
+// REASON: FEATURE - The Account and Tag picker bottom sheets are now configured
+// to open in a full-screen, edge-to-edge layout. This provides a more immersive
+// and user-friendly experience for selecting items from potentially long lists.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -8218,7 +8245,6 @@ fun AddTransactionScreen(
         label = "CategoryColorAnimation"
     )
 
-    // --- NEW: Determine if travel mode is active for the selected date ---
     val isTravelModeActive = remember(travelModeSettings, selectedDateTime) {
         travelModeSettings?.let {
             it.isEnabled &&
@@ -8318,6 +8344,7 @@ fun AddTransactionScreen(
         ModalBottomSheet(
             onDismissRequest = { activeSheet = null },
             sheetState = sheetState,
+            windowInsets = WindowInsets(0),
             containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
         ) {
             when (val sheet = activeSheet) {
@@ -8496,7 +8523,6 @@ private fun AmountComposer(
                 maxLines = 1
             )
         }
-        // --- NEW: Conversion helper text ---
         if (isTravelMode && travelModeSettings != null) {
             val enteredAmount = amount.toDoubleOrNull() ?: 0.0
             val convertedAmount = enteredAmount * travelModeSettings.conversionRate
@@ -8746,7 +8772,7 @@ private fun <T> PickerSheet(
     onAddNew: (() -> Unit)? = null,
     itemContent: @Composable (T) -> Unit
 ) {
-    Column(modifier = Modifier.navigationBarsPadding()) {
+    Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
@@ -8852,7 +8878,8 @@ private fun TagPickerSheet(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Manage Tags", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
@@ -8869,7 +8896,7 @@ private fun TagPickerSheet(
                 )
             }
         }
-        HorizontalDivider(color = GlassPanelBorder)
+        HorizontalDivider()
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -10182,9 +10209,12 @@ private fun RuleSummaryItem(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
-// REASON: FIX - The call to `viewModel.generateAndShareSnapshot` has been updated
-// to pass the local Activity context. This provides the ShareImageGenerator with
-// the necessary window context, resolving the runtime crash.
+// REASON: FEATURE - The ModalBottomSheet for the snapshot customization screen
+// now uses `WindowInsets(0)` to remove default padding. This allows the sheet's
+// content to expand to be truly full-screen and edge-to-edge, improving the
+// user experience.
+// FIX - The sheet state is now configured with `skipPartiallyExpanded = true`
+// to ensure it opens in a fully expanded state by default.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -10194,7 +10224,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -10260,7 +10289,6 @@ fun TransactionListScreen(
     val showShareSheet by viewModel.showShareSheet.collectAsState()
     val shareableFields by viewModel.shareableFields.collectAsState()
 
-    // --- NEW: Get the local context to pass to the ViewModel ---
     val context = LocalContext.current
 
     DisposableEffect(Unit) {
@@ -10357,15 +10385,17 @@ fun TransactionListScreen(
     }
 
     if (showShareSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = { viewModel.onShareSheetDismiss() },
-            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight
+            sheetState = sheetState,
+            containerColor = if (isSystemInDarkTheme()) PopupSurfaceDark else PopupSurfaceLight,
+            windowInsets = WindowInsets(0)
         ) {
             ShareSnapshotSheet(
                 selectedFields = shareableFields,
                 onFieldToggle = { viewModel.onShareableFieldToggled(it) },
                 onGenerateClick = {
-                    // --- UPDATED: Pass the context to the ViewModel ---
                     viewModel.generateAndShareSnapshot(context)
                 },
                 onCancelClick = { viewModel.onShareSheetDismiss() }
@@ -10560,11 +10590,10 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
-// REASON: REFACTOR - The "Split" / "Edit Splits" button has been moved from the
-// secondary actions row into the main TransactionSpotlightHeader. This makes the
-// action more prominent and improves the user workflow.
-// UX REFINEMENT - The text for the split button has been made more explicit,
-// changing from "Split" to "Split Transaction" for better clarity.
+// REASON: FEATURE - The Account, Category, Tag, and Retrospective Update bottom
+// sheets are now configured to open in a full-screen, edge-to-edge layout. This
+// provides a more immersive and user-friendly experience for selecting items
+// from potentially long lists.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -10776,8 +10805,11 @@ fun TransactionDetailScreen(
             }
 
             if (retroUpdateSheetState != null) {
+                val retroSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
                 ModalBottomSheet(
                     onDismissRequest = { viewModel.dismissRetroUpdateSheet() },
+                    sheetState = retroSheetState,
+                    windowInsets = WindowInsets(0),
                     containerColor = popupContainerColor,
                     dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 ) {
@@ -11005,6 +11037,7 @@ fun TransactionDetailScreen(
                         ModalBottomSheet(
                             onDismissRequest = { activeSheetContent = null },
                             sheetState = sheetState,
+                            windowInsets = WindowInsets(0),
                             containerColor = popupContainerColor,
                             dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         ) {
@@ -11798,7 +11831,7 @@ private fun AccountPickerSheet(
     val currentAccount = items.find { it.id == currentAccountId }
     val otherAccounts = items.filter { it.id != currentAccountId }
 
-    Column(modifier = Modifier.navigationBarsPadding()) {
+    Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
@@ -12008,7 +12041,7 @@ private fun CategoryPickerSheet(
     onDismiss: () -> Unit,
     onAddNew: (() -> Unit)? = null
 ) {
-    Column(modifier = Modifier.navigationBarsPadding()) {
+    Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
@@ -12088,7 +12121,8 @@ private fun TagPickerSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(16.dp)
+            .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Manage Tags", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
@@ -12266,6 +12300,7 @@ private fun RetrospectiveUpdateSheetContent(
 
     Column(
         modifier = Modifier
+            .fillMaxHeight()
             .navigationBarsPadding()
             .padding(16.dp)
     ) {
@@ -12313,7 +12348,7 @@ private fun RetrospectiveUpdateSheetContent(
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
             LazyColumn(
-                modifier = Modifier.heightIn(max = 250.dp),
+                modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(state.similarTransactions, key = { it.id }) { transaction ->
@@ -19388,10 +19423,10 @@ enum class AppTheme(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt
-// REASON: REFINEMENT - The opacity of the popup surfaces has been increased
-// from 80% to 85%. This makes the popups more solid, reducing the distraction
-// from background text and improving overall legibility on both light and dark
-// themes.
+// REASON: UX REFINEMENT - The opacity of the popup surfaces has been increased
+// from 85% (0xD9) to 95% (0xF2). This makes popups and bottom sheets more
+// solid, reducing distraction from the background and improving overall
+// legibility on both light and dark themes.
 // =================================================================================
 package io.pm.finlight.ui.theme
 
@@ -19405,7 +19440,6 @@ val AuroraDarkOnSurface = Color(0xFFE6E1E5) // Off-white for text
 val AuroraDarkOnSurfaceVariant = Color(0xFFC4C7C5) // Brighter gray for secondary text
 
 // --- Daybreak Theme (Light Purple) ---
-// --- UPDATED: New, more mature and professional color palette based on user feedback ---
 val DaybreakPrimary = Color(0xFF6750A4)       // Muted, professional purple
 val DaybreakSecondary = Color(0xFF81D4FA)      // Soft, light blue for secondary accents
 val DaybreakBackground = Color(0xFFEADDFF)      // Light lavender background
@@ -19431,9 +19465,9 @@ val PaperOnSurfaceVariant = Color(0xFF555555) // Dark gray for secondary text
 // --- Shared Colors ---
 val GlassPanelBorder = Color(0x33FFFFFF) // White with 20% opacity
 val AuroraNumpadHighlight = Color(0x29FFFFFF) // White with 16% opacity
-// --- UPDATED: Increased opacity from 80% (0xCC) to 85% (0xD9) ---
-val PopupSurfaceDark = Color(0xD9212125) // 85% opaque dark charcoal
-val PopupSurfaceLight = Color(0xD9FFFFFF) // 85% opaque white
+// --- UPDATED: Increased opacity from 85% (0xD9) to 95% (0xF2) ---
+val PopupSurfaceDark = Color(0xF2212125) // 95% opaque dark charcoal
+val PopupSurfaceLight = Color(0xF2FFFFFF) // 95% opaque white
 
 // High-contrast colors for transaction amounts
 val IncomeGreenDark = Color(0xFF66BB6A)
@@ -19703,10 +19737,10 @@ val Typography = Typography(
 ================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FEATURE (Share Snapshot) - The main top app bar logic has been updated.
-// When the `TransactionListScreen` is in selection mode, a contextual app bar
-// is now displayed, showing the number of selected items and providing actions
-// to initiate the share workflow or cancel the selection.
+// REASON: FIX - The contextual TopAppBar shown during transaction selection mode
+// now uses `surfaceColorAtElevation` for its background. This makes its color
+// theme-aware, resolving the bug where it would appear purple even in non-purple
+// themes like "Midnight".
 // =================================================================================
 package io.pm.finlight
 
@@ -19999,7 +20033,6 @@ fun MainAppScreen() {
 
         Scaffold(
             topBar = {
-                // --- NEW: Conditional TopAppBar for selection mode ---
                 if (isSelectionMode && baseCurrentRoute == BottomNavItem.Transactions.route) {
                     TopAppBar(
                         title = { Text("$selectedIdsCount Selected") },
@@ -20014,8 +20047,9 @@ fun MainAppScreen() {
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            // --- FIX: Use a theme-aware surface color instead of a hardcoded one ---
+                            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
+                            titleContentColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 } else if (showMainTopBar) {
@@ -22322,11 +22356,18 @@ data class CalendarDayStatus(
 ================== FILE: ./app/src/main/java/SmsParser.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsParser.kt
-// REASON: FEATURE - The parsing logic is now more powerful. It fetches all
-// enabled ignore rules and separates them by type. It first checks the SMS
-// sender against all SENDER rules. If a match is found, parsing stops.
-// Otherwise, it proceeds to check the message body against BODY_PHRASE rules.
-// A new helper function converts wildcard patterns to valid regex.
+// REASON: FEATURE - The parser is now currency-aware. A new, more powerful
+// regex, `AMOUNT_WITH_CURRENCY_REGEX`, has been added to capture both the amount
+// and any adjacent currency codes (e.g., "MYR", "INR", "Rs"). The parsing logic
+// now populates the new `detectedCurrencyCode` field in the PotentialTransaction,
+// enabling the SmsReceiver to make smarter decisions in Travel Mode.
+// FIX - The amount/currency regex has been made more robust to correctly
+// capture currency symbols like "Rs" that are preceded by a space.
+// FIX - The amount parsing logic now finds all potential numbers and prioritizes
+// the one explicitly associated with a currency symbol, preventing it from
+// incorrectly picking up account or reference numbers as the amount.
+// FIX - Added "purchase" as a standalone keyword to the expense regex to
+// correctly parse messages that use it without "of".
 // =================================================================================
 package io.pm.finlight
 
@@ -22341,9 +22382,9 @@ data class PotentialAccount(
 )
 
 object SmsParser {
-    private val CURRENCY_AMOUNT_REGEX = "(?:rs|inr|rs\\.?)\\s*([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
-    private val KEYWORD_AMOUNT_REGEX = "(?:purchase of|payment of|spent|charged|credited with|debited for|credit of|for)\\s+([\\d,]+\\.?\\d*)".toRegex(RegexOption.IGNORE_CASE)
-    private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of)\\b".toRegex(RegexOption.IGNORE_CASE)
+    private val AMOUNT_WITH_CURRENCY_REGEX = "(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b[ .]*)?([\\d,]+\\.?\\d*)|([\\d,]+\\.?\\d*)\\s*(?:\\b(INR|RS|USD|SGD|MYR|EUR|GBP)\\b)".toRegex(RegexOption.IGNORE_CASE)
+    // --- UPDATED: Added "purchase" as a standalone keyword ---
+    private val EXPENSE_KEYWORDS_REGEX = "\\b(spent|debited|paid|charged|payment of|purchase of|purchase)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val INCOME_KEYWORDS_REGEX = "\\b(credited|received|deposited|refund of)\\b".toRegex(RegexOption.IGNORE_CASE)
     private val ACCOUNT_PATTERNS =
         listOf(
@@ -22412,7 +22453,6 @@ object SmsParser {
         return null
     }
 
-    // --- NEW: Helper to convert wildcard patterns to regex ---
     private fun wildcardToRegex(pattern: String): Regex {
         val escaped = Pattern.quote(pattern).replace("*", "\\E.*\\Q")
         return escaped.toRegex(RegexOption.IGNORE_CASE)
@@ -22432,7 +22472,6 @@ object SmsParser {
         val senderIgnoreRules = allIgnoreRules.filter { it.type == RuleType.SENDER }
         val bodyIgnoreRules = allIgnoreRules.filter { it.type == RuleType.BODY_PHRASE }
 
-        // --- STEP 1: Check against sender ignore rules ---
         for (rule in senderIgnoreRules) {
             try {
                 if (wildcardToRegex(rule.pattern).matches(sms.sender)) {
@@ -22444,7 +22483,6 @@ object SmsParser {
             }
         }
 
-        // --- STEP 2: Check against body phrase ignore rules ---
         for (rule in bodyIgnoreRules) {
             try {
                 if (rule.pattern.toRegex(RegexOption.IGNORE_CASE).containsMatchIn(sms.body)) {
@@ -22459,6 +22497,7 @@ object SmsParser {
         var extractedMerchant: String? = null
         var extractedAmount: Double? = null
         var extractedAccount: PotentialAccount? = null
+        var detectedCurrency: String? = null
 
         val allRules = customSmsRuleDao.getAllRules().first()
         val renameRules = merchantRenameRuleDao.getAllRules().first().associateBy({ it.originalName }, { it.newName })
@@ -22482,7 +22521,12 @@ object SmsParser {
                     try {
                         val match = regexStr.toRegex().find(sms.body)
                         if (match != null && match.groupValues.size > 1) {
-                            extractedAmount = match.groupValues[1].replace(",", "").toDoubleOrNull()
+                            val amountMatch = AMOUNT_WITH_CURRENCY_REGEX.find(match.groupValues[1])
+                            if (amountMatch != null) {
+                                val (amount, currency) = parseAmountAndCurrency(amountMatch)
+                                extractedAmount = amount
+                                detectedCurrency = currency
+                            }
                         }
                     } catch (e: PatternSyntaxException) { /* Ignore */ }
                 }
@@ -22503,10 +22547,23 @@ object SmsParser {
             }
         }
 
-        val amount = extractedAmount
-            ?: CURRENCY_AMOUNT_REGEX.find(sms.body)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
-            ?: KEYWORD_AMOUNT_REGEX.find(sms.body)?.groups?.get(1)?.value?.replace(",", "")?.toDoubleOrNull()
-            ?: return null
+        if (extractedAmount == null) {
+            val allAmountMatches = AMOUNT_WITH_CURRENCY_REGEX.findAll(sms.body).toList()
+            val matchWithCurrency = allAmountMatches.firstOrNull {
+                val currencyPart1 = it.groups[1]?.value?.ifEmpty { null }
+                val currencyPart2 = it.groups[4]?.value?.ifEmpty { null }
+                currencyPart1 != null || currencyPart2 != null
+            }
+            val bestMatch = matchWithCurrency ?: allAmountMatches.firstOrNull()
+
+            if (bestMatch != null) {
+                val (amount, currency) = parseAmountAndCurrency(bestMatch)
+                extractedAmount = amount
+                detectedCurrency = currency
+            }
+        }
+
+        val amount = extractedAmount ?: return null
 
         val transactionType =
             when {
@@ -22563,8 +22620,17 @@ object SmsParser {
             potentialAccount = potentialAccount,
             sourceSmsHash = smsHash,
             categoryId = learnedCategoryId,
-            smsSignature = smsSignature
+            smsSignature = smsSignature,
+            detectedCurrencyCode = detectedCurrency
         )
+    }
+
+    private fun parseAmountAndCurrency(matchResult: MatchResult): Pair<Double?, String?> {
+        val groups = matchResult.groupValues
+        val amount = (groups[2].ifEmpty { groups[3] }).replace(",", "").toDoubleOrNull()
+        var currency = (groups[1].ifEmpty { groups[4] }).uppercase()
+        if (currency == "RS") currency = "INR"
+        return Pair(amount, currency.ifEmpty { null })
     }
 }
 -e 
@@ -24428,10 +24494,10 @@ data class TransactionTagCrossRef(
 ================== FILE: ./app/src/main/java/PotentialTransaction.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/PotentialTransaction.kt
-// REASON: FEATURE (Travel Mode SMS) - Added a new nullable `isForeignCurrency`
-// field. This will be used in the deep link from the new travel mode notification
-// to tell the approval screen whether the transaction amount should be treated
-// as foreign currency and converted.
+// REASON: FEATURE - Added a new nullable `detectedCurrencyCode` field. This will
+// be populated by the SmsParser if it can confidently identify a currency code
+// (e.g., "INR", "MYR") next to the amount in an SMS, forming the basis for the
+// new smart currency detection feature.
 // =================================================================================
 package io.pm.finlight
 
@@ -24447,6 +24513,7 @@ package io.pm.finlight
  * @param categoryId The ID of a learned category, if a mapping exists for the merchant.
  * @param smsSignature A stable hash of the SMS body used for pattern detection.
  * @param isForeignCurrency A flag passed from the notification to indicate user's currency choice.
+ * @param detectedCurrencyCode The currency code (e.g., "INR", "USD") found in the SMS.
  */
 data class PotentialTransaction(
     val sourceSmsId: Long,
@@ -24459,8 +24526,9 @@ data class PotentialTransaction(
     val sourceSmsHash: String? = null,
     val categoryId: Int? = null,
     val smsSignature: String? = null,
-    // --- NEW: Flag to indicate if this is a foreign currency transaction ---
-    val isForeignCurrency: Boolean? = null
+    val isForeignCurrency: Boolean? = null,
+    // --- NEW: Field to store the currency code found in the SMS ---
+    val detectedCurrencyCode: String? = null
 )
 -e 
 
@@ -26519,10 +26587,11 @@ data class Transaction(
 ================== FILE: ./app/src/main/java/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
-// REASON: FEATURE (Travel Mode SMS) - The receiver is now aware of Travel Mode.
-// It checks the SettingsRepository. If travel mode is active, instead of
-// auto-saving, it calls a new notification helper to show a currency
-// clarification prompt to the user. Otherwise, it proceeds as before.
+// REASON: FEATURE - The receiver's logic is now significantly smarter. When
+// Travel Mode is active, it checks the `detectedCurrencyCode` from the parser.
+// If the currency matches the home or foreign currency, it auto-saves the
+// transaction with the correct conversion. It only falls back to showing the
+// user a clarification prompt if the currency is ambiguous.
 // =================================================================================
 package io.pm.finlight
 
@@ -26587,55 +26656,33 @@ class SmsReceiver : BroadcastReceiver() {
                         if (potentialTxn != null && !existingSmsHashes.contains(potentialTxn.sourceSmsHash)) {
                             Log.d(tag, "New potential transaction found: $potentialTxn.")
 
-                            // --- UPDATED: Check for active Travel Mode ---
                             val travelSettings = settingsRepository.getTravelModeSettings().first()
+                            val homeCurrency = settingsRepository.getHomeCurrency().first()
                             val isTravelModeActive = travelSettings?.isEnabled == true &&
                                     Date().time in travelSettings.startDate..travelSettings.endDate
 
-                            if (isTravelModeActive) {
-                                // Travel mode is on, so ask the user for clarification.
-                                Log.d(tag, "Travel mode is active. Showing currency clarification notification.")
-                                NotificationHelper.showTravelModeSmsNotification(context, potentialTxn, travelSettings!!)
-                            } else {
-                                // Travel mode is off, proceed with auto-save.
-                                Log.d(tag, "Travel mode is inactive. Saving automatically.")
-                                val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
-                                val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
-
-                                var account = accountDao.findByName(accountName)
-                                if (account == null) {
-                                    val newAccount = Account(name = accountName, type = accountType)
-                                    accountDao.insert(newAccount)
-                                    account = accountDao.findByName(accountName)
-                                }
-
-                                if (account != null) {
-                                    val newTransaction = Transaction(
-                                        description = potentialTxn.merchantName ?: "Unknown Merchant",
-                                        originalDescription = potentialTxn.merchantName,
-                                        amount = potentialTxn.amount,
-                                        date = System.currentTimeMillis(),
-                                        accountId = account.id,
-                                        categoryId = potentialTxn.categoryId,
-                                        notes = "",
-                                        transactionType = potentialTxn.transactionType,
-                                        sourceSmsId = potentialTxn.sourceSmsId,
-                                        sourceSmsHash = potentialTxn.sourceSmsHash,
-                                        source = "Auto-Captured",
-                                        smsSignature = potentialTxn.smsSignature
-                                    )
-                                    val newTransactionId = transactionDao.insert(newTransaction)
-                                    Log.d(tag, "Transaction saved successfully with ID: $newTransactionId")
-
-                                    if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                                        val workRequest = OneTimeWorkRequestBuilder<TransactionNotificationWorker>()
-                                            .setInputData(workDataOf(TransactionNotificationWorker.KEY_TRANSACTION_ID to newTransactionId.toInt()))
-                                            .build()
-                                        WorkManager.getInstance(context).enqueue(workRequest)
+                            if (isTravelModeActive && travelSettings != null) {
+                                when (potentialTxn.detectedCurrencyCode) {
+                                    // Case 1: Foreign currency is detected
+                                    travelSettings.currencyCode -> {
+                                        Log.d(tag, "Travel Mode: Foreign currency '${potentialTxn.detectedCurrencyCode}' detected. Auto-saving with conversion.")
+                                        saveTransaction(context, potentialTxn, isForeign = true, travelSettings = travelSettings)
                                     }
-                                } else {
-                                    Log.e(tag, "Failed to find or create an account for the transaction.")
+                                    // Case 2: Home currency is detected
+                                    homeCurrency -> {
+                                        Log.d(tag, "Travel Mode: Home currency '${potentialTxn.detectedCurrencyCode}' detected. Auto-saving without conversion.")
+                                        saveTransaction(context, potentialTxn, isForeign = false, travelSettings = null)
+                                    }
+                                    // Case 3: Ambiguous, fall back to user prompt
+                                    else -> {
+                                        Log.d(tag, "Travel Mode: Ambiguous currency. Showing clarification notification.")
+                                        NotificationHelper.showTravelModeSmsNotification(context, potentialTxn, travelSettings)
+                                    }
                                 }
+                            } else {
+                                // Travel mode is off, proceed with normal auto-save.
+                                Log.d(tag, "Travel mode is inactive. Saving automatically.")
+                                saveTransaction(context, potentialTxn, isForeign = false, travelSettings = null)
                             }
                         }
                     }
@@ -26645,6 +26692,76 @@ class SmsReceiver : BroadcastReceiver() {
                     pendingResult.finish()
                 }
             }
+        }
+    }
+
+    private suspend fun saveTransaction(
+        context: Context,
+        potentialTxn: PotentialTransaction,
+        isForeign: Boolean,
+        travelSettings: TravelModeSettings?
+    ) {
+        val db = AppDatabase.getInstance(context)
+        val accountDao = db.accountDao()
+        val transactionDao = db.transactionDao()
+
+        val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
+        val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
+
+        var account = accountDao.findByName(accountName)
+        if (account == null) {
+            val newAccount = Account(name = accountName, type = accountType)
+            accountDao.insert(newAccount)
+            account = accountDao.findByName(accountName)
+        }
+
+        if (account != null) {
+            val transactionToSave = if (isForeign && travelSettings != null) {
+                Transaction(
+                    description = potentialTxn.merchantName ?: "Unknown Merchant",
+                    originalDescription = potentialTxn.merchantName,
+                    amount = potentialTxn.amount * travelSettings.conversionRate,
+                    originalAmount = potentialTxn.amount,
+                    currencyCode = travelSettings.currencyCode,
+                    conversionRate = travelSettings.conversionRate.toDouble(),
+                    date = System.currentTimeMillis(),
+                    accountId = account.id,
+                    categoryId = potentialTxn.categoryId,
+                    notes = "",
+                    transactionType = potentialTxn.transactionType,
+                    sourceSmsId = potentialTxn.sourceSmsId,
+                    sourceSmsHash = potentialTxn.sourceSmsHash,
+                    source = "Auto-Captured",
+                    smsSignature = potentialTxn.smsSignature
+                )
+            } else {
+                Transaction(
+                    description = potentialTxn.merchantName ?: "Unknown Merchant",
+                    originalDescription = potentialTxn.merchantName,
+                    amount = potentialTxn.amount,
+                    date = System.currentTimeMillis(),
+                    accountId = account.id,
+                    categoryId = potentialTxn.categoryId,
+                    notes = "",
+                    transactionType = potentialTxn.transactionType,
+                    sourceSmsId = potentialTxn.sourceSmsId,
+                    sourceSmsHash = potentialTxn.sourceSmsHash,
+                    source = "Auto-Captured",
+                    smsSignature = potentialTxn.smsSignature
+                )
+            }
+
+            val newTransactionId = transactionDao.insert(transactionToSave)
+            Log.d(tag, "Transaction saved successfully with ID: $newTransactionId")
+
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                val workRequest = OneTimeWorkRequestBuilder<TransactionNotificationWorker>()
+                    .setInputData(workDataOf(TransactionNotificationWorker.KEY_TRANSACTION_ID to newTransactionId.toInt()))
+                    .build()
+                WorkManager.getInstance(context).enqueue(workRequest)
+            }
+        } else {
+            Log.e(tag, "Failed to find or create an account for the transaction.")
         }
     }
 }
@@ -28693,10 +28810,14 @@ class ExampleUnitTest {
 ================== FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt ==================
 // =================================================================================
 // FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt
-// REASON: FIX - The unit test has been updated to align with the new IgnoreRule
-// entity and DAO. The mock setup now uses `getEnabledRules()` instead of the
-// removed `getEnabledPhrases()`. All instantiations of IgnoreRule now correctly
-// use the `pattern` property instead of `phrase`, resolving all compilation errors.
+// REASON: FEATURE - Added new unit tests to verify the currency detection logic.
+// The tests now cover scenarios where an SMS contains a foreign currency code
+// (MYR), the home currency code (INR), or the home currency symbol (Rs),
+// ensuring the parser correctly extracts both the amount and the currency.
+// FIX - Added a new test case for the specific ICICI debit message format that
+// was failing, ensuring the improved regex correctly handles it.
+// FIX - Added a new test case to ensure the parser prioritizes amounts with
+// currency symbols over other numbers in an SMS, like account numbers.
 // =================================================================================
 package io.pm.finlight
 
@@ -28722,7 +28843,6 @@ class SmsParserTest {
     @Mock
     private lateinit var mockIgnoreRuleDao: IgnoreRuleDao
 
-    // --- NEW: Mock for the new dependency ---
     @Mock
     private lateinit var mockMerchantCategoryMappingDao: MerchantCategoryMappingDao
 
@@ -28740,9 +28860,91 @@ class SmsParserTest {
     ) {
         `when`(mockCustomSmsRuleDao.getAllRules()).thenReturn(flowOf(customRules))
         `when`(mockMerchantRenameRuleDao.getAllRules()).thenReturn(flowOf(renameRules))
-        // --- UPDATED: Mock the new getEnabledRules() method ---
         `when`(mockIgnoreRuleDao.getEnabledRules()).thenReturn(ignoreRules.filter { it.isEnabled })
     }
+
+    @Test
+    fun `test parses debit message with foreign currency code`() = runBlocking {
+        setupTest()
+        val smsBody = "You have spent MYR 55.50 at STARBUCKS."
+        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(55.50, result?.amount)
+        assertEquals("expense", result?.transactionType)
+        assertEquals("STARBUCKS", result?.merchantName)
+        assertEquals("MYR", result?.detectedCurrencyCode)
+    }
+
+    @Test
+    fun `test parses debit message with home currency code`() = runBlocking {
+        setupTest()
+        val smsBody = "You have spent INR 120.00 at CCD."
+        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(120.00, result?.amount)
+        assertEquals("INR", result?.detectedCurrencyCode)
+    }
+
+    @Test
+    fun `test parses debit message with home currency symbol`() = runBlocking {
+        setupTest()
+        val smsBody = "You have spent Rs. 300 at a local store."
+        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(300.0, result?.amount)
+        assertEquals("INR", result?.detectedCurrencyCode) // Rs should be normalized to INR
+    }
+
+    @Test
+    fun `test parses debit message with no currency`() = runBlocking {
+        setupTest()
+        val smsBody = "A purchase of 500.00 was made at some store."
+        val mockSms = SmsMessage(id = 1L, sender = "AM-HDFCBK", body = smsBody, date = System.currentTimeMillis())
+
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(500.00, result?.amount)
+        assertNull("Detected currency should be null", result?.detectedCurrencyCode)
+    }
+
+    @Test
+    fun `test parses ICICI debit message with Rs symbol correctly`() = runBlocking {
+        setupTest()
+        val smsBody = "ICICI Bank Acct XX823 debited for Rs 240.00 on 28-Jul-25; DAKSHIN CAFE credited. UPI: 552200221100. Call 18002661 for dispute. SMS BLOCK 823 to 123123123"
+        val mockSms = SmsMessage(id = 15L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        assertEquals(240.00, result?.amount)
+        assertEquals("INR", result?.detectedCurrencyCode)
+        assertEquals("expense", result?.transactionType)
+        assertEquals("DAKSHIN CAFE", result?.merchantName)
+    }
+
+    @Test
+    fun `test prioritizes amount with currency over other numbers`() = runBlocking {
+        setupTest()
+        // This SMS has multiple numbers: an account number (823) and the actual amount (240.00)
+        val smsBody = "ICICI Bank Acct XX823 debited for Rs 240.00 on 28-Jul-25; DAKSHIN CAFE credited."
+        val mockSms = SmsMessage(id = 16L, sender = "DM-ICIBNK", body = smsBody, date = System.currentTimeMillis())
+        val result = SmsParser.parse(mockSms, emptyMappings, mockCustomSmsRuleDao, mockMerchantRenameRuleDao, mockIgnoreRuleDao, mockMerchantCategoryMappingDao)
+
+        assertNotNull("Parser should return a result", result)
+        // CRITICAL: Assert that it picked the correct amount, not the account number part.
+        assertEquals(240.00, result?.amount)
+        assertEquals("INR", result?.detectedCurrencyCode)
+    }
+
 
     @Test
     fun `test parses debit message successfully`() = runBlocking {

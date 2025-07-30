@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
-// REASON: FEATURE - Added a new "Currency & Travel" item to the "Preferences"
-// section, providing a navigation entry point to the new screen for managing
-// the multi-currency feature.
+// REASON: FIX - The profile picture placeholder now uses the full adaptive icon
+// (`R.mipmap.ic_launcher`) and removes the theme-dependent background modifier.
+// This ensures the icon is always legible, regardless of the app's theme.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -56,15 +56,12 @@ fun ProfileScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     AsyncImage(
-                        model = savedProfilePictureUri,
+                        model = savedProfilePictureUri ?: R.mipmap.ic_launcher,
                         contentDescription = "User Profile Picture",
-                        placeholder = painterResource(id = R.drawable.ic_launcher_foreground),
-                        error = painterResource(id = R.drawable.ic_launcher_foreground),
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .size(64.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
                             .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                     )
                     Spacer(modifier = Modifier.width(16.dp))
