@@ -1,3 +1,8 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/DashboardCardType.kt
+// REASON: REFACTOR - Renamed RECENT_ACTIVITY to RECENT_TRANSACTIONS to better
+// reflect its content. Removed the unused NET_WORTH card.
+// =================================================================================
 package io.pm.finlight
 
 /**
@@ -7,10 +12,8 @@ package io.pm.finlight
 enum class DashboardCardType {
     HERO_BUDGET,
     QUICK_ACTIONS,
-    NET_WORTH,
-    RECENT_ACTIVITY,
+    RECENT_TRANSACTIONS,
     ACCOUNTS_CAROUSEL,
     BUDGET_WATCH,
-    // --- NEW: Add the new card type for the consistency calendar ---
     SPENDING_CONSISTENCY
 }

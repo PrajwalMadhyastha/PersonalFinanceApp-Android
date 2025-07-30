@@ -1,30 +1,23 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: REFACTOR - Decoupled dashboard customization logic.
-// - Removed the complex `pointerInput` modifier for drag-and-drop.
-// - Removed all `isCustomizationMode` state and related UI changes (e.g., giggle
-//   animation, drag handles).
-// - Added a new "Customize" `IconButton` to the TopAppBar that navigates to the
-//   new dedicated customization screen.
+// REASON: REFACTOR - Updated the `when` block in the `DashboardCard` composable
+// to reflect the changes in the `DashboardCardType` enum. It now uses the new
+// `RECENT_TRANSACTIONS` name and has removed the case for the deleted `NET_WORTH`
+// card.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
-import android.app.Application
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import io.pm.finlight.*
 import io.pm.finlight.ui.components.*
@@ -73,7 +66,6 @@ private fun DashboardCard(
     yearlyConsistencyData: List<CalendarDayStatus>,
     budgetHealthSummary: String
 ) {
-    val netWorth by dashboardViewModel.netWorth.collectAsState()
     val monthlyIncome by dashboardViewModel.monthlyIncome.collectAsState()
     val monthlyExpenses by dashboardViewModel.monthlyExpenses.collectAsState()
     val overallBudget by dashboardViewModel.overallMonthlyBudget.collectAsState()
@@ -96,8 +88,7 @@ private fun DashboardCard(
             budgetHealthSummary = budgetHealthSummary
         )
         DashboardCardType.QUICK_ACTIONS -> AuroraQuickActionsCard(navController = navController)
-        DashboardCardType.NET_WORTH -> AuroraNetWorthCard(netWorth)
-        DashboardCardType.RECENT_ACTIVITY -> AuroraRecentActivityCard(
+        DashboardCardType.RECENT_TRANSACTIONS -> AuroraRecentActivityCard(
             transactions = recentTransactions,
             navController = navController,
             onCategoryClick = { transactionViewModel.requestCategoryChange(it) }

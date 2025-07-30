@@ -1,8 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
-// REASON: FEATURE - Added a data class and functions to save and retrieve all
-// settings related to the new "Travel Mode" feature, including the home
-// currency, from SharedPreferences.
+// REASON: REFACTOR - Updated the default dashboard card order in `loadCardOrder`
+// to match the new preferred layout. Removed the NET_WORTH card from the
+// default list.
 // =================================================================================
 package io.pm.finlight
 
@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import java.util.Calendar
 import java.util.Locale
 
-// --- NEW: Data class to hold all travel mode settings ---
 data class TravelModeSettings(
     val isEnabled: Boolean,
     val currencyCode: String,
@@ -57,12 +56,10 @@ class SettingsRepository(context: Context) {
         private const val KEY_DASHBOARD_CARD_ORDER = "dashboard_card_order"
         private const val KEY_DASHBOARD_VISIBLE_CARDS = "dashboard_visible_cards"
         private const val KEY_SELECTED_THEME = "selected_app_theme"
-        // --- NEW: Keys for Travel Mode ---
         private const val KEY_HOME_CURRENCY = "home_currency_code"
         private const val KEY_TRAVEL_MODE_SETTINGS = "travel_mode_settings"
     }
 
-    // --- NEW: Functions for Home Currency ---
     fun saveHomeCurrency(currencyCode: String) {
         prefs.edit {
             putString(KEY_HOME_CURRENCY, currencyCode)
@@ -77,13 +74,11 @@ class SettingsRepository(context: Context) {
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
-            // Default to INR if not set
             trySend(prefs.getString(KEY_HOME_CURRENCY, "INR") ?: "INR")
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
 
-    // --- NEW: Functions for Travel Mode Settings ---
     fun saveTravelModeSettings(settings: TravelModeSettings?) {
         val json = if (settings == null) null else gson.toJson(settings)
         prefs.edit {
@@ -108,32 +103,18 @@ class SettingsRepository(context: Context) {
         }
     }
 
-
-    // --- Blocking function to get a historical monthly budget ---
-    /**
-     * Retrieves the overall budget for a specific month synchronously.
-     * If no budget is set for the given month, it looks backward up to 12 months
-     * to find the most recently set budget and carries it forward.
-     *
-     * @param year The year of the budget to retrieve.
-     * @param month The month (1-12) of the budget to retrieve.
-     * @return The budget amount as a Float, or 0f if no budget was found.
-     */
     fun getOverallBudgetForMonthBlocking(year: Int, month: Int): Float {
         val currentMonthKey = getBudgetKey(year, month)
 
-        // If a budget is set for the specific month, use it.
         if (prefs.contains(currentMonthKey)) {
             return prefs.getFloat(currentMonthKey, 0f)
         }
 
-        // Otherwise, try to find the most recent budget set before this month.
         val searchCal = Calendar.getInstance().apply {
             set(Calendar.YEAR, year)
-            set(Calendar.MONTH, month - 1) // Calendar month is 0-indexed
+            set(Calendar.MONTH, month - 1)
         }
 
-        // Look back up to 12 months for a set budget.
         for (i in 0..11) {
             searchCal.add(Calendar.MONTH, -1)
             val prevYear = searchCal.get(Calendar.YEAR)
@@ -144,10 +125,8 @@ class SettingsRepository(context: Context) {
             }
         }
 
-        // If no budget is found in the last year, return 0.
         return 0f
     }
-
 
     fun saveSelectedTheme(theme: AppTheme) {
         prefs.edit {
@@ -169,7 +148,6 @@ class SettingsRepository(context: Context) {
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
-
 
     fun saveDashboardLayout(order: List<DashboardCardType>, visible: Set<DashboardCardType>) {
         val orderJson = gson.toJson(order.map { it.name })
@@ -213,13 +191,14 @@ class SettingsRepository(context: Context) {
             val names: List<String> = gson.fromJson(json, type)
             names.mapNotNull { runCatching { DashboardCardType.valueOf(it) }.getOrNull() }
         } else {
+            // --- UPDATED: Set the new default card order ---
             listOf(
                 DashboardCardType.HERO_BUDGET,
                 DashboardCardType.QUICK_ACTIONS,
-                DashboardCardType.NET_WORTH,
-                DashboardCardType.RECENT_ACTIVITY,
-                DashboardCardType.ACCOUNTS_CAROUSEL,
-                DashboardCardType.BUDGET_WATCH
+                DashboardCardType.RECENT_TRANSACTIONS,
+                DashboardCardType.SPENDING_CONSISTENCY,
+                DashboardCardType.BUDGET_WATCH,
+                DashboardCardType.ACCOUNTS_CAROUSEL
             )
         }
     }
@@ -234,7 +213,6 @@ class SettingsRepository(context: Context) {
             DashboardCardType.entries.toSet()
         }
     }
-
 
     fun saveBackupEnabled(isEnabled: Boolean) {
         prefs.edit {
@@ -254,7 +232,6 @@ class SettingsRepository(context: Context) {
             awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
     }
-
 
     fun saveUserName(name: String) {
         prefs.edit {
@@ -383,7 +360,7 @@ class SettingsRepository(context: Context) {
 
             val previousMonthCalendar = Calendar.getInstance().apply {
                 set(Calendar.YEAR, year)
-                set(Calendar.MONTH, month - 1) // Calendar month is 0-indexed
+                set(Calendar.MONTH, month - 1)
                 add(Calendar.MONTH, -1)
             }
             val previousMonthKey = getBudgetKey(
