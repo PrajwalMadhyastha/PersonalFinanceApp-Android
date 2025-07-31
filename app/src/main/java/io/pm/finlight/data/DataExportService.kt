@@ -1,3 +1,11 @@
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/data/DataExportService.kt
+// REASON: FEATURE - The CSV export logic has been completely rewritten to
+// support split transactions. It now includes "Id" and "ParentId" columns.
+// Split items are exported as separate rows linked to their parent via the
+// "ParentId", ensuring full data fidelity on re-import. The JSON backup logic
+// is also updated to include the split_transactions table.
+// =================================================================================
 package io.pm.finlight.data
 
 import android.content.Context
@@ -24,15 +32,15 @@ object DataExportService {
             ignoreUnknownKeys = true
         }
 
-    // --- UPDATED: Add "Tags" to the CSV template header ---
+    // --- UPDATED: Add "Id" and "ParentId" to the CSV template header ---
     fun getCsvTemplateString(): String {
-        return "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags\n"
+        return "Id,ParentId,Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags\n"
     }
 
     suspend fun exportToJsonString(context: Context): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val db = AppDatabase.Companion.getInstance(context)
+                val db = AppDatabase.getInstance(context)
 
                 val backupData =
                     AppDataBackup(
@@ -41,6 +49,8 @@ object DataExportService {
                         categories = db.categoryDao().getAllCategories().first(),
                         budgets = db.budgetDao().getAllBudgets().first(),
                         merchantMappings = db.merchantMappingDao().getAllMappings().first(),
+                        // --- NEW: Include split transactions in the backup ---
+                        splitTransactions = db.splitTransactionDao().getAllSplits().first()
                     )
 
                 json.encodeToString(backupData)
@@ -63,24 +73,25 @@ object DataExportService {
 
                 val backupData = json.decodeFromString<AppDataBackup>(jsonString)
 
-                val db = AppDatabase.Companion.getInstance(context)
-                val transactionDao = db.transactionDao()
-                val accountDao = db.accountDao()
-                val categoryDao = db.categoryDao()
-                val budgetDao = db.budgetDao()
-                val merchantMappingDao = db.merchantMappingDao()
+                val db = AppDatabase.getInstance(context)
+                // Clear all data in the correct order (respecting foreign keys)
+                db.splitTransactionDao().deleteAll()
+                db.transactionDao().deleteAll()
+                db.accountDao().deleteAll()
+                db.categoryDao().deleteAll()
+                db.budgetDao().deleteAll()
+                db.merchantMappingDao().deleteAll()
 
-                transactionDao.deleteAll()
-                accountDao.deleteAll()
-                categoryDao.deleteAll()
-                budgetDao.deleteAll()
-                merchantMappingDao.deleteAll()
 
-                accountDao.insertAll(backupData.accounts)
-                categoryDao.insertAll(backupData.categories)
-                budgetDao.insertAll(backupData.budgets)
-                merchantMappingDao.insertAll(backupData.merchantMappings)
-                transactionDao.insertAll(backupData.transactions)
+                // Insert new data
+                db.accountDao().insertAll(backupData.accounts)
+                db.categoryDao().insertAll(backupData.categories)
+                db.budgetDao().insertAll(backupData.budgets)
+                db.merchantMappingDao().insertAll(backupData.merchantMappings)
+                db.transactionDao().insertAll(backupData.transactions)
+                // --- NEW: Import split transactions ---
+                db.splitTransactionDao().insertAll(backupData.splitTransactions)
+
 
                 true
             } catch (e: Exception) {
@@ -93,8 +104,9 @@ object DataExportService {
     suspend fun exportToCsvString(context: Context): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val db = AppDatabase.Companion.getInstance(context)
+                val db = AppDatabase.getInstance(context)
                 val transactionDao = db.transactionDao()
+                val splitTransactionDao = db.splitTransactionDao()
                 val transactions = transactionDao.getAllTransactions().first()
                 val csvBuilder = StringBuilder()
 
@@ -103,22 +115,39 @@ object DataExportService {
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
                 transactions.forEach { details: TransactionDetails ->
-                    val date = dateFormat.format(Date(details.transaction.date))
-                    val description = escapeCsvField(details.transaction.description)
-                    val amount = details.transaction.amount.toString()
-                    val type = details.transaction.transactionType
-                    val category = escapeCsvField(details.categoryName ?: "N/A")
+                    val transaction = details.transaction
+                    val date = dateFormat.format(Date(transaction.date))
+                    val description = escapeCsvField(transaction.description)
+                    val amount = transaction.amount.toString()
+                    val type = transaction.transactionType
                     val account = escapeCsvField(details.accountName ?: "N/A")
-                    val notes = escapeCsvField(details.transaction.notes ?: "")
-                    val isExcluded = details.transaction.isExcluded.toString()
-
-                    // --- NEW: Fetch and append tags ---
-                    val tags = transactionDao.getTagsForTransactionSimple(details.transaction.id)
-                    val tagsString =
-                        tags.joinToString("|") { it.name } // Use pipe as a safe delimiter
+                    val notes = escapeCsvField(transaction.notes ?: "")
+                    val isExcluded = transaction.isExcluded.toString()
+                    val tags = transactionDao.getTagsForTransactionSimple(transaction.id)
+                    val tagsString = tags.joinToString("|") { it.name }
                     val escapedTags = escapeCsvField(tagsString)
 
-                    csvBuilder.append("$date,$description,$amount,$type,$category,$account,$notes,$isExcluded,$escapedTags\n")
+                    if (transaction.isSplit) {
+                        // This is a parent transaction
+                        val category = "Split Transaction" // Parent has a special category
+                        csvBuilder.append("${transaction.id},,$date,$description,$amount,$type,$category,$account,$notes,$isExcluded,$escapedTags\n")
+
+                        // Now fetch and append its children
+                        val splits = splitTransactionDao.getSplitsForParentSimple(transaction.id)
+                        splits.forEach { splitDetails ->
+                            val split = splitDetails.splitTransaction
+                            // Use notes as description for splits, fallback to category name
+                            val splitDescription = escapeCsvField(split.notes ?: splitDetails.categoryName ?: "")
+                            val splitAmount = split.amount.toString()
+                            val splitCategory = escapeCsvField(splitDetails.categoryName ?: "N/A")
+                            // Child rows have no ID of their own in this context, but link to the parent
+                            csvBuilder.append(",${transaction.id},${dateFormat.format(Date(transaction.date))},$splitDescription,$splitAmount,$type,$splitCategory,$account,${escapeCsvField(split.notes ?: "")},$isExcluded,\n")
+                        }
+                    } else {
+                        // This is a standard, non-split transaction
+                        val category = escapeCsvField(details.categoryName ?: "N/A")
+                        csvBuilder.append("${transaction.id},,$date,$description,$amount,$type,$category,$account,$notes,$isExcluded,$escapedTags\n")
+                    }
                 }
                 csvBuilder.toString()
             } catch (e: Exception) {
@@ -127,9 +156,6 @@ object DataExportService {
             }
         }
     }
-
-    // --- NOTE: The importFromCsv function has been moved to SettingsViewModel ---
-    // This file now only handles data formatting (export).
 
     private fun escapeCsvField(field: String): String {
         if (field.contains(",") || field.contains("\"") || field.contains("\n")) {

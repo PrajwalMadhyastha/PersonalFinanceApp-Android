@@ -1,13 +1,10 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: FEATURE - The `commitCsvImport` logic has been significantly enhanced
-// to handle tags. It now parses a "Tags" column from the CSV, splits the string
-// by a pipe delimiter, and for each tag name, it either finds the existing tag
-// or creates a new one. These tags are then associated with the newly created
-// transaction, completing the tag import feature.
-// FIX - Removed several unused properties and functions (`scanEvent`,
-// `backupEnabled`, `overallBudget`, etc.) to resolve "UnusedSymbol" warnings.
-// The unused `count` parameter was also removed from `ScanResult.Success`.
+// REASON: FEATURE - The `commitCsvImport` logic has been completely rewritten to
+// support split transactions. It now detects if "ParentId" and "Id" columns
+// exist. If so, it uses a two-pass import process to correctly re-link child
+// split items to their newly created parent transactions. If not, it falls back
+// to the standard row-by-row import for generic CSV files.
 // =================================================================================
 package io.pm.finlight
 
@@ -19,6 +16,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.utils.ReminderManager
@@ -44,8 +42,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val context = application
     private val accountRepository = AccountRepository(db.accountDao())
     private val categoryRepository = CategoryRepository(db.categoryDao())
-    // --- NEW: Add TagDao for direct access during import ---
     private val tagDao = db.tagDao()
+    // --- NEW: Add SplitTransactionDao for import ---
+    private val splitTransactionDao = db.splitTransactionDao()
+
 
     val smsScanStartDate: StateFlow<Long>
 
@@ -315,23 +315,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         accounts: Map<String, Account>,
         categories: Map<String, Category>,
     ): ReviewableRow {
-        // --- UPDATED: Loosen column count check for optional tags ---
         if (tokens.size < 8) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count. Expected at least 8.")
 
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         try {
-            dateFormat.parse(tokens[0])
+            dateFormat.parse(tokens[2]) // Date is now at index 2
         } catch (
             e: Exception,
         ) {
             return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_DATE, "Invalid date format.")
         }
 
-        val amount = tokens[2].toDoubleOrNull()
+        val amount = tokens[4].toDoubleOrNull() // Amount is now at index 4
         if (amount == null || amount <= 0) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_AMOUNT, "Invalid amount.")
 
-        val categoryName = tokens[4]
-        val accountName = tokens[5]
+        val categoryName = tokens[6] // Category is now at index 6
+        val accountName = tokens[7] // Account is now at index 7
 
         val categoryExists = categories.containsKey(categoryName)
         val accountExists = accounts.containsKey(accountName)
@@ -384,94 +383,147 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- UPDATED: Logic to handle tag creation and association ---
-    fun commitCsvImport(rowsToImport: List<ReviewableRow>) {
+    fun commitCsvImport(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
-            val allAccounts = accountRepository.allAccounts.first()
-            val allCategories = categoryRepository.allCategories.first()
-            val accountMap = allAccounts.associateBy { it.name.lowercase() }.toMutableMap()
-            val categoryMap = allCategories.associateBy { it.name.lowercase() }.toMutableMap()
+            val (header, rows) = readCsv(uri)
+            val isFinlightExport = header.contains("Id") && header.contains("ParentId")
 
-            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-
-            for (row in rowsToImport) {
-                try {
-                    val columns = row.rowData
-                    val date = dateFormat.parse(columns[0]) ?: Date()
-                    val description = columns[1]
-                    val amount = columns[2].toDouble()
-                    val type = columns[3].lowercase(Locale.getDefault())
-                    val categoryName = columns[4]
-                    val accountName = columns[5]
-                    val notes = columns.getOrNull(6)
-                    val isExcluded = columns.getOrNull(7)?.toBoolean() ?: false
-                    // --- NEW: Parse tags from the 9th column ---
-                    val tagsString = columns.getOrNull(8)
-
-                    var category = categoryMap[categoryName.lowercase()]
-                    if (category == null) {
-                        val newCategory = Category(name = categoryName)
-                        categoryRepository.insert(newCategory)
-                        val updatedCategories = categoryRepository.allCategories.first()
-                        category = updatedCategories.find { it.name.equals(categoryName, ignoreCase = true) }
-                        if (category != null) {
-                            categoryMap[categoryName.lowercase()] = category
-                        } else {
-                            continue
-                        }
-                    }
-
-                    var account = accountMap[accountName.lowercase()]
-                    if (account == null) {
-                        val newAccount = Account(name = accountName, type = "Imported")
-                        accountRepository.insert(newAccount)
-                        val updatedAccounts = accountRepository.allAccounts.first()
-                        account = updatedAccounts.find { it.name.equals(accountName, ignoreCase = true) }
-                        if (account != null) {
-                            accountMap[accountName.lowercase()] = account
-                        } else {
-                            continue
-                        }
-                    }
-
-                    if (account == null || category == null) {
-                        continue
-                    }
-
-                    // --- NEW: Process tags ---
-                    val tagsToAssociate = mutableSetOf<Tag>()
-                    if (!tagsString.isNullOrBlank()) {
-                        val tagNames = tagsString.split('|').map { it.trim() }.filter { it.isNotEmpty() }
-                        for (tagName in tagNames) {
-                            var tag = tagDao.findByName(tagName)
-                            if (tag == null) {
-                                val newTagId = tagDao.insert(Tag(name = tagName))
-                                tag = Tag(id = newTagId.toInt(), name = tagName)
-                            }
-                            tagsToAssociate.add(tag)
-                        }
-                    }
-
-                    val transaction =
-                        Transaction(
-                            date = date.time,
-                            amount = amount,
-                            description = description,
-                            notes = notes,
-                            transactionType = type,
-                            accountId = account.id,
-                            categoryId = category.id,
-                            isExcluded = isExcluded,
-                            source = "Imported"
-                        )
-                    // --- UPDATED: Use the repository function that handles tags ---
-                    transactionRepository.insertTransactionWithTags(transaction, tagsToAssociate)
-                } catch (e: Exception) {
-                    Log.e("CsvImportDebug", "ViewModel: Failed to parse or insert row ${row.lineNumber}. Data: ${row.rowData}", e)
+            db.withTransaction {
+                if (isFinlightExport) {
+                    importFinlightCsv(header, rows)
+                } else {
+                    importGenericCsv(header, rows)
                 }
             }
         }
     }
+
+    private suspend fun readCsv(uri: Uri): Pair<List<String>, List<List<String>>> {
+        val lines = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readLines() ?: emptyList()
+        val header = lines.firstOrNull()?.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex())?.map { it.trim().removeSurrounding("\"") } ?: emptyList()
+        val dataRows = lines.drop(1).map { line ->
+            line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
+        }
+        return Pair(header, dataRows)
+    }
+
+    private suspend fun importFinlightCsv(header: List<String>, rows: List<List<String>>) {
+        val idMap = mutableMapOf<String, Long>() // Map CSV ID to new DB ID
+        val parents = rows.filter { it[header.indexOf("ParentId")].isBlank() }
+        val children = rows.filter { it[header.indexOf("ParentId")].isNotBlank() }
+
+        // Pass 1: Import parents and standard transactions
+        for (row in parents) {
+            val oldId = row[header.indexOf("Id")]
+            val isSplit = row[header.indexOf("Category")] == "Split Transaction"
+            val transaction = createTransactionFromRow(row, header, isSplit = isSplit)
+            val newId = transactionRepository.insertTransactionWithTags(transaction, getTagsFromRow(row, header))
+            idMap[oldId] = newId
+        }
+
+        // Pass 2: Import child splits
+        for (row in children) {
+            val parentIdCsv = row[header.indexOf("ParentId")]
+            val newParentId = idMap[parentIdCsv]?.toInt()
+            if (newParentId == null) {
+                Log.w("CsvImport", "Could not find parent for split row: $row")
+                continue
+            }
+            val split = createSplitFromRow(row, header, newParentId)
+            splitTransactionDao.insertAll(listOf(split))
+        }
+    }
+
+    private suspend fun importGenericCsv(header: List<String>, rows: List<List<String>>) {
+        for (row in rows) {
+            val transaction = createTransactionFromRow(row, header, isSplit = false)
+            transactionRepository.insertTransactionWithTags(transaction, getTagsFromRow(row, header))
+        }
+    }
+
+    private suspend fun createTransactionFromRow(row: List<String>, header: List<String>, isSplit: Boolean): Transaction {
+        val h = header.associateWith { header.indexOf(it) }.withDefault { -1 }
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+        val date = dateFormat.parse(row[h.getValue("Date")])?.time ?: Date().time
+        val description = row[h.getValue("Description")]
+        val amount = row[h.getValue("Amount")].toDouble()
+        val type = row[h.getValue("Type")].lowercase(Locale.getDefault())
+        val categoryName = row[h.getValue("Category")]
+        val accountName = row[h.getValue("Account")]
+        val notes = row.getOrNull(h.getValue("Notes"))
+        val isExcluded = row.getOrNull(h.getValue("IsExcluded")).toBoolean()
+
+        val category = if (isSplit) null else findOrCreateCategory(categoryName)
+        val account = findOrCreateAccount(accountName)
+
+        return Transaction(
+            date = date,
+            description = description,
+            amount = amount,
+            transactionType = type,
+            categoryId = category?.id,
+            accountId = account.id,
+            notes = notes,
+            isExcluded = isExcluded,
+            source = "Imported",
+            isSplit = isSplit
+        )
+    }
+
+    private suspend fun createSplitFromRow(row: List<String>, header: List<String>, parentId: Int): SplitTransaction {
+        val h = header.associateWith { header.indexOf(it) }.withDefault { -1 }
+
+        val amount = row[h.getValue("Amount")].toDouble()
+        val categoryName = row[h.getValue("Category")]
+        val notes = row.getOrNull(h.getValue("Notes"))
+
+        val category = findOrCreateCategory(categoryName)
+
+        return SplitTransaction(
+            parentTransactionId = parentId,
+            amount = amount,
+            categoryId = category.id,
+            notes = notes
+        )
+    }
+
+    private suspend fun getTagsFromRow(row: List<String>, header: List<String>): Set<Tag> {
+        val h = header.associateWith { header.indexOf(it) }.withDefault { -1 }
+        val tagsString = row.getOrNull(h.getValue("Tags"))
+        val tagsToAssociate = mutableSetOf<Tag>()
+        if (!tagsString.isNullOrBlank()) {
+            val tagNames = tagsString.split('|').map { it.trim() }.filter { it.isNotEmpty() }
+            for (tagName in tagNames) {
+                var tag = tagDao.findByName(tagName)
+                if (tag == null) {
+                    val newTagId = tagDao.insert(Tag(name = tagName))
+                    tag = Tag(id = newTagId.toInt(), name = tagName)
+                }
+                tagsToAssociate.add(tag)
+            }
+        }
+        return tagsToAssociate
+    }
+
+    private suspend fun findOrCreateCategory(name: String): Category {
+        var category = categoryRepository.allCategories.first().find { it.name.equals(name, ignoreCase = true) }
+        if (category == null) {
+            val newId = categoryRepository.insert(Category(name = name))
+            category = Category(id = newId.toInt(), name = name)
+        }
+        return category
+    }
+
+    private suspend fun findOrCreateAccount(name: String): Account {
+        var account = accountRepository.allAccounts.first().find { it.name.equals(name, ignoreCase = true) }
+        if (account == null) {
+            val newId = accountRepository.insert(Account(name = name, type = "Imported"))
+            account = Account(id = newId.toInt(), name = name, type = "Imported")
+        }
+        return account
+    }
+
 
     fun clearCsvValidationReport() {
         _csvValidationReport.value = null
