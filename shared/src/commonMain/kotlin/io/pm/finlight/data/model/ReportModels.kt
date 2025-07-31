@@ -1,11 +1,11 @@
-package io.pm.finlight
+package io.pm.finlight.data.model
 
-import com.github.mikephil.charting.data.BarData
-import com.github.mikephil.charting.data.PieData
+import kotlinx.serialization.Serializable
 
 /**
  * Enum to represent the selectable time periods on the Reports screen.
  */
+@Serializable
 enum class ReportPeriod(val displayName: String) {
     WEEK("This Week"),
     MONTH("This Month"),
@@ -14,19 +14,22 @@ enum class ReportPeriod(val displayName: String) {
 }
 
 /**
- * Data class to hold key insights calculated for the selected period.
+ * DTO to hold key insights calculated for the selected period.
  */
+@Serializable
 data class ReportInsights(
     val percentageChange: Int?,
     val topCategory: CategorySpending?
 )
 
 /**
- * Data class to hold all the computed data for the reports screen.
+ * DTO to hold all the computed data for the reports screen.
+ * Note: Android-specific chart data types have been replaced with platform-agnostic data lists.
  */
+@Serializable
 data class ReportScreenData(
-    val pieData: PieData?,
-    val trendData: Pair<BarData, List<String>>?,
+    val categorySpending: List<CategorySpending>,
+    val monthlyTrends: List<MonthlyTrend>,
     val periodTitle: String,
     val insights: ReportInsights?
 )

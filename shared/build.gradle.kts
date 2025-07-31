@@ -3,8 +3,9 @@
 
 @Suppress("DSL_SCOPE_VIOLATION")
 plugins {
+    // --- FIX: Use the corrected, non-nested plugin alias ---
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.library) // Apply Android Library plugin for androidMain
+    alias(libs.plugins.android.library)
     alias(libs.plugins.sqlDelight)
 }
 
@@ -35,8 +36,21 @@ kotlin {
                 // Android-specific dependencies
             }
         }
-        val iosMain by getting {
-            // iOS-specific dependencies
+
+        // --- FIX: Explicitly create the 'iosMain' source set ---
+        // When multiple iOS targets are defined, a common 'iosMain' is not created by default.
+        // We must create it and then make the specific iOS source sets depend on it.
+        val iosMain by creating {
+            dependsOn(commonMain)
+        }
+        val iosX64Main by getting {
+            dependsOn(iosMain)
+        }
+        val iosArm64Main by getting {
+            dependsOn(iosMain)
+        }
+        val iosSimulatorArm64Main by getting {
+            dependsOn(iosMain)
         }
     }
 }
@@ -60,4 +74,3 @@ sqldelight {
         }
     }
 }
-

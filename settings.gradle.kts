@@ -18,6 +18,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // --- FIX: Add the JitPack repository for MPAndroidChart ---
+        maven { url = uri("https://jitpack.io") }
     }
     // Gradle automatically discovers and configures the 'libs' version catalog
     // from the 'gradle/libs.versions.toml' file. No explicit configuration is needed here.
@@ -30,4 +32,3 @@ rootProject.name = "Finlight"
 // The shared module will hold the common Kotlin business logic.
 include(":androidApp")
 include(":shared")
-

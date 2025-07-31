@@ -15,9 +15,11 @@ if (keystorePropertiesFile.exists()) {
 @Suppress("DSL_SCOPE_VIOLATION")
 plugins {
     alias(libs.plugins.android.application)
+    // --- FIX: Use the corrected, non-nested plugin aliases ---
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
+    // --- FIX: Use the corrected, non-nested plugin aliases ---
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -152,4 +154,3 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
-

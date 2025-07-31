@@ -1,34 +1,1176 @@
-Project Context for Personal Finance App
-Generated on: Thu Jul 31 15:13:10 IST 2025
+Project Context for Finlight KMP
+Generated on: Thu Jul 31 21:07:49 IST 2025
 ========================================
 
-================== FILE: ./app/build.gradle.kts ==================
-// =================================================================================
-// FILE: ./app/build.gradle.kts
-// REASON: FIX - Re-enabled the generation of the BuildConfig file by adding
-// `buildConfig = true` to the `buildFeatures` block. This resolves the
-// "Unresolved reference: BuildConfig" error that was causing the build to fail.
-// =================================================================================
+================== FILE: ./settings.gradle.kts ==================
+// settings.gradle.kts (Root Project)
+// This file defines the modules that are part of your project.
+
+// Enable feature preview for type-safe project accessors.
+// This allows us to reference modules like `project.shared` in a type-safe way.
+@file:Suppress("UnstableApiUsage")
+
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+    // Gradle automatically discovers and configures the 'libs' version catalog
+    // from the 'gradle/libs.versions.toml' file. No explicit configuration is needed here.
+}
+
+rootProject.name = "Finlight"
+
+// Include the new modules in the project.
+// The androidApp module holds the Android-specific UI and code.
+// The shared module will hold the common Kotlin business logic.
+include(":androidApp")
+include(":shared")
+
+
+
+
+================== FILE: ./build.gradle.kts ==================
+// build.gradle.kts (Root Project)
+// This file defines the plugins and configurations that apply to the entire project.
+
+@Suppress("DSL_SCOPE_VIOLATION")
+plugins {
+    // --- FIX: Use the correct nested alias structure ---
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.compose.compiler) apply false
+    alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.ktlint) apply false
+    alias(libs.plugins.sqlDelight) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+}
+
+// Apply the Ktlint plugin to all subprojects to maintain code style.
+allprojects {
+    apply(plugin = "org.jlleitschuh.gradle.ktlint")
+}
+
+
+
+
+================== FILE: ./gradle/libs.versions.toml ==================
+# gradle/libs.versions.toml
+# This file centralizes all dependency versions for the entire project.
+
+[versions]
+# Android & Jetpack
+androidGradlePlugin = "8.4.1"
+androidxActivity = "1.9.0"
+androidxAppCompat = "1.7.1"
+androidxArchCore = "2.2.0"
+androidxBiometric = "1.2.0-alpha05"
+androidxComposeBom = "2024.06.00"
+androidxCore = "1.13.1"
+androidxEspresso = "3.6.1"
+androidxLifecycle = "2.8.2"
+androidxNavigation = "2.7.7"
+androidxRoom = "2.6.1"
+androidxTestCore = "1.6.1"
+androidxTestExtJunit = "1.2.1"
+androidxTestRunner = "1.6.1"
+androidxTracing = "1.2.0"
+androidxWork = "2.9.0"
+compileSdk = "35"
+minSdk = "24"
+targetSdk = "35"
+
+# Kotlin & Coroutines
+kotlin = "2.0.0"
+kotlinxCoroutines = "1.8.1"
+kotlinxSerialization = "1.6.3"
+ksp = "2.0.0-1.0.21"
+ktlint = "12.1.1"
+
+# Third Party
+coil = "2.6.0"
+firebaseCrashlytics = "3.0.4"
+gson = "2.10.1"
+imageCropper = "4.5.0"
+mpAndroidChart = "v3.1.0"
+mockito = "5.11.0"
+robolectric = "4.13"
+
+# KMP Libraries (will be used more later)
+sqlDelight = "2.0.2"
+
+
+[libraries]
+# Android & Jetpack
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "androidxAppCompat" }
+androidx-arch-core-testing = { module = "androidx.arch.core:core-testing", version.ref = "androidxArchCore" }
+androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "androidxBiometric" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidxComposeBom" }
+androidx-compose-material = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-runtime-livedata = { group = "androidx.compose.runtime", name = "runtime-livedata" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
+androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidxEspresso" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "androidxLifecycle" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidxLifecycle" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "androidxNavigation" }
+androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "androidxRoom" }
+androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "androidxRoom" }
+androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "androidxRoom" }
+androidx-test-core-ktx = { module = "androidx.test:core-ktx", version.ref = "androidxTestCore" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
+androidx-tracing-ktx = { module = "androidx.tracing:tracing-ktx", version.ref = "androidxTracing" }
+androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "androidxWork" }
+firebase-crashlytics-buildtools = { module = "com.google.firebase:firebase-crashlytics-buildtools", version.ref = "firebaseCrashlytics" }
+google-material = { module = "com.google.android.material:material", version = "1.12.0" }
+junit = { module = "junit:junit", version = "4.13.2" }
+
+# Kotlin & Coroutines
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+
+# Third Party
+coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+image-cropper = { module = "com.vanniktech:android-image-cropper", version.ref = "imageCropper" }
+mp-android-chart = { module = "com.github.PhilJay:MPAndroidChart", version.ref = "mpAndroidChart" }
+mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
+android-library = { id = "com.android.library", version.ref = "androidGradlePlugin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
+sqlDelight = { id = "app.cash.sqldelight", version.ref = "sqlDelight" }
+
+# --- FIX: Define kotlin plugins as a table ---
+[plugins.kotlin]
+android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+
+
+---------- SHARED MODULE ----------
+================== FILE: ./shared/build.gradle.kts ==================
+// shared/build.gradle.kts
+// This file configures the shared Kotlin Multiplatform module.
+
+@Suppress("DSL_SCOPE_VIOLATION")
+plugins {
+    // --- FIX: Use the correct nested alias for the kotlin.multiplatform plugin ---
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.sqlDelight)
+}
+
+kotlin {
+    // Define the targets for our multiplatform module.
+    // We'll build for Android and iOS.
+    androidTarget {
+        compilations.all {
+            kotlinOptions {
+                jvmTarget = "17"
+            }
+        }
+    }
+    iosX64()
+    iosArm64()
+    iosSimulatorArm64()
+
+    // Define the source sets where our code will live.
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                // Dependencies for all platforms will go here.
+                // e.g., Coroutines, Ktor, SQLDelight runtime
+            }
+        }
+        val androidMain by getting {
+            dependencies {
+                // Android-specific dependencies
+            }
+        }
+        val iosMain by getting {
+            // iOS-specific dependencies
+        }
+    }
+}
+
+android {
+    namespace = "io.pm.finlight.shared"
+    compileSdk = libs.versions.compileSdk.get().toInt()
+    defaultConfig {
+        minSdk = libs.versions.minSdk.get().toInt()
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+sqldelight {
+    databases {
+        create("AppDatabase") {
+            packageName.set("io.pm.finlight.shared.db")
+        }
+    }
+}
+
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/MonthlySummaryItem.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold a summary for a specific month, used in month scrollers.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * Note: The 'Calendar' object is replaced with a 'monthTimestamp' (Long)
+ * to remove Android-specific dependencies.
+ */
+@Serializable
+data class MonthlySummaryItem(
+    val monthTimestamp: Long,
+    val totalSpent: Double
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/FinancialSummary.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold a financial summary, typically for a specific date range.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class FinancialSummary(
+    val totalIncome: Double,
+    val totalExpenses: Double
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/TransactionDetails.kt ==================
+package io.pm.finlight.data.model
+
+import io.pm.finlight.data.db.entity.Transaction
+import io.pm.finlight.data.db.entity.TransactionImage
+import kotlinx.serialization.Serializable
+
+/**
+ * A Data Transfer Object (DTO) that combines a Transaction with its related
+ * Account and Category details for display in the UI.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class TransactionDetails(
+    val transaction: Transaction,
+    val images: List<TransactionImage>,
+    val accountName: String?,
+    val categoryName: String?,
+    val categoryIconKey: String?,
+    val categoryColorKey: String?
+)-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/CsvValidationReport.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * An enum to represent the validation status of a single row from the CSV.
+ */
+@Serializable
+enum class CsvRowStatus {
+    VALID,
+    INVALID_COLUMN_COUNT,
+    INVALID_DATE,
+    INVALID_AMOUNT,
+    NEEDS_ACCOUNT_CREATION,
+    NEEDS_CATEGORY_CREATION,
+    NEEDS_BOTH_CREATION,
+}
+
+/**
+ * A DTO representing a single, reviewable row from the imported CSV file.
+ */
+@Serializable
+data class ReviewableRow(
+    val lineNumber: Int,
+    var rowData: List<String>,
+    var status: CsvRowStatus,
+    var statusMessage: String,
+)
+
+/**
+ * A DTO to hold the full results of a CSV validation process.
+ */
+@Serializable
+data class CsvValidationReport(
+    val header: List<String> = emptyList(),
+    val reviewableRows: List<ReviewableRow> = emptyList(),
+    val totalRowCount: Int = 0,
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/SpendingStatus.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents the spending status for a single day relative to the daily budget.
+ */
+@Serializable
+enum class SpendingStatus {
+    NO_SPEND,
+    WITHIN_LIMIT,
+    OVER_LIMIT,
+    NO_DATA
+}-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/DashboardCardType.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents the different types of cards that can be displayed on the dashboard.
+ */
+@Serializable
+enum class DashboardCardType {
+    HERO_BUDGET,
+    QUICK_ACTIONS,
+    RECENT_TRANSACTIONS,
+    ACCOUNTS_CAROUSEL,
+    BUDGET_WATCH,
+    SPENDING_CONSISTENCY
+}
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/GoalWithAccountName.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold a Goal and its associated account's name.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class GoalWithAccountName(
+    val id: Int,
+    val name: String,
+    val targetAmount: Double,
+    val savedAmount: Double,
+    val targetDate: Long?,
+    val accountId: Int,
+    val accountName: String
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/ReportModels.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Enum to represent the selectable time periods on the Reports screen.
+ */
+@Serializable
+enum class ReportPeriod(val displayName: String) {
+    WEEK("This Week"),
+    MONTH("This Month"),
+    QUARTER("3 Months"),
+    ALL_TIME("All Time")
+}
+
+/**
+ * DTO to hold key insights calculated for the selected period.
+ */
+@Serializable
+data class ReportInsights(
+    val percentageChange: Int?,
+    val topCategory: CategorySpending?
+)
+
+/**
+ * DTO to hold all the computed data for the reports screen.
+ * Note: Android-specific chart data types have been replaced with platform-agnostic data lists.
+ */
+@Serializable
+data class ReportScreenData(
+    val categorySpending: List<CategorySpending>,
+    val monthlyTrends: List<MonthlyTrend>,
+    val periodTitle: String,
+    val insights: ReportInsights?
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/AccountWithBalance.kt ==================
+package io.pm.finlight.data.model
+
+import io.pm.finlight.data.db.entity.Account
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO that holds an Account and its dynamically calculated balance.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class AccountWithBalance(
+    val account: Account,
+    val balance: Double,
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/SmsMessage.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A simple data class to hold the relevant information from an SMS message.
+ */
+@Serializable
+data class SmsMessage(
+    val id: Long,
+    val sender: String,
+    val body: String,
+    val date: Long,
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/MonthlyTrend.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold monthly trend data for income vs. expenses.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class MonthlyTrend(
+    val monthYear: String, // Format: "YYYY-MM"
+    val totalIncome: Double,
+    val totalExpenses: Double,
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/SplitTransactionDetails.kt ==================
+package io.pm.finlight.data.model
+
+import io.pm.finlight.data.db.entity.SplitTransaction
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO that combines a SplitTransaction with its corresponding Category details.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class SplitTransactionDetails(
+    val splitTransaction: SplitTransaction,
+    val categoryName: String?,
+    val categoryIconKey: String?,
+    val categoryColorKey: String?
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/TransactionWithSplits.kt ==================
+package io.pm.finlight.data.model
+
+import io.pm.finlight.data.db.entity.SplitTransaction
+import io.pm.finlight.data.db.entity.Transaction
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO used to return a parent transaction along with its list of child split items.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class TransactionWithSplits(
+    val transaction: Transaction,
+    val splits: List<SplitTransaction>
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/CategorySpending.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold the results of a GROUP BY query, containing the name of a category,
+ * its visual identifiers, and the total amount spent in it.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class CategorySpending(
+    val categoryName: String,
+    val totalAmount: Double,
+    val colorKey: String?,
+    val iconKey: String?
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/CalendarDayStatus.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Holds the processed status and data for a single day in the consistency calendar.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * Note: The 'Date' object is replaced with a 'timestamp' (Long) to remove platform dependencies.
+ */
+@Serializable
+data class CalendarDayStatus(
+    val timestamp: Long,
+    val status: SpendingStatus,
+    val amountSpent: Double,
+    val safeToSpend: Double
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/PeriodTotal.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold the results of a GROUP BY query for weekly or monthly totals.
+ */
+@Serializable
+data class PeriodTotal(
+    val period: String,
+    val totalAmount: Double
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/AppDataBackup.kt ==================
+package io.pm.finlight.data.model
+
+import io.pm.finlight.data.db.entity.Account
+import io.pm.finlight.data.db.entity.Budget
+import io.pm.finlight.data.db.entity.Category
+import io.pm.finlight.data.db.entity.MerchantMapping
+import io.pm.finlight.data.db.entity.SplitTransaction
+import io.pm.finlight.data.db.entity.Transaction
+import kotlinx.serialization.Serializable
+
+/**
+ * A top-level container for all application data to be exported.
+ * This class is designed to be easily converted to a single JSON object.
+ */
+@Serializable
+data class AppDataBackup(
+    val transactions: List<Transaction>,
+    val accounts: List<Account>,
+    val categories: List<Category>,
+    val budgets: List<Budget>,
+    val merchantMappings: List<MerchantMapping>,
+    val splitTransactions: List<SplitTransaction> = emptyList()
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/PotentialTransaction.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold the structured information extracted from an SMS message.
+ * This is a temporary object, created before a full 'Transaction' is saved to the database.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class PotentialTransaction(
+    val sourceSmsId: Long,
+    val smsSender: String,
+    val amount: Double,
+    val transactionType: String,
+    val merchantName: String?,
+    val originalMessage: String,
+    val potentialAccount: PotentialAccount? = null,
+    val sourceSmsHash: String? = null,
+    val categoryId: Int? = null,
+    val smsSignature: String? = null,
+    val isForeignCurrency: Boolean? = null,
+    val detectedCurrencyCode: String? = null
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/TimePeriod.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Enum representing different time periods for reports.
+ */
+@Serializable
+enum class TimePeriod {
+    DAILY,
+    WEEKLY,
+    MONTHLY
+}
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/PotentialAccount.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold information about a potential account parsed from an SMS.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class PotentialAccount(
+    val formattedName: String,
+    val accountType: String,
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/MerchantSpendingSummary.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold aggregated spending data for a specific merchant.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class MerchantSpendingSummary(
+    val merchantName: String,
+    val totalAmount: Double,
+    val transactionCount: Int
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/BudgetWithSpending.kt ==================
+package io.pm.finlight.data.model
+
+import io.pm.finlight.data.db.entity.Budget
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO that combines a Budget with the actual amount spent in that category for the period.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ */
+@Serializable
+data class BudgetWithSpending(
+    val budget: Budget,
+    val spent: Double,
+    val iconKey: String?,
+    val colorKey: String?
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/model/DailyTotal.kt ==================
+package io.pm.finlight.data.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A DTO to hold the results of a GROUP BY query, containing a date string
+ * and the total amount spent on that day.
+ */
+@Serializable
+data class DailyTotal(
+    val date: String, // Format: "YYYY-MM-DD"
+    val totalAmount: Double
+)
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/RecurringPattern.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a potential recurring transaction pattern identified from SMS messages.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class RecurringPattern(
+    val smsSignature: String,
+    val description: String,
+    val amount: Double,
+    val transactionType: String,
+    val accountId: Int,
+    val categoryId: Int?,
+    var occurrences: Int,
+    val firstSeen: Long,
+    var lastSeen: Long
+)-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/MerchantMapping.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Maps an SMS sender address to a user-friendly merchant name.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class MerchantMapping(
+    val smsSender: String, // e.g., "AM-HDFCBK"
+    val merchantName: String, // e.g., "McDonald's"
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/Account.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a user's financial account (e.g., Savings, Credit Card).
+ *
+ * This is a pure Kotlin data class, making it compatible with all platforms (Android, iOS, etc.).
+ * The @Serializable annotation allows it to be easily converted to/from JSON for backups.
+ *
+ * Database-specific annotations like @Entity are handled by the database implementation
+ * on each platform (e.g., Room on Android, SwiftData on iOS).
+ */
+@Serializable
+data class Account(
+    val id: Int = 0,
+    val name: String,
+    val type: String,
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/RecurringTransaction.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a rule for a recurring transaction (e.g., monthly bill, weekly income).
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class RecurringTransaction(
+    val id: Int = 0,
+    val description: String,
+    val amount: Double,
+    val transactionType: String, // "income" or "expense"
+    val recurrenceInterval: String, // e.g., "Daily", "Weekly", "Monthly", "Yearly"
+    val startDate: Long, // Timestamp for the first occurrence
+    val accountId: Int,
+    val categoryId: Int?,
+    val lastRunDate: Long? = null
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/Category.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a transaction category (e.g., Food, Groceries, Bills).
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class Category(
+    val id: Int = 0,
+    val name: String,
+    val iconKey: String = "category",
+    val colorKey: String = "gray"
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/Tag.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a user-defined Tag (e.g., "Work Trip", "Vacation 2025").
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class Tag(
+    val id: Int = 0,
+    val name: String
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/Goal.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a user's savings goal.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class Goal(
+    val id: Int = 0,
+    val name: String,
+    val targetAmount: Double,
+    var savedAmount: Double,
+    val targetDate: Long?,
+    val accountId: Int
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/CustomSmsRule.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a user-defined rule for parsing specific SMS formats.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class CustomSmsRule(
+    val id: Int = 0,
+    val triggerPhrase: String,
+    val merchantRegex: String?,
+    val amountRegex: String?,
+    val accountRegex: String?,
+    val merchantNameExample: String?,
+    val amountExample: String?,
+    val accountNameExample: String?,
+    val priority: Int,
+    val sourceSmsBody: String
+)-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/TransactionTagCrossRef.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * A "join table" entity for the many-to-many relationship between Transactions and Tags.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class TransactionTagCrossRef(
+    val transactionId: Int,
+    val tagId: Int
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/TransactionImage.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents an image file attached to a transaction.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class TransactionImage(
+    val id: Int = 0,
+    val transactionId: Int,
+    val imageUri: String
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/IgnoreRule.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Enum to define the type of content an IgnoreRule should match against.
+ */
+@Serializable
+enum class RuleType {
+    SENDER,
+    BODY_PHRASE
+}
+
+/**
+ * Represents a user-defined rule to ignore an SMS during parsing.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class IgnoreRule(
+    val id: Int = 0,
+    val type: RuleType = RuleType.BODY_PHRASE,
+    val pattern: String,
+    var isEnabled: Boolean = true,
+    val isDefault: Boolean = false
+)-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/MerchantCategoryMapping.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Stores a user-defined mapping between a parsed merchant name and a specific category.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class MerchantCategoryMapping(
+    val parsedName: String,
+    val categoryId: Int
+)-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/Budget.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a user's budget for a specific category in a given month.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class Budget(
+    val id: Int = 0,
+    val categoryName: String,
+    val amount: Double,
+    val month: Int, // e.g., 6 for June
+    val year: Int, // e.g., 2024
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/Transaction.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a single financial transaction.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class Transaction(
+    val id: Int = 0,
+    val description: String,
+    val categoryId: Int?,
+    val amount: Double, // ALWAYS in home currency
+    val date: Long,
+    val accountId: Int,
+    val notes: String?,
+    val transactionType: String = "expense",
+    val sourceSmsId: Long? = null,
+    val sourceSmsHash: String? = null,
+    val source: String = "Manual Entry",
+    val originalDescription: String? = null,
+    val isExcluded: Boolean = false,
+    val smsSignature: String? = null,
+    val originalAmount: Double? = null,
+    val currencyCode: String? = null,
+    val conversionRate: Double? = null,
+    val isSplit: Boolean = false
+)-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/SplitTransaction.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a single item within a split transaction.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class SplitTransaction(
+    val id: Int = 0,
+    val parentTransactionId: Int,
+    val amount: Double, // ALWAYS in home currency
+    val categoryId: Int?,
+    val notes: String?,
+    val originalAmount: Double? = null
+)
+
+-e 
+-e 
+
+
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/MerchantRenameRule.kt ==================
+package io.pm.finlight.data.db.entity
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Defines a rule to rename a parsed merchant name to a more user-friendly one.
+ *
+ * This is a pure Kotlin data class for multiplatform compatibility.
+ * @Serializable allows it to be used in JSON backups.
+ */
+@Serializable
+data class MerchantRenameRule(
+    val originalName: String,
+    val newName: String
+)
+
+-e 
+-e 
+
+
+---------- ANDROID APP MODULE ----------
+================== FILE: ./androidApp/build.gradle.kts ==================
+// androidApp/build.gradle.kts
+// This is the build file for the Android application module.
+// It now depends on the :shared module for its core logic.
+
 import java.io.FileInputStream
 import java.util.Properties
-
-// It's good practice to define versions in one place.
-val roomVersion = "2.6.1"
-val lifecycleVersion = "2.8.2"
-val activityComposeVersion = "1.9.0"
-val coreKtxVersion = "1.13.1"
-val navigationVersion = "2.7.7"
-val androidxTestVersion = "1.6.1"
-val testExtJunitVersion = "1.2.1"
-val espressoVersion = "3.6.1"
-val tracingVersion = "1.2.0"
-val workVersion = "2.9.0"
-val robolectricVersion = "4.13"
-val coroutinesTestVersion = "1.8.1"
-val gsonVersion = "2.10.1"
-val coilVersion = "2.6.0"
-// --- NEW: Add Image Cropper library version ---
-val imageCropperVersion = "4.5.0"
 
 // Read properties from local.properties
 val keystorePropertiesFile = rootProject.file("local.properties")
@@ -37,18 +1179,20 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+@Suppress("DSL_SCOPE_VIOLATION")
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.devtools.ksp")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("org.jetbrains.kotlin.plugin.serialization")
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.1"
+    alias(libs.plugins.android.application)
+    // --- FIX: Use the correct nested alias for the kotlin.android plugin ---
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.ksp)
+    // --- FIX: Use the correct nested alias for the kotlin.serialization plugin ---
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
     namespace = "io.pm.finlight"
-    compileSdk = 35
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     signingConfigs {
         create("release") {
@@ -61,8 +1205,8 @@ android {
 
     defaultConfig {
         applicationId = "io.pm.finlight"
-        minSdk = 24
-        targetSdk = 35
+        minSdk = libs.versions.minSdk.get().toInt()
+        targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -83,9 +1227,6 @@ android {
             )
             signingConfig = signingConfigs.getByName("release")
         }
-        // --- NEW: Explicitly define the debug build type ---
-        // This ensures that the App Inspector can connect to your app to view
-        // databases, background workers, and other debug information.
         debug {
             isDebuggable = true
         }
@@ -99,7 +1240,6 @@ android {
     }
     buildFeatures {
         compose = true
-        // --- FIX: Enable BuildConfig generation ---
         buildConfig = true
     }
     packaging {
@@ -111,85 +1251,80 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
-            // --- FIX: Return default values for Android framework methods in unit tests ---
             isReturnDefaultValues = true
         }
     }
 }
 
-configurations.all {
-    resolutionStrategy {
-        force("androidx.core:core-ktx:$coreKtxVersion")
-        force("androidx.core:core:$coreKtxVersion")
-        force("androidx.tracing:tracing-ktx:$tracingVersion")
-    }
-}
-
 dependencies {
-    implementation("androidx.core:core-ktx:$coreKtxVersion")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
-    implementation("androidx.activity:activity-compose:$activityComposeVersion")
+    // This is the most important line: it includes our shared logic module.
+    implementation(project(":shared"))
 
-    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.runtime:runtime-livedata")
+    // Use the version catalog (libs) for all dependencies.
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
 
-    implementation("androidx.room:room-runtime:$roomVersion")
-    implementation("androidx.room:room-ktx:$roomVersion")
-    implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("com.google.firebase:firebase-crashlytics-buildtools:3.0.4")
-    ksp("androidx.room:room-compiler:$roomVersion")
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material)
+    implementation(libs.androidx.compose.runtime.livedata)
 
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleVersion")
-    implementation("androidx.navigation:navigation-compose:$navigationVersion")
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.firebase.crashlytics.buildtools)
+    ksp(libs.androidx.room.compiler)
 
-    implementation("com.google.android.material:material:1.12.0")
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.navigation.compose)
 
-    implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+    implementation(libs.google.material)
 
-    implementation("com.google.code.gson:gson:$gsonVersion")
+    implementation(libs.mp.android.chart)
 
-    implementation("androidx.tracing:tracing-ktx:$tracingVersion")
+    implementation(libs.gson)
 
-    implementation("io.coil-kt:coil-compose:$coilVersion")
+    implementation(libs.androidx.tracing.ktx)
 
-    implementation("com.vanniktech:android-image-cropper:$imageCropperVersion")
+    implementation(libs.coil.compose)
+
+    implementation(libs.image.cropper)
+
+    implementation(libs.androidx.biometric)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // Local unit tests
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.mockito:mockito-inline:5.2.0")
-    testImplementation("androidx.test:core-ktx:$androidxTestVersion")
-    testImplementation("androidx.test.ext:junit:$testExtJunitVersion")
-    testImplementation("org.robolectric:robolectric:$robolectricVersion")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutinesTestVersion")
-    testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.androidx.test.core.ktx)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.arch.core.testing)
 
     // Instrumented UI tests
-    androidTestImplementation("androidx.tracing:tracing-ktx:$tracingVersion")
-    androidTestImplementation("androidx.test:runner:$androidxTestVersion")
-    androidTestImplementation("androidx.test:core-ktx:$androidxTestVersion")
-    androidTestImplementation("androidx.test.ext:junit-ktx:$testExtJunitVersion")
-    androidTestImplementation("androidx.test:rules:$androidxTestVersion")
-    androidTestImplementation("androidx.test.espresso:espresso-core:$espressoVersion")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.androidx.tracing.ktx)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.core.ktx)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner) // androidx.test:rules is part of runner now
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 
     // Debug dependencies
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
-
-    implementation("androidx.biometric:biometric:1.2.0-alpha05")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    implementation("androidx.work:work-runtime-ktx:$workVersion")
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
 
 
-================== FILE: ./app/src/main/AndroidManifest.xml ==================
+================== FILE: ./androidApp/src/main/AndroidManifest.xml ==================
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
@@ -293,8 +1428,7 @@ dependencies {
 
 
 
----------- Main Source Files ----------
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/TimePeriodReportViewModelFactory.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/TimePeriodReportViewModelFactory.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModelFactory.kt
 // REASON: REFACTOR - The factory has been updated to accept and provide the
@@ -331,9 +1465,10 @@ class TimePeriodReportViewModelFactory(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/RuleCreationViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/RuleCreationViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RuleCreationViewModel.kt
 // REASON: FEATURE - The ViewModel now fully supports "edit mode". A new
@@ -507,9 +1642,10 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/DashboardViewModelFactory.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/DashboardViewModelFactory.kt ==================
 package io.pm.finlight
 
 import android.app.Application
@@ -540,9 +1676,10 @@ class DashboardViewModelFactory(private val application: Application) : ViewMode
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/TimePeriodReportViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/TimePeriodReportViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TimePeriodReportViewModel.kt
 // REASON: FIX - The `generateMonthConsistencyData` function now fetches the date
@@ -851,9 +1988,10 @@ class TimePeriodReportViewModel(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/TransactionViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/TransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionViewModel.kt
 // REASON: FIX - The `reparseTransactionFromSms` function has been corrected to
@@ -1798,9 +2936,10 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/IncomeViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/IncomeViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/IncomeViewModel.kt
 // REASON: FIX - The logic for the `monthlySummaries` flow has been updated.
@@ -1927,9 +3066,10 @@ class IncomeViewModel(application: Application) : AndroidViewModel(application) 
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/SearchViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/SearchViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SearchViewModel.kt
 // REASON: FEATURE - The ViewModel now accepts an `initialDateMillis` parameter.
@@ -2071,9 +3211,10 @@ class SearchViewModel(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/ManageIgnoreRulesViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/ManageIgnoreRulesViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ManageIgnoreRulesViewModel.kt
 // REASON: FEATURE - The ViewModel has been updated to support creating
@@ -2145,9 +3286,10 @@ class ManageIgnoreRulesViewModel(application: Application) : AndroidViewModel(ap
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/GoalViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/GoalViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/GoalViewModel.kt
 // REASON: FIX - Re-added the `getGoalById` function. This function is essential
@@ -2219,9 +3361,10 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/LinkTransactionViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/LinkTransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/LinkTransactionViewModel.kt
 // REASON: REFACTOR - The transaction matching logic has been updated. Instead
@@ -2322,9 +3465,10 @@ class LinkTransactionViewModel(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/CategoryViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/CategoryViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CategoryViewModel.kt
 // REASON: UX REFINEMENT - The `addCategory` function now performs a
@@ -2403,9 +3547,10 @@ class CategoryViewModel(application: Application) : AndroidViewModel(application
         }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/OnboardingViewModelFactory.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/OnboardingViewModelFactory.kt ==================
 // FILE: app/src/main/java/io/pm/finlight/OnboardingViewModelFactory.kt
 
 package io.pm.finlight
@@ -2434,9 +3579,10 @@ class OnboardingViewModelFactory(private val application: Application) : ViewMod
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/ManageParseRulesViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/ManageParseRulesViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ManageParseRulesViewModel.kt
 // REASON: NEW FILE - This ViewModel provides the logic for the new rule management
@@ -2481,9 +3627,10 @@ class ManageParseRulesViewModel(application: Application) : AndroidViewModel(app
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/ProfileViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/ProfileViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ProfileViewModel.kt
 // REASON: Added a function to handle updating the user's name in SharedPreferences.
@@ -2583,9 +3730,10 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/OnboardingViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/OnboardingViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/OnboardingViewModel.kt
 // REASON: FEATURE - The ViewModel is updated to detect the user's home
@@ -2680,9 +3828,10 @@ class OnboardingViewModel(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/BudgetViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/BudgetViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/BudgetViewModel.kt
 // REASON: FIX - The unused `getCurrentMonthYearString` function has been removed
@@ -2815,9 +3964,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/DrilldownViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/DrilldownViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DrilldownViewModel.kt
 // REASON: NEW FILE - This ViewModel and its associated factory power the new
@@ -2939,9 +4089,10 @@ class DrilldownViewModel(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/CurrencyViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/CurrencyViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CurrencyViewModel.kt
 // REASON: NEW FILE - This ViewModel provides the state and logic for the new
@@ -2995,9 +4146,10 @@ class CurrencyViewModel(application: Application) : AndroidViewModel(application
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/SearchViewModelFactory.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/SearchViewModelFactory.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SearchViewModelFactory.kt
 // REASON: FEATURE - The factory now accepts an optional `initialDateMillis`
@@ -3033,9 +4185,10 @@ class SearchViewModelFactory(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/ReportsViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/ReportsViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ReportsViewModel.kt
 // REASON: FIX - The logic for the yearly consistency heatmap has been corrected.
@@ -3385,9 +4538,10 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/TagViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/TagViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TagViewModel.kt
 // REASON: UX REFINEMENT - The `addTag` function now checks if a tag with the
@@ -3466,9 +4620,10 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/SettingsViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/SettingsViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/SettingsViewModel.kt
 // REASON: FIX - The `commitCsvImport` function signature has been changed from
@@ -4005,9 +5160,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/AccountViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/AccountViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AccountViewModel.kt
 // REASON: UX REFINEMENT - The `addAccount` function now checks if an account
@@ -4100,9 +5256,10 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
             repository.delete(account)
         }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/RecurringTransactionViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/RecurringTransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionViewModel.kt
 // REASON: FEATURE - The ViewModel is updated to support full CRUD operations.
@@ -4168,9 +5325,10 @@ class RecurringTransactionViewModel(application: Application) : AndroidViewModel
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/SplitTransactionViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/SplitTransactionViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionViewModel.kt
 // REASON: FEATURE (Travel Mode Splitting) - The ViewModel's initialization
@@ -4329,9 +5487,10 @@ class SplitTransactionViewModel(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/DashboardViewModel.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/DashboardViewModel.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
 // REASON: REFACTOR - Decoupled dashboard customization logic.
@@ -4623,9 +5782,10 @@ class DashboardViewModel(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/NavItems.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/NavItems.kt ==================
 package io.pm.finlight.ui
 
 import androidx.compose.material.icons.Icons
@@ -4684,9 +5844,10 @@ val screenTitles = mapOf(
     // --- NEW: Title for the new customization screen ---
     "customize_dashboard" to "Customize Dashboard"
 )-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkRecurringTransactionScreen.kt
 // REASON: BUG FIX - The navigation logic has been corrected to definitively fix
@@ -4947,9 +6108,10 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TagManagementScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/TagManagementScreen.kt ==================
 // =================================================================================
 // FILE: app/src/main/java/io/pm/finlight/ui/screens/TagManagementScreen.kt
 // REASON: MAJOR REFACTOR - The screen has been completely redesigned to align
@@ -5193,9 +6355,10 @@ private fun DeleteTagDialog(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SplitTransactionScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/SplitTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SplitTransactionScreen.kt
 // REASON: FEATURE (Travel Mode Splitting) - The screen is now currency-aware.
@@ -5569,9 +6732,10 @@ private fun ConversionInfoCard(transaction: Transaction) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddRecurringTransactionScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/AddRecurringTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddRecurringTransactionScreen.kt
 // REASON: FEATURE - The screen now supports both "add" and "edit" modes. It
@@ -5903,9 +7067,10 @@ private fun auroraTextFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
 )
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategoryListScreen.kt
 // REASON: UX REFINEMENT - The screen's layout is now wrapped in a Scaffold that
@@ -6205,9 +7370,10 @@ fun DeleteCategoryDialog(
         containerColor = containerColor
     )
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/GoalScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/GoalScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/GoalScreen.kt
 // REASON: REFACTOR - The screen has been simplified to only display the list of
@@ -6426,9 +7592,10 @@ private fun DeleteGoalDialog(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/MerchantSpendingScreen.kt
 // REASON: REVERT - Reverted changes to make the items clickable. Navigation is
@@ -6518,9 +7685,10 @@ fun MerchantSpendingCard(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditBudgetScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/AddEditBudgetScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditBudgetScreen.kt
 // REASON: REFACTOR - The dialog has been updated to use GlassPanel components
@@ -6671,9 +7839,10 @@ fun AddEditBudgetScreen(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageIgnoreRulesScreen.kt
 // REASON: FEATURE - The UI is now capable of managing both sender and body-based
@@ -6897,9 +8066,10 @@ fun ManageIgnoreRulesScreen(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SmsWorkflowScreens.kt
 // REASON: FEATURE - The Category and Tag picker bottom sheets on the approval
@@ -7549,9 +8719,10 @@ private fun CategoryIcon(category: Category, modifier: Modifier = Modifier) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TimePeriodReportScreen.kt
 // REASON: FIX - The `MonthlyConsistencyCalendarCard` is now passed the
@@ -7935,9 +9106,10 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsSubScreens.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/SettingsSubScreens.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SettingsSubScreens.kt
 // REASON: UX REFINEMENT - The informational text within the `CsvInfoDialog` has
@@ -8642,9 +9814,10 @@ private fun CsvInfoDialog(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddTransactionScreen.kt
 // REASON: FEATURE - The Account and Tag picker bottom sheets are now configured
@@ -9616,9 +10789,10 @@ private fun TransactionTypeToggle(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DrilldownScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/DrilldownScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DrilldownScreen.kt
 // REASON: NEW FILE - This composable defines the UI for the new drilldown
@@ -9799,9 +10973,10 @@ private fun SpendingBarChart(chartData: Pair<BarData, List<String>>) {
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditAccountScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/AddEditAccountScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditAccountScreen.kt
 // REASON: NEW FILE - This file combines the logic for both adding and editing
@@ -9972,9 +11147,10 @@ fun AddEditAccountScreen(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountListScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/AccountListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountListScreen.kt
 // REASON: UX REFINEMENT - The screen now includes a Scaffold with a SnackbarHost
@@ -10095,9 +11271,10 @@ private fun AccountListItem(
         }
     }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/BudgetScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/BudgetScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/BudgetScreen.kt
 // REASON: MAJOR REFACTOR - The entire screen has been redesigned to align with
@@ -10481,9 +11658,10 @@ fun EditOverallBudgetDialog(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RuleCreationScreen.kt
 // REASON: MAJOR REFACTOR - The screen has been fully redesigned to align with the
@@ -10791,9 +11969,10 @@ private fun RuleSummaryItem(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionListScreen.kt
 // REASON: FEATURE - The ModalBottomSheet for the snapshot customization screen
@@ -11172,9 +12351,10 @@ fun BudgetProgress(spent: Float, budget: Float, modifier: Modifier = Modifier) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/TransactionDetailScreen.kt
 // REASON: FEATURE - The Account, Category, Tag, and Retrospective Update bottom
@@ -13016,9 +14196,10 @@ private fun SelectableTransactionItem(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CategorySpendingScreen.kt
 // REASON: FEATURE - The DonutChart is now interactive. It accepts an
@@ -13307,9 +14488,10 @@ private fun ChartLegend(modifier: Modifier = Modifier, spendingList: List<Catego
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountDetailScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/AccountDetailScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AccountDetailScreen.kt
 // REASON: MAJOR REFACTOR - This screen has been completely redesigned to align
@@ -13487,9 +14669,10 @@ private fun AccountDetailTransactionItem(transactionDetails: TransactionDetails)
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
 // REASON: FEATURE - The "Spending Consistency" card has been updated to include
@@ -13624,9 +14807,10 @@ private fun DashboardCard(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/EditProfileScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/EditProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/EditProfileScreen.kt
 // REASON: FIX - Replaced the `Uri.parse(it)` call with the more idiomatic
@@ -13864,9 +15048,10 @@ private fun createTempImageFile(context: Context): File {
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RecurringTransactionScreens.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/RecurringTransactionScreens.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/RecurringTransactionScreens.kt
 // REASON: FEATURE - The UI has been updated to support rule management. Each
@@ -14017,9 +15202,10 @@ private fun RecurringTransactionItem(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/SearchScreen.kt
 // REASON: FIX - The screen now accepts an `expandFilters` boolean. The
@@ -14353,9 +15539,10 @@ fun DateTextField(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditGoalScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/AddEditGoalScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/AddEditGoalScreen.kt
 // REASON: FIX - Integrated the user-provided, working solution for the
@@ -14651,9 +15838,10 @@ private fun auroraTextFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
 )
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CsvValidationScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/CsvValidationScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CsvValidationScreen.kt
 // REASON: FIX - The call to `viewModel.commitCsvImport` now correctly passes
@@ -14875,9 +16063,10 @@ fun EditableRowItem(row: ReviewableRow, onEditClick: () -> Unit, onDeleteClick: 
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageParseRulesScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/ManageParseRulesScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ManageParseRulesScreen.kt
 // REASON: MAJOR REFACTOR - The screen has been redesigned to align with the
@@ -15062,9 +16251,10 @@ private fun RuleDetailRow(label: String, value: String) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CurrencyTravelScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/CurrencyTravelScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CurrencyTravelScreen.kt
 // REASON: NEW FILE - This screen provides the UI for managing the new "Travel
@@ -15382,9 +16572,10 @@ private fun CurrencyPickerDialog(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/IncomeScreen.kt
 // REASON: FIX - The call to CategorySpendingScreen has been updated to include
@@ -15663,9 +16854,10 @@ fun IncomeHeader(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/OnboardingScreen.kt
 // REASON: REFACTOR - Combined OnboardingPages.kt into this file to resolve an
@@ -16256,9 +17448,10 @@ fun CompletionPage() {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkTransactionScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/LinkTransactionScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/LinkTransactionScreen.kt
 // REASON: FEATURE - The screen now includes an AlertDialog to confirm the user's
@@ -16416,9 +17609,10 @@ private fun LinkCandidateItem(transaction: Transaction, onClick: () -> Unit) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CustomizeDashboardScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/CustomizeDashboardScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CustomizeDashboardScreen.kt
 // REASON: FIX - The `graphicsLayer` modifier now correctly applies the translation
@@ -16553,9 +17747,10 @@ private fun String.toDisplayString(): String {
     return this.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ProfileScreen.kt
 // REASON: FIX - The profile picture placeholder now uses the full adaptive icon
@@ -16744,9 +17939,10 @@ private fun SettingsSection(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/ReportsScreen.kt
 // REASON: FIX - The navigation from the DonutChart now includes a
@@ -17301,9 +18497,10 @@ private fun ChartLegend(modifier: Modifier = Modifier, pieData: PieData?) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/ShareSnapshotSheet.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/ShareSnapshotSheet.kt ==================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.clickable
@@ -17424,9 +18621,10 @@ fun ShareSnapshotSheet(
         }
     }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/AnimatedCircle.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/AnimatedCircle.kt ==================
 package io.pm.finlight.ui.components
 
 import androidx.compose.ui.geometry.Offset
@@ -17447,9 +18645,10 @@ internal data class AnimatedCircle(
     val baseCenter: Offset,
     val speedMultiplier: Float
 )-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/AuroraAnimatedBackground.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/AuroraAnimatedBackground.kt ==================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.*
@@ -17539,9 +18738,10 @@ fun AuroraAnimatedBackground() {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/GlassmorphismComponents.kt
 // REASON: REFACTOR - Renamed `AuroraRecentActivityCard` to
@@ -18141,9 +19341,10 @@ private fun QuickActionItem(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/UtilityComponents.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/UtilityComponents.kt ==================
 package io.pm.finlight.ui.components
 
 import androidx.compose.foundation.background
@@ -18299,9 +19500,10 @@ fun GroupedBarChart(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/PagerUtils.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/PagerUtils.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/PagerUtils.kt
 // REASON: NEW FILE - Centralized the pagerTabIndicatorOffset helper function
@@ -18359,9 +19561,10 @@ fun Modifier.pagerTabIndicatorOffset(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/TransactionItem.kt
 // REASON: FIX - Added default values to the new selection mode parameters in
@@ -18596,9 +19799,10 @@ fun TransactionList(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
 // REASON: FEATURE - Added a new `ConsistencyCalendarLegend` composable to the
@@ -19075,9 +20279,10 @@ private fun isSameDay(cal1: Calendar, cal2: Calendar): Boolean {
             cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DaybreakAnimatedBackground.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/DaybreakAnimatedBackground.kt ==================
 package io.pm.finlight.ui.components
 
 import androidx.compose.animation.core.*
@@ -19168,9 +20373,10 @@ fun DaybreakAnimatedBackground() {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/CategoryDialogs.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/CategoryDialogs.kt ==================
 package io.pm.finlight.ui.components
 
 import androidx.compose.material3.AlertDialog
@@ -19251,9 +20457,10 @@ fun DeleteCategoryDialog(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/SettingsComponents.kt
 // REASON: REFACTOR - The ListItem components have been updated to use a
@@ -19484,9 +20691,10 @@ fun MonthlyReportTimePicker(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendarLegend.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendarLegend.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendarLegend.kt
 // REASON: NEW FILE - This composable defines the legend for the spending
@@ -19551,9 +20759,10 @@ private fun LegendItem(color: Color, label: String) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/CreationDialogs.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/CreationDialogs.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/CreationDialogs.kt
 // REASON: NEW FILE - Centralized the creation dialogs to resolve conflicting
@@ -19728,9 +20937,10 @@ fun CreateCategoryDialog(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/FilterBottomSheet.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/FilterBottomSheet.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/FilterBottomSheet.kt
 // REASON: NEW FILE - A reusable composable for the filter bottom sheet to be
@@ -19870,9 +21080,10 @@ private fun <T> SearchableDropdown(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/components/DragDrop.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/DragDrop.kt
 // REASON: FIX - The drag-and-drop logic has been completely rewritten to be
@@ -19982,9 +21193,10 @@ class DragDropState(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/theme/ThemeManager.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/theme/ThemeManager.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/theme/ThemeManager.kt
 // REASON: FEATURE - The AppTheme enum has been updated to include "Daybreak"
@@ -20056,9 +21268,10 @@ enum class AppTheme(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/theme/Color.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Color.kt
 // REASON: UX REFINEMENT - The opacity of the popup surfaces has been increased
@@ -20113,9 +21326,10 @@ val ExpenseRedDark = Color(0xFFEF5350)
 val IncomeGreenLight = Color(0xFF2E7D32)
 val ExpenseRedLight = Color(0xFFC62828)
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Theme.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/theme/Theme.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Theme.kt
 // REASON: FEATURE - The logic inside the PersonalFinanceAppTheme composable has
@@ -20232,9 +21446,10 @@ fun PersonalFinanceAppTheme(
     )
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/ui/theme/Type.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/theme/Type.kt ==================
 // FILE: app/src/main/java/io/pm/finlight/ui/theme/Type.kt
 
 package io.pm.finlight.ui.theme
@@ -20370,9 +21585,10 @@ val Typography = Typography(
     ),
 )
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/MainActivity.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
 // REASON: FIX - Removed the deep link handling logic from the SplashScreen's
@@ -21478,9 +22694,10 @@ private fun CategoryIconDisplay(category: Category) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/utils/CurrencyHelper.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/utils/CurrencyHelper.kt ==================
 package io.pm.finlight.utils
 
 import java.util.Currency
@@ -21550,9 +22767,10 @@ object CurrencyHelper {
         return commonCurrencies.find { it.currencyCode.equals(currencyCode, ignoreCase = true) }
     }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/utils/ReminderManager.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/utils/ReminderManager.kt ==================
 package io.pm.finlight.utils
 
 import android.content.Context
@@ -21732,9 +22950,10 @@ object ReminderManager {
         WorkManager.getInstance(context).cancelUniqueWork(MONTHLY_SUMMARY_WORK_TAG)
     }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/utils/BankLogoHelper.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/utils/BankLogoHelper.kt ==================
 package io.pm.finlight.utils
 
 import androidx.annotation.DrawableRes
@@ -21786,9 +23005,10 @@ object BankLogoHelper {
         }
     }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/utils/SmsParser.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/utils/SmsParser.kt ==================
 package io.pm.finlight.utils
 
 import android.util.Log
@@ -22060,9 +23280,10 @@ object SmsParser {
         return Pair(amount, currency.ifEmpty { null })
     }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/utils/CategoryIconHelper.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/utils/CategoryIconHelper.kt ==================
 package io.pm.finlight.utils
 
 import androidx.annotation.DrawableRes
@@ -22295,9 +23516,10 @@ object CategoryIconHelper {
         )
     }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/utils/ShareImageGenerator.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/utils/ShareImageGenerator.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/utils/ShareImageGenerator.kt
 // REASON: FIX - Resolved a runtime crash by attaching the ComposeView to the
@@ -22550,9 +23772,10 @@ private fun TransactionSnapshotContent(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/utils/NotificationHelper.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/utils/NotificationHelper.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/utils/NotificationHelper.kt
 // REASON: FIX - All notifications now use the new, dedicated `ic_notification_logo`
@@ -23080,9 +24303,10 @@ object NotificationHelper {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/receiver/BootReceiver.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/receiver/BootReceiver.kt ==================
 package io.pm.finlight
 
 import android.content.BroadcastReceiver
@@ -23116,9 +24340,10 @@ class BootReceiver : BroadcastReceiver() {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/receiver/SmsReceiver.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/receiver/SmsReceiver.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsReceiver.kt
 // REASON: FEATURE - The receiver's logic is now significantly smarter. When
@@ -23303,9 +24528,10 @@ class SmsReceiver : BroadcastReceiver() {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/workers/MonthlySummaryWorker.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/workers/MonthlySummaryWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MonthlySummaryWorker.kt
 // REASON: Added a call to ReminderManager.scheduleMonthlySummary at the end of the
@@ -23371,9 +24597,10 @@ class MonthlySummaryWorker(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/workers/WeeklySummaryWorker.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/workers/WeeklySummaryWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/WeeklySummaryWorker.kt
 // REASON: FIX - The calculation logic has been updated to explicitly filter out
@@ -23438,9 +24665,10 @@ class WeeklySummaryWorker(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/workers/TransactionNotificationWorker.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/workers/TransactionNotificationWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionNotificationWorker.kt
 // REASON: FIX - The CoroutineWorker's constructor has been corrected to properly
@@ -23516,9 +24744,10 @@ class TransactionNotificationWorker(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/workers/RecurringPatternWorker.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/workers/RecurringPatternWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringPatternWorker.kt
 // REASON: FIX - The call to `recurringTransactionDao.insert()` now correctly
@@ -23659,9 +24888,10 @@ class RecurringPatternWorker(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/workers/DailyReportWorker.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/workers/DailyReportWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/DailyReportWorker.kt
 // REASON: BUG FIX - The worker's date calculation logic has been completely
@@ -23729,9 +24959,10 @@ class DailyReportWorker(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/workers/RecurringTransactionWorker.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/workers/RecurringTransactionWorker.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionWorker.kt
 // REASON: REFACTOR - The worker's core logic has been completely overhauled.
@@ -23841,9 +25072,10 @@ class RecurringTransactionWorker(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/DataExportService.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/DataExportService.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/data/DataExportService.kt
 // REASON: FEATURE - The CSV export logic has been completely rewritten to
@@ -24011,9 +25243,10 @@ object DataExportService {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/AccountRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/AccountRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/AccountRepository.kt
 // REASON: Updated the insert function to return the new account's ID (Long).
@@ -24046,9 +25279,10 @@ class AccountRepository(private val accountDao: AccountDao) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/BudgetRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/BudgetRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/BudgetRepository.kt
 // REASON: FIX - The unused `getBudgetsForMonth` function has been removed to
@@ -24089,9 +25323,10 @@ class BudgetRepository(private val budgetDao: BudgetDao) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/SplitTransactionRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/SplitTransactionRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionRepository.kt
 // REASON: NEW FILE - This repository abstracts the data source for split
@@ -24109,9 +25344,10 @@ class SplitTransactionRepository(private val splitTransactionDao: SplitTransacti
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/RecurringTransactionRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/RecurringTransactionRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionRepository.kt
 // REASON: FEATURE - The repository has been updated to expose `getById`,
@@ -24145,9 +25381,10 @@ class RecurringTransactionRepository(private val recurringTransactionDao: Recurr
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/TagRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/TagRepository.kt ==================
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
@@ -24181,9 +25418,10 @@ class TagRepository(
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/CategoryRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/CategoryRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CategoryRepository.kt
 // REASON: Updated the insert function to return the new category's ID (Long) and
@@ -24238,9 +25476,10 @@ class CategoryRepository(private val categoryDao: CategoryDao) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/MerchantMappingRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/MerchantMappingRepository.kt ==================
 package io.pm.finlight
 
 import kotlinx.coroutines.flow.Flow
@@ -24264,9 +25503,10 @@ class MerchantMappingRepository(private val merchantMappingDao: MerchantMappingD
 
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/GoalRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/GoalRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/GoalRepository.kt
 // REASON: NEW FILE - Creates a repository to abstract the Goal data source,
@@ -24295,9 +25535,10 @@ class GoalRepository(private val goalDao: GoalDao) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/SmsRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/SmsRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SmsRepository.kt
 // REASON: Making the fallback SMS lookup more robust. Instead of an exact date
@@ -24444,9 +25685,10 @@ class SmsRepository(private val context: Context) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/SettingsRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/SettingsRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/SettingsRepository.kt
 // REASON: FIX - Added backward compatibility for dashboard layout loading. The
@@ -24999,9 +26241,10 @@ class SettingsRepository(context: Context) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/MerchantCategoryMappingRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/MerchantCategoryMappingRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MerchantCategoryMappingRepository.kt
 // REASON: FIX - The unused `getCategoryIdForMerchant` function has been removed
@@ -25025,9 +26268,10 @@ class MerchantCategoryMappingRepository(private val dao: MerchantCategoryMapping
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/MerchantRenameRuleRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/MerchantRenameRuleRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/MerchantRenameRuleRepository.kt
 // REASON: FIX - The unused `getAllRules` function has been removed to resolve
@@ -25054,9 +26298,10 @@ class MerchantRenameRuleRepository(private val dao: MerchantRenameRuleDao) {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt
 // REASON: FIX - The `insertTransactionWithTags` function has been updated to
@@ -25277,1065 +26522,10 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     }
 }
 -e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/MonthlySummaryItem.kt ==================
-package io.pm.finlight
-
-import java.util.Calendar
-
-/**
- * A data class to hold a Calendar instance for a specific month
- * and the total amount spent during that month.
- *
- * @param calendar The Calendar object representing the month.
- * @param totalSpent The total expenses for that month.
- */
-data class MonthlySummaryItem(val calendar: Calendar, val totalSpent: Double)
 -e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/FinancialSummary.kt ==================
-package io.pm.finlight
-
-/**
- * A data class to hold a financial summary, typically for a specific date range.
- * This is used for fetching aggregated income and expense data from the database.
- *
- * @param totalIncome The sum of all income transactions in the period.
- * @param totalExpenses The sum of all expense transactions in the period.
- */
-data class FinancialSummary(
-    val totalIncome: Double,
-    val totalExpenses: Double
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/TransactionDetails.kt ==================
-package io.pm.finlight
-
-import androidx.room.Embedded
-import androidx.room.Relation
-
-data class TransactionDetails(
-    @Embedded
-    val transaction: Transaction,
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "transactionId"
-    )
-    val images: List<TransactionImage>, // --- NEW: Add relation to images ---
-    val accountName: String?,
-    val categoryName: String?,
-    val categoryIconKey: String?,
-    val categoryColorKey: String?
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/CsvValidationReport.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/data/model/CsvValidationReport.kt
-// REASON: FEATURE - Added a `header` property to the data class. This allows
-// the validation process to store the CSV header, which is now required by the
-// updated import logic in the SettingsViewModel to correctly map columns.
-// =================================================================================
-package io.pm.finlight
-
-/**
- * An enum to represent the validation status of a single row from the CSV.
- */
-enum class CsvRowStatus {
-    VALID,
-    INVALID_COLUMN_COUNT,
-    INVALID_DATE,
-    INVALID_AMOUNT,
-    NEEDS_ACCOUNT_CREATION,
-    NEEDS_CATEGORY_CREATION,
-    NEEDS_BOTH_CREATION,
-}
-
-/**
- * A data class representing a single, reviewable row from the imported CSV file.
- * It holds the original data and its current validation status.
- */
-data class ReviewableRow(
-    val lineNumber: Int,
-    var rowData: List<String>,
-    var status: CsvRowStatus,
-    var statusMessage: String,
-)
-
-/**
- * A data class to hold the full results of a CSV validation process.
- */
-data class CsvValidationReport(
-    val header: List<String> = emptyList(),
-    val reviewableRows: List<ReviewableRow> = emptyList(),
-    val totalRowCount: Int = 0,
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/SpendingStatus.kt ==================
-package io.pm.finlight
-
-/**
- * Represents the spending status for a single day relative to the daily budget.
- * This is used to color the cells in the Spending Consistency Calendar.
- */
-enum class SpendingStatus {
-    /**
-     * No expenses were recorded on this day.
-     */
-    NO_SPEND,
-
-    /**
-     * Expenses were recorded but were within the calculated daily budget.
-     */
-    WITHIN_LIMIT,
-
-    /**
-     * Expenses exceeded the calculated daily budget.
-     */
-    OVER_LIMIT,
-
-    /**
-     * The day is in the future or before the user started tracking, so no data is available.
-     */
-    NO_DATA
-}
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/DashboardCardType.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/DashboardCardType.kt
-// REASON: REFACTOR - Renamed RECENT_ACTIVITY to RECENT_TRANSACTIONS to better
-// reflect its content. Removed the unused NET_WORTH card.
-// =================================================================================
-package io.pm.finlight
-
-/**
- * Represents the different types of cards that can be displayed on the dashboard.
- * Used for managing customizable dashboard layouts.
- */
-enum class DashboardCardType {
-    HERO_BUDGET,
-    QUICK_ACTIONS,
-    RECENT_TRANSACTIONS,
-    ACCOUNTS_CAROUSEL,
-    BUDGET_WATCH,
-    SPENDING_CONSISTENCY
-}
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/ReportModels.kt ==================
-package io.pm.finlight
-
-import com.github.mikephil.charting.data.BarData
-import com.github.mikephil.charting.data.PieData
-
-/**
- * Enum to represent the selectable time periods on the Reports screen.
- */
-enum class ReportPeriod(val displayName: String) {
-    WEEK("This Week"),
-    MONTH("This Month"),
-    QUARTER("3 Months"),
-    ALL_TIME("All Time")
-}
-
-/**
- * Data class to hold key insights calculated for the selected period.
- */
-data class ReportInsights(
-    val percentageChange: Int?,
-    val topCategory: CategorySpending?
-)
-
-/**
- * Data class to hold all the computed data for the reports screen.
- */
-data class ReportScreenData(
-    val pieData: PieData?,
-    val trendData: Pair<BarData, List<String>>?,
-    val periodTitle: String,
-    val insights: ReportInsights?
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/AccountWithBalance.kt ==================
-package io.pm.finlight
-
-import androidx.room.Embedded
-
-/**
- * A data class to hold an Account and its dynamically calculated balance.
- * This is used for display purposes in the UI and is not a database entity.
- */
-data class AccountWithBalance(
-    @Embedded
-    val account: Account,
-    val balance: Double,
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/SmsMessage.kt ==================
-package io.pm.finlight
-
-/**
- * A simple data class to hold the relevant information from an SMS message.
- */
-data class SmsMessage(
-    val id: Long,
-    val sender: String,
-    val body: String,
-    val date: Long,
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/MonthlyTrend.kt ==================
-package io.pm.finlight
-
-data class MonthlyTrend(
-    val monthYear: String, // Format: "YYYY-MM"
-    val totalIncome: Double,
-    val totalExpenses: Double,
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/SplitTransactionDetails.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionDetails.kt
-// REASON: NEW FILE - This is a Data Transfer Object (DTO) that combines a
-// SplitTransaction with its corresponding Category details (name, icon, color).
-// It's used by Room to return the complete data needed for the UI in a single query.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Embedded
-
-data class SplitTransactionDetails(
-    @Embedded
-    val splitTransaction: SplitTransaction,
-    val categoryName: String?,
-    val categoryIconKey: String?,
-    val categoryColorKey: String?
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/TransactionWithSplits.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionWithSplits.kt
-// REASON: NEW FILE - This is a Data Transfer Object (DTO) used by Room to return
-// a parent transaction along with its list of child split items. The @Relation
-// annotation tells Room how to join the two entities.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Embedded
-import androidx.room.Relation
-
-data class TransactionWithSplits(
-    @Embedded
-    val transaction: Transaction,
-
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "parentTransactionId"
-    )
-    val splits: List<SplitTransaction>
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/CategorySpending.kt ==================
-package io.pm.finlight
-
-/**
- * A simple data class to hold the results of a GROUP BY query,
- * containing the name of a category, its visual identifiers, and the total amount spent in it.
- */
-data class CategorySpending(
-    val categoryName: String,
-    val totalAmount: Double,
-    val colorKey: String?,
-    val iconKey: String?
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/CalendarDayStatus.kt ==================
-package io.pm.finlight
-
-import java.util.Date
-
-/**
- * Holds the processed status and data for a single day in the consistency calendar.
- *
- * @param date The specific date this status applies to.
- * @param status The calculated spending status for this day.
- * @param amountSpent The total amount spent on this day.
- * @param safeToSpend The calculated "safe to spend" amount for this day, derived from the monthly budget.
- */
-data class CalendarDayStatus(
-    val date: Date,
-    val status: SpendingStatus,
-    val amountSpent: Double,
-    val safeToSpend: Double
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/PeriodTotal.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/PeriodTotal.kt
-// REASON: NEW FILE - This data class is required by the new DAO queries to hold
-// the aggregated results for weekly and monthly spending totals.
-// =================================================================================
-package io.pm.finlight
-
-/**
- * A simple data class to hold the results of a GROUP BY query for weekly or monthly totals.
- *
- * @param period The period identifier (e.g., "2025-27" for week 27, or "2025-07" for July).
- * @param totalAmount The sum of all expenses for this period.
- */
-data class PeriodTotal(
-    val period: String,
-    val totalAmount: Double
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/AppDataBackup.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/data/model/AppDataBackup.kt
-// REASON: FEATURE - The backup data model has been updated to include a list of
-// `SplitTransaction` entities. This ensures that detailed split transaction
-// data is correctly included in JSON backups and restores.
-// =================================================================================
-package io.pm.finlight
-
-import kotlinx.serialization.Serializable
-
-/**
- * A top-level container for all application data to be exported.
- * This class is designed to be easily converted to a single JSON object.
- */
-@Serializable
-data class AppDataBackup(
-    val transactions: List<Transaction>,
-    val accounts: List<Account>,
-    val categories: List<Category>,
-    val budgets: List<Budget>,
-    val merchantMappings: List<MerchantMapping>,
-    // --- NEW: Add split transactions to the backup model ---
-    val splitTransactions: List<SplitTransaction> = emptyList()
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/PotentialTransaction.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/PotentialTransaction.kt
-// REASON: FEATURE - Added a new nullable `detectedCurrencyCode` field. This will
-// be populated by the SmsParser if it can confidently identify a currency code
-// (e.g., "INR", "MYR") next to the amount in an SMS, forming the basis for the
-// new smart currency detection feature.
-// =================================================================================
-package io.pm.finlight
-
-import io.pm.finlight.utils.PotentialAccount
-
-/**
- * A data class to hold the structured information extracted from an SMS message.
- * This is a temporary object, created before a full 'Transaction' is saved to the database.
- *
- * @param amount The monetary value of the transaction.
- * @param transactionType The type of transaction, either 'expense' or 'income'.
- * @param merchantName The name of the merchant, if it can be determined.
- * @param originalMessage The original SMS body, for reference and debugging.
- * @param potentialAccount Holds the parsed account name and type, if found.
- * @param categoryId The ID of a learned category, if a mapping exists for the merchant.
- * @param smsSignature A stable hash of the SMS body used for pattern detection.
- * @param isForeignCurrency A flag passed from the notification to indicate user's currency choice.
- * @param detectedCurrencyCode The currency code (e.g., "INR", "USD") found in the SMS.
- */
-data class PotentialTransaction(
-    val sourceSmsId: Long,
-    val smsSender: String,
-    val amount: Double,
-    val transactionType: String,
-    val merchantName: String?,
-    val originalMessage: String,
-    val potentialAccount: PotentialAccount? = null,
-    val sourceSmsHash: String? = null,
-    val categoryId: Int? = null,
-    val smsSignature: String? = null,
-    val isForeignCurrency: Boolean? = null,
-    // --- NEW: Field to store the currency code found in the SMS ---
-    val detectedCurrencyCode: String? = null
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/TimePeriod.kt ==================
-package io.pm.finlight.data.model
-
-enum class TimePeriod {
-    DAILY,
-    WEEKLY,
-    MONTHLY
-}-e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/MerchantSpendingSummary.kt ==================
-package io.pm.finlight
-
-/**
- * A data class to hold aggregated spending data for a specific merchant.
- *
- * @param merchantName The name of the merchant (from the transaction description).
- * @param totalAmount The sum of all expenses for this merchant in a given period.
- * @param transactionCount The number of transactions (visits) for this merchant.
- */
-data class MerchantSpendingSummary(
-    val merchantName: String,
-    val totalAmount: Double,
-    val transactionCount: Int
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/BudgetWithSpending.kt ==================
-package io.pm.finlight
-
-import androidx.room.Embedded
-
-data class BudgetWithSpending(
-    @Embedded
-    val budget: Budget,
-    val spent: Double,
-    // --- NEW: Add fields for category icon and color ---
-    val iconKey: String?,
-    val colorKey: String?
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/model/DailyTotal.kt ==================
-package io.pm.finlight
-
-/**
- * A simple data class to hold the results of a GROUP BY query,
- * containing a date string and the total amount spent on that day.
- */
-data class DailyTotal(
-    val date: String, // Format: "YYYY-MM-DD"
-    val totalAmount: Double
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/RecurringPattern.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/RecurringPattern.kt
-// REASON: NEW FILE - This entity is the cornerstone of the proactive recurring
-// transaction detection feature. It will store a "signature" for each type of
-// SMS-based transaction, along with metadata like occurrence count and timestamps,
-// allowing the new worker to analyze patterns over time.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
-/**
- * Represents a potential recurring transaction pattern identified from SMS messages.
- *
- * @param smsSignature A unique, normalized hash representing the non-volatile parts of an SMS message body. This acts as the primary key.
- * @param description The common description or merchant name associated with this pattern.
- * @param amount The most recent amount for this transaction pattern.
- * @param transactionType The type of transaction ("income" or "expense").
- * @param accountId The ID of the account most recently associated with this pattern.
- * @param categoryId The ID of the category most recently associated with this pattern.
- * @param occurrences The number of times this signature has been seen.
- * @param firstSeen The timestamp of the first time this pattern was recorded.
- * @param lastSeen The timestamp of the most recent occurrence.
- */
-@Entity(
-    tableName = "recurring_patterns",
-    indices = [Index(value = ["lastSeen"])]
-)
-data class RecurringPattern(
-    @PrimaryKey
-    val smsSignature: String,
-    val description: String,
-    val amount: Double,
-    val transactionType: String,
-    val accountId: Int,
-    val categoryId: Int?,
-    var occurrences: Int,
-    val firstSeen: Long,
-    var lastSeen: Long
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/MerchantMapping.kt ==================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
-
-@Serializable
-@Entity(tableName = "merchant_mappings")
-data class MerchantMapping(
-    @PrimaryKey
-    val smsSender: String, // e.g., "AM-HDFCBK"
-    val merchantName: String, // e.g., "McDonald's"
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/Account.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/Account.kt
-// REASON: REFACTOR - A unique, case-insensitive index (`collate = NOCASE`) has
-// been added to the 'name' column. This prevents duplicate account names with
-// different casing (e.g., "SBI" and "sbi") from being created.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
-
-@Serializable
-@Entity(
-    tableName = "accounts",
-    // --- NEW: Add a unique, case-insensitive index to the name column ---
-    indices = [Index(value = ["name"], unique = true, name = "index_accounts_name_nocase")]
-)
-data class Account(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    // --- UPDATED: Added COLLATE NOCASE to the column definition ---
-    @ColumnInfo(name = "name", collate = ColumnInfo.NOCASE)
-    val name: String,
-    val type: String,
-    // The balance field is intentionally removed from the database entity.
-    // It will be calculated on-the-fly.
-)-e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/RecurringTransaction.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/RecurringTransaction.kt
-// REASON: FEATURE - Added a new nullable `lastRunDate` field. This will store
-// the timestamp of the last time a transaction was created from this rule,
-// which is essential for the RecurringTransactionWorker to determine the next
-// due date.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
-import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
-
-@Serializable
-@Entity(
-    tableName = "recurring_transactions",
-    indices = [
-        Index(value = ["accountId"]),
-        Index(value = ["categoryId"]),
-    ],
-    foreignKeys = [
-        ForeignKey(
-            entity = Account::class,
-            parentColumns = ["id"],
-            childColumns = ["accountId"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
-            entity = Category::class,
-            parentColumns = ["id"],
-            childColumns = ["categoryId"],
-            onDelete = ForeignKey.SET_NULL,
-        ),
-    ],
-)
-data class RecurringTransaction(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val description: String,
-    val amount: Double,
-    val transactionType: String, // "income" or "expense"
-    val recurrenceInterval: String, // e.g., "Daily", "Weekly", "Monthly", "Yearly"
-    val startDate: Long, // Timestamp for the first occurrence
-    val accountId: Int,
-    val categoryId: Int?,
-    // --- NEW: Track the last execution date of this rule ---
-    val lastRunDate: Long? = null
-)-e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/Category.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/Category.kt
-// REASON: REFACTOR - The index on the 'name' column has been updated with
-// `collate = NOCASE`. This makes the uniqueness constraint case-insensitive at
-// the database level, preventing duplicate categories like "Food" and "food".
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
-
-@Serializable
-@Entity(
-    tableName = "categories",
-    // --- UPDATED: Ensure the unique index on 'name' is case-insensitive ---
-    indices = [Index(value = ["name"], unique = true, name = "index_categories_name_nocase")],
-)
-data class Category(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    // --- UPDATED: Added COLLATE NOCASE to the column definition for robustness ---
-    @ColumnInfo(name = "name", collate = ColumnInfo.NOCASE)
-    val name: String,
-    // A key to identify the Material Icon for the category
-    @ColumnInfo(name = "iconKey")
-    val iconKey: String = "category", // Default icon
-    // A key to identify the icon's background color
-    @ColumnInfo(name = "colorKey")
-    val colorKey: String = "gray" // Default color
-)-e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/Tag.kt ==================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
-
-/**
- * Represents a user-defined Tag (e.g., "Work Trip", "Vacation 2025", "Tax-Deductible").
- * Tags provide a flexible way to organize transactions outside of the rigid category system.
- */
-@Serializable
-@Entity(
-    tableName = "tags",
-    indices = [Index(value = ["name"], unique = true)]
-)
-data class Tag(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val name: String
-)-e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/Goal.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/Goal.kt
-// REASON: NEW FILE - Defines the Room entity for a savings goal, including its
-// name, target and saved amounts, target date, and the associated account.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
-@Entity(
-    tableName = "goals",
-    foreignKeys = [
-        ForeignKey(
-            entity = Account::class,
-            parentColumns = ["id"],
-            childColumns = ["accountId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
-    indices = [Index(value = ["accountId"])]
-)
-data class Goal(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val name: String,
-    val targetAmount: Double,
-    var savedAmount: Double,
-    val targetDate: Long?,
-    val accountId: Int
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/CustomSmsRule.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRule.kt
-// REASON: FEATURE - Added a new `sourceSmsBody` column. This will store the
-// original SMS text that the rule was created from, which is a necessary
-// foundation for the upcoming "Edit Rule" feature.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
-/**
- * Represents a user-defined parsing rule that is independent of the SMS sender.
- * The rule is activated when its 'triggerPhrase' is found within an SMS body.
- *
- * @param id The unique identifier for the rule.
- * @param triggerPhrase A stable, unique piece of text from an SMS that identifies
- * when this rule should be applied (e.g., "spent on your SBI Credit Card").
- * @param merchantRegex The regex pattern to extract the merchant name. Can be null.
- * @param amountRegex The regex pattern to extract the transaction amount. Can be null.
- * @param accountRegex The regex pattern to extract the account name/number. Can be null.
- * @param merchantNameExample The user-selected text for the merchant, for display purposes.
- * @param amountExample The user-selected text for the amount, for display purposes.
- * @param accountNameExample The user-selected text for the account, for display purposes.
- * @param priority The execution priority. Higher numbers are checked first.
- * @param sourceSmsBody The original SMS text this rule was created from.
- */
-@Entity(
-    tableName = "custom_sms_rules",
-    indices = [Index(value = ["triggerPhrase"], unique = true)]
-)
-data class CustomSmsRule(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val triggerPhrase: String,
-    val merchantRegex: String?,
-    val amountRegex: String?,
-    val accountRegex: String?,
-    val merchantNameExample: String?,
-    val amountExample: String?,
-    val accountNameExample: String?,
-    val priority: Int,
-    val sourceSmsBody: String
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/TransactionTagCrossRef.kt ==================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.ForeignKey
-
-/**
- * This is a "join table" to create a many-to-many relationship
- * between the 'transactions' table and the 'tags' table.
- */
-@Entity(
-    tableName = "transaction_tag_cross_ref",
-    primaryKeys = ["transactionId", "tagId"],
-    foreignKeys = [
-        ForeignKey(
-            entity = Transaction::class,
-            parentColumns = ["id"],
-            childColumns = ["transactionId"],
-            onDelete = ForeignKey.CASCADE // If a transaction is deleted, remove its tag links
-        ),
-        ForeignKey(
-            entity = Tag::class,
-            parentColumns = ["id"],
-            childColumns = ["tagId"],
-            onDelete = ForeignKey.CASCADE // If a tag is deleted, remove its links from transactions
-        )
-    ]
-)
-data class TransactionTagCrossRef(
-    val transactionId: Int,
-    val tagId: Int
-)-e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/TransactionImage.kt ==================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
-@Entity(
-    tableName = "transaction_images",
-    foreignKeys = [
-        ForeignKey(
-            entity = Transaction::class,
-            parentColumns = ["id"],
-            childColumns = ["transactionId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
-    // --- FIX: Explicitly declare the index that Room creates for the foreign key ---
-    indices = [Index(value = ["transactionId"])]
-)
-data class TransactionImage(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val transactionId: Int,
-    val imageUri: String // Stores the URI of the image in the app's internal storage
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/IgnoreRule.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/IgnoreRule.kt
-// REASON: FEATURE - The entity has been enhanced to support different rule
-// types. A new `RuleType` enum (SENDER, BODY_PHRASE) and a corresponding `type`
-// column have been added. The `phrase` column has been renamed to `pattern` to
-// better reflect its new, more generic purpose.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
-/**
- * Enum to define the type of content an IgnoreRule should match against.
- */
-enum class RuleType {
-    SENDER,
-    BODY_PHRASE
-}
-
-/**
- * Represents a user-defined rule to ignore an SMS.
- *
- * @param id The unique identifier for the rule.
- * @param type The type of rule (SENDER or BODY_PHRASE).
- * @param pattern The text pattern to match against (e.g., "*JioBal*" for sender, "invoice of" for body).
- * @param isEnabled Whether this rule is currently active.
- * @param isDefault True if this is a pre-populated rule, false if user-added.
- */
-@Entity(
-    tableName = "ignore_rules",
-    indices = [Index(value = ["pattern"], unique = true)]
-)
-data class IgnoreRule(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val type: RuleType = RuleType.BODY_PHRASE,
-    val pattern: String,
-    var isEnabled: Boolean = true,
-    val isDefault: Boolean = false
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/MerchantCategoryMapping.kt ==================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-
-/**
- * Stores a user-defined mapping between a parsed merchant name and a specific category.
- * This allows the app to "learn" user preferences and auto-categorize future transactions.
- *
- * @param parsedName The merchant name as it was originally parsed from an SMS or other source. This is the key.
- * @param categoryId The ID of the Category the user has associated with this merchant.
- */
-@Entity(tableName = "merchant_category_mapping")
-data class MerchantCategoryMapping(
-    @PrimaryKey
-    val parsedName: String,
-    val categoryId: Int
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/Budget.kt ==================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
-
-@Serializable
-@Entity(tableName = "budgets")
-data class Budget(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val categoryName: String,
-    val amount: Double,
-    val month: Int, // e.g., 6 for June
-    val year: Int, // e.g., 2024
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/Transaction.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/Transaction.kt
-// REASON: FEATURE (Splitting) - Added a new `isSplit` boolean column. This will
-// act as a simple flag to quickly identify "parent" transactions that have been
-// split into multiple items, which is crucial for UI logic and preventing direct
-// edits to a split transaction's amount.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
-import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
-
-@Serializable
-@Entity(
-    tableName = "transactions",
-    indices = [
-        Index(value = ["categoryId"]),
-        Index(value = ["accountId"]),
-        Index(value = ["smsSignature"])
-    ],
-    foreignKeys = [
-        ForeignKey(
-            entity = Category::class,
-            parentColumns = ["id"],
-            childColumns = ["categoryId"],
-            onDelete = ForeignKey.SET_NULL,
-        ),
-        ForeignKey(
-            entity = Account::class,
-            parentColumns = ["id"],
-            childColumns = ["accountId"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-    ],
-)
-data class Transaction(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val description: String,
-    val categoryId: Int?,
-    val amount: Double, // ALWAYS in home currency
-    val date: Long,
-    val accountId: Int,
-    val notes: String?,
-    val transactionType: String = "expense",
-    val sourceSmsId: Long? = null,
-    val sourceSmsHash: String? = null,
-    val source: String = "Manual Entry",
-    val originalDescription: String? = null,
-    val isExcluded: Boolean = false,
-    val smsSignature: String? = null,
-    val originalAmount: Double? = null,
-    val currencyCode: String? = null,
-    val conversionRate: Double? = null,
-    // --- NEW: Flag to indicate this is a parent transaction ---
-    val isSplit: Boolean = false
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/SplitTransaction.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/SplitTransaction.kt
-// REASON: FIX - Added the @Serializable annotation. This is required by the
-// kotlinx.serialization library to correctly include this entity in the JSON
-// data backup, resolving a build error.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
-import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
-
-@Serializable
-@Entity(
-    tableName = "split_transactions",
-    foreignKeys = [
-        ForeignKey(
-            entity = Transaction::class,
-            parentColumns = ["id"],
-            childColumns = ["parentTransactionId"],
-            onDelete = ForeignKey.CASCADE // If the parent is deleted, its splits are also deleted.
-        ),
-        ForeignKey(
-            entity = Category::class,
-            parentColumns = ["id"],
-            childColumns = ["categoryId"],
-            onDelete = ForeignKey.SET_NULL // If a category is deleted, the split remains but uncategorized.
-        )
-    ],
-    indices = [
-        Index(value = ["parentTransactionId"]),
-        Index(value = ["categoryId"])
-    ]
-)
-data class SplitTransaction(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val parentTransactionId: Int,
-    val amount: Double, // ALWAYS in home currency
-    val categoryId: Int?,
-    val notes: String?,
-    val originalAmount: Double? = null
-)
--e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/MerchantRenameRule.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/MerchantRenameRule.kt
-// REASON: REFACTOR - The `originalName` primary key has been updated with
-// `collate = NOCASE`. This makes the rule matching case-insensitive, so a rule
-// for "zomato" will correctly apply to transactions parsed as "Zomato".
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-
-/**
- * Stores a user-defined rule to rename a parsed merchant name to a more
- * user-friendly one.
- * @param originalName The name originally extracted by the parser's regex.
- * @param newName The name the user wants to see instead.
- */
-@Entity(tableName = "merchant_rename_rules")
-data class MerchantRenameRule(
-    // --- UPDATED: Make the primary key case-insensitive ---
-    @PrimaryKey
-    @ColumnInfo(name = "originalName", collate = ColumnInfo.NOCASE)
-    val originalName: String,
-    val newName: String
-)-e 
-
-
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/MerchantRenameRuleDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/MerchantRenameRuleDao.kt ==================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -26356,9 +26546,10 @@ interface MerchantRenameRuleDao {
     suspend fun deleteByOriginalName(originalName: String)
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/SplitTransactionDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/SplitTransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/SplitTransactionDao.kt
 // REASON: FEATURE - Added `getAllSplits` and `getSplitsForParentSimple` queries.
@@ -26421,9 +26612,10 @@ interface SplitTransactionDao {
     suspend fun deleteSplitsForParent(parentTransactionId: Int)
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/CustomSmsRuleDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/CustomSmsRuleDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRuleDao.kt
 // REASON: FEATURE - Added the `getRuleById` and `update` functions. These are
@@ -26483,9 +26675,10 @@ interface CustomSmsRuleDao {
     suspend fun update(rule: CustomSmsRule)
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/RecurringPatternDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/RecurringPatternDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringPatternDao.kt
 // REASON: NEW FILE - This DAO provides the database interface for the
@@ -26535,9 +26728,10 @@ interface RecurringPatternDao {
     suspend fun deleteBySignature(signature: String)
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/MerchantCategoryMappingDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/MerchantCategoryMappingDao.kt ==================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -26570,9 +26764,10 @@ interface MerchantCategoryMappingDao {
     suspend fun getCategoryIdForMerchant(parsedName: String): Int?
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/GoalDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/GoalDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/GoalDao.kt
 // REASON: NEW FILE - Defines the DAO for the Goal entity, providing all
@@ -26629,9 +26824,10 @@ interface GoalDao {
     fun getGoalsForAccount(accountId: Int): Flow<List<Goal>>
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/RecurringTransactionDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/RecurringTransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionDao.kt
 // REASON: FIX - The `insert` function now returns a `Long` representing the
@@ -26673,9 +26869,10 @@ interface RecurringTransactionDao {
     suspend fun updateLastRunDate(id: Int, lastRunDate: Long)
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/MerchantMappingDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/MerchantMappingDao.kt ==================
 package io.pm.finlight
 
 import androidx.room.Dao
@@ -26704,9 +26901,10 @@ interface MerchantMappingDao {
     suspend fun getMappingForSender(sender: String): MerchantMapping?
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/IgnoreRuleDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/IgnoreRuleDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/IgnoreRuleDao.kt
 // REASON: FEATURE - The `getEnabledPhrases` function has been replaced with
@@ -26774,9 +26972,10 @@ interface IgnoreRuleDao {
     suspend fun delete(rule: IgnoreRule)
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/TransactionDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/TransactionDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
 // REASON: FEATURE - Added new queries to support the drilldown screens:
@@ -27403,9 +27602,10 @@ interface TransactionDao {
     ): List<TransactionDetails>
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/CategoryDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/CategoryDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/CategoryDao.kt
 // REASON: REFACTOR - The `findByName` query has been updated to use `COLLATE
@@ -27450,9 +27650,10 @@ interface CategoryDao {
     @Delete
     suspend fun delete(category: Category)
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/BudgetDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/BudgetDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/BudgetDao.kt
 // REASON: FEATURE (Splitting) - The queries for calculating spending against
@@ -27551,9 +27752,10 @@ interface BudgetDao {
     suspend fun delete(budget: Budget)
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/AccountDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/AccountDao.kt ==================
 package io.pm.finlight.data.db.dao
 
 import androidx.room.Dao
@@ -27615,9 +27817,10 @@ interface AccountDao {
     @Delete
     suspend fun delete(account: Account)
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/TagDao.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/TagDao.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/TagDao.kt
 // REASON: REFACTOR - Added a new `findByName` function that performs a
@@ -27653,9 +27856,10 @@ interface TagDao {
     @Delete
     suspend fun delete(tag: Tag)
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/data/db/AppDatabase.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/AppDatabase.kt ==================
 package io.pm.finlight.data.db
 
 import android.content.Context
@@ -28188,9 +28392,10 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 }-e 
+-e 
 
 
-================== FILE: ./app/src/main/java/io/pm/finlight/MainApplication.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/MainApplication.kt ==================
 package io.pm.finlight
 
 import android.app.Application
@@ -28298,10 +28503,11 @@ class MainApplication : Application() {
         }
     }
 }-e 
+-e 
 
 
 ---------- Instrumented Test Files (UI Tests) ----------
-================== FILE: ./app/src/androidTest/java/io/pm/finlight/TransactionCrudTests.kt ==================
+================== FILE: ./androidApp/src/androidTest/java/io/pm/finlight/TransactionCrudTests.kt ==================
 package io.pm.finlight
 
 import android.Manifest
@@ -28456,9 +28662,10 @@ class TransactionCrudTests {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/androidTest/java/io/pm/finlight/TestRules.kt ==================
+================== FILE: ./androidApp/src/androidTest/java/io/pm/finlight/TestRules.kt ==================
 package io.pm.finlight
 
 import android.content.Context
@@ -28511,9 +28718,10 @@ class DisableAppLockRule : TestRule {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/androidTest/java/io/pm/finlight/DashboardAndReportsWorkflowTests.kt ==================
+================== FILE: ./androidApp/src/androidTest/java/io/pm/finlight/DashboardAndReportsWorkflowTests.kt ==================
 // =================================================================================
 // FILE: ./app/src/androidTest/java/io/pm/finlight/DashboardAndReportsWorkflowTests.kt
 // REASON: FIX - Removed unused imports for SimpleDateFormat and java.util.* to
@@ -28642,9 +28850,10 @@ class DashboardAndReportsWorkflowTests {
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/androidTest/java/io/pm/finlight/AppWorkflowTests.kt ==================
+================== FILE: ./androidApp/src/androidTest/java/io/pm/finlight/AppWorkflowTests.kt ==================
 // =================================================================================
 // FILE: ./app/src/androidTest/java/io/pm/finlight/AppWorkflowTests.kt
 // REASON: FIX - Removed several unused import directives to resolve lint warnings
@@ -28759,149 +28968,218 @@ class AppWorkflowTests {
     }
 }
 -e 
+-e 
 
 
 ---------- Unit Test Files ----------
-================== FILE: ./app/src/test/java/io/pm/finlight/DashboardViewModelTest.kt ==================
+================== FILE: ./androidApp/src/test/java/io/pm/finlight/DashboardViewModelTest.kt ==================
 package io.pm.finlight
 
 import android.app.Application
 import android.os.Build
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
-import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.*
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mock
+import org.mockito.Mockito
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.`when`
+import org.mockito.MockitoAnnotations
 import org.robolectric.annotation.Config
-import java.util.Calendar
 
 @ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
-@Config(sdk = [Build.VERSION_CODES.UPSIDE_DOWN_CAKE]) // UPSIDE_DOWN_CAKE is API 34
+@Config(sdk = [Build.VERSION_CODES.UPSIDE_DOWN_CAKE])
 class DashboardViewModelTest {
+
     @get:Rule
     var instantTaskExecutorRule = InstantTaskExecutorRule()
 
-    private val testDispatcher = UnconfinedTestDispatcher()
-
-    private lateinit var database: AppDatabase
-    private lateinit var viewModel: DashboardViewModel
-    private lateinit var settingsRepository: SettingsRepository
+    @Mock
     private lateinit var transactionRepository: TransactionRepository
+
+    @Mock
     private lateinit var accountRepository: AccountRepository
+
+    @Mock
     private lateinit var budgetDao: BudgetDao
+
+    @Mock
+    private lateinit var settingsRepository: SettingsRepository
+
+    private lateinit var viewModel: DashboardViewModel
+
+    private val testDispatcher = UnconfinedTestDispatcher()
 
     @Before
     fun setup() {
+        MockitoAnnotations.openMocks(this)
         Dispatchers.setMain(testDispatcher)
 
-        val context = ApplicationProvider.getApplicationContext<Application>()
+        // --- FIX: Set up default mock behaviors BEFORE ViewModel initialization ---
+        // These are required for the ViewModel's init block to succeed.
+        // Individual tests can override these with more specific `when` clauses.
+        `when`(settingsRepository.getUserName()).thenReturn(flowOf("User"))
+        `when`(settingsRepository.getProfilePictureUri()).thenReturn(flowOf(null))
+        `when`(settingsRepository.getDashboardCardOrder()).thenReturn(flowOf(emptyList()))
+        `when`(settingsRepository.getDashboardVisibleCards()).thenReturn(flowOf(emptySet()))
+        `when`(transactionRepository.getFinancialSummaryForRangeFlow(Mockito.anyLong(), Mockito.anyLong())).thenReturn(flowOf(FinancialSummary(0.0, 0.0)))
+        `when`(settingsRepository.getOverallBudgetForMonth(Mockito.anyInt(), Mockito.anyInt())).thenReturn(flowOf(0f))
+        `when`(accountRepository.accountsWithBalance).thenReturn(flowOf(emptyList()))
+        `when`(transactionRepository.recentTransactions).thenReturn(flowOf(emptyList()))
+        `when`(budgetDao.getBudgetsWithSpendingForMonth(Mockito.anyString(), Mockito.anyInt(), Mockito.anyInt())).thenReturn(flowOf(emptyList()))
+        `when`(transactionRepository.getFirstTransactionDate()).thenReturn(flowOf(null))
+        `when`(transactionRepository.getDailySpendingForDateRange(Mockito.anyLong(), Mockito.anyLong())).thenReturn(flowOf(emptyList()))
 
-        database =
-            Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-                .allowMainThreadQueries()
-                .build()
 
-        transactionRepository = TransactionRepository(database.transactionDao())
-        accountRepository = AccountRepository(database.accountDao())
-        settingsRepository = SettingsRepository(context)
-        budgetDao = database.budgetDao()
-
-        viewModel =
-            DashboardViewModel(
-                transactionRepository = transactionRepository,
-                accountRepository = accountRepository,
-                budgetDao = budgetDao,
-                settingsRepository = settingsRepository,
-            )
+        // Initialize the ViewModel with mocked dependencies
+        viewModel = DashboardViewModel(
+            transactionRepository = transactionRepository,
+            accountRepository = accountRepository,
+            budgetDao = budgetDao,
+            settingsRepository = settingsRepository,
+        )
     }
 
     @After
     fun tearDown() {
-        database.close()
         Dispatchers.resetMain()
     }
 
     @Test
-    fun test_safeToSpend_calculationIsCorrect() =
-        runTest {
-            // --- ARRANGE ---
-            // 1. Set a budget.
-            val testBudget = 30000f
-            settingsRepository.saveOverallBudgetForCurrentMonth(testBudget)
+    fun `test monthly income and expenses are loaded correctly`() = runTest {
+        // ARRANGE: Mock the repository to return a specific financial summary for this test
+        val summary = FinancialSummary(totalIncome = 5000.0, totalExpenses = 1500.0)
+        `when`(transactionRepository.getFinancialSummaryForRangeFlow(Mockito.anyLong(), Mockito.anyLong())).thenReturn(flowOf(summary))
 
-            // 2. Insert test data directly inside the runTest scope.
-            val accountDao = database.accountDao()
-            val categoryDao = database.categoryDao()
-            val transactionDao = database.transactionDao()
+        // ACT: Re-initialize ViewModel to pick up the new mock setup
+        viewModel = DashboardViewModel(transactionRepository, accountRepository, budgetDao, settingsRepository)
+        advanceUntilIdle() // Let flows emit
 
-            accountDao.insert(Account(id = 1, name = "Test Bank", type = "Savings"))
-            categoryDao.insert(Category(id = 1, name = "Food"))
+        // ASSERT: Check if the StateFlows in the ViewModel reflect the mocked data
+        assertEquals(5000.0, viewModel.monthlyIncome.first(), 0.0)
+        assertEquals(1500.0, viewModel.monthlyExpenses.first(), 0.0)
+    }
 
-            val calendar = Calendar.getInstance()
-            transactionDao.insert(
-                Transaction(
-                    description = "Groceries",
-                    amount = 2500.0,
-                    date = calendar.timeInMillis,
-                    accountId = 1,
-                    categoryId = 1,
-                    transactionType = "expense",
-                    notes = "",
-                ),
-            )
-
-            // --- ACT ---
-            advanceUntilIdle() // Ensure all initial jobs in ViewModel are complete.
-            val safeToSpend = viewModel.safeToSpendPerDay.first()
-
-            // --- ASSERT ---
-            val monthlyExpenses = viewModel.monthlyExpenses.first()
-            val remainingBudget = testBudget - monthlyExpenses.toFloat()
-
-            val lastDayOfMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-            val currentDay = calendar.get(Calendar.DAY_OF_MONTH)
-            val remainingDays = (lastDayOfMonth - currentDay + 1).coerceAtLeast(1)
-
-            val expectedSafeToSpend = if (remainingBudget > 0) remainingBudget / remainingDays else 0f
-
-            assertEquals("Safe to spend calculation is incorrect", expectedSafeToSpend, safeToSpend, 0.01f)
-        }
-}
--e 
-
-
-================== FILE: ./app/src/test/java/io/pm/finlight/ExampleUnitTest.kt ==================
-package io.pm.finlight
-
-import org.junit.Assert.*
-import org.junit.Test
-
-/**
- * Example local unit test, which will execute on the development machine (host).
- *
- * See [testing documentation](http://d.android.com/tools/testing).
- */
-class ExampleUnitTest {
     @Test
-    fun addition_isCorrect() {
-        assertEquals(4, 2 + 2)
+    fun `test amount remaining calculation is correct`() = runTest {
+        // ARRANGE
+        val budget = 3000f
+        val expenses = 1200.0
+        `when`(settingsRepository.getOverallBudgetForMonth(Mockito.anyInt(), Mockito.anyInt())).thenReturn(flowOf(budget))
+        `when`(transactionRepository.getFinancialSummaryForRangeFlow(Mockito.anyLong(), Mockito.anyLong())).thenReturn(flowOf(FinancialSummary(0.0, expenses)))
+
+        // ACT
+        viewModel = DashboardViewModel(transactionRepository, accountRepository, budgetDao, settingsRepository)
+        advanceUntilIdle()
+
+        // ASSERT
+        val expectedRemaining = budget - expenses.toFloat()
+        assertEquals(expectedRemaining, viewModel.amountRemaining.first(), 0.01f)
+    }
+
+    @Test
+    fun `budgetHealthSummary shows 'Set a budget' when budget is zero`() = runTest {
+        // ARRANGE
+        `when`(settingsRepository.getOverallBudgetForMonth(Mockito.anyInt(), Mockito.anyInt())).thenReturn(flowOf(0f))
+        `when`(transactionRepository.getFinancialSummaryForRangeFlow(Mockito.anyLong(), Mockito.anyLong())).thenReturn(flowOf(FinancialSummary(0.0, 1000.0)))
+
+        // ACT
+        viewModel = DashboardViewModel(transactionRepository, accountRepository, budgetDao, settingsRepository)
+        advanceUntilIdle()
+
+        // ASSERT
+        assertEquals("Set a budget to see insights", viewModel.budgetHealthSummary.first())
+    }
+
+    @Test
+    fun `budgetHealthSummary shows 'over budget' message when expenses exceed budget`() = runTest {
+        // ARRANGE
+        `when`(settingsRepository.getOverallBudgetForMonth(Mockito.anyInt(), Mockito.anyInt())).thenReturn(flowOf(1000f))
+        `when`(transactionRepository.getFinancialSummaryForRangeFlow(Mockito.anyLong(), Mockito.anyLong())).thenReturn(flowOf(FinancialSummary(0.0, 1200.0)))
+
+        // ACT
+        viewModel = DashboardViewModel(transactionRepository, accountRepository, budgetDao, settingsRepository)
+        viewModel.refreshBudgetSummary() // Trigger a new phrase selection
+        advanceUntilIdle()
+
+        // ASSERT
+        val possibleMessages = listOf(
+            "You've gone over for ${viewModel.monthYear}.",
+            "Let's get back on track next month.",
+            "Budget exceeded for the month."
+        )
+        assertTrue(
+            "Summary message should be one of the 'over budget' phrases.",
+            viewModel.budgetHealthSummary.first() in possibleMessages
+        )
+    }
+
+    @Test
+    fun `updateCardOrder calls settingsRepository to save layout`() = runTest {
+        // ARRANGE
+        val initialOrder = listOf(DashboardCardType.HERO_BUDGET, DashboardCardType.QUICK_ACTIONS, DashboardCardType.RECENT_TRANSACTIONS)
+        val visibleCards = setOf(DashboardCardType.HERO_BUDGET, DashboardCardType.QUICK_ACTIONS, DashboardCardType.RECENT_TRANSACTIONS)
+
+        `when`(settingsRepository.getDashboardCardOrder()).thenReturn(flowOf(initialOrder))
+        `when`(settingsRepository.getDashboardVisibleCards()).thenReturn(flowOf(visibleCards))
+
+        viewModel = DashboardViewModel(transactionRepository, accountRepository, budgetDao, settingsRepository)
+        advanceUntilIdle()
+
+        // ACT
+        viewModel.updateCardOrder(from = 1, to = 2)
+        advanceUntilIdle()
+
+        // ASSERT
+        val expectedNewOrder = listOf(DashboardCardType.HERO_BUDGET, DashboardCardType.RECENT_TRANSACTIONS, DashboardCardType.QUICK_ACTIONS)
+        // Verify that the repository's save method was called with the new order
+        verify(settingsRepository).saveDashboardLayout(expectedNewOrder, visibleCards)
+    }
+
+    @Test
+    fun `toggleCardVisibility calls settingsRepository to save layout`() = runTest {
+        // ARRANGE
+        val initialOrder = listOf(DashboardCardType.HERO_BUDGET, DashboardCardType.QUICK_ACTIONS)
+        val initialVisible = setOf(DashboardCardType.HERO_BUDGET, DashboardCardType.QUICK_ACTIONS)
+
+        `when`(settingsRepository.getDashboardCardOrder()).thenReturn(flowOf(initialOrder))
+        `when`(settingsRepository.getDashboardVisibleCards()).thenReturn(flowOf(initialVisible))
+
+        viewModel = DashboardViewModel(transactionRepository, accountRepository, budgetDao, settingsRepository)
+        advanceUntilIdle()
+
+        // ACT
+        viewModel.toggleCardVisibility(DashboardCardType.QUICK_ACTIONS) // Toggle it off
+        advanceUntilIdle()
+
+        // ASSERT
+        val expectedNewVisible = setOf(DashboardCardType.HERO_BUDGET)
+        // Verify that the repository's save method was called with the updated visible set
+        verify(settingsRepository).saveDashboardLayout(initialOrder, expectedNewVisible)
     }
 }
 -e 
+-e 
 
 
-================== FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt ==================
+================== FILE: ./androidApp/src/test/java/io/pm/finlight/SmsParserTest.kt ==================
 // =================================================================================
 // FILE: ./app/src/test/java/io/pm/finlight/SmsParserTest.kt
 // REASON: FEATURE - Added new unit tests to verify the currency detection logic.
@@ -29222,6 +29500,7 @@ class SmsParserTest {
         assertNull("Parser should ignore messages with user-defined phrases", result)
     }
 }
+-e 
 -e 
 
 
