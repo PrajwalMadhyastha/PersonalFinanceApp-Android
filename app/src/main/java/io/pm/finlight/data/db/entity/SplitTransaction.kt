@@ -1,9 +1,8 @@
 // =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SplitTransaction.kt
-// REASON: FEATURE (Travel Mode Splitting) - Added a new nullable `originalAmount`
-// column. This will store the split amount in the foreign currency if the parent
-// transaction was made in Travel Mode, allowing the UI to display the correct
-// values while the `amount` column always stores the home currency value.
+// FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/SplitTransaction.kt
+// REASON: FIX - Added the @Serializable annotation. This is required by the
+// kotlinx.serialization library to correctly include this entity in the JSON
+// data backup, resolving a build error.
 // =================================================================================
 package io.pm.finlight
 
@@ -11,7 +10,9 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(
     tableName = "split_transactions",
     foreignKeys = [
@@ -40,6 +41,5 @@ data class SplitTransaction(
     val amount: Double, // ALWAYS in home currency
     val categoryId: Int?,
     val notes: String?,
-    // --- NEW: Store the amount in the original foreign currency, if applicable ---
     val originalAmount: Double? = null
 )

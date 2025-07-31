@@ -1,9 +1,8 @@
 // =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: FIX - Added the missing `getTagsForTransactionSimple` function. This
-// function was already defined in the DAO but was not exposed by the repository,
-// causing an "Unresolved reference" error in the TransactionViewModel when
-// trying to generate a shareable image with tags.
+// FILE: ./app/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt
+// REASON: FIX - The `insertTransactionWithTags` function has been updated to
+// return the Long ID of the newly created transaction. This is required by the
+// CSV import logic to map old IDs to new ones and resolves a build error.
 // =================================================================================
 package io.pm.finlight
 
@@ -13,12 +12,9 @@ import kotlinx.coroutines.flow.onEach
 
 class TransactionRepository(private val transactionDao: TransactionDao) {
 
-    // --- NEW: Expose the DAO function to get a transaction with its splits ---
     fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?> {
         return transactionDao.getTransactionWithSplits(transactionId)
     }
-
-    // --- (Existing repository methods below) ---
 
     val allTransactions: Flow<List<TransactionDetails>> =
         transactionDao.getAllTransactions()
@@ -149,14 +145,15 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         }
     }
 
-    suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
-        val transactionId = transactionDao.insert(transaction).toInt()
+    suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>): Long {
+        val transactionId = transactionDao.insert(transaction)
         if (tags.isNotEmpty()) {
             val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = transactionId, tagId = tag.id)
+                TransactionTagCrossRef(transactionId = transactionId.toInt(), tagId = tag.id)
             }
             transactionDao.addTagsToTransaction(crossRefs)
         }
+        return transactionId
     }
 
     suspend fun updateTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
