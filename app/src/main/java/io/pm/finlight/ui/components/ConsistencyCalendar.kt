@@ -1,9 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
-// REASON: FIX - The `MonthlyConsistencyCalendarCard` now correctly uses the
-// `DetailedMonthlyCalendar` component instead of the mini-heatmap. This ensures
-// the correct, interactive calendar is displayed on the monthly report screen,
-// fixing the visual bug with future dates and improving UI consistency.
+// REASON: FEATURE - Added a new `ConsistencyCalendarLegend` composable to the
+// bottom of the yearly and detailed monthly calendar views to provide users
+// with a clear explanation of what each color in the heatmap represents.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -179,20 +178,24 @@ fun ConsistencyCalendar(
         }
     }
 
-    LazyRow(
-        state = lazyListState,
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DAY_SPACING * 2)
-    ) {
-        items(months) { monthData ->
-            MonthColumn(
-                monthData = monthData,
-                year = year,
-                today = today,
-                dataMap = dataMap,
-                onDayClick = onDayClick
-            )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        LazyRow(
+            state = lazyListState,
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(DAY_SPACING * 2)
+        ) {
+            items(months) { monthData ->
+                MonthColumn(
+                    monthData = monthData,
+                    year = year,
+                    today = today,
+                    dataMap = dataMap,
+                    onDayClick = onDayClick
+                )
+            }
         }
+        // --- NEW: Add the legend below the calendar ---
+        ConsistencyCalendarLegend()
     }
 }
 
@@ -285,6 +288,8 @@ fun DetailedMonthlyCalendar(
                 }
             }
         }
+        // --- NEW: Add the legend below the calendar ---
+        ConsistencyCalendarLegend()
     }
 }
 

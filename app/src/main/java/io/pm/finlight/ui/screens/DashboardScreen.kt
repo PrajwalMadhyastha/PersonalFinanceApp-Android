@@ -1,7 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: REFACTOR - Updated the `when` block in the `DashboardCard` composable
-// to call the renamed `AuroraRecentTransactionsCard` component.
+// REASON: FEATURE - The "Spending Consistency" card has been updated to include
+// the new `ConsistencyCalendarLegend` component, providing users with a clear
+// explanation of the heatmap colors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
