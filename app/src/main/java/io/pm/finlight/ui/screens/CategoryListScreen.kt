@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import io.pm.finlight.Category
-import io.pm.finlight.CategoryIconHelper
+import io.pm.finlight.utils.CategoryIconHelper
 import io.pm.finlight.CategoryViewModel
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.PopupSurfaceDark

@@ -41,10 +41,12 @@ import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
 import io.pm.finlight.*
+import io.pm.finlight.data.model.TimePeriod
 import io.pm.finlight.ui.components.ConsistencyCalendar
 import io.pm.finlight.ui.components.DetailedMonthlyCalendar
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.GroupedBarChart
+import io.pm.finlight.utils.CategoryIconHelper
 import java.util.*
 import kotlin.math.abs
 import kotlin.math.atan2

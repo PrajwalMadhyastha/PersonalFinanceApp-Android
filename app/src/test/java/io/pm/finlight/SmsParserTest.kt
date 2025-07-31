@@ -11,6 +11,7 @@
 // =================================================================================
 package io.pm.finlight
 
+import io.pm.finlight.utils.SmsParser
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*

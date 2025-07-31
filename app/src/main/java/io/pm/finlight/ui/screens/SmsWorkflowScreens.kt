@@ -49,6 +49,8 @@ import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.theme.GlassPanelBorder
 import io.pm.finlight.ui.theme.PopupSurfaceDark
 import io.pm.finlight.ui.theme.PopupSurfaceLight
+import io.pm.finlight.utils.CategoryIconHelper
+import io.pm.finlight.utils.CurrencyHelper
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 import java.text.NumberFormat

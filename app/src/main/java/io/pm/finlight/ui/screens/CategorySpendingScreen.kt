@@ -35,7 +35,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import io.pm.finlight.CategoryIconHelper
+import io.pm.finlight.utils.CategoryIconHelper
 import io.pm.finlight.CategorySpending
 import io.pm.finlight.ui.components.GlassPanel
 import kotlin.math.atan2

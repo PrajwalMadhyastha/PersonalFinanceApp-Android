@@ -30,14 +30,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
-import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import io.pm.finlight.*
+import io.pm.finlight.data.model.TimePeriod
 import io.pm.finlight.ui.components.GlassPanel
 import io.pm.finlight.ui.components.MonthlyConsistencyCalendarCard
 import io.pm.finlight.ui.components.TransactionItem

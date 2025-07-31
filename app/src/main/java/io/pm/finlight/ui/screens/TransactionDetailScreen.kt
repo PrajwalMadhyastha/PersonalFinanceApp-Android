@@ -78,6 +78,8 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import io.pm.finlight.R
+import io.pm.finlight.utils.CategoryIconHelper
+import io.pm.finlight.utils.CurrencyHelper
 
 private const val TAG = "DetailScreenDebug"
 

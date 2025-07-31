@@ -54,6 +54,9 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import io.pm.finlight.*
 import io.pm.finlight.ui.theme.GlassPanelBorder
 import androidx.compose.ui.graphics.vector.ImageVector
+import io.pm.finlight.ui.BottomNavItem
+import io.pm.finlight.utils.BankLogoHelper
+import io.pm.finlight.utils.CategoryIconHelper
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.min
