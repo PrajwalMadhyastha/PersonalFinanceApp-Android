@@ -26,8 +26,6 @@ val coilVersion = "2.6.0"
 val imageCropperVersion = "4.5.0"
 // --- FIX: Update mockito-inline to a version compatible with Java 21 ---
 val mockitoVersion = "5.11.0"
-
-
 // Read properties from local.properties
 val keystorePropertiesFile = rootProject.file("local.properties")
 val keystoreProperties = Properties()
