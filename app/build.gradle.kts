@@ -24,6 +24,9 @@ val gsonVersion = "2.10.1"
 val coilVersion = "2.6.0"
 // --- NEW: Add Image Cropper library version ---
 val imageCropperVersion = "4.5.0"
+// --- FIX: Update mockito-inline to a version compatible with Java 21 ---
+val mockitoVersion = "5.11.0"
+
 
 // Read properties from local.properties
 val keystorePropertiesFile = rootProject.file("local.properties")
@@ -156,7 +159,8 @@ dependencies {
 
     // Local unit tests
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.mockito:mockito-inline:5.2.0")
+    // --- FIX: Switched to mockito-core and updated version ---
+    testImplementation("org.mockito:mockito-core:$mockitoVersion")
     testImplementation("androidx.test:core-ktx:$androidxTestVersion")
     testImplementation("androidx.test.ext:junit:$testExtJunitVersion")
     testImplementation("org.robolectric:robolectric:$robolectricVersion")
