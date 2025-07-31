@@ -39,7 +39,7 @@ mpAndroidChart = "v3.1.0"
 mockito = "5.11.0"
 robolectric = "4.13"
 
-# KMP Libraries (will be used more later)
+# KMP Libraries
 sqlDelight = "2.0.2"
 
 
@@ -88,6 +88,11 @@ mp-android-chart = { module = "com.github.PhilJay:MPAndroidChart", version.ref =
 mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 
+# --- NEW: Add SQLDelight libraries ---
+sqlDelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqlDelight" }
+sqlDelight-driver-android = { module = "app.cash.sqldelight:android-driver", version.ref = "sqlDelight" }
+sqlDelight-driver-native = { module = "app.cash.sqldelight:native-driver", version.ref = "sqlDelight" }
+
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
@@ -97,7 +102,6 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
 sqlDelight = { id = "app.cash.sqldelight", version.ref = "sqlDelight" }
 
-# --- FIX: Define kotlin plugins using a flat structure. Hyphens become dots in the alias. ---
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
