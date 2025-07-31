@@ -1,11 +1,21 @@
-plugins {
-    id("com.android.application") version "8.6.1" apply false
-    // Set the Kotlin version for the entire project.
-    id("org.jetbrains.kotlin.android") version "2.0.0" apply false
-    // Set the KSP version for the entire project.
-    id("com.google.devtools.ksp") version "2.0.0-1.0.21" apply false
-    // --- ADDED: Declare the Compose Compiler plugin for the project ---
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false
+// build.gradle.kts (Root Project)
+// This file defines the plugins and configurations that apply to the entire project.
 
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.0" apply false
+// Define aliases for the plugins from our version catalog.
+@Suppress("DSL_SCOPE_VIOLATION")
+plugins {
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.compose.compiler) apply false
+    alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.ktlint) apply false
+    alias(libs.plugins.sqlDelight) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
 }
+
+// Apply the Ktlint plugin to all subprojects to maintain code style.
+allprojects {
+    apply(plugin = "org.jlleitschuh.gradle.ktlint")
+}
+

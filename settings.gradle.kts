@@ -1,4 +1,9 @@
-// This file should be in the root directory of your project
+// settings.gradle.kts (Root Project)
+// This file defines the modules that are part of your project.
+
+// Enable feature preview for type-safe project accessors.
+// This allows us to reference modules like `project.shared` in a type-safe way.
+@file:Suppress("UnstableApiUsage")
 
 pluginManagement {
     repositories {
@@ -7,14 +12,22 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
-        // --- NEW: Add JitPack repository ---
-        maven { url = uri("https://jitpack.io") }
     }
+    // Gradle automatically discovers and configures the 'libs' version catalog
+    // from the 'gradle/libs.versions.toml' file. No explicit configuration is needed here.
 }
-rootProject.name = "Finlight" // Or your actual project name
-include(":app")
+
+rootProject.name = "Finlight"
+
+// Include the new modules in the project.
+// The androidApp module holds the Android-specific UI and code.
+// The shared module will hold the common Kotlin business logic.
+include(":androidApp")
+include(":shared")
+
