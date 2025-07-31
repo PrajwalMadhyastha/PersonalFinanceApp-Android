@@ -1,10 +1,8 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CsvValidationScreen.kt
-// REASON: MAJOR REFACTOR - This screen has been completely redesigned to align
-// with the "Project Aurora" vision. The standard Card for each row has been
-// replaced with a GlassPanel component. The status is now indicated by a
-// colored icon for a cleaner look, and all text and component colors are
-// theme-aware to ensure high contrast and a cohesive, modern experience.
+// REASON: FIX - The call to `viewModel.commitCsvImport` now correctly passes
+// the list of `ReviewableRow` objects. This aligns with the updated ViewModel
+// function signature and resolves the "Argument type mismatch" build error.
 // =================================================================================
 package io.pm.finlight.ui.screens
 

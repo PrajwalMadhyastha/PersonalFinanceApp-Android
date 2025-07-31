@@ -1,10 +1,11 @@
 // =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: FEATURE - The `commitCsvImport` logic has been completely rewritten to
-// support split transactions. It now detects if "ParentId" and "Id" columns
-// exist. If so, it uses a two-pass import process to correctly re-link child
-// split items to their newly created parent transactions. If not, it falls back
-// to the standard row-by-row import for generic CSV files.
+// FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/SettingsViewModel.kt
+// REASON: FIX - The `commitCsvImport` function signature has been changed from
+// accepting a Uri to accepting a List<ReviewableRow>. This resolves the
+// argument type mismatch error and makes the import logic more robust by
+// operating on the validated (and potentially modified) list of rows from the
+// UI, rather than re-reading the original file. The `generateValidationReport`
+// function is also updated to capture and store the CSV header.
 // =================================================================================
 package io.pm.finlight
 
@@ -43,7 +44,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val accountRepository = AccountRepository(db.accountDao())
     private val categoryRepository = CategoryRepository(db.categoryDao())
     private val tagDao = db.tagDao()
-    // --- NEW: Add SplitTransactionDao for import ---
     private val splitTransactionDao = db.splitTransactionDao()
 
 
@@ -293,21 +293,30 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 initialData.map {
                     createReviewableRow(it.lineNumber, it.rowData, accountsMap, categoriesMap)
                 }
-            return CsvValidationReport(revalidatedRows, revalidatedRows.size)
+            return CsvValidationReport(header = _csvValidationReport.value?.header ?: emptyList(), reviewableRows = revalidatedRows, totalRowCount = revalidatedRows.size)
         }
 
         val reviewableRows = mutableListOf<ReviewableRow>()
-        var lineNumber = 1
+        var header = emptyList<String>()
+        var lineNumber = 0 // Start at 0 to account for header
 
         getApplication<Application>().contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
-            lines.drop(1).forEach { line ->
-                lineNumber++
+            val lineIterator = lines.iterator()
+            if (lineIterator.hasNext()) {
+                val headerLine = lineIterator.next()
+                header = headerLine.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
+            }
+
+            while (lineIterator.hasNext()) {
+                lineNumber++ // This is now the actual line number in the file (starting from 2)
+                val line = lineIterator.next()
                 val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
-                reviewableRows.add(createReviewableRow(lineNumber, tokens, accountsMap, categoriesMap))
+                reviewableRows.add(createReviewableRow(lineNumber + 1, tokens, accountsMap, categoriesMap))
             }
         }
-        return CsvValidationReport(reviewableRows, lineNumber - 1)
+        return CsvValidationReport(header, reviewableRows, lineNumber)
     }
+
 
     private fun createReviewableRow(
         lineNumber: Int,
@@ -383,9 +392,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun commitCsvImport(uri: Uri) {
+    fun commitCsvImport(rowsToImport: List<ReviewableRow>) {
         viewModelScope.launch(Dispatchers.IO) {
-            val (header, rows) = readCsv(uri)
+            val header = _csvValidationReport.value?.header ?: run {
+                Log.e("CsvImport", "Header not found in validation report. Aborting.")
+                return@launch
+            }
+            val rows = rowsToImport.map { it.rowData }
             val isFinlightExport = header.contains("Id") && header.contains("ParentId")
 
             db.withTransaction {
@@ -396,15 +409,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
-    }
-
-    private suspend fun readCsv(uri: Uri): Pair<List<String>, List<List<String>>> {
-        val lines = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readLines() ?: emptyList()
-        val header = lines.firstOrNull()?.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex())?.map { it.trim().removeSurrounding("\"") } ?: emptyList()
-        val dataRows = lines.drop(1).map { line ->
-            line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
-        }
-        return Pair(header, dataRows)
     }
 
     private suspend fun importFinlightCsv(header: List<String>, rows: List<List<String>>) {
