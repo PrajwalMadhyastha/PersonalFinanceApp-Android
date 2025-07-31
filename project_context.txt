@@ -1,5 +1,5 @@
 Project Context for Personal Finance App
-Generated on: Thu Jul 31 13:53:31 IST 2025
+Generated on: Thu Jul 31 15:13:10 IST 2025
 ========================================
 
 ================== FILE: ./app/build.gradle.kts ==================
@@ -3470,15 +3470,13 @@ class TagViewModel(application: Application) : AndroidViewModel(application) {
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/SettingsViewModel.kt ==================
 // =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SettingsViewModel.kt
-// REASON: FEATURE - The `commitCsvImport` logic has been significantly enhanced
-// to handle tags. It now parses a "Tags" column from the CSV, splits the string
-// by a pipe delimiter, and for each tag name, it either finds the existing tag
-// or creates a new one. These tags are then associated with the newly created
-// transaction, completing the tag import feature.
-// FIX - Removed several unused properties and functions (`scanEvent`,
-// `backupEnabled`, `overallBudget`, etc.) to resolve "UnusedSymbol" warnings.
-// The unused `count` parameter was also removed from `ScanResult.Success`.
+// FILE: ./app/src/main/java/io/pm/finlight/ui/viewmodel/SettingsViewModel.kt
+// REASON: FIX - The `commitCsvImport` function signature has been changed from
+// accepting a Uri to accepting a List<ReviewableRow>. This resolves the
+// argument type mismatch error and makes the import logic more robust by
+// operating on the validated (and potentially modified) list of rows from the
+// UI, rather than re-reading the original file. The `generateValidationReport`
+// function is also updated to capture and store the CSV header.
 // =================================================================================
 package io.pm.finlight
 
@@ -3490,6 +3488,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.utils.ReminderManager
@@ -3515,8 +3514,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val context = application
     private val accountRepository = AccountRepository(db.accountDao())
     private val categoryRepository = CategoryRepository(db.categoryDao())
-    // --- NEW: Add TagDao for direct access during import ---
     private val tagDao = db.tagDao()
+    private val splitTransactionDao = db.splitTransactionDao()
+
 
     val smsScanStartDate: StateFlow<Long>
 
@@ -3764,21 +3764,30 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 initialData.map {
                     createReviewableRow(it.lineNumber, it.rowData, accountsMap, categoriesMap)
                 }
-            return CsvValidationReport(revalidatedRows, revalidatedRows.size)
+            return CsvValidationReport(header = _csvValidationReport.value?.header ?: emptyList(), reviewableRows = revalidatedRows, totalRowCount = revalidatedRows.size)
         }
 
         val reviewableRows = mutableListOf<ReviewableRow>()
-        var lineNumber = 1
+        var header = emptyList<String>()
+        var lineNumber = 0 // Start at 0 to account for header
 
         getApplication<Application>().contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
-            lines.drop(1).forEach { line ->
-                lineNumber++
+            val lineIterator = lines.iterator()
+            if (lineIterator.hasNext()) {
+                val headerLine = lineIterator.next()
+                header = headerLine.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
+            }
+
+            while (lineIterator.hasNext()) {
+                lineNumber++ // This is now the actual line number in the file (starting from 2)
+                val line = lineIterator.next()
                 val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex()).map { it.trim().removeSurrounding("\"") }
-                reviewableRows.add(createReviewableRow(lineNumber, tokens, accountsMap, categoriesMap))
+                reviewableRows.add(createReviewableRow(lineNumber + 1, tokens, accountsMap, categoriesMap))
             }
         }
-        return CsvValidationReport(reviewableRows, lineNumber - 1)
+        return CsvValidationReport(header, reviewableRows, lineNumber)
     }
+
 
     private fun createReviewableRow(
         lineNumber: Int,
@@ -3786,23 +3795,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         accounts: Map<String, Account>,
         categories: Map<String, Category>,
     ): ReviewableRow {
-        // --- UPDATED: Loosen column count check for optional tags ---
         if (tokens.size < 8) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_COLUMN_COUNT, "Invalid column count. Expected at least 8.")
 
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         try {
-            dateFormat.parse(tokens[0])
+            dateFormat.parse(tokens[2]) // Date is now at index 2
         } catch (
             e: Exception,
         ) {
             return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_DATE, "Invalid date format.")
         }
 
-        val amount = tokens[2].toDoubleOrNull()
+        val amount = tokens[4].toDoubleOrNull() // Amount is now at index 4
         if (amount == null || amount <= 0) return ReviewableRow(lineNumber, tokens, CsvRowStatus.INVALID_AMOUNT, "Invalid amount.")
 
-        val categoryName = tokens[4]
-        val accountName = tokens[5]
+        val categoryName = tokens[6] // Category is now at index 6
+        val accountName = tokens[7] // Account is now at index 7
 
         val categoryExists = categories.containsKey(categoryName)
         val accountExists = accounts.containsKey(accountName)
@@ -3855,94 +3863,142 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- UPDATED: Logic to handle tag creation and association ---
     fun commitCsvImport(rowsToImport: List<ReviewableRow>) {
         viewModelScope.launch(Dispatchers.IO) {
-            val allAccounts = accountRepository.allAccounts.first()
-            val allCategories = categoryRepository.allCategories.first()
-            val accountMap = allAccounts.associateBy { it.name.lowercase() }.toMutableMap()
-            val categoryMap = allCategories.associateBy { it.name.lowercase() }.toMutableMap()
+            val header = _csvValidationReport.value?.header ?: run {
+                Log.e("CsvImport", "Header not found in validation report. Aborting.")
+                return@launch
+            }
+            val rows = rowsToImport.map { it.rowData }
+            val isFinlightExport = header.contains("Id") && header.contains("ParentId")
 
-            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-
-            for (row in rowsToImport) {
-                try {
-                    val columns = row.rowData
-                    val date = dateFormat.parse(columns[0]) ?: Date()
-                    val description = columns[1]
-                    val amount = columns[2].toDouble()
-                    val type = columns[3].lowercase(Locale.getDefault())
-                    val categoryName = columns[4]
-                    val accountName = columns[5]
-                    val notes = columns.getOrNull(6)
-                    val isExcluded = columns.getOrNull(7)?.toBoolean() ?: false
-                    // --- NEW: Parse tags from the 9th column ---
-                    val tagsString = columns.getOrNull(8)
-
-                    var category = categoryMap[categoryName.lowercase()]
-                    if (category == null) {
-                        val newCategory = Category(name = categoryName)
-                        categoryRepository.insert(newCategory)
-                        val updatedCategories = categoryRepository.allCategories.first()
-                        category = updatedCategories.find { it.name.equals(categoryName, ignoreCase = true) }
-                        if (category != null) {
-                            categoryMap[categoryName.lowercase()] = category
-                        } else {
-                            continue
-                        }
-                    }
-
-                    var account = accountMap[accountName.lowercase()]
-                    if (account == null) {
-                        val newAccount = Account(name = accountName, type = "Imported")
-                        accountRepository.insert(newAccount)
-                        val updatedAccounts = accountRepository.allAccounts.first()
-                        account = updatedAccounts.find { it.name.equals(accountName, ignoreCase = true) }
-                        if (account != null) {
-                            accountMap[accountName.lowercase()] = account
-                        } else {
-                            continue
-                        }
-                    }
-
-                    if (account == null || category == null) {
-                        continue
-                    }
-
-                    // --- NEW: Process tags ---
-                    val tagsToAssociate = mutableSetOf<Tag>()
-                    if (!tagsString.isNullOrBlank()) {
-                        val tagNames = tagsString.split('|').map { it.trim() }.filter { it.isNotEmpty() }
-                        for (tagName in tagNames) {
-                            var tag = tagDao.findByName(tagName)
-                            if (tag == null) {
-                                val newTagId = tagDao.insert(Tag(name = tagName))
-                                tag = Tag(id = newTagId.toInt(), name = tagName)
-                            }
-                            tagsToAssociate.add(tag)
-                        }
-                    }
-
-                    val transaction =
-                        Transaction(
-                            date = date.time,
-                            amount = amount,
-                            description = description,
-                            notes = notes,
-                            transactionType = type,
-                            accountId = account.id,
-                            categoryId = category.id,
-                            isExcluded = isExcluded,
-                            source = "Imported"
-                        )
-                    // --- UPDATED: Use the repository function that handles tags ---
-                    transactionRepository.insertTransactionWithTags(transaction, tagsToAssociate)
-                } catch (e: Exception) {
-                    Log.e("CsvImportDebug", "ViewModel: Failed to parse or insert row ${row.lineNumber}. Data: ${row.rowData}", e)
+            db.withTransaction {
+                if (isFinlightExport) {
+                    importFinlightCsv(header, rows)
+                } else {
+                    importGenericCsv(header, rows)
                 }
             }
         }
     }
+
+    private suspend fun importFinlightCsv(header: List<String>, rows: List<List<String>>) {
+        val idMap = mutableMapOf<String, Long>() // Map CSV ID to new DB ID
+        val parents = rows.filter { it[header.indexOf("ParentId")].isBlank() }
+        val children = rows.filter { it[header.indexOf("ParentId")].isNotBlank() }
+
+        // Pass 1: Import parents and standard transactions
+        for (row in parents) {
+            val oldId = row[header.indexOf("Id")]
+            val isSplit = row[header.indexOf("Category")] == "Split Transaction"
+            val transaction = createTransactionFromRow(row, header, isSplit = isSplit)
+            val newId = transactionRepository.insertTransactionWithTags(transaction, getTagsFromRow(row, header))
+            idMap[oldId] = newId
+        }
+
+        // Pass 2: Import child splits
+        for (row in children) {
+            val parentIdCsv = row[header.indexOf("ParentId")]
+            val newParentId = idMap[parentIdCsv]?.toInt()
+            if (newParentId == null) {
+                Log.w("CsvImport", "Could not find parent for split row: $row")
+                continue
+            }
+            val split = createSplitFromRow(row, header, newParentId)
+            splitTransactionDao.insertAll(listOf(split))
+        }
+    }
+
+    private suspend fun importGenericCsv(header: List<String>, rows: List<List<String>>) {
+        for (row in rows) {
+            val transaction = createTransactionFromRow(row, header, isSplit = false)
+            transactionRepository.insertTransactionWithTags(transaction, getTagsFromRow(row, header))
+        }
+    }
+
+    private suspend fun createTransactionFromRow(row: List<String>, header: List<String>, isSplit: Boolean): Transaction {
+        val h = header.associateWith { header.indexOf(it) }.withDefault { -1 }
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+        val date = dateFormat.parse(row[h.getValue("Date")])?.time ?: Date().time
+        val description = row[h.getValue("Description")]
+        val amount = row[h.getValue("Amount")].toDouble()
+        val type = row[h.getValue("Type")].lowercase(Locale.getDefault())
+        val categoryName = row[h.getValue("Category")]
+        val accountName = row[h.getValue("Account")]
+        val notes = row.getOrNull(h.getValue("Notes"))
+        val isExcluded = row.getOrNull(h.getValue("IsExcluded")).toBoolean()
+
+        val category = if (isSplit) null else findOrCreateCategory(categoryName)
+        val account = findOrCreateAccount(accountName)
+
+        return Transaction(
+            date = date,
+            description = description,
+            amount = amount,
+            transactionType = type,
+            categoryId = category?.id,
+            accountId = account.id,
+            notes = notes,
+            isExcluded = isExcluded,
+            source = "Imported",
+            isSplit = isSplit
+        )
+    }
+
+    private suspend fun createSplitFromRow(row: List<String>, header: List<String>, parentId: Int): SplitTransaction {
+        val h = header.associateWith { header.indexOf(it) }.withDefault { -1 }
+
+        val amount = row[h.getValue("Amount")].toDouble()
+        val categoryName = row[h.getValue("Category")]
+        val notes = row.getOrNull(h.getValue("Notes"))
+
+        val category = findOrCreateCategory(categoryName)
+
+        return SplitTransaction(
+            parentTransactionId = parentId,
+            amount = amount,
+            categoryId = category.id,
+            notes = notes
+        )
+    }
+
+    private suspend fun getTagsFromRow(row: List<String>, header: List<String>): Set<Tag> {
+        val h = header.associateWith { header.indexOf(it) }.withDefault { -1 }
+        val tagsString = row.getOrNull(h.getValue("Tags"))
+        val tagsToAssociate = mutableSetOf<Tag>()
+        if (!tagsString.isNullOrBlank()) {
+            val tagNames = tagsString.split('|').map { it.trim() }.filter { it.isNotEmpty() }
+            for (tagName in tagNames) {
+                var tag = tagDao.findByName(tagName)
+                if (tag == null) {
+                    val newTagId = tagDao.insert(Tag(name = tagName))
+                    tag = Tag(id = newTagId.toInt(), name = tagName)
+                }
+                tagsToAssociate.add(tag)
+            }
+        }
+        return tagsToAssociate
+    }
+
+    private suspend fun findOrCreateCategory(name: String): Category {
+        var category = categoryRepository.allCategories.first().find { it.name.equals(name, ignoreCase = true) }
+        if (category == null) {
+            val newId = categoryRepository.insert(Category(name = name))
+            category = Category(id = newId.toInt(), name = name)
+        }
+        return category
+    }
+
+    private suspend fun findOrCreateAccount(name: String): Account {
+        var account = accountRepository.allAccounts.first().find { it.name.equals(name, ignoreCase = true) }
+        if (account == null) {
+            val newId = accountRepository.insert(Account(name = name, type = "Imported"))
+            account = Account(id = newId.toInt(), name = name, type = "Imported")
+        }
+        return account
+    }
+
 
     fun clearCsvValidationReport() {
         _csvValidationReport.value = null
@@ -13436,8 +13492,9 @@ private fun AccountDetailTransactionItem(transactionDetails: TransactionDetails)
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/DashboardScreen.kt
-// REASON: REFACTOR - Updated the `when` block in the `DashboardCard` composable
-// to call the renamed `AuroraRecentTransactionsCard` component.
+// REASON: FEATURE - The "Spending Consistency" card has been updated to include
+// the new `ConsistencyCalendarLegend` component, providing users with a clear
+// explanation of the heatmap colors.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -14599,11 +14656,9 @@ private fun auroraTextFieldColors() = OutlinedTextFieldDefaults.colors(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CsvValidationScreen.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/screens/CsvValidationScreen.kt
-// REASON: MAJOR REFACTOR - This screen has been completely redesigned to align
-// with the "Project Aurora" vision. The standard Card for each row has been
-// replaced with a GlassPanel component. The status is now indicated by a
-// colored icon for a cleaner look, and all text and component colors are
-// theme-aware to ensure high contrast and a cohesive, modern experience.
+// REASON: FIX - The call to `viewModel.commitCsvImport` now correctly passes
+// the list of `ReviewableRow` objects. This aligns with the updated ViewModel
+// function signature and resolves the "Argument type mismatch" build error.
 // =================================================================================
 package io.pm.finlight.ui.screens
 
@@ -18546,10 +18601,9 @@ fun TransactionList(
 ================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt ==================
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendar.kt
-// REASON: FIX - The `MonthlyConsistencyCalendarCard` now correctly uses the
-// `DetailedMonthlyCalendar` component instead of the mini-heatmap. This ensures
-// the correct, interactive calendar is displayed on the monthly report screen,
-// fixing the visual bug with future dates and improving UI consistency.
+// REASON: FEATURE - Added a new `ConsistencyCalendarLegend` composable to the
+// bottom of the yearly and detailed monthly calendar views to provide users
+// with a clear explanation of what each color in the heatmap represents.
 // =================================================================================
 package io.pm.finlight.ui.components
 
@@ -18725,20 +18779,24 @@ fun ConsistencyCalendar(
         }
     }
 
-    LazyRow(
-        state = lazyListState,
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DAY_SPACING * 2)
-    ) {
-        items(months) { monthData ->
-            MonthColumn(
-                monthData = monthData,
-                year = year,
-                today = today,
-                dataMap = dataMap,
-                onDayClick = onDayClick
-            )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        LazyRow(
+            state = lazyListState,
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(DAY_SPACING * 2)
+        ) {
+            items(months) { monthData ->
+                MonthColumn(
+                    monthData = monthData,
+                    year = year,
+                    today = today,
+                    dataMap = dataMap,
+                    onDayClick = onDayClick
+                )
+            }
         }
+        // --- NEW: Add the legend below the calendar ---
+        ConsistencyCalendarLegend()
     }
 }
 
@@ -18831,6 +18889,8 @@ fun DetailedMonthlyCalendar(
                 }
             }
         }
+        // --- NEW: Add the legend below the calendar ---
+        ConsistencyCalendarLegend()
     }
 }
 
@@ -19422,6 +19482,73 @@ fun MonthlyReportTimePicker(
         },
         containerColor = popupContainerColor
     )
+}
+-e 
+
+
+================== FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendarLegend.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/ui/components/ConsistencyCalendarLegend.kt
+// REASON: NEW FILE - This composable defines the legend for the spending
+// consistency heatmap, mapping each color to its corresponding status.
+// =================================================================================
+package io.pm.finlight.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.dp
+
+@Composable
+fun ConsistencyCalendarLegend() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LegendItem(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), label = "No Data")
+        LegendItem(color = Color(0xFF39D353), label = "No Spend")
+        LegendItem(color = lerp(Color(0xFFACD5F2), Color(0xFF006DAB), 0.5f), label = "In Budget")
+        LegendItem(color = lerp(Color(0xFFF87171), Color(0xFFB91C1C), 0.5f), label = "Over Budget")
+    }
+}
+
+@Composable
+private fun LegendItem(color: Color, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(color)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 -e 
 
@@ -23717,6 +23844,14 @@ class RecurringTransactionWorker(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/data/DataExportService.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/data/DataExportService.kt
+// REASON: FEATURE - The CSV export logic has been completely rewritten to
+// support split transactions. It now includes "Id" and "ParentId" columns.
+// Split items are exported as separate rows linked to their parent via the
+// "ParentId", ensuring full data fidelity on re-import. The JSON backup logic
+// is also updated to include the split_transactions table.
+// =================================================================================
 package io.pm.finlight.data
 
 import android.content.Context
@@ -23743,15 +23878,15 @@ object DataExportService {
             ignoreUnknownKeys = true
         }
 
-    // --- UPDATED: Add "Tags" to the CSV template header ---
+    // --- UPDATED: Add "Id" and "ParentId" to the CSV template header ---
     fun getCsvTemplateString(): String {
-        return "Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags\n"
+        return "Id,ParentId,Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags\n"
     }
 
     suspend fun exportToJsonString(context: Context): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val db = AppDatabase.Companion.getInstance(context)
+                val db = AppDatabase.getInstance(context)
 
                 val backupData =
                     AppDataBackup(
@@ -23760,6 +23895,8 @@ object DataExportService {
                         categories = db.categoryDao().getAllCategories().first(),
                         budgets = db.budgetDao().getAllBudgets().first(),
                         merchantMappings = db.merchantMappingDao().getAllMappings().first(),
+                        // --- NEW: Include split transactions in the backup ---
+                        splitTransactions = db.splitTransactionDao().getAllSplits().first()
                     )
 
                 json.encodeToString(backupData)
@@ -23782,24 +23919,25 @@ object DataExportService {
 
                 val backupData = json.decodeFromString<AppDataBackup>(jsonString)
 
-                val db = AppDatabase.Companion.getInstance(context)
-                val transactionDao = db.transactionDao()
-                val accountDao = db.accountDao()
-                val categoryDao = db.categoryDao()
-                val budgetDao = db.budgetDao()
-                val merchantMappingDao = db.merchantMappingDao()
+                val db = AppDatabase.getInstance(context)
+                // Clear all data in the correct order (respecting foreign keys)
+                db.splitTransactionDao().deleteAll()
+                db.transactionDao().deleteAll()
+                db.accountDao().deleteAll()
+                db.categoryDao().deleteAll()
+                db.budgetDao().deleteAll()
+                db.merchantMappingDao().deleteAll()
 
-                transactionDao.deleteAll()
-                accountDao.deleteAll()
-                categoryDao.deleteAll()
-                budgetDao.deleteAll()
-                merchantMappingDao.deleteAll()
 
-                accountDao.insertAll(backupData.accounts)
-                categoryDao.insertAll(backupData.categories)
-                budgetDao.insertAll(backupData.budgets)
-                merchantMappingDao.insertAll(backupData.merchantMappings)
-                transactionDao.insertAll(backupData.transactions)
+                // Insert new data
+                db.accountDao().insertAll(backupData.accounts)
+                db.categoryDao().insertAll(backupData.categories)
+                db.budgetDao().insertAll(backupData.budgets)
+                db.merchantMappingDao().insertAll(backupData.merchantMappings)
+                db.transactionDao().insertAll(backupData.transactions)
+                // --- NEW: Import split transactions ---
+                db.splitTransactionDao().insertAll(backupData.splitTransactions)
+
 
                 true
             } catch (e: Exception) {
@@ -23812,8 +23950,9 @@ object DataExportService {
     suspend fun exportToCsvString(context: Context): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val db = AppDatabase.Companion.getInstance(context)
+                val db = AppDatabase.getInstance(context)
                 val transactionDao = db.transactionDao()
+                val splitTransactionDao = db.splitTransactionDao()
                 val transactions = transactionDao.getAllTransactions().first()
                 val csvBuilder = StringBuilder()
 
@@ -23822,22 +23961,39 @@ object DataExportService {
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
                 transactions.forEach { details: TransactionDetails ->
-                    val date = dateFormat.format(Date(details.transaction.date))
-                    val description = escapeCsvField(details.transaction.description)
-                    val amount = details.transaction.amount.toString()
-                    val type = details.transaction.transactionType
-                    val category = escapeCsvField(details.categoryName ?: "N/A")
+                    val transaction = details.transaction
+                    val date = dateFormat.format(Date(transaction.date))
+                    val description = escapeCsvField(transaction.description)
+                    val amount = transaction.amount.toString()
+                    val type = transaction.transactionType
                     val account = escapeCsvField(details.accountName ?: "N/A")
-                    val notes = escapeCsvField(details.transaction.notes ?: "")
-                    val isExcluded = details.transaction.isExcluded.toString()
-
-                    // --- NEW: Fetch and append tags ---
-                    val tags = transactionDao.getTagsForTransactionSimple(details.transaction.id)
-                    val tagsString =
-                        tags.joinToString("|") { it.name } // Use pipe as a safe delimiter
+                    val notes = escapeCsvField(transaction.notes ?: "")
+                    val isExcluded = transaction.isExcluded.toString()
+                    val tags = transactionDao.getTagsForTransactionSimple(transaction.id)
+                    val tagsString = tags.joinToString("|") { it.name }
                     val escapedTags = escapeCsvField(tagsString)
 
-                    csvBuilder.append("$date,$description,$amount,$type,$category,$account,$notes,$isExcluded,$escapedTags\n")
+                    if (transaction.isSplit) {
+                        // This is a parent transaction
+                        val category = "Split Transaction" // Parent has a special category
+                        csvBuilder.append("${transaction.id},,$date,$description,$amount,$type,$category,$account,$notes,$isExcluded,$escapedTags\n")
+
+                        // Now fetch and append its children
+                        val splits = splitTransactionDao.getSplitsForParentSimple(transaction.id)
+                        splits.forEach { splitDetails ->
+                            val split = splitDetails.splitTransaction
+                            // Use notes as description for splits, fallback to category name
+                            val splitDescription = escapeCsvField(split.notes ?: splitDetails.categoryName ?: "")
+                            val splitAmount = split.amount.toString()
+                            val splitCategory = escapeCsvField(splitDetails.categoryName ?: "N/A")
+                            // Child rows have no ID of their own in this context, but link to the parent
+                            csvBuilder.append(",${transaction.id},${dateFormat.format(Date(transaction.date))},$splitDescription,$splitAmount,$type,$splitCategory,$account,${escapeCsvField(split.notes ?: "")},$isExcluded,\n")
+                        }
+                    } else {
+                        // This is a standard, non-split transaction
+                        val category = escapeCsvField(details.categoryName ?: "N/A")
+                        csvBuilder.append("${transaction.id},,$date,$description,$amount,$type,$category,$account,$notes,$isExcluded,$escapedTags\n")
+                    }
                 }
                 csvBuilder.toString()
             } catch (e: Exception) {
@@ -23847,16 +24003,14 @@ object DataExportService {
         }
     }
 
-    // --- NOTE: The importFromCsv function has been moved to SettingsViewModel ---
-    // This file now only handles data formatting (export).
-
     private fun escapeCsvField(field: String): String {
         if (field.contains(",") || field.contains("\"") || field.contains("\n")) {
             return "\"${field.replace("\"", "\"\"")}\""
         }
         return field
     }
-}-e 
+}
+-e 
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/AccountRepository.kt ==================
@@ -24904,11 +25058,10 @@ class MerchantRenameRuleRepository(private val dao: MerchantRenameRuleDao) {
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt ==================
 // =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionRepository.kt
-// REASON: FIX - Added the missing `getTagsForTransactionSimple` function. This
-// function was already defined in the DAO but was not exposed by the repository,
-// causing an "Unresolved reference" error in the TransactionViewModel when
-// trying to generate a shareable image with tags.
+// FILE: ./app/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt
+// REASON: FIX - The `insertTransactionWithTags` function has been updated to
+// return the Long ID of the newly created transaction. This is required by the
+// CSV import logic to map old IDs to new ones and resolves a build error.
 // =================================================================================
 package io.pm.finlight
 
@@ -24918,12 +25071,9 @@ import kotlinx.coroutines.flow.onEach
 
 class TransactionRepository(private val transactionDao: TransactionDao) {
 
-    // --- NEW: Expose the DAO function to get a transaction with its splits ---
     fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?> {
         return transactionDao.getTransactionWithSplits(transactionId)
     }
-
-    // --- (Existing repository methods below) ---
 
     val allTransactions: Flow<List<TransactionDetails>> =
         transactionDao.getAllTransactions()
@@ -25054,14 +25204,15 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         }
     }
 
-    suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
-        val transactionId = transactionDao.insert(transaction).toInt()
+    suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>): Long {
+        val transactionId = transactionDao.insert(transaction)
         if (tags.isNotEmpty()) {
             val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = transactionId, tagId = tag.id)
+                TransactionTagCrossRef(transactionId = transactionId.toInt(), tagId = tag.id)
             }
             transactionDao.addTagsToTransaction(crossRefs)
         }
+        return transactionId
     }
 
     suspend fun updateTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
@@ -25185,9 +25336,10 @@ data class TransactionDetails(
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/data/model/CsvValidationReport.kt ==================
 // =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/CsvValidationReport.kt
-// REASON: FIX - The unused enum constants ACCOUNT_NOT_FOUND and
-// CATEGORY_NOT_FOUND have been removed to resolve the "UnusedSymbol" warnings.
+// FILE: ./app/src/main/java/io/pm/finlight/data/model/CsvValidationReport.kt
+// REASON: FEATURE - Added a `header` property to the data class. This allows
+// the validation process to store the CSV header, which is now required by the
+// updated import logic in the SettingsViewModel to correctly map columns.
 // =================================================================================
 package io.pm.finlight
 
@@ -25219,6 +25371,7 @@ data class ReviewableRow(
  * A data class to hold the full results of a CSV validation process.
  */
 data class CsvValidationReport(
+    val header: List<String> = emptyList(),
     val reviewableRows: List<ReviewableRow> = emptyList(),
     val totalRowCount: Int = 0,
 )
@@ -25464,6 +25617,12 @@ data class PeriodTotal(
 
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/data/model/AppDataBackup.kt ==================
+// =================================================================================
+// FILE: ./app/src/main/java/io/pm/finlight/data/model/AppDataBackup.kt
+// REASON: FEATURE - The backup data model has been updated to include a list of
+// `SplitTransaction` entities. This ensures that detailed split transaction
+// data is correctly included in JSON backups and restores.
+// =================================================================================
 package io.pm.finlight
 
 import kotlinx.serialization.Serializable
@@ -25479,6 +25638,8 @@ data class AppDataBackup(
     val categories: List<Category>,
     val budgets: List<Budget>,
     val merchantMappings: List<MerchantMapping>,
+    // --- NEW: Add split transactions to the backup model ---
+    val splitTransactions: List<SplitTransaction> = emptyList()
 )
 -e 
 
@@ -26098,11 +26259,10 @@ data class Transaction(
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/SplitTransaction.kt ==================
 // =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SplitTransaction.kt
-// REASON: FEATURE (Travel Mode Splitting) - Added a new nullable `originalAmount`
-// column. This will store the split amount in the foreign currency if the parent
-// transaction was made in Travel Mode, allowing the UI to display the correct
-// values while the `amount` column always stores the home currency value.
+// FILE: ./app/src/main/java/io/pm/finlight/data/db/entity/SplitTransaction.kt
+// REASON: FIX - Added the @Serializable annotation. This is required by the
+// kotlinx.serialization library to correctly include this entity in the JSON
+// data backup, resolving a build error.
 // =================================================================================
 package io.pm.finlight
 
@@ -26110,7 +26270,9 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(
     tableName = "split_transactions",
     foreignKeys = [
@@ -26139,7 +26301,6 @@ data class SplitTransaction(
     val amount: Double, // ALWAYS in home currency
     val categoryId: Int?,
     val notes: String?,
-    // --- NEW: Store the amount in the original foreign currency, if applicable ---
     val originalAmount: Double? = null
 )
 -e 
@@ -26199,11 +26360,10 @@ interface MerchantRenameRuleDao {
 
 ================== FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/SplitTransactionDao.kt ==================
 // =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/SplitTransactionDao.kt
-// REASON: FEATURE (Splitting) - Added a new `getSplitsForParent` query. This
-// query joins the split_transactions table with the categories table to fetch
-// each split item along with its full category details, which is necessary for
-// displaying them in the UI.
+// FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/SplitTransactionDao.kt
+// REASON: FEATURE - Added `getAllSplits` and `getSplitsForParentSimple` queries.
+// These are required by the data export service to fetch all split items for
+// JSON and CSV backups.
 // =================================================================================
 package io.pm.finlight
 
@@ -26227,6 +26387,26 @@ interface SplitTransactionDao {
         ORDER BY s.amount DESC
     """)
     fun getSplitsForParent(parentTransactionId: Int): Flow<List<SplitTransactionDetails>>
+
+    // --- NEW: Query to get simple split details for CSV export ---
+    @Transaction
+    @Query("""
+        SELECT s.*, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
+        FROM split_transactions s
+        LEFT JOIN categories c ON s.categoryId = c.id
+        WHERE s.parentTransactionId = :parentTransactionId
+        ORDER BY s.id ASC
+    """)
+    suspend fun getSplitsForParentSimple(parentTransactionId: Int): List<SplitTransactionDetails>
+
+
+    // --- NEW: Query to get all splits for JSON backup ---
+    @Query("SELECT * FROM split_transactions")
+    fun getAllSplits(): Flow<List<SplitTransaction>>
+
+    // --- NEW: Query to clear the table during import ---
+    @Query("DELETE FROM split_transactions")
+    suspend fun deleteAll()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(splits: List<SplitTransaction>)
