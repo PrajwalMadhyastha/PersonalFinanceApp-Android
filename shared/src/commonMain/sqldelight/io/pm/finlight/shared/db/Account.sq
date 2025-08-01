@@ -1,0 +1,34 @@
+-- The 'CREATE TABLE' statement for the Account entity.
+-- SQLDelight uses this to generate a type-safe 'Account' data class.
+CREATE TABLE account (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    type TEXT NOT NULL
+);
+
+-- SQLDelight will generate functions based on these queries.
+
+-- A query to select all accounts, ordered by name.
+selectAll:
+SELECT * FROM account ORDER BY name ASC;
+
+-- A query to select a single account by its ID.
+selectById:
+SELECT * FROM account WHERE id = :id;
+
+-- A query to select an account by its name (case-insensitive).
+selectByName:
+SELECT * FROM account WHERE name = :name COLLATE NOCASE;
+
+-- An insert statement. SQLDelight will generate an 'insert' function.
+-- Note: We don't need to provide the 'id' as it's autoincremented.
+insert:
+INSERT OR IGNORE INTO account(name, type) VALUES (:name, :type);
+
+-- An update statement.
+update:
+UPDATE account SET name = :name, type = :type WHERE id = :id;
+
+-- A delete statement.
+deleteById:
+DELETE FROM account WHERE id = :id;
