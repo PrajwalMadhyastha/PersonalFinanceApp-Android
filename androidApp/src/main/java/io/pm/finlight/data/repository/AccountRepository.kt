@@ -2,11 +2,12 @@ package io.pm.finlight.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import io.pm.finlight.data.db.entity.Account
+import io.pm.finlight.shared.db.Account
 import io.pm.finlight.shared.db.AccountQueries
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 class AccountRepository(
@@ -18,7 +19,7 @@ class AccountRepository(
         accountQueries.selectAll(::mapAccount).asFlow().mapToList(dispatcher)
 
     fun getAccountById(id: Long): Flow<Account?> =
-        accountQueries.selectById(id, ::mapAccount).asFlow().mapToList(dispatcher).map { it.firstOrNull() }
+        accountQueries.selectById(id, ::mapAccount).asFlow().map { it.firstOrNull() }
 
     suspend fun findAccountByName(name: String): Account? = withContext(dispatcher) {
         accountQueries.selectByName(name, ::mapAccount).executeAsOneOrNull()

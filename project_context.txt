@@ -1,5 +1,5 @@
 Project Context for Finlight KMP
-Generated on: Thu Jul 31 21:07:49 IST 2025
+Generated on: Fri Aug  1 13:16:02 IST 2025
 ========================================
 
 ================== FILE: ./settings.gradle.kts ==================
@@ -23,6 +23,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // --- FIX: Add the JitPack repository for MPAndroidChart ---
+        maven { url = uri("https://jitpack.io") }
     }
     // Gradle automatically discovers and configures the 'libs' version catalog
     // from the 'gradle/libs.versions.toml' file. No explicit configuration is needed here.
@@ -38,30 +40,28 @@ include(":shared")
 
 
 
-
 ================== FILE: ./build.gradle.kts ==================
 // build.gradle.kts (Root Project)
 // This file defines the plugins and configurations that apply to the entire project.
 
 @Suppress("DSL_SCOPE_VIOLATION")
 plugins {
-    // --- FIX: Use the correct nested alias structure ---
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
+    // --- FIX: Use the corrected, non-nested plugin aliases ---
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.compose.compiler) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.ktlint) apply false
     alias(libs.plugins.sqlDelight) apply false
-    alias(libs.plugins.kotlin.serialization) apply false
 }
 
 // Apply the Ktlint plugin to all subprojects to maintain code style.
 allprojects {
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
 }
-
 
 
 
@@ -107,7 +107,7 @@ mpAndroidChart = "v3.1.0"
 mockito = "5.11.0"
 robolectric = "4.13"
 
-# KMP Libraries (will be used more later)
+# KMP Libraries
 sqlDelight = "2.0.2"
 
 
@@ -145,6 +145,8 @@ google-material = { module = "com.google.android.material:material", version = "
 junit = { module = "junit:junit", version = "4.13.2" }
 
 # Kotlin & Coroutines
+# --- NEW: Add core coroutines dependency ---
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 
@@ -156,6 +158,11 @@ mp-android-chart = { module = "com.github.PhilJay:MPAndroidChart", version.ref =
 mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 
+# KMP Libraries
+sqlDelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqlDelight" }
+sqlDelight-driver-android = { module = "app.cash.sqldelight:android-driver", version.ref = "sqlDelight" }
+sqlDelight-driver-native = { module = "app.cash.sqldelight:native-driver", version.ref = "sqlDelight" }
+
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
@@ -165,11 +172,10 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
 sqlDelight = { id = "app.cash.sqldelight", version.ref = "sqlDelight" }
 
-# --- FIX: Define kotlin plugins as a table ---
-[plugins.kotlin]
-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+
 
 
 ---------- SHARED MODULE ----------
@@ -179,10 +185,10 @@ serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref 
 
 @Suppress("DSL_SCOPE_VIOLATION")
 plugins {
-    // --- FIX: Use the correct nested alias for the kotlin.multiplatform plugin ---
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.library)
     alias(libs.plugins.sqlDelight)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 kotlin {
@@ -203,17 +209,32 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                // Dependencies for all platforms will go here.
-                // e.g., Coroutines, Ktor, SQLDelight runtime
+                implementation(libs.sqlDelight.runtime)
+                implementation(libs.kotlinx.serialization.json)
+                // --- NEW: Add coroutines dependency to commonMain ---
+                implementation(libs.kotlinx.coroutines.core)
             }
         }
         val androidMain by getting {
             dependencies {
-                // Android-specific dependencies
+                implementation(libs.sqlDelight.driver.android)
             }
         }
-        val iosMain by getting {
-            // iOS-specific dependencies
+
+        val iosMain by creating {
+            dependsOn(commonMain)
+            dependencies {
+                implementation(libs.sqlDelight.driver.native)
+            }
+        }
+        val iosX64Main by getting {
+            dependsOn(iosMain)
+        }
+        val iosArm64Main by getting {
+            dependsOn(iosMain)
+        }
+        val iosSimulatorArm64Main by getting {
+            dependsOn(iosMain)
         }
     }
 }
@@ -769,6 +790,23 @@ data class DailyTotal(
 -e 
 
 
+================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/DatabaseDriverFactory.kt ==================
+package io.pm.finlight.data.db
+
+import app.cash.sqldelight.db.SqlDriver
+
+/**
+ * An expected class that defines the contract for creating a platform-specific
+ * SQLDelight database driver. The actual implementations will be provided
+ * in the androidMain and iosMain source sets.
+ */
+expect class DatabaseDriverFactory {
+    fun createDriver(): SqlDriver
+}
+-e 
+-e 
+
+
 ================== FILE: ./shared/src/commonMain/kotlin/io/pm/finlight/data/db/entity/RecurringPattern.kt ==================
 package io.pm.finlight.data.db.entity
 
@@ -1182,11 +1220,9 @@ if (keystorePropertiesFile.exists()) {
 @Suppress("DSL_SCOPE_VIOLATION")
 plugins {
     alias(libs.plugins.android.application)
-    // --- FIX: Use the correct nested alias for the kotlin.android plugin ---
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
-    // --- FIX: Use the correct nested alias for the kotlin.serialization plugin ---
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -1213,9 +1249,7 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-        ksp {
-            arg("room.schemaLocation", "$projectDir/schemas")
-        }
+        // ksp argument for room.schemaLocation is no longer needed
     }
 
     buildTypes {
@@ -1273,11 +1307,13 @@ dependencies {
     implementation(libs.androidx.compose.material)
     implementation(libs.androidx.compose.runtime.livedata)
 
+    // --- FIX: Keep Room runtime for now for potential future migrations, but remove the compiler ---
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.firebase.crashlytics.buildtools)
-    ksp(libs.androidx.room.compiler)
+    // --- FIX: Remove the Room KSP compiler dependency ---
+    // ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
@@ -1440,7 +1476,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.model.TimePeriod
 
 class TimePeriodReportViewModelFactory(
@@ -1483,7 +1518,6 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
@@ -1646,36 +1680,35 @@ class RuleCreationViewModel(application: Application) : AndroidViewModel(applica
 
 
 ================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/DashboardViewModelFactory.kt ==================
-package io.pm.finlight
+package io.pm.finlight.ui.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import io.pm.finlight.data.db.AppDatabase
+import io.pm.finlight.data.db.DatabaseProvider
+import io.pm.finlight.data.repository.AccountRepository
+import io.pm.finlight.data.repository.SettingsRepository
+import io.pm.finlight.data.repository.TransactionRepository
 
-/**
- * Factory for creating a DashboardViewModel with a constructor that takes dependencies.
- */
 class DashboardViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(DashboardViewModel::class.java)) {
-            val db = AppDatabase.getInstance(application)
-            val transactionRepository = TransactionRepository(db.transactionDao())
-            val accountRepository = AccountRepository(db.accountDao())
+            val db = DatabaseProvider.getInstance(application)
+            val transactionRepository = TransactionRepository(db.transactionQueries, db.accountQueries, db.categoryQueries, db.tagQueries, db.transaction_tag_cross_refQueries)
+            val accountRepository = AccountRepository(db.accountQueries)
             val settingsRepository = SettingsRepository(application)
 
             @Suppress("UNCHECKED_CAST")
             return DashboardViewModel(
+                db = db,
                 transactionRepository = transactionRepository,
                 accountRepository = accountRepository,
-                budgetDao = db.budgetDao(),
                 settingsRepository = settingsRepository,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
-}
--e 
+}-e 
 -e 
 
 
@@ -2010,7 +2043,6 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.ui.components.ShareableField
 import io.pm.finlight.utils.CategoryIconHelper
 import io.pm.finlight.utils.ShareImageGenerator
@@ -2952,7 +2984,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import java.text.SimpleDateFormat
@@ -3227,7 +3258,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -3301,7 +3331,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -3379,7 +3408,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -3483,7 +3511,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.CategoryIconHelper
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -3558,7 +3585,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import io.pm.finlight.data.db.AppDatabase
 
 /**
  * Factory for creating an OnboardingViewModel.
@@ -3595,7 +3621,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -3842,7 +3867,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -3984,7 +4008,6 @@ import androidx.lifecycle.viewModelScope
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.flow.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -4162,7 +4185,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import io.pm.finlight.data.db.AppDatabase
 
 class SearchViewModelFactory(
     private val application: Application,
@@ -4208,7 +4230,6 @@ import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.CategoryIconHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -4554,7 +4575,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -4644,7 +4664,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.ui.theme.AppTheme
 import io.pm.finlight.utils.ReminderManager
 import io.pm.finlight.utils.SmsParser
@@ -5177,7 +5196,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.db.dao.AccountDao
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -5271,7 +5289,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.ReminderManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -5342,7 +5359,6 @@ import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
@@ -5491,297 +5507,27 @@ class SplitTransactionViewModel(
 
 
 ================== FILE: ./androidApp/src/main/java/io/pm/finlight/ui/viewmodel/DashboardViewModel.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/DashboardViewModel.kt
-// REASON: REFACTOR - Decoupled dashboard customization logic.
-// - Removed `isCustomizationMode`, `showAddCardSheet`, and related state, as this
-//   is now handled by a dedicated screen.
-// - Added `allCards` StateFlow to provide the full list of cards to the new
-//   customization screen.
-// - Added `toggleCardVisibility` function to handle showing/hiding cards from
-//   the new screen.
-// - `updateCardOrder` now saves the layout immediately.
-// =================================================================================
-package io.pm.finlight
+package io.pm.finlight.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
+import io.pm.finlight.data.repository.AccountRepository
+import io.pm.finlight.data.repository.SettingsRepository
+import io.pm.finlight.data.repository.TransactionRepository
+import io.pm.finlight.shared.db.AppDatabase
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 
-data class ConsistencyStats(val goodDays: Int, val badDays: Int, val noSpendDays: Int, val noDataDays: Int)
-
+// A simplified version for now to get the build to pass.
+// We will restore full functionality step-by-step.
 class DashboardViewModel(
+    private val db: AppDatabase,
     private val transactionRepository: TransactionRepository,
     private val accountRepository: AccountRepository,
-    private val budgetDao: BudgetDao,
-    private val settingsRepository: SettingsRepository,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
-    val userName: StateFlow<String>
-    val profilePictureUri: StateFlow<String?>
-
-    val netWorth: StateFlow<Double>
-    val monthlyIncome: StateFlow<Double>
-    val monthlyExpenses: StateFlow<Double>
-    val recentTransactions: StateFlow<List<TransactionDetails>>
-    val budgetStatus: StateFlow<List<BudgetWithSpending>>
-    val overallMonthlyBudget: StateFlow<Float>
-    val amountRemaining: StateFlow<Float>
-    val safeToSpendPerDay: StateFlow<Float>
-    val accountsSummary: StateFlow<List<AccountWithBalance>>
-    val monthYear: String
-
-    val visibleCards: StateFlow<List<DashboardCardType>>
-    val allCards: StateFlow<List<DashboardCardType>>
-
-    private val _cardOrder = MutableStateFlow<List<DashboardCardType>>(emptyList())
-    private val _visibleCardsSet = MutableStateFlow<Set<DashboardCardType>>(emptySet())
-
-    val yearlyConsistencyData: StateFlow<List<CalendarDayStatus>>
-    val budgetHealthSummary: StateFlow<String>
-    private val _summaryRefreshTrigger = MutableStateFlow(System.currentTimeMillis())
-
-    init {
-        userName = settingsRepository.getUserName()
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = "User"
-            )
-
-        profilePictureUri = settingsRepository.getProfilePictureUri()
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = null
-            )
-
-        viewModelScope.launch {
-            settingsRepository.getDashboardCardOrder().collect {
-                _cardOrder.value = it
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.getDashboardVisibleCards().collect {
-                _visibleCardsSet.value = it
-            }
-        }
-
-        allCards = _cardOrder.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-        visibleCards = combine(
-            _cardOrder,
-            _visibleCardsSet
-        ) { order, visible ->
-            order.filter { it in visible }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-        val calendar = Calendar.getInstance()
-        monthYear = SimpleDateFormat("MMMM", Locale.getDefault()).format(calendar.time)
-
-        val monthStart =
-            (calendar.clone() as Calendar).apply {
-                set(Calendar.DAY_OF_MONTH, 1)
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
-        val monthEnd =
-            (calendar.clone() as Calendar).apply {
-                add(Calendar.MONTH, 1)
-                set(Calendar.DAY_OF_MONTH, 1)
-                add(Calendar.DAY_OF_MONTH, -1)
-                set(Calendar.HOUR_OF_DAY, 23)
-                set(Calendar.MINUTE, 59)
-                set(Calendar.SECOND, 59)
-                set(Calendar.MILLISECOND, 999)
-            }.timeInMillis
-
-        val financialSummaryFlow = transactionRepository.getFinancialSummaryForRangeFlow(monthStart, monthEnd)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-
-        monthlyIncome = financialSummaryFlow.map { it?.totalIncome ?: 0.0 }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
-
-        monthlyExpenses = financialSummaryFlow.map { it?.totalExpenses ?: 0.0 }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
-
-        val currentYear = calendar.get(Calendar.YEAR)
-        val currentMonth = calendar.get(Calendar.MONTH) + 1
-
-        overallMonthlyBudget =
-            settingsRepository.getOverallBudgetForMonth(currentYear, currentMonth)
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
-
-        amountRemaining =
-            combine(overallMonthlyBudget, monthlyExpenses) { budget, expenses ->
-                budget - expenses.toFloat()
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
-
-        safeToSpendPerDay =
-            amountRemaining.map { remaining ->
-                val today = Calendar.getInstance()
-                val lastDayOfMonth = today.getActualMaximum(Calendar.DAY_OF_MONTH)
-                val remainingDays = (lastDayOfMonth - today.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1)
-
-                if (remaining > 0) remaining / remainingDays else 0f
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
-
-        budgetHealthSummary = combine(
-            monthlyExpenses,
-            overallMonthlyBudget,
-            _summaryRefreshTrigger
-        ) { expenses, budget, _ ->
-            if (budget <= 0f) {
-                "Set a budget to see insights"
-            } else {
-                val cal = Calendar.getInstance()
-                val monthName = cal.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
-                val dayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
-                val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-
-                val percentOfMonthPassed = dayOfMonth.toFloat() / daysInMonth.toFloat()
-                val percentOfBudgetSpent = (expenses / budget).toFloat()
-
-                when {
-                    percentOfBudgetSpent > 1 -> listOf(
-                        "You've gone over for $monthName.",
-                        "Let's get back on track next month.",
-                        "Budget exceeded for the month."
-                    ).random()
-                    percentOfBudgetSpent > percentOfMonthPassed + 0.2 -> listOf(
-                        "A little ahead of schedule.",
-                        "Watch your spending for the rest of $monthName.",
-                        "Heads up: spending is a bit high."
-                    ).random()
-                    percentOfBudgetSpent < percentOfMonthPassed - 0.2 -> listOf(
-                        "Well under budget so far!",
-                        "You're saving more this month.",
-                        "Plenty of room in the budget."
-                    ).random()
-                    else -> listOf(
-                        "Looking good for $monthName!",
-                        "Great job staying on budget!",
-                        "Your spending is right on track."
-                    ).random()
-                }
-            }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Monthly Budget")
-
-        netWorth =
-            accountRepository.accountsWithBalance.map { list ->
-                list.sumOf { it.balance }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
-
-        recentTransactions =
-            transactionRepository.recentTransactions
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-        val yearMonthString = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
-        budgetStatus = budgetDao.getBudgetsWithSpendingForMonth(yearMonthString, currentMonth, currentYear)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-        accountsSummary =
-            accountRepository.accountsWithBalance
-                .stateIn(
-                    scope = viewModelScope,
-                    started = SharingStarted.WhileSubscribed(5000),
-                    initialValue = emptyList(),
-                )
-
-        yearlyConsistencyData = flow {
-            emit(generateYearlyConsistencyData())
-        }.flowOn(Dispatchers.Default)
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
-            )
-    }
-
-    fun refreshBudgetSummary() {
-        _summaryRefreshTrigger.value = System.currentTimeMillis()
-    }
-
-    private suspend fun generateYearlyConsistencyData(): List<CalendarDayStatus> = withContext(Dispatchers.IO) {
-        val today = Calendar.getInstance()
-        val year = today.get(Calendar.YEAR)
-        val currentMonthIndex = today.get(Calendar.MONTH)
-        val daysSoFar = today.get(Calendar.DAY_OF_YEAR)
-
-        var totalBudgetSoFar = 0f
-        for (month in 0..currentMonthIndex) {
-            totalBudgetSoFar += settingsRepository.getOverallBudgetForMonthBlocking(year, month + 1)
-        }
-        val yearlySafeToSpend = if (totalBudgetSoFar > 0 && daysSoFar > 0) (totalBudgetSoFar / daysSoFar).toDouble() else 0.0
-
-        val calendar = Calendar.getInstance()
-        val endDate = calendar.timeInMillis
-        calendar.set(Calendar.DAY_OF_YEAR, 1)
-        val startDate = calendar.timeInMillis
-
-        val firstTransactionDate = transactionRepository.getFirstTransactionDate().first()
-        val firstDataCal = firstTransactionDate?.let { Calendar.getInstance().apply { timeInMillis = it } }
-
-        val dailyTotals = transactionRepository.getDailySpendingForDateRange(startDate, endDate).first()
-        val spendingMap = dailyTotals.associateBy({ it.date }, { it.totalAmount })
-
-        val resultList = mutableListOf<CalendarDayStatus>()
-        val dayIterator = Calendar.getInstance().apply { timeInMillis = startDate }
-
-        while (!dayIterator.after(today)) {
-            if (firstDataCal != null && dayIterator.before(firstDataCal)) {
-                resultList.add(CalendarDayStatus(dayIterator.time, SpendingStatus.NO_DATA, 0.0, 0.0))
-                dayIterator.add(Calendar.DAY_OF_YEAR, 1)
-                continue
-            }
-
-            val dateKey = String.format(Locale.ROOT, "%d-%02d-%02d", dayIterator.get(Calendar.YEAR), dayIterator.get(Calendar.MONTH) + 1, dayIterator.get(Calendar.DAY_OF_MONTH))
-            val amountSpent = spendingMap[dateKey] ?: 0.0
-
-            val status = when {
-                amountSpent == 0.0 -> SpendingStatus.NO_SPEND
-                yearlySafeToSpend > 0 && amountSpent > yearlySafeToSpend -> SpendingStatus.OVER_LIMIT
-                else -> SpendingStatus.WITHIN_LIMIT
-            }
-
-            resultList.add(CalendarDayStatus(dayIterator.time, status, amountSpent, yearlySafeToSpend))
-            dayIterator.add(Calendar.DAY_OF_YEAR, 1)
-        }
-        resultList
-    }
-
-    fun updateCardOrder(from: Int, to: Int) {
-        _cardOrder.update { currentList ->
-            currentList.toMutableList().apply {
-                add(to, removeAt(from))
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
-        }
-    }
-
-    fun toggleCardVisibility(cardType: DashboardCardType) {
-        _visibleCardsSet.update { currentSet ->
-            if (cardType in currentSet) {
-                currentSet - cardType
-            } else {
-                currentSet + cardType
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.saveDashboardLayout(_cardOrder.value, _visibleCardsSet.value)
-        }
-    }
-}
--e 
+    val userName: StateFlow<String> = MutableStateFlow("User")
+    val profilePictureUri: StateFlow<String?> = MutableStateFlow(null)
+}-e 
 -e 
 
 
@@ -11701,7 +11447,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.google.gson.Gson
 import io.pm.finlight.*
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.ui.components.GlassPanel
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -21589,1108 +21334,45 @@ val Typography = Typography(
 
 
 ================== FILE: ./androidApp/src/main/java/io/pm/finlight/MainActivity.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/MainActivity.kt
-// REASON: FIX - Removed the deep link handling logic from the SplashScreen's
-// LaunchedEffect. The NavHost now acts as the single source of truth for
-// automatically handling deep links from intents, which resolves the race
-// condition that caused the destination to be pushed onto the back stack twice.
-// =================================================================================
 package io.pm.finlight
 
-import android.Manifest
-import android.app.Activity
-import android.app.Application
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
-import androidx.biometric.BiometricPrompt
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.fragment.app.FragmentActivity
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.tooling.preview.Preview
+import io.pm.finlight.ui.theme.FinlightTheme
+import androidx.compose.material3.Text
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavHostController
-import androidx.navigation.NavType
-import androidx.navigation.compose.*
-import androidx.navigation.navArgument
-import androidx.navigation.navDeepLink
-import coil.compose.AsyncImage
-import com.google.gson.Gson
-import io.pm.finlight.data.model.TimePeriod
-import io.pm.finlight.ui.BottomNavItem
-import io.pm.finlight.ui.components.AuroraAnimatedBackground
-import io.pm.finlight.ui.components.DaybreakAnimatedBackground
-import io.pm.finlight.ui.screenTitles
-import io.pm.finlight.ui.screens.*
-import io.pm.finlight.ui.theme.AppTheme
-import io.pm.finlight.ui.theme.PersonalFinanceAppTheme
-import io.pm.finlight.ui.theme.PopupSurfaceDark
-import io.pm.finlight.ui.theme.PopupSurfaceLight
-import io.pm.finlight.utils.CategoryIconHelper
-import kotlinx.coroutines.flow.map
-import java.net.URLDecoder
-import java.util.concurrent.Executor
+import io.pm.finlight.ui.viewmodel.DashboardViewModel
+import io.pm.finlight.ui.viewmodel.DashboardViewModelFactory
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-
-        val settingsRepository = SettingsRepository(this)
-        val hasSeenOnboarding = settingsRepository.hasSeenOnboarding()
-
         setContent {
-            val settingsViewModel: SettingsViewModel = viewModel()
-            val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
-
-            PersonalFinanceAppTheme(selectedTheme = selectedTheme) {
-                var showOnboarding by remember { mutableStateOf(!hasSeenOnboarding) }
-
-                if (showOnboarding) {
-                    val onboardingViewModel: OnboardingViewModel = viewModel(factory = OnboardingViewModelFactory(application))
-                    OnboardingScreen(
-                        viewModel = onboardingViewModel,
-                        onOnboardingFinished = {
-                            settingsRepository.setHasSeenOnboarding(true)
-                            showOnboarding = false
-                        }
-                    )
-                } else {
-                    FinanceAppWithLockScreen(isInitiallyLocked = settingsRepository.isAppLockEnabledBlocking())
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun FinanceAppWithLockScreen(isInitiallyLocked: Boolean) {
-    val context = LocalContext.current
-    val settingsRepository = remember { SettingsRepository(context) }
-
-    var isLocked by remember { mutableStateOf(isInitiallyLocked) }
-    val appLockEnabled by settingsRepository.getAppLockEnabled().collectAsState(initial = isInitiallyLocked)
-
-    val permissionsToRequest = arrayOf(
-        Manifest.permission.READ_SMS,
-        Manifest.permission.RECEIVE_SMS,
-        Manifest.permission.POST_NOTIFICATIONS
-    )
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { perms ->
-        val allPermissionsGranted = perms.all { it.value }
-        if (!allPermissionsGranted) {
-            Toast.makeText(context, "Some permissions were denied. The app may not function fully.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    LaunchedEffect(key1 = true) {
-        val areAllPermissionsGranted = permissionsToRequest.all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
-        if (!areAllPermissionsGranted) {
-            permissionLauncher.launch(permissionsToRequest)
-        }
-    }
-
-    LaunchedEffect(appLockEnabled) {
-        if (!appLockEnabled) {
-            isLocked = false
-        }
-    }
-
-    if (isLocked) {
-        LockScreen(onUnlock = { isLocked = false })
-    } else {
-        MainAppScreen()
-    }
-}
-
-
-@Composable
-fun LockScreen(onUnlock: () -> Unit) {
-    val context = LocalContext.current
-    val activity = LocalContext.current as FragmentActivity
-    val executor: Executor = remember { ContextCompat.getMainExecutor(context) }
-
-    val promptInfo = remember {
-        BiometricPrompt.PromptInfo.Builder()
-            .setTitle("App Locked")
-            .setSubtitle("Authenticate to access your finances")
-            .setNegativeButtonText("Cancel")
-            .build()
-    }
-
-    val biometricPrompt = remember {
-        BiometricPrompt(activity, executor,
-            object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    super.onAuthenticationSucceeded(result)
-                    onUnlock()
-                }
-
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    super.onAuthenticationError(errorCode, errString)
-                    if (errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON && errorCode != BiometricPrompt.ERROR_USER_CANCELED) {
-                        Toast.makeText(context, "Authentication error: $errString", Toast.LENGTH_SHORT).show()
-                    }
-                }
-
-                override fun onAuthenticationFailed() {
-                    super.onAuthenticationFailed()
-                    Toast.makeText(context, "Authentication failed", Toast.LENGTH_SHORT).show()
-                }
-            })
-    }
-
-    LaunchedEffect(Unit) {
-        biometricPrompt.authenticate(promptInfo)
-    }
-
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Button(onClick = { biometricPrompt.authenticate(promptInfo) }) {
-            Icon(Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Unlock App")
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MainAppScreen() {
-    val navController = rememberNavController()
-
-    val dashboardViewModel: DashboardViewModel = viewModel(factory = DashboardViewModelFactory(LocalContext.current.applicationContext as Application))
-    val settingsViewModel: SettingsViewModel = viewModel()
-    val transactionViewModel: TransactionViewModel = viewModel()
-    val accountViewModel: AccountViewModel = viewModel()
-    val categoryViewModel: CategoryViewModel = viewModel()
-    val budgetViewModel: BudgetViewModel = viewModel()
-    val profileViewModel: ProfileViewModel = viewModel()
-    val incomeViewModel: IncomeViewModel = viewModel()
-    val goalViewModel: GoalViewModel = viewModel()
-
-    val userName by dashboardViewModel.userName.collectAsState()
-    val profilePictureUri by dashboardViewModel.profilePictureUri.collectAsState()
-    val filterState by transactionViewModel.filterState.collectAsState()
-    val selectedTheme by settingsViewModel.selectedTheme.collectAsState()
-
-    val transactionForCategoryChange by transactionViewModel.transactionForCategoryChange.collectAsState()
-
-    val isSelectionMode by transactionViewModel.isSelectionModeActive.collectAsState()
-    val selectedIdsCount by transactionViewModel.selectedTransactionIds.map { it.size }.collectAsState(initial = 0)
-
-    val bottomNavItems = listOf(
-        BottomNavItem.Dashboard,
-        BottomNavItem.Transactions,
-        BottomNavItem.Reports
-    )
-
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
-    val currentRoute = currentDestination?.route
-    val baseCurrentRoute = currentRoute?.split("?")?.firstOrNull()?.split("/")?.firstOrNull()
-
-    val showBottomBar = bottomNavItems.any { it.route == baseCurrentRoute }
-
-    val showMainTopBar = baseCurrentRoute !in setOf(
-        "transaction_detail",
-        "income_screen",
-        "splash_screen",
-        "add_transaction",
-        "time_period_report_screen",
-        "link_recurring_transaction",
-        "appearance_settings",
-        "automation_settings",
-        "notification_settings",
-        "data_settings",
-        "add_edit_goal",
-        "currency_travel_settings",
-        "split_transaction",
-        "category_detail",
-        "merchant_detail",
-        "customize_dashboard"
-    )
-
-    val currentTitle = if (showBottomBar) {
-        "Hi, $userName!"
-    } else {
-        screenTitles[currentRoute] ?: screenTitles[baseCurrentRoute] ?: "Finance App"
-    }
-    val showProfileIcon = showBottomBar
-
-    val fabRoutes = setOf(
-        "account_list",
-        "recurring_transactions",
-        "goals_screen"
-    )
-    val showFab = baseCurrentRoute in fabRoutes
-
-    val activity = LocalContext.current as AppCompatActivity
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (selectedTheme) {
-            AppTheme.AURORA -> {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
-                AuroraAnimatedBackground()
-            }
-            AppTheme.DAYBREAK -> {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
-                DaybreakAnimatedBackground()
-            }
-            else -> {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {}
-            }
-        }
-
-        Scaffold(
-            topBar = {
-                if (isSelectionMode && baseCurrentRoute == BottomNavItem.Transactions.route) {
-                    TopAppBar(
-                        title = { Text("$selectedIdsCount Selected") },
-                        navigationIcon = {
-                            IconButton(onClick = { transactionViewModel.clearSelectionMode() }) {
-                                Icon(Icons.Default.Close, contentDescription = "Cancel Selection")
-                            }
-                        },
-                        actions = {
-                            IconButton(onClick = { transactionViewModel.onShareClick() }) {
-                                Icon(Icons.Default.Share, contentDescription = "Share")
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
-                            titleContentColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    )
-                } else if (showMainTopBar) {
-                    TopAppBar(
-                        title = { Text(currentTitle) },
-                        navigationIcon = {
-                            if (showProfileIcon) {
-                                AsyncImage(
-                                    model = profilePictureUri ?: R.mipmap.ic_launcher,
-                                    contentDescription = "User Profile Picture",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .padding(start = 16.dp)
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .clickable { navController.navigate("profile") }
-                                )
-                            } else if (!showBottomBar) {
-                                IconButton(onClick = { navController.popBackStack() }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                                }
-                            }
-                        },
-                        actions = {
-                            when (baseCurrentRoute) {
-                                BottomNavItem.Dashboard.route -> {
-                                    IconButton(onClick = { navController.navigate("customize_dashboard") }) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Customize Dashboard")
-                                    }
-                                    IconButton(onClick = { navController.navigate("search_screen") }) {
-                                        Icon(Icons.Default.Search, contentDescription = "Search")
-                                    }
-                                }
-                                BottomNavItem.Transactions.route -> {
-                                    val areFiltersActive by remember(filterState) {
-                                        derivedStateOf {
-                                            filterState.keyword.isNotBlank() || filterState.account != null || filterState.category != null
-                                        }
-                                    }
-                                    IconButton(onClick = { navController.navigate("add_transaction") }) {
-                                        Icon(Icons.Default.Add, contentDescription = "Add Transaction")
-                                    }
-                                    BadgedBox(
-                                        badge = {
-                                            if (areFiltersActive) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .clip(CircleShape)
-                                                        .background(MaterialTheme.colorScheme.primary)
-                                                )
-                                            }
-                                        }
-                                    ) {
-                                        IconButton(onClick = { transactionViewModel.onFilterClick() }) {
-                                            Icon(Icons.Default.FilterList, contentDescription = "Filter Transactions")
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-                    )
-                }
-            },
-            bottomBar = {
-                if (showBottomBar) {
-                    NavigationBar(
-                        containerColor = Color.Transparent
-                    ) {
-                        bottomNavItems.forEach { screen ->
-                            val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
-                            NavigationBarItem(
-                                icon = { Icon(screen.icon, contentDescription = screen.label) },
-                                label = { Text(screen.label) },
-                                selected = isSelected,
-                                onClick = {
-                                    navController.navigate(screen.route) {
-                                        popUpTo(BottomNavItem.Dashboard.route) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            },
-            floatingActionButton = {
-                if (showFab) {
-                    FloatingActionButton(onClick = {
-                        when (baseCurrentRoute) {
-                            "account_list" -> navController.navigate("add_account")
-                            "recurring_transactions" -> navController.navigate("add_recurring_transaction")
-                            "goals_screen" -> navController.navigate("add_edit_goal")
-                        }
-                    }) {
-                        Icon(Icons.Filled.Add, contentDescription = "Add")
-                    }
-                }
-            },
-            containerColor = Color.Transparent
-        ) { innerPadding ->
-            AppNavHost(
-                navController = navController,
-                modifier = Modifier.padding(innerPadding),
-                activity = activity,
-                dashboardViewModel = dashboardViewModel,
-                settingsViewModel = settingsViewModel,
-                transactionViewModel = transactionViewModel,
-                accountViewModel = accountViewModel,
-                categoryViewModel = categoryViewModel,
-                budgetViewModel = budgetViewModel,
-                profileViewModel = profileViewModel,
-                incomeViewModel = incomeViewModel,
-                goalViewModel = goalViewModel
-            )
-        }
-
-        if (transactionForCategoryChange != null) {
-            val categories by transactionViewModel.allCategories.collectAsState(initial = emptyList())
-            val isThemeDark = isSystemInDarkTheme()
-            val popupContainerColor = if (isThemeDark) PopupSurfaceDark else PopupSurfaceLight
-            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-            ModalBottomSheet(
-                onDismissRequest = { transactionViewModel.cancelCategoryChange() },
-                sheetState = sheetState,
-                containerColor = popupContainerColor
-            ) {
-                CategoryPickerSheet(
-                    title = "Change Category",
-                    items = categories,
-                    onItemSelected = { newCategory ->
-                        transactionViewModel.updateTransactionCategory(transactionForCategoryChange!!.transaction.id, newCategory.id)
-                        transactionViewModel.cancelCategoryChange()
-                    },
-                    onAddNew = null
+            FinlightTheme {
+                // A very simple placeholder UI to ensure the build passes.
+                // We will restore the full navigation and UI next.
+                val dashboardViewModel: DashboardViewModel = viewModel(
+                    factory = DashboardViewModelFactory(application)
                 )
+                Greeting(name = "Finlight User")
             }
         }
     }
 }
 
-
 @Composable
-fun AppNavHost(
-    navController: NavHostController,
-    modifier: Modifier = Modifier,
-    activity: AppCompatActivity,
-    dashboardViewModel: DashboardViewModel,
-    settingsViewModel: SettingsViewModel,
-    transactionViewModel: TransactionViewModel,
-    accountViewModel: AccountViewModel,
-    categoryViewModel: CategoryViewModel,
-    budgetViewModel: BudgetViewModel,
-    profileViewModel: ProfileViewModel,
-    incomeViewModel: IncomeViewModel,
-    goalViewModel: GoalViewModel
-) {
-    NavHost(
-        navController = navController,
-        startDestination = "splash_screen",
-        modifier = modifier
-    ) {
-        composable(
-            "customize_dashboard",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            CustomizeDashboardScreen(navController = navController, viewModel = dashboardViewModel)
-        }
-
-        composable("splash_screen") {
-            SplashScreen(navController = navController, activity = activity)
-        }
-
-        composable(
-            "split_transaction/{transactionId}",
-            arguments = listOf(navArgument("transactionId") { type = NavType.IntType }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
-            SplitTransactionScreen(navController = navController, transactionId = transactionId)
-        }
-
-        composable(
-            "manage_parse_rules",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            ManageParseRulesScreen(navController)
-        }
-        composable(
-            "manage_ignore_rules",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            ManageIgnoreRulesScreen()
-        }
-
-        composable(BottomNavItem.Dashboard.route) {
-            DashboardScreen(
-                navController = navController,
-                dashboardViewModel = dashboardViewModel,
-                transactionViewModel = transactionViewModel
-            )
-        }
-        composable(
-            route = "transaction_list?initialTab={initialTab}",
-            arguments = listOf(navArgument("initialTab") {
-                type = NavType.IntType
-                defaultValue = 0
-            }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val initialTab = backStackEntry.arguments?.getInt("initialTab") ?: 0
-            TransactionListScreen(
-                navController = navController,
-                viewModel = transactionViewModel,
-                initialTab = initialTab
-            )
-        }
-        composable(
-            route = BottomNavItem.Reports.route,
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/reports" }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { ReportsScreen(navController, viewModel()) }
-
-        composable(
-            "profile",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            ProfileScreen(
-                navController = navController,
-                profileViewModel = profileViewModel
-            )
-        }
-        composable(
-            "edit_profile",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { EditProfileScreen(navController, profileViewModel) }
-        composable(
-            "csv_validation_screen",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { CsvValidationScreen(navController, settingsViewModel) }
-        composable(
-            route = "search_screen?categoryId={categoryId}&date={date}&focusSearch={focusSearch}&expandFilters={expandFilters}",
-            arguments = listOf(
-                navArgument("categoryId") { type = NavType.IntType; defaultValue = -1 },
-                navArgument("date") { type = NavType.LongType; defaultValue = -1L },
-                navArgument("focusSearch") { type = NavType.BoolType; defaultValue = true },
-                navArgument("expandFilters") { type = NavType.BoolType; defaultValue = true }
-            ),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val categoryId = backStackEntry.arguments?.getInt("categoryId") ?: -1
-            val date = backStackEntry.arguments?.getLong("date") ?: -1L
-            val focusSearch = backStackEntry.arguments?.getBoolean("focusSearch") ?: true
-            val expandFilters = backStackEntry.arguments?.getBoolean("expandFilters") ?: true
-
-            val factory = SearchViewModelFactory(
-                activity.application,
-                if (categoryId != -1) categoryId else null,
-                if (date != -1L) date else null
-            )
-            val searchViewModel: SearchViewModel = viewModel(factory = factory)
-            SearchScreen(navController, searchViewModel, transactionViewModel, focusSearch, expandFilters)
-        }
-        composable(
-            route = "review_sms_screen",
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/review_sms" }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { ReviewSmsScreen(navController, settingsViewModel) }
-
-        composable(
-            "income_screen",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            IncomeScreen(navController, incomeViewModel, transactionViewModel)
-        }
-
-        composable(
-            route = "approve_transaction_screen?potentialTxnJson={potentialTxnJson}",
-            arguments = listOf(
-                navArgument("potentialTxnJson") { type = NavType.StringType }
-            ),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/approve_transaction_screen?potentialTxnJson={potentialTxnJson}" }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val json = backStackEntry.arguments?.getString("potentialTxnJson")
-            val potentialTxn = Gson().fromJson(URLDecoder.decode(json, "UTF-8"), PotentialTransaction::class.java)
-
-            ApproveTransactionScreen(
-                navController = navController,
-                transactionViewModel = transactionViewModel,
-                settingsViewModel = settingsViewModel,
-                potentialTxn = potentialTxn
-            )
-        }
-
-        composable(
-            "add_transaction?isCsvEdit={isCsvEdit}&csvLineNumber={csvLineNumber}&initialDataJson={initialDataJson}",
-            arguments = listOf(
-                navArgument("isCsvEdit") { type = NavType.BoolType; defaultValue = false },
-                navArgument("csvLineNumber") { type = NavType.IntType; defaultValue = -1 },
-                navArgument("initialDataJson") { type = NavType.StringType; nullable = true; defaultValue = null }
-            ),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val arguments = requireNotNull(backStackEntry.arguments)
-            AddTransactionScreen(
-                navController = navController,
-                viewModel = transactionViewModel,
-                isCsvEdit = arguments.getBoolean("isCsvEdit"),
-                initialDataJson = arguments.getString("initialDataJson")?.let { URLDecoder.decode(it, "UTF-8") }
-            )
-        }
-
-        composable(
-            route = "transaction_detail/{transactionId}",
-            arguments = listOf(navArgument("transactionId") { type = NavType.IntType }),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/transaction_detail/{transactionId}" }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val transactionId = backStackEntry.arguments!!.getInt("transactionId")
-            TransactionDetailScreen(
-                navController = navController,
-                transactionId = transactionId,
-                viewModel = transactionViewModel,
-                accountViewModel = accountViewModel,
-                onSaveRenameRule = { original, new -> settingsViewModel.saveMerchantRenameRule(original, new) }
-            )
-        }
-
-        composable(
-            "account_list",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { AccountListScreen(navController, accountViewModel) }
-
-        composable(
-            "add_account",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            AddEditAccountScreen(navController, accountViewModel, null)
-        }
-        composable(
-            "edit_account/{accountId}",
-            arguments = listOf(navArgument("accountId") { type = NavType.IntType }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            AddEditAccountScreen(navController, accountViewModel, backStackEntry.arguments!!.getInt("accountId"))
-        }
-
-        composable(
-            "account_detail/{accountId}",
-            arguments = listOf(navArgument("accountId") { type = NavType.IntType }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            AccountDetailScreen(navController, accountViewModel, backStackEntry.arguments!!.getInt("accountId"))
-        }
-        composable(
-            "budget_screen",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { BudgetScreen(navController, budgetViewModel) }
-        composable(
-            "add_budget",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { AddEditBudgetScreen(navController, budgetViewModel, null) }
-        composable(
-            "edit_budget/{budgetId}",
-            arguments = listOf(navArgument("budgetId") { type = NavType.IntType }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            AddEditBudgetScreen(navController, budgetViewModel, backStackEntry.arguments?.getInt("budgetId"))
-        }
-        composable(
-            "category_list",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { CategoryListScreen(navController, categoryViewModel) }
-        composable(
-            "tag_management",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { TagManagementScreen() }
-        composable(
-            "recurring_transactions",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { RecurringTransactionScreen(navController) }
-
-        composable(
-            "add_recurring_transaction?ruleId={ruleId}",
-            arguments = listOf(navArgument("ruleId") { type = NavType.IntType; defaultValue = -1 }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val ruleId = backStackEntry.arguments?.getInt("ruleId")
-            AddRecurringTransactionScreen(navController = navController, ruleId = if (ruleId == -1) null else ruleId)
-        }
-
-        composable(
-            "rule_creation_screen?potentialTransactionJson={potentialTransactionJson}&ruleId={ruleId}",
-            arguments = listOf(
-                navArgument("potentialTransactionJson") { type = NavType.StringType; nullable = true },
-                navArgument("ruleId") { type = NavType.IntType; defaultValue = -1 }
-            ),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val json = backStackEntry.arguments?.getString("potentialTransactionJson")
-            val ruleId = backStackEntry.arguments?.getInt("ruleId")
-            RuleCreationScreen(
-                navController = navController,
-                potentialTransactionJson = json?.let { URLDecoder.decode(it, "UTF-8") },
-                ruleId = if (ruleId == -1) null else ruleId
-            )
-        }
-
-        composable(
-            "link_transaction_screen/{potentialTransactionJson}",
-            arguments = listOf(navArgument("potentialTransactionJson") { type = NavType.StringType }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
-            LinkTransactionScreen(navController = navController, potentialTransactionJson = json)
-        }
-
-        composable(
-            route = "link_recurring_transaction/{potentialTransactionJson}",
-            arguments = listOf(navArgument("potentialTransactionJson") { type = NavType.StringType }),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/link_recurring/{potentialTransactionJson}" }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val json = backStackEntry.arguments?.getString("potentialTransactionJson") ?: ""
-            LinkRecurringTransactionScreen(navController = navController, potentialTransactionJson = json)
-        }
-
-        composable(
-            "time_period_report_screen/{timePeriod}?date={date}",
-            arguments = listOf(
-                navArgument("timePeriod") { type = NavType.EnumType(TimePeriod::class.java) },
-                navArgument("date") { type = NavType.LongType; defaultValue = -1L }
-            ),
-            deepLinks = listOf(navDeepLink { uriPattern = "app://finlight.pm.io/report/{timePeriod}?date={date}" }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val timePeriod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                backStackEntry.arguments?.getSerializable("timePeriod", TimePeriod::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                backStackEntry.arguments?.getSerializable("timePeriod") as? TimePeriod
-            }
-            val date = backStackEntry.arguments?.getLong("date")
-            if (timePeriod != null) {
-                TimePeriodReportScreen(
-                    navController = navController,
-                    timePeriod = timePeriod,
-                    transactionViewModel = transactionViewModel,
-                    initialDateMillis = date
-                )
-            }
-        }
-
-        composable(
-            "goals_screen",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            GoalScreen(navController = navController, goalViewModel = goalViewModel)
-        }
-
-        composable(
-            "add_edit_goal",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            AddEditGoalScreen(navController = navController, goalId = null)
-        }
-        composable(
-            "add_edit_goal/{goalId}",
-            arguments = listOf(navArgument("goalId") { type = NavType.IntType }),
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) { backStackEntry ->
-            val goalId = backStackEntry.arguments?.getInt("goalId")
-            AddEditGoalScreen(navController = navController, goalId = goalId)
-        }
-
-
-        composable(
-            "appearance_settings",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            AppearanceSettingsScreen(navController, settingsViewModel)
-        }
-        composable(
-            "automation_settings",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            AutomationSettingsScreen(navController, settingsViewModel)
-        }
-        composable(
-            "notification_settings",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            NotificationSettingsScreen(navController, settingsViewModel)
-        }
-        composable(
-            "data_settings",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            DataSettingsScreen(navController, settingsViewModel)
-        }
-        composable(
-            "currency_travel_settings",
-            enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally(initialOffsetX = { -1000 }, animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(300)) }
-        ) {
-            CurrencyTravelScreen(navController)
-        }
-        composable(
-            "category_detail/{categoryName}/{month}/{year}",
-            arguments = listOf(
-                navArgument("categoryName") { type = NavType.StringType },
-                navArgument("month") { type = NavType.IntType },
-                navArgument("year") { type = NavType.IntType }
-            )
-        ) { backStackEntry ->
-            val categoryName = URLDecoder.decode(backStackEntry.arguments?.getString("categoryName"), "UTF-8")
-            val month = backStackEntry.arguments?.getInt("month") ?: 0
-            val year = backStackEntry.arguments?.getInt("year") ?: 0
-            DrilldownScreen(
-                navController = navController,
-                drilldownType = DrilldownType.CATEGORY,
-                entityName = categoryName,
-                month = month,
-                year = year
-            )
-        }
-        composable(
-            "merchant_detail/{merchantName}/{month}/{year}",
-            arguments = listOf(
-                navArgument("merchantName") { type = NavType.StringType },
-                navArgument("month") { type = NavType.IntType },
-                navArgument("year") { type = NavType.IntType }
-            )
-        ) { backStackEntry ->
-            val merchantName = URLDecoder.decode(backStackEntry.arguments?.getString("merchantName"), "UTF-8")
-            val month = backStackEntry.arguments?.getInt("month") ?: 0
-            val year = backStackEntry.arguments?.getInt("year") ?: 0
-            DrilldownScreen(
-                navController = navController,
-                drilldownType = DrilldownType.MERCHANT,
-                entityName = merchantName,
-                month = month,
-                year = year
-            )
-        }
-    }
+fun Greeting(name: String) {
+    Text(text = "Hello $name!")
 }
 
+@Preview(showBackground = true)
 @Composable
-fun SplashScreen(navController: NavHostController, activity: Activity) {
-    // --- FIX: This LaunchedEffect now ONLY handles the initial navigation. ---
-    // It no longer inspects the activity's intent for deep links.
-    // The NavHost is now solely responsible for this.
-    LaunchedEffect(key1 = Unit) {
-        navController.navigate(BottomNavItem.Dashboard.route) {
-            popUpTo("splash_screen") { inclusive = true }
-        }
-    }
-
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        CircularProgressIndicator()
-    }
-}
-
-@Composable
-private fun CategoryPickerSheet(
-    title: String,
-    items: List<Category>,
-    onItemSelected: (Category) -> Unit,
-    onAddNew: (() -> Unit)? = null
-) {
-    Column(modifier = Modifier.navigationBarsPadding().fillMaxHeight()) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(16.dp),
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 100.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(items) { category ->
-                Column(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            onItemSelected(category)
-                        }
-                        .padding(vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    CategoryIconDisplay(category)
-                    Text(
-                        category.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-            if (onAddNew != null) {
-                item {
-                    Column(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable(onClick = onAddNew)
-                            .padding(vertical = 12.dp)
-                            .height(80.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            Icons.Default.AddCircleOutline,
-                            contentDescription = "Create New",
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            "New",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun CategoryIconDisplay(category: Category) {
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(CategoryIconHelper.getIconBackgroundColor(category.colorKey)),
-        contentAlignment = Alignment.Center
-    ) {
-        if (category.name == "Uncategorized") {
-            Icon(
-                imageVector = CategoryIconHelper.getIcon("help_outline"),
-                contentDescription = category.name,
-                tint = Color.Black,
-                modifier = Modifier.size(24.dp)
-            )
-        } else if (category.iconKey == "letter_default") {
-            Text(
-                text = category.name.firstOrNull()?.uppercase() ?: "?",
-                color = Color.Black,
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp
-            )
-        } else {
-            Icon(
-                imageVector = CategoryIconHelper.getIcon(category.iconKey),
-                contentDescription = category.name,
-                tint = Color.Black,
-                modifier = Modifier.size(24.dp)
-            )
-        }
+fun DefaultPreview() {
+    FinlightTheme {
+        Greeting("Android")
     }
 }
 -e 
@@ -24365,7 +23047,6 @@ import androidx.core.app.ActivityCompat
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.NotificationHelper
 import io.pm.finlight.utils.SmsParser
 import kotlinx.coroutines.CoroutineScope
@@ -24543,7 +23224,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.NotificationHelper
 import io.pm.finlight.utils.ReminderManager
 import kotlinx.coroutines.Dispatchers
@@ -24614,7 +23294,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.NotificationHelper
 import io.pm.finlight.utils.ReminderManager
 import kotlinx.coroutines.Dispatchers
@@ -24681,7 +23360,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.NotificationHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
@@ -24760,7 +23438,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.NotificationHelper
 import io.pm.finlight.utils.ReminderManager
 import kotlinx.coroutines.Dispatchers
@@ -24906,7 +23583,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.NotificationHelper
 import io.pm.finlight.utils.ReminderManager
 import kotlinx.coroutines.Dispatchers
@@ -24977,7 +23653,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.NotificationHelper
 import io.pm.finlight.utils.ReminderManager
 import kotlinx.coroutines.Dispatchers
@@ -25091,7 +23766,6 @@ import android.net.Uri
 import android.util.Log
 import io.pm.finlight.AppDataBackup
 import io.pm.finlight.TransactionDetails
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -25247,38 +23921,62 @@ object DataExportService {
 
 
 ================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/AccountRepository.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/AccountRepository.kt
-// REASON: Updated the insert function to return the new account's ID (Long).
-// =================================================================================
-package io.pm.finlight
+package io.pm.finlight.data.repository
 
-import io.pm.finlight.data.db.dao.AccountDao
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import io.pm.finlight.shared.db.Account
+import io.pm.finlight.shared.db.AccountQueries
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
-class AccountRepository(private val accountDao: AccountDao) {
-    val accountsWithBalance: Flow<List<AccountWithBalance>> = accountDao.getAccountsWithBalance()
+class AccountRepository(
+    private val accountQueries: AccountQueries,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
 
-    val allAccounts: Flow<List<Account>> = accountDao.getAllAccounts()
+    fun getAllAccounts(): Flow<List<Account>> =
+        accountQueries.selectAll(::mapAccount).asFlow().mapToList(dispatcher)
 
-    fun getAccountById(accountId: Int): Flow<Account?> {
-        return accountDao.getAccountById(accountId)
+    fun getAccountById(id: Long): Flow<Account?> =
+        accountQueries.selectById(id, ::mapAccount).asFlow().map { it.firstOrNull() }
+
+    suspend fun findAccountByName(name: String): Account? = withContext(dispatcher) {
+        accountQueries.selectByName(name, ::mapAccount).executeAsOneOrNull()
     }
 
-    // --- UPDATED: Returns the new row ID from the DAO ---
-    suspend fun insert(account: Account): Long {
-        return accountDao.insert(account)
+    suspend fun insert(account: Account): Long = withContext(dispatcher) {
+        accountQueries.insert(name = account.name, type = account.type)
+        return@withContext accountQueries.lastInsertRowId().executeAsOne()
     }
 
-    suspend fun update(account: Account) {
-        accountDao.update(account)
+    suspend fun update(account: Account) = withContext(dispatcher) {
+        accountQueries.update(
+            id = account.id.toLong(),
+            name = account.name,
+            type = account.type
+        )
     }
 
-    suspend fun delete(account: Account) {
-        accountDao.delete(account)
+    suspend fun delete(account: Account) = withContext(dispatcher) {
+        accountQueries.deleteById(account.id.toLong())
     }
-}
--e 
+
+    private fun mapAccount(
+        id: Long,
+        name: String,
+        type: String
+    ): Account {
+        return Account(
+            id = id.toInt(),
+            name = name,
+            type = type
+        )
+    }
+}-e 
 -e 
 
 
@@ -26302,2096 +25000,141 @@ class MerchantRenameRuleRepository(private val dao: MerchantRenameRuleDao) {
 
 
 ================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt
-// REASON: FIX - The `insertTransactionWithTags` function has been updated to
-// return the Long ID of the newly created transaction. This is required by the
-// CSV import logic to map old IDs to new ones and resolves a build error.
-// =================================================================================
-package io.pm.finlight
+package io.pm.finlight.data.repository
 
-import android.util.Log
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import io.pm.finlight.shared.data.db.entity.Transaction
+import io.pm.finlight.shared.db.*
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.onEach
-
-class TransactionRepository(private val transactionDao: TransactionDao) {
-
-    fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?> {
-        return transactionDao.getTransactionWithSplits(transactionId)
-    }
-
-    val allTransactions: Flow<List<TransactionDetails>> =
-        transactionDao.getAllTransactions()
-            .onEach { transactions ->
-                Log.d(
-                    "TransactionFlowDebug",
-                    "Repository Flow Emitted. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}",
-                )
-            }
-
-    fun getFirstTransactionDate(): Flow<Long?> {
-        return transactionDao.getFirstTransactionDate()
-    }
-
-    fun getFinancialSummaryForRangeFlow(startDate: Long, endDate: Long): Flow<FinancialSummary?> {
-        return transactionDao.getFinancialSummaryForRangeFlow(startDate, endDate)
-    }
-
-    fun getTopSpendingCategoriesForRangeFlow(startDate: Long, endDate: Long): Flow<CategorySpending?> {
-        return transactionDao.getTopSpendingCategoriesForRangeFlow(startDate, endDate)
-    }
-
-    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>> {
-        return transactionDao.getIncomeTransactionsForRange(startDate, endDate, keyword, accountId, categoryId)
-    }
-
-    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<CategorySpending>> {
-        return transactionDao.getIncomeByCategoryForMonth(startDate, endDate, keyword, accountId, categoryId)
-    }
-
-    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>> {
-        return transactionDao.getSpendingByMerchantForMonth(startDate, endDate, keyword, accountId, categoryId)
-    }
-
-    suspend fun addImageToTransaction(transactionId: Int, imageUri: String) {
-        val transactionImage = TransactionImage(transactionId = transactionId, imageUri = imageUri)
-        transactionDao.insertImage(transactionImage)
-    }
-
-    suspend fun deleteImage(transactionImage: TransactionImage) {
-        transactionDao.deleteImage(transactionImage)
-    }
-
-    fun getImagesForTransaction(transactionId: Int): Flow<List<TransactionImage>> {
-        return transactionDao.getImagesForTransaction(transactionId)
-    }
-
-    suspend fun updateDescription(id: Int, description: String) = transactionDao.updateDescription(id, description)
-    suspend fun updateAmount(id: Int, amount: Double) = transactionDao.updateAmount(id, amount)
-    suspend fun updateNotes(id: Int, notes: String?) = transactionDao.updateNotes(id, notes)
-    suspend fun updateCategoryId(id: Int, categoryId: Int?) = transactionDao.updateCategoryId(id, categoryId)
-    suspend fun updateAccountId(id: Int, accountId: Int) = transactionDao.updateAccountId(id, accountId)
-    suspend fun updateDate(id: Int, date: Long) = transactionDao.updateDate(id, date)
-    suspend fun updateExclusionStatus(id: Int, isExcluded: Boolean) = transactionDao.updateExclusionStatus(id, isExcluded)
-
-    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
-        return transactionDao.getTransactionDetailsById(id)
-    }
-
-    val recentTransactions: Flow<List<TransactionDetails>> = transactionDao.getRecentTransactionDetails()
-
-    fun getAllSmsHashes(): Flow<List<String>> {
-        return transactionDao.getAllSmsHashes()
-    }
-
-    fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>> {
-        return transactionDao.getTransactionsForAccountDetails(accountId)
-    }
-
-    fun getTransactionDetailsForRange(
-        startDate: Long,
-        endDate: Long,
-        keyword: String?,
-        accountId: Int?,
-        categoryId: Int?
-    ): Flow<List<TransactionDetails>> {
-        return transactionDao.getTransactionDetailsForRange(startDate, endDate, keyword, accountId, categoryId)
-    }
-
-    fun getAllTransactionsForRange(
-        startDate: Long,
-        endDate: Long,
-    ): Flow<List<Transaction>> {
-        return transactionDao.getAllTransactionsForRange(startDate, endDate)
-    }
-
-    fun getTransactionById(id: Int): Flow<Transaction?> {
-        return transactionDao.getTransactionById(id)
-    }
-
-    fun getTransactionsForAccount(accountId: Int): Flow<List<Transaction>> {
-        return transactionDao.getTransactionsForAccount(accountId)
-    }
-
-    fun getSpendingByCategoryForMonth(
-        startDate: Long,
-        endDate: Long,
-        keyword: String?,
-        accountId: Int?,
-        categoryId: Int?
-    ): Flow<List<CategorySpending>> {
-        return transactionDao.getSpendingByCategoryForMonth(startDate, endDate, keyword, accountId, categoryId)
-    }
-
-    fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>> {
-        return transactionDao.getMonthlyTrends(startDate)
-    }
-
-    suspend fun countTransactionsForCategory(categoryId: Int): Int {
-        return transactionDao.countTransactionsForCategory(categoryId)
-    }
-
-    fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
-        return transactionDao.getTagsForTransaction(transactionId)
-    }
-
-    suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag> {
-        return transactionDao.getTagsForTransactionSimple(transactionId)
-    }
-
-    suspend fun updateTagsForTransaction(transactionId: Int, tags: Set<Tag>) {
-        transactionDao.clearTagsForTransaction(transactionId)
-        if (tags.isNotEmpty()) {
-            val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = transactionId, tagId = tag.id)
-            }
-            transactionDao.addTagsToTransaction(crossRefs)
-        }
-    }
-
-    suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>): Long {
-        val transactionId = transactionDao.insert(transaction)
-        if (tags.isNotEmpty()) {
-            val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = transactionId.toInt(), tagId = tag.id)
-            }
-            transactionDao.addTagsToTransaction(crossRefs)
-        }
-        return transactionId
-    }
-
-    suspend fun updateTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
-        transactionDao.update(transaction)
-        transactionDao.clearTagsForTransaction(transaction.id)
-        if (tags.isNotEmpty()) {
-            val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = transaction.id, tagId = tag.id)
-            }
-            transactionDao.addTagsToTransaction(crossRefs)
-        }
-    }
-
-    suspend fun insertTransactionWithTagsAndImages(
-        transaction: Transaction,
-        tags: Set<Tag>,
-        imagePaths: List<String>
-    ): Long {
-        val newTransactionId = transactionDao.insert(transaction)
-        if (tags.isNotEmpty()) {
-            val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = newTransactionId.toInt(), tagId = tag.id)
-            }
-            transactionDao.addTagsToTransaction(crossRefs)
-        }
-        imagePaths.forEach { path ->
-            val imageEntity = TransactionImage(
-                transactionId = newTransactionId.toInt(),
-                imageUri = path
-            )
-            transactionDao.insertImage(imageEntity)
-        }
-        return newTransactionId
-    }
-
-    suspend fun delete(transaction: Transaction) {
-        transactionDao.delete(transaction)
-    }
-
-    suspend fun setSmsHash(transactionId: Int, smsHash: String) {
-        transactionDao.setSmsHash(transactionId, smsHash)
-    }
-
-    fun getTransactionCountForMerchant(description: String): Flow<Int> {
-        return transactionDao.getTransactionCountForMerchant(description)
-    }
-
-    suspend fun findSimilarTransactions(description: String, excludeId: Int): List<Transaction> {
-        return transactionDao.findSimilarTransactions(description, excludeId)
-    }
-
-    suspend fun updateCategoryForIds(ids: List<Int>, categoryId: Int) {
-        transactionDao.updateCategoryForIds(ids, categoryId)
-    }
-
-    suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String) {
-        transactionDao.updateDescriptionForIds(ids, newDescription)
-    }
-
-    fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>> {
-        return transactionDao.getDailySpendingForDateRange(startDate, endDate)
-    }
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/MerchantRenameRuleDao.kt ==================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface MerchantRenameRuleDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(rule: MerchantRenameRule)
-
-    @Query("SELECT * FROM merchant_rename_rules")
-    fun getAllRules(): Flow<List<MerchantRenameRule>>
-
-    @Query("DELETE FROM merchant_rename_rules WHERE originalName = :originalName")
-    suspend fun deleteByOriginalName(originalName: String)
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/SplitTransactionDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/data/db/dao/SplitTransactionDao.kt
-// REASON: FEATURE - Added `getAllSplits` and `getSplitsForParentSimple` queries.
-// These are required by the data export service to fetch all split items for
-// JSON and CSV backups.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Transaction
-import androidx.room.Update
-import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface SplitTransactionDao {
-
-    @Transaction
-    @Query("""
-        SELECT s.*, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
-        FROM split_transactions s
-        LEFT JOIN categories c ON s.categoryId = c.id
-        WHERE s.parentTransactionId = :parentTransactionId
-        ORDER BY s.amount DESC
-    """)
-    fun getSplitsForParent(parentTransactionId: Int): Flow<List<SplitTransactionDetails>>
-
-    // --- NEW: Query to get simple split details for CSV export ---
-    @Transaction
-    @Query("""
-        SELECT s.*, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
-        FROM split_transactions s
-        LEFT JOIN categories c ON s.categoryId = c.id
-        WHERE s.parentTransactionId = :parentTransactionId
-        ORDER BY s.id ASC
-    """)
-    suspend fun getSplitsForParentSimple(parentTransactionId: Int): List<SplitTransactionDetails>
-
-
-    // --- NEW: Query to get all splits for JSON backup ---
-    @Query("SELECT * FROM split_transactions")
-    fun getAllSplits(): Flow<List<SplitTransaction>>
-
-    // --- NEW: Query to clear the table during import ---
-    @Query("DELETE FROM split_transactions")
-    suspend fun deleteAll()
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(splits: List<SplitTransaction>)
-
-    @Update
-    suspend fun update(split: SplitTransaction)
-
-    @Query("DELETE FROM split_transactions WHERE id = :splitId")
-    suspend fun deleteById(splitId: Int)
-
-    @Query("DELETE FROM split_transactions WHERE parentTransactionId = :parentTransactionId")
-    suspend fun deleteSplitsForParent(parentTransactionId: Int)
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/CustomSmsRuleDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/CustomSmsRuleDao.kt
-// REASON: FEATURE - Added the `getRuleById` and `update` functions. These are
-// essential for the "Edit Rule" feature, allowing the ViewModel to fetch a
-// specific rule for editing and then save the updated version back to the
-// database.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
-import kotlinx.coroutines.flow.Flow
-
-/**
- * Data Access Object (DAO) for the CustomSmsRule entity.
- * Provides methods to interact with the custom_sms_rules table in the database.
- */
-@Dao
-interface CustomSmsRuleDao {
-
-    /**
-     * Inserts a new custom SMS rule into the database. If a rule with the same primary key
-     * already exists, it will be replaced.
-     *
-     * @param rule The CustomSmsRule object to insert.
-     */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(rule: CustomSmsRule)
-
-    /**
-     * Retrieves all custom SMS rules from the database, ordered by priority in descending order.
-     * This ensures that higher-priority rules are evaluated first.
-     *
-     * @return A Flow emitting a list of all CustomSmsRule objects.
-     */
-    @Query("SELECT * FROM custom_sms_rules ORDER BY priority DESC")
-    fun getAllRules(): Flow<List<CustomSmsRule>>
-
-    /**
-     * Deletes a specific custom rule from the database.
-     *
-     * @param rule The CustomSmsRule object to delete.
-     */
-    @Delete
-    suspend fun delete(rule: CustomSmsRule)
-
-    // --- NEW: Function to get a single rule by its ID ---
-    @Query("SELECT * FROM custom_sms_rules WHERE id = :id")
-    fun getRuleById(id: Int): Flow<CustomSmsRule?>
-
-    // --- NEW: Function to update an existing rule ---
-    @Update
-    suspend fun update(rule: CustomSmsRule)
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/RecurringPatternDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/RecurringPatternDao.kt
-// REASON: NEW FILE - This DAO provides the database interface for the
-// RecurringPattern entity. It includes methods for inserting, updating,
-// retrieving, and deleting patterns, which will be used by the new
-// RecurringPatternWorker to track and analyze potential recurring transactions.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
-
-@Dao
-interface RecurringPatternDao {
-
-    /**
-     * Inserts a new pattern. If a pattern with the same signature already exists, it is replaced.
-     */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(pattern: RecurringPattern)
-
-    /**
-     * Updates an existing pattern.
-     */
-    @Update
-    suspend fun update(pattern: RecurringPattern)
-
-    /**
-     * Retrieves a pattern by its unique SMS signature.
-     */
-    @Query("SELECT * FROM recurring_patterns WHERE smsSignature = :signature")
-    suspend fun getPatternBySignature(signature: String): RecurringPattern?
-
-    /**
-     * Retrieves all patterns from the database for analysis.
-     */
-    @Query("SELECT * FROM recurring_patterns")
-    suspend fun getAllPatterns(): List<RecurringPattern>
-
-    /**
-     * Deletes a pattern by its signature, typically after a recurring rule has been created from it.
-     */
-    @Query("DELETE FROM recurring_patterns WHERE smsSignature = :signature")
-    suspend fun deleteBySignature(signature: String)
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/MerchantCategoryMappingDao.kt ==================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-
-/**
- * Data Access Object (DAO) for the MerchantCategoryMapping entity.
- */
-@Dao
-interface MerchantCategoryMappingDao {
-
-    /**
-     * Inserts a new merchant-category mapping. If a mapping for the merchant
-     * already exists, it will be replaced with the new one.
-     *
-     * @param mapping The MerchantCategoryMapping object to insert or update.
-     */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(mapping: MerchantCategoryMapping)
-
-    /**
-     * Retrieves the learned category ID for a given merchant name.
-     *
-     * @param parsedName The name of the merchant to look up.
-     * @return The associated category ID (Int), or null if no mapping exists.
-     */
-    @Query("SELECT categoryId FROM merchant_category_mapping WHERE parsedName = :parsedName")
-    suspend fun getCategoryIdForMerchant(parsedName: String): Int?
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/GoalDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/GoalDao.kt
-// REASON: NEW FILE - Defines the DAO for the Goal entity, providing all
-// necessary CRUD operations and a query to fetch goals with their associated
-// account names for display in the UI.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
-import kotlinx.coroutines.flow.Flow
-
-/**
- * A data class to hold a Goal and its associated account's name.
- */
-data class GoalWithAccountName(
-    val id: Int,
-    val name: String,
-    val targetAmount: Double,
-    val savedAmount: Double,
-    val targetDate: Long?,
-    val accountId: Int,
-    val accountName: String
-)
-
-@Dao
-interface GoalDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(goal: Goal)
-
-    @Update
-    suspend fun update(goal: Goal)
-
-    @Delete
-    suspend fun delete(goal: Goal)
-
-    @Query("SELECT * FROM goals WHERE id = :id")
-    fun getGoalById(id: Int): Flow<Goal?>
-
-    @Query("""
-        SELECT
-            g.id, g.name, g.targetAmount, g.savedAmount, g.targetDate, g.accountId, a.name as accountName
-        FROM goals as g
-        INNER JOIN accounts as a ON g.accountId = a.id
-        ORDER BY g.targetDate ASC
-    """)
-    fun getAllGoalsWithAccountName(): Flow<List<GoalWithAccountName>>
-
-    @Query("SELECT * FROM goals WHERE accountId = :accountId")
-    fun getGoalsForAccount(accountId: Int): Flow<List<Goal>>
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/RecurringTransactionDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/RecurringTransactionDao.kt
-// REASON: FIX - The `insert` function now returns a `Long` representing the
-// row ID of the newly inserted rule. This is required by the
-// RecurringPatternWorker to get the ID for the notification deep link and
-// resolves the `Unresolved reference 'toInt'` compilation error.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
-import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface RecurringTransactionDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(recurringTransaction: RecurringTransaction): Long // --- FIX: Added Long return type
-
-    @Update
-    suspend fun update(recurringTransaction: RecurringTransaction)
-
-    @Delete
-    suspend fun delete(recurringTransaction: RecurringTransaction)
-
-    @Query("SELECT * FROM recurring_transactions ORDER BY startDate DESC")
-    fun getAllRulesFlow(): Flow<List<RecurringTransaction>>
-
-    @Query("SELECT * FROM recurring_transactions")
-    suspend fun getAllRulesList(): List<RecurringTransaction>
-
-    @Query("SELECT * FROM recurring_transactions WHERE id = :id")
-    fun getById(id: Int): Flow<RecurringTransaction?>
-
-    @Query("UPDATE recurring_transactions SET lastRunDate = :lastRunDate WHERE id = :id")
-    suspend fun updateLastRunDate(id: Int, lastRunDate: Long)
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/MerchantMappingDao.kt ==================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface MerchantMappingDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(mapping: MerchantMapping)
-
-    // --- NEW: Function to insert a list of mappings during import ---
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(mappings: List<MerchantMapping>)
-
-    // --- NEW: Function to clear the table during import ---
-    @Query("DELETE FROM merchant_mappings")
-    suspend fun deleteAll()
-
-    @Query("SELECT * FROM merchant_mappings")
-    fun getAllMappings(): Flow<List<MerchantMapping>>
-
-    @Query("SELECT * FROM merchant_mappings WHERE smsSender = :sender")
-    suspend fun getMappingForSender(sender: String): MerchantMapping?
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/IgnoreRuleDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/IgnoreRuleDao.kt
-// REASON: FEATURE - The `getEnabledPhrases` function has been replaced with
-// `getEnabledRules`, which returns the full IgnoreRule objects. This provides
-// the SmsParser with the necessary `type` information to distinguish between
-// sender and body phrase patterns.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
-import kotlinx.coroutines.flow.Flow
-
-/**
- * Data Access Object (DAO) for the IgnoreRule entity.
- */
-@Dao
-interface IgnoreRuleDao {
-
-    /**
-     * Retrieves all ignore rules from the database, ordered alphabetically.
-     * @return A Flow emitting a list of all IgnoreRule objects.
-     */
-    @Query("SELECT * FROM ignore_rules ORDER BY pattern ASC")
-    fun getAll(): Flow<List<IgnoreRule>>
-
-    /**
-     * Retrieves all enabled ignore rules.
-     * @return A list of the active IgnoreRule objects.
-     */
-    @Query("SELECT * FROM ignore_rules WHERE isEnabled = 1")
-    suspend fun getEnabledRules(): List<IgnoreRule>
-
-    /**
-     * Inserts a new ignore rule. If a rule with the same pattern already exists,
-     * it will be ignored.
-     * @param rule The IgnoreRule object to insert.
-     */
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(rule: IgnoreRule)
-
-    /**
-     * Inserts a list of ignore rules. Used for seeding the database.
-     * @param rules The list of IgnoreRule objects to insert.
-     */
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertAll(rules: List<IgnoreRule>)
-
-    /**
-     * Updates an existing ignore rule.
-     * @param rule The IgnoreRule object to update.
-     */
-    @Update
-    suspend fun update(rule: IgnoreRule)
-
-    /**
-     * Deletes a specific ignore rule from the database.
-     * @param rule The IgnoreRule object to delete.
-     */
-    @Delete
-    suspend fun delete(rule: IgnoreRule)
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/TransactionDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TransactionDao.kt
-// REASON: FEATURE - Added new queries to support the drilldown screens:
-// - getTransactionsForCategoryName: Fetches all transactions for a specific category in a date range.
-// - getTransactionsForMerchantName: Fetches all transactions for a specific merchant in a date range.
-// - getMonthlySpendingForCategory: Gets historical monthly spending for a single category.
-// - getMonthlySpendingForMerchant: Gets historical monthly spending for a single merchant.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.*
-import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface TransactionDao {
-
-    @Query("SELECT * FROM transactions WHERE id = :transactionId")
-    fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?>
-
-    @Query("UPDATE transactions SET isSplit = :isSplit, categoryId = CASE WHEN :isSplit = 1 THEN NULL ELSE categoryId END, description = CASE WHEN :isSplit = 1 THEN 'Split Transaction' ELSE description END WHERE id = :transactionId")
-    suspend fun markAsSplit(transactionId: Int, isSplit: Boolean)
-
-    @Query("""
-        UPDATE transactions 
-        SET isSplit = 0, description = :originalDescription, categoryId = :newCategoryId
-        WHERE id = :transactionId
-    """)
-    suspend fun unmarkAsSplit(transactionId: Int, originalDescription: String, newCategoryId: Int?)
-
-
-    @Query("SELECT MIN(date) FROM transactions")
-    fun getFirstTransactionDate(): Flow<Long?>
-
-    @Query("SELECT * FROM transactions WHERE smsSignature IS NOT NULL AND date >= :sinceDate")
-    suspend fun getTransactionsWithSignatureSince(sinceDate: Long): List<Transaction>
-
-    @Query("SELECT * FROM transactions WHERE smsSignature = :signature ORDER BY date ASC")
-    suspend fun getTransactionsBySignature(signature: String): List<Transaction>
-
-
-    @Query(
-        """
-        WITH AtomicExpenses AS (
-            -- 1. Regular, non-split transactions
-            SELECT T.categoryId, T.amount FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
-            UNION ALL
-            -- 2. Child items from split transactions
-            SELECT S.categoryId, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
+import kotlinx.coroutines.withContext
+
+class TransactionRepository(
+    private val transactionQueries: TransactionQueries,
+    private val accountQueries: AccountQueries,
+    private val categoryQueries: CategoryQueries,
+    private val tagQueries: TagQueries,
+    private val transactionTagCrossRefQueries: Transaction_tag_cross_refQueries,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
+
+    suspend fun insert(transaction: Transaction): Long = withContext(dispatcher) {
+        transactionQueries.insert(
+            description = transaction.description,
+            categoryId = transaction.categoryId?.toLong(),
+            amount = transaction.amount,
+            date = transaction.date,
+            accountId = transaction.accountId.toLong(),
+            notes = transaction.notes,
+            transactionType = transaction.transactionType,
+            sourceSmsId = transaction.sourceSmsId,
+            sourceSmsHash = transaction.sourceSmsHash,
+            source = transaction.source,
+            originalDescription = transaction.originalDescription,
+            isExcluded = if (transaction.isExcluded) 1L else 0L,
+            smsSignature = transaction.smsSignature,
+            originalAmount = transaction.originalAmount,
+            currencyCode = transaction.currencyCode,
+            conversionRate = transaction.conversionRate,
+            isSplit = if (transaction.isSplit) 1L else 0L
         )
-        SELECT C.name as categoryName, SUM(AE.amount) as totalAmount, C.iconKey as iconKey, C.colorKey as categoryColorKey
-        FROM AtomicExpenses AS AE
-        JOIN categories AS C ON AE.categoryId = C.id
-        WHERE AE.categoryId IS NOT NULL
-        GROUP BY C.name
-        ORDER BY totalAmount DESC
-        LIMIT 3
-    """
-    )
-    suspend fun getTopSpendingCategoriesForRange(startDate: Long, endDate: Long): List<CategorySpending>
+        return@withContext transactionQueries.lastInsertRowId().executeAsOne()
+    }
 
-    @Query(
-        """
-        WITH AtomicExpenses AS (
-            SELECT T.categoryId, T.amount FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
-            UNION ALL
-            SELECT S.categoryId, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
+    suspend fun update(transaction: Transaction) = withContext(dispatcher) {
+        transactionQueries.update(
+            id = transaction.id.toLong(),
+            description = transaction.description,
+            categoryId = transaction.categoryId?.toLong(),
+            amount = transaction.amount,
+            date = transaction.date,
+            accountId = transaction.accountId.toLong(),
+            notes = transaction.notes,
+            transactionType = transaction.transactionType,
+            isExcluded = if (transaction.isExcluded) 1L else 0L,
+            isSplit = if (transaction.isSplit) 1L else 0L
         )
-        SELECT C.name as categoryName, SUM(AE.amount) as totalAmount, C.iconKey as iconKey, C.colorKey as categoryColorKey
-        FROM AtomicExpenses AS AE
-        JOIN categories AS C ON AE.categoryId = C.id
-        WHERE AE.categoryId IS NOT NULL
-        GROUP BY C.name
-        ORDER BY totalAmount DESC
-        LIMIT 1
-    """
-    )
-    fun getTopSpendingCategoriesForRangeFlow(startDate: Long, endDate: Long): Flow<CategorySpending?>
+    }
 
+    suspend fun delete(transaction: Transaction) = withContext(dispatcher) {
+        transactionQueries.deleteById(transaction.id.toLong())
+    }
 
-    @Query("UPDATE transactions SET isExcluded = :isExcluded WHERE id = :id")
-    suspend fun updateExclusionStatus(id: Int, isExcluded: Boolean)
+    fun getAllTransactions(): Flow<List<Transaction>> {
+        return transactionQueries.selectAll(::mapTransaction).asFlow().mapToList(dispatcher)
+    }
 
-    @Query(
-        """
-        SELECT
-            T.*,
-            A.name as accountName,
-            C.name as categoryName,
-            C.iconKey as categoryIconKey,
-            C.colorKey as categoryColorKey
-        FROM
-            transactions AS T
-        LEFT JOIN
-            accounts AS A ON T.accountId = A.id
-        LEFT JOIN
-            categories AS C ON T.categoryId = C.id
-        ORDER BY
-            T.date DESC
-    """
-    )
-    fun getAllTransactions(): Flow<List<TransactionDetails>>
+    // Additional functions will be added here as we migrate ViewModels
 
-    @Query("""
-        WITH AtomicIncomes AS (
-            SELECT T.*
-            FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
-            UNION ALL
-            SELECT
-                P.id, P.description, S.categoryId, S.amount, P.date, P.accountId, S.notes, P.transactionType, P.sourceSmsId, P.sourceSmsHash, P.source,
-                P.originalDescription, P.isExcluded, P.smsSignature, P.originalAmount, P.currencyCode, P.conversionRate, P.isSplit
-            FROM split_transactions AS S JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'income' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
+    private fun mapTransaction(
+        id: Long,
+        description: String,
+        categoryId: Long?,
+        amount: Double,
+        date: Long,
+        accountId: Long,
+        notes: String?,
+        transactionType: String,
+        sourceSmsId: Long?,
+        sourceSmsHash: String?,
+        source: String,
+        originalDescription: String?,
+        isExcluded: Long,
+        smsSignature: String?,
+        originalAmount: Double?,
+        currencyCode: String?,
+        conversionRate: Double?,
+        isSplit: Long
+    ): Transaction {
+        return Transaction(
+            id = id.toInt(),
+            description = description,
+            categoryId = categoryId?.toInt(),
+            amount = amount,
+            date = date,
+            accountId = accountId.toInt(),
+            notes = notes,
+            transactionType = transactionType,
+            sourceSmsId = sourceSmsId,
+            sourceSmsHash = sourceSmsHash,
+            source = source,
+            originalDescription = originalDescription,
+            isExcluded = isExcluded == 1L,
+            smsSignature = smsSignature,
+            originalAmount = originalAmount,
+            currencyCode = currencyCode,
+            conversionRate = conversionRate,
+            isSplit = isSplit == 1L
         )
-        SELECT
-            AI.*,
-            A.name as accountName,
-            C.name as categoryName,
-            C.iconKey as categoryIconKey,
-            C.colorKey as categoryColorKey
-        FROM AtomicIncomes AS AI
-        LEFT JOIN accounts AS A ON AI.accountId = A.id
-        LEFT JOIN categories AS C ON AI.categoryId = C.id
-        WHERE (:keyword IS NULL OR LOWER(AI.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AI.notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR AI.accountId = :accountId)
-          AND (:categoryId IS NULL OR AI.categoryId = :categoryId)
-        ORDER BY AI.date DESC
-    """)
-    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>>
-
-    @Query("""
-        WITH AtomicIncomes AS (
-            SELECT T.categoryId, T.amount, T.description, T.notes, T.accountId
-            FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'income' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
-            UNION ALL
-            SELECT S.categoryId, S.amount, P.description, S.notes, P.accountId
-            FROM split_transactions AS S JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'income' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
-        )
-        SELECT 
-            C.name as categoryName, 
-            SUM(AI.amount) as totalAmount,
-            C.iconKey as iconKey,
-            C.colorKey as colorKey
-        FROM AtomicIncomes AS AI
-        JOIN categories AS C ON AI.categoryId = C.id
-        WHERE AI.categoryId IS NOT NULL
-          AND (:keyword IS NULL OR LOWER(AI.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AI.notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR AI.accountId = :accountId)
-          AND (:categoryId IS NULL OR C.id = :categoryId)
-        GROUP BY C.name
-        ORDER BY totalAmount DESC
-    """)
-    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<CategorySpending>>
-
-    @Query("""
-        SELECT
-            T.description as merchantName,
-            SUM(T.amount) as totalAmount,
-            COUNT(T.id) as transactionCount
-        FROM transactions AS T
-        WHERE T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate
-          AND T.isExcluded = 0
-          AND T.isSplit = 0
-          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR T.accountId = :accountId)
-          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
-        GROUP BY LOWER(T.description)
-        ORDER BY totalAmount DESC
-    """)
-    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>>
-
-    // --- NEW: Query for category drilldown transaction list ---
-    @Query("""
-        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
-        FROM transactions AS T
-        LEFT JOIN accounts AS A ON T.accountId = A.id
-        LEFT JOIN categories AS C ON T.categoryId = C.id
-        WHERE C.name = :categoryName AND T.date BETWEEN :startDate AND :endDate
-        ORDER BY T.date DESC
-    """)
-    fun getTransactionsForCategoryName(categoryName: String, startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
-
-    // --- NEW: Query for merchant drilldown transaction list ---
-    @Query("""
-        SELECT T.*, A.name as accountName, C.name as categoryName, C.iconKey as categoryIconKey, C.colorKey as categoryColorKey
-        FROM transactions AS T
-        LEFT JOIN accounts AS A ON T.accountId = A.id
-        LEFT JOIN categories AS C ON T.categoryId = C.id
-        WHERE T.description = :merchantName AND T.date BETWEEN :startDate AND :endDate
-        ORDER BY T.date DESC
-    """)
-    fun getTransactionsForMerchantName(merchantName: String, startDate: Long, endDate: Long): Flow<List<TransactionDetails>>
-
-    // --- NEW: Query for category drilldown monthly trend chart ---
-    @Query("""
-        WITH AtomicExpenses AS (
-            SELECT P.date, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            JOIN categories AS C ON S.categoryId = C.id
-            WHERE P.transactionType = 'expense' AND P.isExcluded = 0 AND C.name = :categoryName
-            UNION ALL
-            SELECT T.date, T.amount FROM transactions AS T
-            JOIN categories AS C ON T.categoryId = C.id
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0 AND C.name = :categoryName
-        )
-        SELECT
-            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
-            SUM(amount) as totalAmount
-        FROM AtomicExpenses
-        WHERE date BETWEEN :startDate AND :endDate
-        GROUP BY period
-        ORDER BY period ASC
-    """)
-    fun getMonthlySpendingForCategory(categoryName: String, startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
-
-    // --- NEW: Query for merchant drilldown monthly trend chart ---
-    @Query("""
-        WITH AtomicExpenses AS (
-            SELECT P.date, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND P.isExcluded = 0 AND P.description = :merchantName
-            UNION ALL
-            SELECT T.date, T.amount FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0 AND T.description = :merchantName
-        )
-        SELECT
-            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
-            SUM(amount) as totalAmount
-        FROM AtomicExpenses
-        WHERE date BETWEEN :startDate AND :endDate
-        GROUP BY period
-        ORDER BY period ASC
-    """)
-    fun getMonthlySpendingForMerchant(merchantName: String, startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
-
-
-    @Insert
-    suspend fun insertImage(transactionImage: TransactionImage)
-
-    @Delete
-    suspend fun deleteImage(transactionImage: TransactionImage)
-
-    @Query("SELECT * FROM transaction_images WHERE transactionId = :transactionId")
-    fun getImagesForTransaction(transactionId: Int): Flow<List<TransactionImage>>
-
-
-    @Query("UPDATE transactions SET description = :description WHERE id = :id")
-    suspend fun updateDescription(id: Int, description: String)
-
-    @Query("UPDATE transactions SET amount = :amount WHERE id = :id")
-    suspend fun updateAmount(id: Int, amount: Double)
-
-    @Query("UPDATE transactions SET notes = :notes WHERE id = :id")
-    suspend fun updateNotes(id: Int, notes: String?)
-
-    @Query("UPDATE transactions SET categoryId = :categoryId WHERE id = :id")
-    suspend fun updateCategoryId(id: Int, categoryId: Int?)
-
-    @Query("UPDATE transactions SET accountId = :accountId WHERE id = :id")
-    suspend fun updateAccountId(id: Int, accountId: Int)
-
-    @Query("UPDATE transactions SET date = :date WHERE id = :id")
-    suspend fun updateDate(id: Int, date: Long)
-
-
-    @Query(
-        """
-        SELECT
-            T.*,
-            A.name as accountName,
-            C.name as categoryName,
-            C.iconKey as categoryIconKey,
-            C.colorKey as categoryColorKey
-        FROM
-            transactions AS T
-        LEFT JOIN
-            accounts AS A ON T.accountId = A.id
-        LEFT JOIN
-            categories AS C ON T.categoryId = C.id
-        WHERE T.id = :id
-    """
-    )
-    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?>
-
-
-    @Query(
-        """
-        SELECT
-            T.*,
-            A.name as accountName,
-            C.name as categoryName,
-            C.iconKey as categoryIconKey,
-            C.colorKey as categoryColorKey
-        FROM
-            transactions AS T
-        LEFT JOIN
-            accounts AS A ON T.accountId = A.id
-        LEFT JOIN
-            categories AS C ON T.categoryId = C.id
-        ORDER BY
-            T.date DESC
-        LIMIT 5
-    """
-    )
-    fun getRecentTransactionDetails(): Flow<List<TransactionDetails>>
-
-    @Query("SELECT sourceSmsHash FROM transactions WHERE sourceSmsHash IS NOT NULL")
-    fun getAllSmsHashes(): Flow<List<String>>
-
-    @Query(
-        """
-        SELECT
-            T.*,
-            A.name as accountName,
-            C.name as categoryName,
-            C.iconKey as categoryIconKey,
-            C.colorKey as categoryColorKey
-        FROM
-            transactions AS T
-        LEFT JOIN
-            accounts AS A ON T.accountId = A.id
-        LEFT JOIN
-            categories AS C ON T.categoryId = C.id
-        WHERE T.date BETWEEN :startDate AND :endDate
-          AND (:keyword IS NULL OR LOWER(T.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(T.notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR T.accountId = :accountId)
-          AND (:categoryId IS NULL OR T.categoryId = :categoryId)
-        ORDER BY
-            T.date DESC
-    """
-    )
-    fun getTransactionDetailsForRange(
-        startDate: Long,
-        endDate: Long,
-        keyword: String?,
-        accountId: Int?,
-        categoryId: Int?
-    ): Flow<List<TransactionDetails>>
-
-    @Query(
-        """
-        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
-        FROM transactions t
-        LEFT JOIN accounts a ON t.accountId = a.id
-        LEFT JOIN categories c ON t.categoryId = c.id
-        WHERE t.accountId = :accountId
-        ORDER BY t.date DESC
-    """
-    )
-    fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>>
-
-    @Query("SELECT * FROM transactions")
-    fun getAllTransactionsSimple(): Flow<List<Transaction>>
-
-    @Query("SELECT * FROM transactions WHERE date BETWEEN :startDate AND :endDate ORDER BY date DESC")
-    fun getAllTransactionsForRange(
-        startDate: Long,
-        endDate: Long,
-    ): Flow<List<Transaction>>
-
-    @Query("SELECT * FROM transactions WHERE id = :id")
-    fun getTransactionById(id: Int): Flow<Transaction?>
-
-    @Query("SELECT * FROM transactions WHERE accountId = :accountId ORDER BY date DESC")
-    fun getTransactionsForAccount(accountId: Int): Flow<List<Transaction>>
-
-    @Query(
-        """
-        WITH AtomicExpenses AS (
-            SELECT T.categoryId, T.amount FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
-            UNION ALL
-            SELECT S.categoryId, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
-        )
-        SELECT SUM(AE.amount) FROM AtomicExpenses AS AE
-        JOIN categories AS C ON AE.categoryId = C.id
-        WHERE C.name = :categoryName AND AE.categoryId IS NOT NULL
-    """
-    )
-    fun getSpendingForCategory(
-        categoryName: String,
-        startDate: Long,
-        endDate: Long,
-    ): Flow<Double?>
-
-    @Query(
-        """
-        WITH AtomicExpenses AS (
-            SELECT T.categoryId, T.amount, T.description, T.notes, T.accountId
-            FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
-            UNION ALL
-            SELECT S.categoryId, S.amount, P.description, S.notes, P.accountId
-            FROM split_transactions AS S JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND P.date BETWEEN :startDate AND :endDate AND P.isExcluded = 0
-        )
-        SELECT 
-            C.name as categoryName, 
-            SUM(AE.amount) as totalAmount,
-            C.iconKey as iconKey,
-            C.colorKey as colorKey
-        FROM AtomicExpenses AS AE
-        JOIN categories AS C ON AE.categoryId = C.id
-        WHERE AE.categoryId IS NOT NULL
-          AND (:keyword IS NULL OR LOWER(AE.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(AE.notes) LIKE '%' || LOWER(:keyword) || '%')
-          AND (:accountId IS NULL OR AE.accountId = :accountId)
-          AND (:categoryId IS NULL OR AE.categoryId = :categoryId)
-        GROUP BY C.name
-        ORDER BY totalAmount ASC
-    """
-    )
-    fun getSpendingByCategoryForMonth(
-        startDate: Long,
-        endDate: Long,
-        keyword: String?,
-        accountId: Int?,
-        categoryId: Int?
-    ): Flow<List<CategorySpending>>
-
-    @Query(
-        """
-        SELECT
-            strftime('%Y-%m', T1.date / 1000, 'unixepoch', 'localtime') as monthYear,
-            SUM(CASE WHEN T1.transactionType = 'income' AND T1.isSplit = 0 THEN T1.amount ELSE 0 END) + 
-            (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE strftime('%Y-%m', p.date / 1000, 'unixepoch', 'localtime') = strftime('%Y-%m', T1.date / 1000, 'unixepoch', 'localtime') AND p.isExcluded = 0 AND p.transactionType = 'income') as totalIncome,
-            SUM(CASE WHEN T1.transactionType = 'expense' AND T1.isSplit = 0 THEN T1.amount ELSE 0 END) + 
-            (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE strftime('%Y-%m', p.date / 1000, 'unixepoch', 'localtime') = strftime('%Y-%m', T1.date / 1000, 'unixepoch', 'localtime') AND p.isExcluded = 0 AND p.transactionType = 'expense') as totalExpenses
-        FROM transactions AS T1
-        WHERE T1.date >= :startDate AND T1.isExcluded = 0
-        GROUP BY monthYear
-        ORDER BY monthYear ASC
-    """
-    )
-    fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>>
-
-    @Query("SELECT COUNT(*) FROM transactions WHERE categoryId = :categoryId")
-    suspend fun countTransactionsForCategory(categoryId: Int): Int
-
-    @Query("SELECT COUNT(*) FROM transaction_tag_cross_ref WHERE tagId = :tagId")
-    suspend fun countTransactionsForTag(tagId: Int): Int
-
-    @Query("""
-        SELECT
-            SUM(CASE WHEN T.transactionType = 'income' AND T.isSplit = 0 THEN T.amount ELSE 0 END) + (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE p.date BETWEEN :startDate AND :endDate AND p.transactionType = 'income' AND p.isExcluded = 0) as totalIncome,
-            SUM(CASE WHEN T.transactionType = 'expense' AND T.isSplit = 0 THEN T.amount ELSE 0 END) + (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE p.date BETWEEN :startDate AND :endDate AND p.transactionType = 'expense' AND p.isExcluded = 0) as totalExpenses
-        FROM transactions AS T
-        WHERE T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
-    """)
-    suspend fun getFinancialSummaryForRange(startDate: Long, endDate: Long): FinancialSummary?
-
-    @Query("""
-        SELECT
-            SUM(CASE WHEN T.transactionType = 'income' AND T.isSplit = 0 THEN T.amount ELSE 0 END) + (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE p.date BETWEEN :startDate AND :endDate AND p.transactionType = 'income' AND p.isExcluded = 0) as totalIncome,
-            SUM(CASE WHEN T.transactionType = 'expense' AND T.isSplit = 0 THEN T.amount ELSE 0 END) + (SELECT IFNULL(SUM(s.amount), 0) FROM split_transactions s JOIN transactions p ON s.parentTransactionId = p.id WHERE p.date BETWEEN :startDate AND :endDate AND p.transactionType = 'expense' AND p.isExcluded = 0) as totalExpenses
-        FROM transactions AS T
-        WHERE T.date BETWEEN :startDate AND :endDate AND T.isExcluded = 0
-    """)
-    fun getFinancialSummaryForRangeFlow(startDate: Long, endDate: Long): Flow<FinancialSummary?>
-
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(transactions: List<Transaction>)
-
-    @Query("DELETE FROM transactions")
-    suspend fun deleteAll()
-
-    @Insert
-    suspend fun insert(transaction: Transaction): Long
-
-    @Update
-    suspend fun update(transaction: Transaction)
-
-    @Delete
-    suspend fun delete(transaction: Transaction)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun addTagsToTransaction(crossRefs: List<TransactionTagCrossRef>)
-
-    @Query("DELETE FROM transaction_tag_cross_ref WHERE transactionId = :transactionId")
-    suspend fun clearTagsForTransaction(transactionId: Int)
-
-    @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
-    fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>>
-
-    @Query("SELECT T.* FROM tags T INNER JOIN transaction_tag_cross_ref TTCR ON T.id = TTCR.tagId WHERE TTCR.transactionId = :transactionId")
-    suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag>
-
-    @Query("""
-        WITH AtomicExpenses AS (
-            SELECT T.date, T.amount FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0
-            UNION ALL
-            SELECT P.date, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND P.isExcluded = 0
-        )
-        SELECT
-            strftime('%Y-%m-%d', date / 1000, 'unixepoch', 'localtime') as date,
-            SUM(amount) as totalAmount
-        FROM AtomicExpenses
-        WHERE date BETWEEN :startDate AND :endDate
-        GROUP BY date
-        ORDER BY date ASC
-    """)
-    fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>>
-
-    @Query("""
-        WITH AtomicExpenses AS (
-            SELECT P.date, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND P.isExcluded = 0
-            UNION ALL
-            SELECT T.date, T.amount FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0
-        )
-        SELECT
-            strftime('%Y-%W', date / 1000, 'unixepoch', 'localtime') as period,
-            SUM(amount) as totalAmount
-        FROM AtomicExpenses
-        WHERE date BETWEEN :startDate AND :endDate
-        GROUP BY period
-        ORDER BY period ASC
-    """)
-    fun getWeeklySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
-
-    @Query("""
-        WITH AtomicExpenses AS (
-            SELECT P.date, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND P.isExcluded = 0
-            UNION ALL
-            SELECT T.date, T.amount FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND T.isExcluded = 0
-        )
-        SELECT
-            strftime('%Y-%m', date / 1000, 'unixepoch', 'localtime') as period,
-            SUM(amount) as totalAmount
-        FROM AtomicExpenses
-        WHERE date BETWEEN :startDate AND :endDate
-        GROUP BY period
-        ORDER BY period ASC
-    """)
-    fun getMonthlySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<PeriodTotal>>
-
-    @Query("UPDATE transactions SET sourceSmsHash = :smsHash WHERE id = :transactionId")
-    suspend fun setSmsHash(transactionId: Int, smsHash: String)
-
-    @Query("""
-        SELECT * FROM transactions
-        WHERE sourceSmsHash IS NULL
-          AND date BETWEEN :startDate AND :endDate
-          AND amount BETWEEN :minAmount AND :maxAmount
-          AND transactionType = :transactionType
-        ORDER BY ABS(date - :smsDate) ASC
-    """)
-    suspend fun findLinkableTransactions(
-        startDate: Long,
-        endDate: Long,
-        minAmount: Double,
-        maxAmount: Double,
-        smsDate: Long,
-        transactionType: String
-    ): List<Transaction>
-
-    @Query("""
-        SELECT COUNT(*) FROM transactions
-        WHERE LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description)
-        AND isExcluded = 0
-    """)
-    fun getTransactionCountForMerchant(description: String): Flow<Int>
-
-    @Query("""
-        SELECT COUNT(*) FROM transactions
-        WHERE (LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description))
-        AND isExcluded = 0
-    """)
-    suspend fun getTransactionCountForMerchantSuspend(description: String): Int
-
-    @Query("""
-        SELECT * FROM transactions
-        WHERE (LOWER(description) = LOWER(:description) OR LOWER(originalDescription) = LOWER(:description))
-        AND id != :excludeId
-        AND isExcluded = 0
-    """)
-    suspend fun findSimilarTransactions(description: String, excludeId: Int): List<Transaction>
-
-    @Query("UPDATE transactions SET categoryId = :categoryId WHERE id IN (:ids)")
-    suspend fun updateCategoryForIds(ids: List<Int>, categoryId: Int)
-
-    @Query("UPDATE transactions SET description = :newDescription WHERE id IN (:ids)")
-    suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String)
-
-    @Query("""
-        SELECT t.*, a.name as accountName, c.name as categoryName, c.iconKey as categoryIconKey, c.colorKey as categoryColorKey
-        FROM transactions t
-        LEFT JOIN accounts a ON t.accountId = a.id
-        LEFT JOIN categories c ON t.categoryId = c.id
-        WHERE
-            (:keyword = '' OR LOWER(t.description) LIKE '%' || LOWER(:keyword) || '%' OR LOWER(t.notes) LIKE '%' || LOWER(:keyword) || '%') AND
-            (:accountId IS NULL OR t.accountId = :accountId) AND
-            (:categoryId IS NULL OR t.categoryId = :categoryId) AND
-            (:transactionType IS NULL OR t.transactionType = :transactionType) AND
-            (:startDate IS NULL OR t.date >= :startDate) AND
-            (:endDate IS NULL OR t.date <= :endDate)
-        ORDER BY t.date DESC
-    """)
-    suspend fun searchTransactions(
-        keyword: String,
-        accountId: Int?,
-        categoryId: Int?,
-        transactionType: String?,
-        startDate: Long?,
-        endDate: Long?,
-    ): List<TransactionDetails>
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/CategoryDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/CategoryDao.kt
-// REASON: REFACTOR - The `findByName` query has been updated to use `COLLATE
-// NOCASE`. This ensures that all direct lookups for a category by its name are
-// case-insensitive, matching the new schema constraint.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
-import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface CategoryDao {
-
-    @Query("SELECT * FROM categories ORDER BY name ASC")
-    fun getAllCategories(): Flow<List<Category>>
-
-    @Query("SELECT * FROM categories WHERE id = :categoryId")
-    suspend fun getCategoryById(categoryId: Int): Category?
-
-    // --- UPDATED: Use COLLATE NOCASE for explicit case-insensitive matching ---
-    @Query("SELECT * FROM categories WHERE name = :name COLLATE NOCASE LIMIT 1")
-    suspend fun findByName(name: String): Category?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(categories: List<Category>)
-
-    @Query("DELETE FROM categories")
-    suspend fun deleteAll()
-
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(category: Category): Long
-
-    @Update
-    suspend fun update(category: Category)
-
-    @Delete
-    suspend fun delete(category: Category)
+    }
 }-e 
 -e 
 
 
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/BudgetDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/BudgetDao.kt
-// REASON: FEATURE (Splitting) - The queries for calculating spending against
-// budgets (`getBudgetsWithSpendingForMonth` and `getActualSpendingForCategory`)
-// have been rewritten. They now use a UNION ALL to combine non-split transactions
-// with child split items, ensuring budget calculations are accurate.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.*
-import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface BudgetDao {
-    @Query("SELECT * FROM budgets WHERE month = :month AND year = :year")
-    fun getBudgetsForMonth(
-        month: Int,
-        year: Int,
-    ): Flow<List<Budget>>
-
-    @Query(
-        """
-        WITH AtomicExpenses AS (
-            -- 1. Regular, non-split transactions
-            SELECT T.categoryId, T.amount FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND strftime('%Y-%m', T.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND T.isExcluded = 0
-            UNION ALL
-            -- 2. Child items from split transactions
-            SELECT S.categoryId, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND strftime('%Y-%m', P.date / 1000, 'unixepoch', 'localtime') = :yearMonth AND P.isExcluded = 0
-        )
-        SELECT
-            B.*,
-            IFNULL(TxSums.totalSpent, 0.0) as spent,
-            Cat.iconKey as iconKey,
-            Cat.colorKey as colorKey
-        FROM
-            budgets AS B
-        LEFT JOIN
-            (SELECT
-                C.name as categoryName,
-                SUM(AE.amount) as totalSpent
-             FROM AtomicExpenses AS AE
-             JOIN categories AS C ON AE.categoryId = C.id
-             WHERE AE.categoryId IS NOT NULL
-             GROUP BY C.name) AS TxSums
-        ON B.categoryName = TxSums.categoryName
-        LEFT JOIN categories AS Cat ON B.categoryName = Cat.name
-        WHERE B.month = :month AND B.year = :year
-    """
-    )
-    fun getBudgetsWithSpendingForMonth(yearMonth: String, month: Int, year: Int): Flow<List<BudgetWithSpending>>
-
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(budgets: List<Budget>)
-
-    @Query("DELETE FROM budgets")
-    suspend fun deleteAll()
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(budget: Budget)
-
-    @Query(
-        """
-        WITH AtomicExpenses AS (
-            SELECT T.categoryId, T.amount FROM transactions AS T
-            WHERE T.isSplit = 0 AND T.transactionType = 'expense' AND strftime('%m', T.date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', T.date / 1000, 'unixepoch', 'localtime') + 0 = :year AND T.isExcluded = 0
-            UNION ALL
-            SELECT S.categoryId, S.amount FROM split_transactions AS S
-            JOIN transactions AS P ON S.parentTransactionId = P.id
-            WHERE P.transactionType = 'expense' AND strftime('%m', P.date / 1000, 'unixepoch', 'localtime') + 0 = :month AND strftime('%Y', P.date / 1000, 'unixepoch', 'localtime') + 0 = :year AND P.isExcluded = 0
-        )
-        SELECT SUM(AE.amount) FROM AtomicExpenses AS AE
-        JOIN categories AS C ON AE.categoryId = C.id
-        WHERE C.name = :categoryName AND AE.categoryId IS NOT NULL
-    """
-    )
-    fun getActualSpendingForCategory(
-        categoryName: String,
-        month: Int,
-        year: Int,
-    ): Flow<Double?>
-
-    @Query("SELECT * FROM budgets")
-    fun getAllBudgets(): Flow<List<Budget>>
-
-    @Query("SELECT * FROM budgets WHERE id = :id")
-    fun getById(id: Int): Flow<Budget?>
-
-    @Update
-    suspend fun update(budget: Budget)
-
-    @Delete
-    suspend fun delete(budget: Budget)
-}
--e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/AccountDao.kt ==================
-package io.pm.finlight.data.db.dao
-
-import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Transaction
-import androidx.room.Update
-import io.pm.finlight.Account
-import io.pm.finlight.AccountWithBalance
-import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface AccountDao {
-    @Transaction
-    @Query(
-        """
-        SELECT
-            A.*,
-            IFNULL(TxSums.balance, 0.0) as balance
-        FROM
-            accounts AS A
-        LEFT JOIN
-            (SELECT
-                accountId,
-                SUM(CASE WHEN transactionType = 'income' THEN amount ELSE -amount END) as balance
-             FROM transactions
-             WHERE isExcluded = 0 -- This is correct for a balance calculation
-             GROUP BY accountId) AS TxSums
-        ON A.id = TxSums.accountId
-        ORDER BY
-            A.name ASC
-    """
-    )
-    fun getAccountsWithBalance(): Flow<List<AccountWithBalance>>
-
-    @Query("SELECT * FROM accounts ORDER BY name ASC")
-    fun getAllAccounts(): Flow<List<Account>>
-
-    @Query("SELECT * FROM accounts WHERE name = :name COLLATE NOCASE LIMIT 1")
-    suspend fun findByName(name: String): Account?
-
-    @Query("SELECT * FROM accounts WHERE id = :accountId")
-    fun getAccountById(accountId: Int): Flow<Account?>
-
-    @Insert(onConflict = OnConflictStrategy.Companion.REPLACE)
-    suspend fun insertAll(accounts: List<Account>)
-
-    @Query("DELETE FROM accounts")
-    suspend fun deleteAll()
-
-    @Insert(onConflict = OnConflictStrategy.Companion.IGNORE)
-    suspend fun insert(account: Account): Long
-
-    @Update
-    suspend fun update(account: Account)
-
-    @Delete
-    suspend fun delete(account: Account)
-}-e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/dao/TagDao.kt ==================
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/TagDao.kt
-// REASON: REFACTOR - Added a new `findByName` function that performs a
-// case-insensitive search. This is essential for the ViewModel to check if a
-// tag already exists before attempting to insert a new one, allowing for
-// proper user feedback on duplicates.
-// =================================================================================
-package io.pm.finlight
-
-import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
-import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface TagDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(tag: Tag): Long
-
-    @Query("SELECT * FROM tags ORDER BY name ASC")
-    fun getAllTags(): Flow<List<Tag>>
-
-    // --- NEW: Function to find a tag by name, case-insensitively ---
-    @Query("SELECT * FROM tags WHERE name = :name COLLATE NOCASE LIMIT 1")
-    suspend fun findByName(name: String): Tag?
-
-    @Update
-    suspend fun update(tag: Tag)
-
-    @Delete
-    suspend fun delete(tag: Tag)
-}-e 
--e 
-
-
-================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/AppDatabase.kt ==================
+================== FILE: ./androidApp/src/main/java/io/pm/finlight/data/db/DatabaseProvider.kt ==================
 package io.pm.finlight.data.db
 
 import android.content.Context
-import androidx.room.Database
-import androidx.room.Room
-import androidx.room.RoomDatabase
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
-import io.pm.finlight.Account
-import io.pm.finlight.Budget
-import io.pm.finlight.BudgetDao
-import io.pm.finlight.Category
-import io.pm.finlight.CategoryDao
-import io.pm.finlight.CustomSmsRule
-import io.pm.finlight.CustomSmsRuleDao
-import io.pm.finlight.Goal
-import io.pm.finlight.GoalDao
-import io.pm.finlight.IgnoreRule
-import io.pm.finlight.IgnoreRuleDao
-import io.pm.finlight.MerchantCategoryMapping
-import io.pm.finlight.MerchantCategoryMappingDao
-import io.pm.finlight.MerchantMapping
-import io.pm.finlight.MerchantMappingDao
-import io.pm.finlight.MerchantRenameRule
-import io.pm.finlight.MerchantRenameRuleDao
-import io.pm.finlight.RecurringPattern
-import io.pm.finlight.RecurringPatternDao
-import io.pm.finlight.RecurringTransaction
-import io.pm.finlight.RecurringTransactionDao
-import io.pm.finlight.RuleType
-import io.pm.finlight.SplitTransaction
-import io.pm.finlight.SplitTransactionDao
-import io.pm.finlight.Tag
-import io.pm.finlight.TagDao
-import io.pm.finlight.Transaction
-import io.pm.finlight.TransactionDao
-import io.pm.finlight.TransactionImage
-import io.pm.finlight.TransactionTagCrossRef
-import io.pm.finlight.data.db.dao.AccountDao
-import io.pm.finlight.utils.CategoryIconHelper
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import java.util.Calendar
+import io.pm.finlight.shared.db.AppDatabase
 
-@Database(
-    entities = [
-        Transaction::class,
-        Account::class,
-        Category::class,
-        Budget::class,
-        MerchantMapping::class,
-        RecurringTransaction::class,
-        Tag::class,
-        TransactionTagCrossRef::class,
-        TransactionImage::class,
-        CustomSmsRule::class,
-        MerchantRenameRule::class,
-        MerchantCategoryMapping::class,
-        IgnoreRule::class,
-        Goal::class,
-        RecurringPattern::class,
-        SplitTransaction::class
-    ],
-    version = 32, // --- UPDATED: Incremented version number
-    exportSchema = true,
-)
-abstract class AppDatabase : RoomDatabase() {
-    abstract fun transactionDao(): TransactionDao
-    abstract fun accountDao(): AccountDao
-    abstract fun categoryDao(): CategoryDao
-    abstract fun budgetDao(): BudgetDao
-    abstract fun merchantMappingDao(): MerchantMappingDao
-    abstract fun recurringTransactionDao(): RecurringTransactionDao
-    abstract fun tagDao(): TagDao
-    abstract fun customSmsRuleDao(): CustomSmsRuleDao
-    abstract fun merchantRenameRuleDao(): MerchantRenameRuleDao
-    abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
-    abstract fun ignoreRuleDao(): IgnoreRuleDao
-    abstract fun goalDao(): GoalDao
-    abstract fun recurringPatternDao(): RecurringPatternDao
-    abstract fun splitTransactionDao(): SplitTransactionDao
+/**
+ * A singleton object to provide the shared AppDatabase instance
+ * to the androidApp module. This replaces the old Room.databaseBuilder logic.
+ */
+object DatabaseProvider {
+    private var instance: AppDatabase? = null
 
-    companion object {
-        @Volatile
-        private var INSTANCE: AppDatabase? = null
-
-        private val DEFAULT_IGNORE_PHRASES = listOf(
-            "invoice of",
-            "payment of.*is successful",
-            "has been credited to",
-            "payment of.*has been received towards",
-            "credited to your.*card",
-            "Payment of.*has been received on your.*Credit Card",
-            "We have received",
-            "has been initiated",
-            "redemption",
-            "requested money from you"
-        ).map { IgnoreRule(pattern = it, type = RuleType.BODY_PHRASE, isDefault = true) }
-
-        val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE transactions ADD COLUMN transactionType TEXT NOT NULL DEFAULT 'expense'")
-                db.execSQL("UPDATE transactions SET transactionType = 'income' WHERE amount > 0")
-                db.execSQL("UPDATE transactions SET amount = ABS(amount)")
-            }
-        }
-        val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_mappings` (`smsSender` TEXT NOT NULL, `merchantName` TEXT NOT NULL, PRIMARY KEY(`smsSender`))")
-            }
-        }
-        val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE transactions ADD COLUMN sourceSmsId INTEGER")
-            }
-        }
-        val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("CREATE TABLE IF NOT EXISTS `recurring_transactions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `description` TEXT NOT NULL, `amount` REAL NOT NULL, `transactionType` TEXT NOT NULL, `recurrenceInterval` TEXT NOT NULL, `startDate` INTEGER NOT NULL, `accountId` INTEGER NOT NULL, `categoryId` INTEGER, FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_transactions_accountId` ON `recurring_transactions` (`accountId`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_transactions_categoryId` ON `recurring_transactions` (`categoryId`)")
-            }
-        }
-        val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL)")
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_name` ON `tags` (`name`)")
-                db.execSQL("CREATE TABLE IF NOT EXISTS `transaction_tag_cross_ref` (`transactionId` INTEGER NOT NULL, `tagId` INTEGER NOT NULL, PRIMARY KEY(`transactionId`, `tagId`), FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE, FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) ON DELETE CASCADE)")
-            }
-        }
-        val MIGRATION_6_7 = object : Migration(6, 7) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE transactions ADD COLUMN sourceSmsHash TEXT")
-            }
-        }
-        val MIGRATION_7_8 = object : Migration(7, 8) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE transactions ADD COLUMN source TEXT NOT NULL DEFAULT 'Manual Entry'")
-                db.execSQL("UPDATE transactions SET source = 'Reviewed Import' WHERE sourceSmsId IS NOT NULL")
-            }
-        }
-        val MIGRATION_8_9 = object : Migration(8, 9) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE categories ADD COLUMN iconKey TEXT NOT NULL DEFAULT 'category'")
-            }
-        }
-        val MIGRATION_9_10 = object : Migration(9, 10) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE categories ADD COLUMN colorKey TEXT NOT NULL DEFAULT 'gray_light'")
-            }
-        }
-        val MIGRATION_10_11 = object : Migration(10, 11) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
-                    CREATE TABLE IF NOT EXISTS `transaction_images` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `transactionId` INTEGER NOT NULL,
-                        `imageUri` TEXT NOT NULL,
-                        FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE
-                    )
-                """)
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_transaction_images_transactionId` ON `transaction_images` (`transactionId`)")
-            }
-        }
-
-        val MIGRATION_11_12 = object : Migration(11, 12) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
-                    CREATE TABLE IF NOT EXISTS `custom_sms_rules` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `smsSender` TEXT NOT NULL,
-                        `ruleType` TEXT NOT NULL,
-                        `regexPattern` TEXT NOT NULL,
-                        `priority` INTEGER NOT NULL
-                    )
-                """)
-            }
-        }
-
-        val MIGRATION_12_13 = object : Migration(12, 13) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("DROP TABLE IF EXISTS `custom_sms_rules`")
-                db.execSQL("""
-                    CREATE TABLE IF NOT EXISTS `custom_sms_rules` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `triggerPhrase` TEXT NOT NULL,
-                        `merchantRegex` TEXT,
-                        `amountRegex` TEXT,
-                        `priority` INTEGER NOT NULL
-                    )
-                """)
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_custom_sms_rules_triggerPhrase` ON `custom_sms_rules` (`triggerPhrase`)")
-            }
-        }
-
-        val MIGRATION_13_14 = object : Migration(13, 14) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `merchantNameExample` TEXT")
-                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `amountExample` TEXT")
-            }
-        }
-
-        val MIGRATION_14_15 = object : Migration(14, 15) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `accountRegex` TEXT")
-                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `accountNameExample` TEXT")
-            }
-        }
-
-        val MIGRATION_15_16 = object : Migration(15, 16) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE transactions ADD COLUMN originalDescription TEXT")
-                db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_rename_rules` (`originalName` TEXT NOT NULL, `newName` TEXT NOT NULL, PRIMARY KEY(`originalName`))")
-            }
-        }
-
-        val MIGRATION_16_17 = object : Migration(16, 17) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE transactions ADD COLUMN isExcluded INTEGER NOT NULL DEFAULT 0")
-            }
-        }
-
-        val MIGRATION_17_18 = object : Migration(17, 18) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_category_mapping` (`parsedName` TEXT NOT NULL, `categoryId` INTEGER NOT NULL, PRIMARY KEY(`parsedName`))")
-            }
-        }
-
-        val MIGRATION_18_19 = object : Migration(18, 19) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("CREATE TABLE IF NOT EXISTS `ignore_rules` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `phrase` TEXT NOT NULL)")
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ignore_rules_phrase` ON `ignore_rules` (`phrase`)")
-            }
-        }
-
-        val MIGRATION_19_20 = object : Migration(19, 20) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `ignore_rules` ADD COLUMN `isEnabled` INTEGER NOT NULL DEFAULT 1")
-                db.execSQL("ALTER TABLE `ignore_rules` ADD COLUMN `isDefault` INTEGER NOT NULL DEFAULT 0")
-            }
-        }
-
-        val MIGRATION_20_21 = object : Migration(20, 21) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `custom_sms_rules` ADD COLUMN `sourceSmsBody` TEXT NOT NULL DEFAULT ''")
-            }
-        }
-
-        val MIGRATION_21_22 = object : Migration(21, 22) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (16, 'Bike', 'two_wheeler', 'red_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (17, 'Car', 'directions_car', 'blue_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (18, 'Debt', 'credit_score', 'brown_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (19, 'Family', 'people', 'pink_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (20, 'Friends', 'group', 'cyan_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (21, 'Gift', 'card_giftcard', 'purple_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (22, 'Fitness', 'fitness_center', 'green_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (23, 'Home Maintenance', 'home', 'teal_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (24, 'Insurance', 'shield', 'indigo_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (25, 'Learning & Education', 'school', 'orange_light')")
-                db.execSQL("INSERT OR IGNORE INTO categories (id, name, iconKey, colorKey) VALUES (26, 'Rent', 'house', 'deep_purple_light')")
-            }
-        }
-
-        val MIGRATION_22_23 = object : Migration(22, 23) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `recurring_transactions` ADD COLUMN `lastRunDate` INTEGER")
-            }
-        }
-
-        val MIGRATION_23_24 = object : Migration(23, 24) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
-                    CREATE TABLE IF NOT EXISTS `goals` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `name` TEXT NOT NULL, 
-                        `targetAmount` REAL NOT NULL, 
-                        `savedAmount` REAL NOT NULL, 
-                        `targetDate` INTEGER, 
-                        `accountId` INTEGER NOT NULL, 
-                        FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON DELETE CASCADE
-                    )
-                """)
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_goals_accountId` ON `goals` (`accountId`)")
-            }
-        }
-
-        val MIGRATION_24_25 = object : Migration(24, 25) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
-                    CREATE TABLE `accounts_new` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `name` TEXT NOT NULL COLLATE NOCASE, 
-                        `type` TEXT NOT NULL
-                    )
-                """)
-                db.execSQL("CREATE UNIQUE INDEX `index_accounts_name_nocase` ON `accounts_new` (`name`)")
-                db.execSQL("INSERT INTO `accounts_new` (id, name, type) SELECT id, name, type FROM accounts")
-                db.execSQL("DROP TABLE `accounts`")
-                db.execSQL("ALTER TABLE `accounts_new` RENAME TO `accounts`")
-
-                db.execSQL("""
-                    CREATE TABLE `categories_new` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `name` TEXT NOT NULL COLLATE NOCASE, 
-                        `iconKey` TEXT NOT NULL, 
-                        `colorKey` TEXT NOT NULL
-                    )
-                """)
-                db.execSQL("CREATE UNIQUE INDEX `index_categories_name_nocase` ON `categories_new` (`name`)")
-                db.execSQL("INSERT INTO `categories_new` (id, name, iconKey, colorKey) SELECT id, name, iconKey, colorKey FROM categories")
-                db.execSQL("DROP TABLE `categories`")
-                db.execSQL("ALTER TABLE `categories_new` RENAME TO `categories`")
-
-                db.execSQL("""
-                    CREATE TABLE `merchant_rename_rules_new` (
-                        `originalName` TEXT NOT NULL COLLATE NOCASE, 
-                        `newName` TEXT NOT NULL, 
-                        PRIMARY KEY(`originalName`)
-                    )
-                """)
-                db.execSQL("INSERT INTO `merchant_rename_rules_new` (originalName, newName) SELECT originalName, newName FROM merchant_rename_rules")
-                db.execSQL("DROP TABLE `merchant_rename_rules`")
-                db.execSQL("ALTER TABLE `merchant_rename_rules_new` RENAME TO `merchant_rename_rules`")
-            }
-        }
-
-        val MIGRATION_25_26 = object : Migration(25, 26) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
-                    CREATE TABLE IF NOT EXISTS `recurring_patterns` (
-                        `smsSignature` TEXT NOT NULL, 
-                        `description` TEXT NOT NULL, 
-                        `amount` REAL NOT NULL, 
-                        `transactionType` TEXT NOT NULL, 
-                        `accountId` INTEGER NOT NULL, 
-                        `categoryId` INTEGER, 
-                        `occurrences` INTEGER NOT NULL, 
-                        `firstSeen` INTEGER NOT NULL, 
-                        `lastSeen` INTEGER NOT NULL, 
-                        PRIMARY KEY(`smsSignature`)
-                    )
-                """)
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_patterns_lastSeen` ON `recurring_patterns` (`lastSeen`)")
-            }
-        }
-
-        val MIGRATION_26_27 = object : Migration(26, 27) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `smsSignature` TEXT")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_transactions_smsSignature` ON `transactions` (`smsSignature`)")
-            }
-        }
-
-        val MIGRATION_27_28 = object : Migration(27, 28) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `originalAmount` REAL")
-                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `currencyCode` TEXT")
-                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `conversionRate` REAL")
-            }
-        }
-
-        val MIGRATION_28_29 = object : Migration(28, 29) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `isSplit` INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("""
-                    CREATE TABLE IF NOT EXISTS `split_transactions` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `parentTransactionId` INTEGER NOT NULL, 
-                        `amount` REAL NOT NULL, 
-                        `categoryId` INTEGER, 
-                        `notes` TEXT, 
-                        FOREIGN KEY(`parentTransactionId`) REFERENCES `transactions`(`id`) ON DELETE CASCADE, 
-                        FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON DELETE SET NULL
-                    )
-                """)
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_split_transactions_parentTransactionId` ON `split_transactions` (`parentTransactionId`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_split_transactions_categoryId` ON `split_transactions` (`categoryId`)")
-            }
-        }
-
-        val MIGRATION_29_30 = object : Migration(29, 30) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `split_transactions` ADD COLUMN `originalAmount` REAL")
-            }
-        }
-
-        val MIGRATION_30_31 = object : Migration(30, 31) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('We have received', 1, 1)")
-                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('has been initiated', 1, 1)")
-                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('redemption', 1, 1)")
-                db.execSQL("INSERT OR IGNORE INTO ignore_rules (phrase, isEnabled, isDefault) VALUES ('requested money from you', 1, 1)")
-            }
-        }
-
-        // --- NEW: Migration to add `type` column and rename `phrase` to `pattern` ---
-        val MIGRATION_31_32 = object : Migration(31, 32) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                // 1. Create a new table with the desired schema
-                db.execSQL("""
-                    CREATE TABLE `ignore_rules_new` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `type` TEXT NOT NULL DEFAULT 'BODY_PHRASE', 
-                        `pattern` TEXT NOT NULL, 
-                        `isEnabled` INTEGER NOT NULL DEFAULT 1, 
-                        `isDefault` INTEGER NOT NULL DEFAULT 0
-                    )
-                """)
-                // 2. Copy data from the old table to the new one
-                db.execSQL("""
-                    INSERT INTO `ignore_rules_new` (id, pattern, isEnabled, isDefault)
-                    SELECT id, phrase, isEnabled, isDefault FROM `ignore_rules`
-                """)
-                // 3. Create the unique index on the new table
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ignore_rules_pattern` ON `ignore_rules_new` (`pattern`)")
-                // 4. Drop the old table
-                db.execSQL("DROP TABLE `ignore_rules`")
-                // 5. Rename the new table to the original name
-                db.execSQL("ALTER TABLE `ignore_rules_new` RENAME TO `ignore_rules`")
-            }
-        }
-
-
-        fun getInstance(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance =
-                    Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "finance_database")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32)
-                        .addCallback(DatabaseCallback(context))
-                        .build()
-                INSTANCE = instance
-                instance
-            }
-        }
-
-        private class DatabaseCallback(private val context: Context) : Callback() {
-            override fun onCreate(db: SupportSQLiteDatabase) {
-                super.onCreate(db)
-                CoroutineScope(Dispatchers.IO).launch {
-                    populateDatabase(getInstance(context))
-                }
-            }
-
-            override fun onOpen(db: SupportSQLiteDatabase) {
-                super.onOpen(db)
-            }
-
-            suspend fun populateDatabase(db: AppDatabase) {
-                val accountDao = db.accountDao()
-                val categoryDao = db.categoryDao()
-                val transactionDao = db.transactionDao()
-                val budgetDao = db.budgetDao()
-                val ignoreRuleDao = db.ignoreRuleDao()
-
-                categoryDao.insertAll(CategoryIconHelper.predefinedCategories)
-                ignoreRuleDao.insertAll(DEFAULT_IGNORE_PHRASES)
-
-                accountDao.insertAll(
-                    listOf(
-                        Account(id = 1, name = "Cash Spends", type = "Cash"),
-                        Account(id = 2, name = "SBI", type = "Savings"),
-                        Account(id = 3, name = "HDFC", type = "Credit Card"),
-                        Account(id = 4, name = "ICICI", type = "Savings"),
-                    ),
-                )
-
-                val calendar = Calendar.getInstance()
-                calendar.set(Calendar.DAY_OF_MONTH, 5)
-                val incomeDate = calendar.timeInMillis
-                calendar.set(Calendar.DAY_OF_MONTH, 10)
-                val expenseDate1 = calendar.timeInMillis
-                calendar.set(Calendar.DAY_OF_MONTH, 15)
-                val expenseDate2 = calendar.timeInMillis
-
-                transactionDao.insertAll(
-                    listOf(
-                        Transaction(
-                            description = "Monthly Salary",
-                            categoryId = 12, // "Salary"
-                            amount = 75000.0,
-                            date = incomeDate,
-                            accountId = 2, // SBI
-                            notes = "Paycheck",
-                            transactionType = "income",
-                        ),
-                        Transaction(
-                            description = "Grocery Shopping",
-                            categoryId = 6, // "Groceries"
-                            amount = 4500.0,
-                            date = expenseDate1,
-                            accountId = 3, // HDFC
-                            notes = "Weekly groceries",
-                            transactionType = "expense",
-                        ),
-                        Transaction(
-                            description = "Dinner with friends",
-                            categoryId = 4, // "Food & Drinks"
-                            amount = 1200.0,
-                            date = expenseDate2,
-                            accountId = 3, // HDFC
-                            notes = null,
-                            transactionType = "expense",
-                        )
-                    )
-                )
-
-                val month = calendar.get(Calendar.MONTH) + 1
-                val year = calendar.get(Calendar.YEAR)
-
-                budgetDao.insertAll(
-                    listOf(
-                        Budget(
-                            categoryName = "Groceries",
-                            amount = 10000.0,
-                            month = month,
-                            year = year
-                        ),
-                        Budget(
-                            categoryName = "Food & Drinks",
-                            amount = 5000.0,
-                            month = month,
-                            year = year
-                        ),
-                        Budget(categoryName = "Bills", amount = 2000.0, month = month, year = year),
-                    ),
-                )
+    fun getInstance(context: Context): AppDatabase {
+        return instance ?: synchronized(this) {
+            instance ?: AppDatabase(DatabaseDriverFactory(context).createDriver()).also {
+                instance = it
             }
         }
     }
-}-e 
+}
+-e 
 -e 
 
 

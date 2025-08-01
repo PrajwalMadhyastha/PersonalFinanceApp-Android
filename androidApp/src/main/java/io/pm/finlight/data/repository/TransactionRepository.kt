@@ -1,112 +1,69 @@
-// =================================================================================
-// FILE: ./app/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt
-// REASON: FIX - The `insertTransactionWithTags` function has been updated to
-// return the Long ID of the newly created transaction. This is required by the
-// CSV import logic to map old IDs to new ones and resolves a build error.
-// =================================================================================
-package io.pm.finlight
+package io.pm.finlight.data.repository
 
-import android.util.Log
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOneNotNull
+import app.cash.sqldelight.coroutines.mapToOneOrNull
+import io.pm.finlight.data.db.entity.Tag
+import io.pm.finlight.data.db.entity.Transaction
+import io.pm.finlight.data.db.entity.TransactionImage
+import io.pm.finlight.data.model.*
+import io.pm.finlight.shared.db.*
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
-class TransactionRepository(private val transactionDao: TransactionDao) {
+/**
+ * Repository for handling all transaction-related data operations.
+ * This class is the single source of truth for transaction data and abstracts
+ * the data source (SQLDelight database) from the rest of the application.
+ *
+ * NOTE: This class has been refactored to use SQLDelight queries instead of Room DAOs.
+ */
+class TransactionRepository(
+    private val transactionQueries: TransactionQueries,
+    private val transactionTagCrossRefQueries: Transaction_tag_cross_refQueries,
+    private val tagQueries: TagQueries,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
 
-    fun getTransactionWithSplits(transactionId: Int): Flow<TransactionWithSplits?> {
-        return transactionDao.getTransactionWithSplits(transactionId)
-    }
-
-    val allTransactions: Flow<List<TransactionDetails>> =
-        transactionDao.getAllTransactions()
-            .onEach { transactions ->
-                Log.d(
-                    "TransactionFlowDebug",
-                    "Repository Flow Emitted. Count: ${transactions.size}. Newest: ${transactions.firstOrNull()?.transaction?.description}",
-                )
-            }
-
-    fun getFirstTransactionDate(): Flow<Long?> {
-        return transactionDao.getFirstTransactionDate()
-    }
-
-    fun getFinancialSummaryForRangeFlow(startDate: Long, endDate: Long): Flow<FinancialSummary?> {
-        return transactionDao.getFinancialSummaryForRangeFlow(startDate, endDate)
-    }
-
-    fun getTopSpendingCategoriesForRangeFlow(startDate: Long, endDate: Long): Flow<CategorySpending?> {
-        return transactionDao.getTopSpendingCategoriesForRangeFlow(startDate, endDate)
-    }
-
-    fun getIncomeTransactionsForRange(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<TransactionDetails>> {
-        return transactionDao.getIncomeTransactionsForRange(startDate, endDate, keyword, accountId, categoryId)
-    }
-
-    fun getIncomeByCategoryForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<CategorySpending>> {
-        return transactionDao.getIncomeByCategoryForMonth(startDate, endDate, keyword, accountId, categoryId)
-    }
-
-    fun getSpendingByMerchantForMonth(startDate: Long, endDate: Long, keyword: String?, accountId: Int?, categoryId: Int?): Flow<List<MerchantSpendingSummary>> {
-        return transactionDao.getSpendingByMerchantForMonth(startDate, endDate, keyword, accountId, categoryId)
-    }
-
-    suspend fun addImageToTransaction(transactionId: Int, imageUri: String) {
-        val transactionImage = TransactionImage(transactionId = transactionId, imageUri = imageUri)
-        transactionDao.insertImage(transactionImage)
-    }
-
-    suspend fun deleteImage(transactionImage: TransactionImage) {
-        transactionDao.deleteImage(transactionImage)
-    }
-
-    fun getImagesForTransaction(transactionId: Int): Flow<List<TransactionImage>> {
-        return transactionDao.getImagesForTransaction(transactionId)
-    }
-
-    suspend fun updateDescription(id: Int, description: String) = transactionDao.updateDescription(id, description)
-    suspend fun updateAmount(id: Int, amount: Double) = transactionDao.updateAmount(id, amount)
-    suspend fun updateNotes(id: Int, notes: String?) = transactionDao.updateNotes(id, notes)
-    suspend fun updateCategoryId(id: Int, categoryId: Int?) = transactionDao.updateCategoryId(id, categoryId)
-    suspend fun updateAccountId(id: Int, accountId: Int) = transactionDao.updateAccountId(id, accountId)
-    suspend fun updateDate(id: Int, date: Long) = transactionDao.updateDate(id, date)
-    suspend fun updateExclusionStatus(id: Int, isExcluded: Boolean) = transactionDao.updateExclusionStatus(id, isExcluded)
-
-    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
-        return transactionDao.getTransactionDetailsById(id)
-    }
-
-    val recentTransactions: Flow<List<TransactionDetails>> = transactionDao.getRecentTransactionDetails()
-
-    fun getAllSmsHashes(): Flow<List<String>> {
-        return transactionDao.getAllSmsHashes()
-    }
-
-    fun getTransactionsForAccountDetails(accountId: Int): Flow<List<TransactionDetails>> {
-        return transactionDao.getTransactionsForAccountDetails(accountId)
-    }
+    val recentTransactions: Flow<List<TransactionDetails>> =
+        transactionQueries.selectRecentTransactionDetails(limit = 10, mapper = ::mapTransactionDetails)
+            .asFlow()
+            .mapToList(dispatcher)
 
     fun getTransactionDetailsForRange(
-        startDate: Long,
-        endDate: Long,
+        start: Long,
+        end: Long,
         keyword: String?,
         accountId: Int?,
         categoryId: Int?
     ): Flow<List<TransactionDetails>> {
-        return transactionDao.getTransactionDetailsForRange(startDate, endDate, keyword, accountId, categoryId)
+        val finalKeyword = if (keyword.isNullOrBlank()) null else "%$keyword%"
+        return transactionQueries.getTransactionDetailsForRange(
+            startDate = start,
+            endDate = end,
+            accountId = accountId?.toLong(),
+            categoryId = categoryId?.toLong(),
+            keyword = finalKeyword,
+            mapper = ::mapTransactionDetails
+        ).asFlow().mapToList(dispatcher)
     }
 
-    fun getAllTransactionsForRange(
-        startDate: Long,
-        endDate: Long,
-    ): Flow<List<Transaction>> {
-        return transactionDao.getAllTransactionsForRange(startDate, endDate)
-    }
-
-    fun getTransactionById(id: Int): Flow<Transaction?> {
-        return transactionDao.getTransactionById(id)
-    }
-
-    fun getTransactionsForAccount(accountId: Int): Flow<List<Transaction>> {
-        return transactionDao.getTransactionsForAccount(accountId)
+    fun getFinancialSummaryForRangeFlow(start: Long, end: Long): Flow<FinancialSummary?> {
+        return transactionQueries.getFinancialSummaryForRange(start, end)
+            .asFlow()
+            .mapToOneOrNull(dispatcher)
+            .map {
+                it?.let { summary ->
+                    FinancialSummary(
+                        totalIncome = summary.totalIncome ?: 0.0,
+                        totalExpenses = summary.totalExpenses ?: 0.0
+                    )
+                }
+            }
     }
 
     fun getSpendingByCategoryForMonth(
@@ -116,104 +73,219 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
         accountId: Int?,
         categoryId: Int?
     ): Flow<List<CategorySpending>> {
-        return transactionDao.getSpendingByCategoryForMonth(startDate, endDate, keyword, accountId, categoryId)
+        val finalKeyword = if (keyword.isNullOrBlank()) null else "%$keyword%"
+        return transactionQueries.getSpendingByCategoryForMonth(
+            startDate = startDate,
+            endDate = endDate,
+            accountId = accountId?.toLong(),
+            categoryId = categoryId?.toLong(),
+            keyword = finalKeyword,
+            mapper = ::mapCategorySpending
+        ).asFlow().mapToList(dispatcher)
+    }
+
+    fun getSpendingByMerchantForMonth(
+        startDate: Long,
+        endDate: Long,
+        keyword: String?,
+        accountId: Int?,
+        categoryId: Int?
+    ): Flow<List<MerchantSpendingSummary>> {
+        val finalKeyword = if (keyword.isNullOrBlank()) null else "%$keyword%"
+        return transactionQueries.getSpendingByMerchantForMonth(
+            startDate = startDate,
+            endDate = endDate,
+            accountId = accountId?.toLong(),
+            categoryId = categoryId?.toLong(),
+            keyword = finalKeyword,
+            mapper = ::mapMerchantSpendingSummary
+        ).asFlow().mapToList(dispatcher)
     }
 
     fun getMonthlyTrends(startDate: Long): Flow<List<MonthlyTrend>> {
-        return transactionDao.getMonthlyTrends(startDate)
-    }
-
-    suspend fun countTransactionsForCategory(categoryId: Int): Int {
-        return transactionDao.countTransactionsForCategory(categoryId)
-    }
-
-    fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
-        return transactionDao.getTagsForTransaction(transactionId)
-    }
-
-    suspend fun getTagsForTransactionSimple(transactionId: Int): List<Tag> {
-        return transactionDao.getTagsForTransactionSimple(transactionId)
-    }
-
-    suspend fun updateTagsForTransaction(transactionId: Int, tags: Set<Tag>) {
-        transactionDao.clearTagsForTransaction(transactionId)
-        if (tags.isNotEmpty()) {
-            val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = transactionId, tagId = tag.id)
-            }
-            transactionDao.addTagsToTransaction(crossRefs)
-        }
-    }
-
-    suspend fun insertTransactionWithTags(transaction: Transaction, tags: Set<Tag>): Long {
-        val transactionId = transactionDao.insert(transaction)
-        if (tags.isNotEmpty()) {
-            val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = transactionId.toInt(), tagId = tag.id)
-            }
-            transactionDao.addTagsToTransaction(crossRefs)
-        }
-        return transactionId
-    }
-
-    suspend fun updateTransactionWithTags(transaction: Transaction, tags: Set<Tag>) {
-        transactionDao.update(transaction)
-        transactionDao.clearTagsForTransaction(transaction.id)
-        if (tags.isNotEmpty()) {
-            val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = transaction.id, tagId = tag.id)
-            }
-            transactionDao.addTagsToTransaction(crossRefs)
-        }
+        return transactionQueries.getMonthlyTrends(startDate, mapper = ::mapMonthlyTrend)
+            .asFlow()
+            .mapToList(dispatcher)
     }
 
     suspend fun insertTransactionWithTagsAndImages(
         transaction: Transaction,
         tags: Set<Tag>,
         imagePaths: List<String>
-    ): Long {
-        val newTransactionId = transactionDao.insert(transaction)
-        if (tags.isNotEmpty()) {
-            val crossRefs = tags.map { tag ->
-                TransactionTagCrossRef(transactionId = newTransactionId.toInt(), tagId = tag.id)
-            }
-            transactionDao.addTagsToTransaction(crossRefs)
-        }
-        imagePaths.forEach { path ->
-            val imageEntity = TransactionImage(
-                transactionId = newTransactionId.toInt(),
-                imageUri = path
+    ): Long = withContext(dispatcher) {
+        var newTxnId: Long = -1
+        transactionQueries.transaction {
+            transactionQueries.insert(
+                description = transaction.description,
+                categoryId = transaction.categoryId?.toLong(),
+                amount = transaction.amount,
+                date = transaction.date,
+                accountId = transaction.accountId.toLong(),
+                notes = transaction.notes,
+                transactionType = transaction.transactionType,
+                sourceSmsId = transaction.sourceSmsId,
+                sourceSmsHash = transaction.sourceSmsHash,
+                source = transaction.source,
+                originalDescription = transaction.originalDescription,
+                isExcluded = if (transaction.isExcluded) 1L else 0L,
+                smsSignature = transaction.smsSignature,
+                originalAmount = transaction.originalAmount,
+                currencyCode = transaction.currencyCode,
+                conversionRate = transaction.conversionRate,
+                isSplit = if (transaction.isSplit) 1L else 0L
             )
-            transactionDao.insertImage(imageEntity)
+            newTxnId = transactionQueries.lastInsertRowId().executeAsOne()
+
+            tags.forEach { tag ->
+                transactionTagCrossRefQueries.insert(newTxnId, tag.id.toLong())
+            }
+
+            imagePaths.forEach { path ->
+                transactionQueries.insertImage(transactionId = newTxnId, imageUri = path)
+            }
         }
-        return newTransactionId
+        return@withContext newTxnId
     }
 
-    suspend fun delete(transaction: Transaction) {
-        transactionDao.delete(transaction)
+    fun getTransactionById(id: Int): Flow<Transaction?> {
+        return transactionQueries.selectById(id.toLong(), ::mapTransaction)
+            .asFlow()
+            .mapToOneOrNull(dispatcher)
     }
 
-    suspend fun setSmsHash(transactionId: Int, smsHash: String) {
-        transactionDao.setSmsHash(transactionId, smsHash)
+    fun getTransactionDetailsById(id: Int): Flow<TransactionDetails?> {
+        return transactionQueries.selectTransactionDetailsById(id.toLong(), ::mapTransactionDetails)
+            .asFlow()
+            .mapToOneOrNull(dispatcher)
     }
 
     fun getTransactionCountForMerchant(description: String): Flow<Int> {
-        return transactionDao.getTransactionCountForMerchant(description)
+        return transactionQueries.getTransactionCountForMerchant(description)
+            .asFlow()
+            .mapToOneNotNull(dispatcher)
+            .map { it.toInt() }
     }
 
-    suspend fun findSimilarTransactions(description: String, excludeId: Int): List<Transaction> {
-        return transactionDao.findSimilarTransactions(description, excludeId)
+    suspend fun updateDescription(id: Int, newDescription: String) = withContext(dispatcher) {
+        transactionQueries.updateDescription(newDescription, id.toLong())
     }
 
-    suspend fun updateCategoryForIds(ids: List<Int>, categoryId: Int) {
-        transactionDao.updateCategoryForIds(ids, categoryId)
+    suspend fun updateAmount(id: Int, newAmount: Double) = withContext(dispatcher) {
+        transactionQueries.updateAmount(newAmount, id.toLong())
     }
 
-    suspend fun updateDescriptionForIds(ids: List<Int>, newDescription: String) {
-        transactionDao.updateDescriptionForIds(ids, newDescription)
+    suspend fun updateNotes(id: Int, newNotes: String?) = withContext(dispatcher) {
+        transactionQueries.updateNotes(newNotes, id.toLong())
     }
 
-    fun getDailySpendingForDateRange(startDate: Long, endDate: Long): Flow<List<DailyTotal>> {
-        return transactionDao.getDailySpendingForDateRange(startDate, endDate)
+    suspend fun updateCategoryId(id: Int, newCategoryId: Int?) = withContext(dispatcher) {
+        transactionQueries.updateCategoryId(newCategoryId?.toLong(), id.toLong())
+    }
+
+    suspend fun updateAccountId(id: Int, newAccountId: Int) = withContext(dispatcher) {
+        transactionQueries.updateAccountId(newAccountId.toLong(), id.toLong())
+    }
+
+    suspend fun updateDate(id: Int, newDate: Long) = withContext(dispatcher) {
+        transactionQueries.updateDate(newDate, id.toLong())
+    }
+
+    suspend fun updateExclusionStatus(id: Int, isExcluded: Boolean) = withContext(dispatcher) {
+        transactionQueries.updateExclusionStatus(if (isExcluded) 1L else 0L, id.toLong())
+    }
+
+    suspend fun updateTagsForTransaction(transactionId: Int, tags: Set<Tag>) = withContext(dispatcher) {
+        transactionTagCrossRefQueries.transaction {
+            transactionTagCrossRefQueries.deleteByTransactionId(transactionId.toLong())
+            tags.forEach { tag ->
+                transactionTagCrossRefQueries.insert(transactionId.toLong(), tag.id.toLong())
+            }
+        }
+    }
+
+    fun getTagsForTransaction(transactionId: Int): Flow<List<Tag>> {
+        return tagQueries.selectTagsForTransaction(transactionId.toLong(), ::mapTag)
+            .asFlow()
+            .mapToList(dispatcher)
+    }
+
+    fun getImagesForTransaction(transactionId: Int): Flow<List<TransactionImage>> {
+        return transactionQueries.selectImagesForTransaction(transactionId.toLong(), ::mapTransactionImage)
+            .asFlow()
+            .mapToList(dispatcher)
+    }
+
+    suspend fun addImageToTransaction(transactionId: Int, imagePath: String) = withContext(dispatcher) {
+        transactionQueries.insertImage(transactionId.toLong(), imagePath)
+    }
+
+    suspend fun deleteImage(image: TransactionImage) = withContext(dispatcher) {
+        transactionQueries.deleteImageById(image.id.toLong())
+    }
+
+    // --- Private Mapper Functions ---
+
+    private fun mapTransaction(
+        id: Long, description: String, categoryId: Long?, amount: Double, date: Long,
+        accountId: Long, notes: String?, transactionType: String, sourceSmsId: Long?,
+        sourceSmsHash: String?, source: String, originalDescription: String?,
+        isExcluded: Long, smsSignature: String?, originalAmount: Double?,
+        currencyCode: String?, conversionRate: Double?, isSplit: Long
+    ): Transaction {
+        return Transaction(
+            id = id.toInt(), description = description, categoryId = categoryId?.toInt(),
+            amount = amount, date = date, accountId = accountId.toInt(), notes = notes,
+            transactionType = transactionType, sourceSmsId = sourceSmsId,
+            sourceSmsHash = sourceSmsHash, source = source,
+            originalDescription = originalDescription, isExcluded = isExcluded == 1L,
+            smsSignature = smsSignature, originalAmount = originalAmount,
+            currencyCode = currencyCode, conversionRate = conversionRate, isSplit = isSplit == 1L
+        )
+    }
+
+    private fun mapTransactionDetails(
+        id: Long, description: String, categoryId: Long?, amount: Double, date: Long,
+        accountId: Long, notes: String?, transactionType: String, sourceSmsId: Long?,
+        sourceSmsHash: String?, source: String, originalDescription: String?,
+        isExcluded: Long, smsSignature: String?, originalAmount: Double?,
+        currencyCode: String?, conversionRate: Double?, isSplit: Long,
+        accountName: String?, categoryName: String?, categoryIconKey: String?, categoryColorKey: String?
+    ): TransactionDetails {
+        val transaction = mapTransaction(
+            id, description, categoryId, amount, date, accountId, notes,
+            transactionType, sourceSmsId, sourceSmsHash, source, originalDescription,
+            isExcluded, smsSignature, originalAmount, currencyCode, conversionRate, isSplit
+        )
+        // Note: The 'images' list is loaded separately when needed.
+        return TransactionDetails(
+            transaction = transaction, images = emptyList(), accountName = accountName,
+            categoryName = categoryName, categoryIconKey = categoryIconKey, categoryColorKey = categoryColorKey
+        )
+    }
+
+    private fun mapCategorySpending(
+        categoryName: String, totalAmount: Double, colorKey: String?, iconKey: String?
+    ): CategorySpending {
+        return CategorySpending(categoryName, totalAmount, colorKey, iconKey)
+    }
+
+    private fun mapMerchantSpendingSummary(
+        merchantName: String, totalAmount: Double, transactionCount: Long
+    ): MerchantSpendingSummary {
+        return MerchantSpendingSummary(merchantName, totalAmount, transactionCount.toInt())
+    }
+
+    private fun mapMonthlyTrend(
+        monthYear: String, totalIncome: Double?, totalExpenses: Double?
+    ): MonthlyTrend {
+        return MonthlyTrend(monthYear, totalIncome ?: 0.0, totalExpenses ?: 0.0)
+    }
+
+    private fun mapTag(id: Long, name: String): Tag {
+        return Tag(id.toInt(), name)
+    }
+
+    private fun mapTransactionImage(id: Long, transactionId: Long, imageUri: String): TransactionImage {
+        return TransactionImage(id.toInt(), transactionId.toInt(), imageUri)
     }
 }
