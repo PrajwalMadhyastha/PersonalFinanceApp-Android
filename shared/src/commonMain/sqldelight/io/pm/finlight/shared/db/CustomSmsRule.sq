@@ -1,0 +1,38 @@
+CREATE TABLE custom_sms_rule (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    triggerPhrase TEXT NOT NULL UNIQUE,
+    merchantRegex TEXT,
+    amountRegex TEXT,
+    accountRegex TEXT,
+    merchantNameExample TEXT,
+    amountExample TEXT,
+    accountNameExample TEXT,
+    priority INTEGER NOT NULL,
+    sourceSmsBody TEXT NOT NULL
+);
+
+selectAll:
+SELECT * FROM custom_sms_rule ORDER BY priority DESC;
+
+selectById:
+SELECT * FROM custom_sms_rule WHERE id = :id;
+
+insert:
+INSERT OR REPLACE INTO custom_sms_rule(triggerPhrase, merchantRegex, amountRegex, accountRegex, merchantNameExample, amountExample, accountNameExample, priority, sourceSmsBody)
+VALUES ?;
+
+update:
+UPDATE custom_sms_rule SET
+    triggerPhrase = :triggerPhrase,
+    merchantRegex = :merchantRegex,
+    amountRegex = :amountRegex,
+    accountRegex = :accountRegex,
+    merchantNameExample = :merchantNameExample,
+    amountExample = :amountExample,
+    accountNameExample = :accountNameExample,
+    priority = :priority,
+    sourceSmsBody = :sourceSmsBody
+WHERE id = :id;
+
+deleteById:
+DELETE FROM custom_sms_rule WHERE id = :id;

@@ -1,0 +1,10 @@
+CREATE TABLE merchant_mapping (
+    smsSender TEXT NOT NULL PRIMARY KEY,
+    merchantName TEXT NOT NULL
+);
+
+selectAll:
+SELECT * FROM merchant_mapping;
+
+insert:
+INSERT OR REPLACE INTO merchant_mapping(smsSender, merchantName) VALUES (:smsSender, :merchantName);

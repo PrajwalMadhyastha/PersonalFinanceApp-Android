@@ -1,0 +1,15 @@
+CREATE TABLE transaction_image (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    transactionId INTEGER NOT NULL,
+    imageUri TEXT NOT NULL,
+    FOREIGN KEY(transactionId) REFERENCES `transaction`(id) ON DELETE CASCADE
+);
+
+selectByTransactionId:
+SELECT * FROM transaction_image WHERE transactionId = :transactionId;
+
+insert:
+INSERT INTO transaction_image(transactionId, imageUri) VALUES (:transactionId, :imageUri);
+
+deleteById:
+DELETE FROM transaction_image WHERE id = :id;

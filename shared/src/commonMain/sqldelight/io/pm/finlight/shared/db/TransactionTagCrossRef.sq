@@ -1,0 +1,16 @@
+-- The 'CREATE TABLE' statement for the Transaction-Tag join table.
+CREATE TABLE transaction_tag_cross_ref (
+    transactionId INTEGER NOT NULL,
+    tagId INTEGER NOT NULL,
+    PRIMARY KEY(transactionId, tagId),
+    FOREIGN KEY(transactionId) REFERENCES `transaction`(id) ON DELETE CASCADE,
+    FOREIGN KEY(tagId) REFERENCES tag(id) ON DELETE CASCADE
+);
+
+-- Insert a new cross-reference.
+insert:
+INSERT INTO transaction_tag_cross_ref(transactionId, tagId) VALUES (:transactionId, :tagId);
+
+-- Delete all cross-references for a given transaction.
+deleteByTransactionId:
+DELETE FROM transaction_tag_cross_ref WHERE transactionId = :transactionId;

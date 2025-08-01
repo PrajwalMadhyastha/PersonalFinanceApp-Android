@@ -1,0 +1,31 @@
+-- The 'CREATE TABLE' statement for the Category entity.
+CREATE TABLE category (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    iconKey TEXT NOT NULL DEFAULT 'category',
+    colorKey TEXT NOT NULL DEFAULT 'gray'
+);
+
+-- A query to select all categories, ordered by name.
+selectAll:
+SELECT * FROM category ORDER BY name ASC;
+
+-- A query to select a single category by its ID.
+selectById:
+SELECT * FROM category WHERE id = :id;
+
+-- A query to select a category by its name (case-insensitive).
+selectByName:
+SELECT * FROM category WHERE name = :name COLLATE NOCASE;
+
+-- An insert statement for a new category.
+insert:
+INSERT OR IGNORE INTO category(name, iconKey, colorKey) VALUES (:name, :iconKey, :colorKey);
+
+-- An update statement for an existing category.
+update:
+UPDATE category SET name = :name, iconKey = :iconKey, colorKey = :colorKey WHERE id = :id;
+
+-- A delete statement.
+deleteById:
+DELETE FROM category WHERE id = :id;

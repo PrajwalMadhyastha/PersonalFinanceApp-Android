@@ -1,0 +1,25 @@
+-- The 'CREATE TABLE' statement for the Tag entity.
+CREATE TABLE tag (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+);
+
+-- Select all tags.
+selectAll:
+SELECT * FROM tag ORDER BY name ASC;
+
+-- Select a tag by its name.
+selectByName:
+SELECT * FROM tag WHERE name = :name COLLATE NOCASE;
+
+-- Insert a new tag.
+insert:
+INSERT OR IGNORE INTO tag(name) VALUES (:name);
+
+-- Update an existing tag.
+update:
+UPDATE tag SET name = :name WHERE id = :id;
+
+-- Delete a tag by its ID.
+deleteById:
+DELETE FROM tag WHERE id = :id;

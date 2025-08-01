@@ -1,0 +1,41 @@
+CREATE TABLE recurring_transaction (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    description TEXT NOT NULL,
+    amount REAL NOT NULL,
+    transactionType TEXT NOT NULL,
+    recurrenceInterval TEXT NOT NULL,
+    startDate INTEGER NOT NULL,
+    accountId INTEGER NOT NULL,
+    categoryId INTEGER,
+    lastRunDate INTEGER,
+    FOREIGN KEY(accountId) REFERENCES account(id) ON DELETE CASCADE,
+    FOREIGN KEY(categoryId) REFERENCES category(id) ON DELETE SET NULL
+);
+
+selectAll:
+SELECT * FROM recurring_transaction ORDER BY startDate DESC;
+
+selectById:
+SELECT * FROM recurring_transaction WHERE id = :id;
+
+insert:
+INSERT INTO recurring_transaction(description, amount, transactionType, recurrenceInterval, startDate, accountId, categoryId, lastRunDate)
+VALUES ?;
+
+update:
+UPDATE recurring_transaction SET
+    description = :description,
+    amount = :amount,
+    transactionType = :transactionType,
+    recurrenceInterval = :recurrenceInterval,
+    startDate = :startDate,
+    accountId = :accountId,
+    categoryId = :categoryId,
+    lastRunDate = :lastRunDate
+WHERE id = :id;
+
+deleteById:
+DELETE FROM recurring_transaction WHERE id = :id;
+
+updateLastRunDate:
+UPDATE recurring_transaction SET lastRunDate = :lastRunDate WHERE id = :id;

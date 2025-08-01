@@ -1,0 +1,10 @@
+CREATE TABLE merchant_category_mapping (
+    parsedName TEXT NOT NULL PRIMARY KEY,
+    categoryId INTEGER NOT NULL
+);
+
+selectCategoryIdByMerchant:
+SELECT categoryId FROM merchant_category_mapping WHERE parsedName = :parsedName;
+
+insert:
+INSERT OR REPLACE INTO merchant_category_mapping(parsedName, categoryId) VALUES (:parsedName, :categoryId);

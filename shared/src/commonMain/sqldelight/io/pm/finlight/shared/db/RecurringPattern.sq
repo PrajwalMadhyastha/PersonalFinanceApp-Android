@@ -1,0 +1,30 @@
+CREATE TABLE recurring_pattern (
+    smsSignature TEXT NOT NULL PRIMARY KEY,
+    description TEXT NOT NULL,
+    amount REAL NOT NULL,
+    transactionType TEXT NOT NULL,
+    accountId INTEGER NOT NULL,
+    categoryId INTEGER,
+    occurrences INTEGER NOT NULL,
+    firstSeen INTEGER NOT NULL,
+    lastSeen INTEGER NOT NULL
+);
+
+selectBySignature:
+SELECT * FROM recurring_pattern WHERE smsSignature = :signature;
+
+selectAll:
+SELECT * FROM recurring_pattern;
+
+insert:
+INSERT OR REPLACE INTO recurring_pattern(smsSignature, description, amount, transactionType, accountId, categoryId, occurrences, firstSeen, lastSeen)
+VALUES ?;
+
+update:
+UPDATE recurring_pattern SET
+    occurrences = :occurrences,
+    lastSeen = :lastSeen
+WHERE smsSignature = :smsSignature;
+
+deleteBySignature:
+DELETE FROM recurring_pattern WHERE smsSignature = :signature;

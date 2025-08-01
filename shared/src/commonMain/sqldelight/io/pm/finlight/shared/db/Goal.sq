@@ -1,0 +1,34 @@
+CREATE TABLE goal (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    targetAmount REAL NOT NULL,
+    savedAmount REAL NOT NULL,
+    targetDate INTEGER,
+    accountId INTEGER NOT NULL,
+    FOREIGN KEY(accountId) REFERENCES account(id) ON DELETE CASCADE
+);
+
+selectAllWithAccountName:
+SELECT
+    g.id, g.name, g.targetAmount, g.savedAmount, g.targetDate, g.accountId, a.name AS accountName
+FROM goal AS g
+INNER JOIN account AS a ON g.accountId = a.id
+ORDER BY g.targetDate ASC;
+
+selectById:
+SELECT * FROM goal WHERE id = :id;
+
+insert:
+INSERT INTO goal(name, targetAmount, savedAmount, targetDate, accountId) VALUES ?;
+
+update:
+UPDATE goal SET
+    name = :name,
+    targetAmount = :targetAmount,
+    savedAmount = :savedAmount,
+    targetDate = :targetDate,
+    accountId = :accountId
+WHERE id = :id;
+
+deleteById:
+DELETE FROM goal WHERE id = :id;

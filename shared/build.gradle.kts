@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.library)
     alias(libs.plugins.sqlDelight)
+    // --- FIX: Apply the Kotlin Serialization plugin ---
+    alias(libs.plugins.kotlin.serialization)
 }
 
 kotlin {
@@ -26,13 +28,13 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                // --- NEW: Add SQLDelight runtime dependency for all platforms ---
                 implementation(libs.sqlDelight.runtime)
+                // --- FIX: Add the serialization library dependency ---
+                implementation(libs.kotlinx.serialization.json)
             }
         }
         val androidMain by getting {
             dependencies {
-                // --- NEW: Add Android-specific SQLDelight driver ---
                 implementation(libs.sqlDelight.driver.android)
             }
         }
@@ -40,7 +42,6 @@ kotlin {
         val iosMain by creating {
             dependsOn(commonMain)
             dependencies {
-                // --- NEW: Add native (iOS) SQLDelight driver ---
                 implementation(libs.sqlDelight.driver.native)
             }
         }

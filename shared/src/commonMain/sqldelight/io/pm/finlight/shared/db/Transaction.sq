@@ -1,0 +1,64 @@
+-- Import the Kotlin data classes so SQLDelight can map query results to them.
+import io.pm.finlight.data.db.entity.Transaction;
+
+-- The 'CREATE TABLE' statement for the Transaction entity.
+-- It includes foreign keys to the 'account' and 'category' tables.
+CREATE TABLE `transaction` (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    description TEXT NOT NULL,
+    categoryId INTEGER,
+    amount REAL NOT NULL,
+    date INTEGER NOT NULL,
+    accountId INTEGER NOT NULL,
+    notes TEXT,
+    transactionType TEXT NOT NULL DEFAULT 'expense',
+    sourceSmsId INTEGER,
+    sourceSmsHash TEXT,
+    source TEXT NOT NULL DEFAULT 'Manual Entry',
+    originalDescription TEXT,
+    isExcluded INTEGER NOT NULL DEFAULT 0, -- SQLite uses 0 for false, 1 for true
+    smsSignature TEXT,
+    originalAmount REAL,
+    currencyCode TEXT,
+    conversionRate REAL,
+    isSplit INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(accountId) REFERENCES account(id) ON DELETE CASCADE,
+    FOREIGN KEY(categoryId) REFERENCES category(id) ON DELETE SET NULL
+);
+
+-- Create indexes for frequently queried columns to improve performance.
+CREATE INDEX transaction_accountId_index ON `transaction`(accountId);
+CREATE INDEX transaction_categoryId_index ON `transaction`(categoryId);
+CREATE INDEX transaction_date_index ON `transaction`(date);
+
+
+-- Define the queries for the Transaction table.
+
+selectAll:
+SELECT * FROM `transaction`;
+
+selectById:
+SELECT * FROM `transaction` WHERE id = :id;
+
+insert:
+INSERT INTO `transaction` (
+    description, categoryId, amount, date, accountId, notes, transactionType, sourceSmsId,
+    sourceSmsHash, source, originalDescription, isExcluded, smsSignature, originalAmount,
+    currencyCode, conversionRate, isSplit
+) VALUES ?;
+
+update:
+UPDATE `transaction` SET
+    description = :description,
+    categoryId = :categoryId,
+    amount = :amount,
+    date = :date,
+    accountId = :accountId,
+    notes = :notes,
+    transactionType = :transactionType,
+    isExcluded = :isExcluded,
+    isSplit = :isSplit
+WHERE id = :id;
+
+deleteById:
+DELETE FROM `transaction` WHERE id = :id;

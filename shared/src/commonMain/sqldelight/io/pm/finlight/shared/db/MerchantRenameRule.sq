@@ -1,0 +1,13 @@
+CREATE TABLE merchant_rename_rule (
+    originalName TEXT NOT NULL PRIMARY KEY,
+    newName TEXT NOT NULL
+);
+
+selectAll:
+SELECT * FROM merchant_rename_rule;
+
+insert:
+INSERT OR REPLACE INTO merchant_rename_rule(originalName, newName) VALUES (:originalName, :newName);
+
+deleteByOriginalName:
+DELETE FROM merchant_rename_rule WHERE originalName = :originalName;

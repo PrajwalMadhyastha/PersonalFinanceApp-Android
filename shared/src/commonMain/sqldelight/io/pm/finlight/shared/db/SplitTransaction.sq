@@ -1,0 +1,28 @@
+-- The 'CREATE TABLE' statement for the SplitTransaction entity.
+CREATE TABLE split_transaction (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    parentTransactionId INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    categoryId INTEGER,
+    notes TEXT,
+    originalAmount REAL,
+    FOREIGN KEY(parentTransactionId) REFERENCES `transaction`(id) ON DELETE CASCADE,
+    FOREIGN KEY(categoryId) REFERENCES category(id) ON DELETE SET NULL
+);
+
+-- Select all splits for a given parent transaction.
+selectByParentId:
+SELECT * FROM split_transaction WHERE parentTransactionId = :parentTransactionId;
+
+-- Insert a new split item.
+insert:
+INSERT INTO split_transaction(parentTransactionId, amount, categoryId, notes, originalAmount)
+VALUES ?;
+
+-- Delete all splits for a given parent transaction.
+deleteByParentId:
+DELETE FROM split_transaction WHERE parentTransactionId = :parentTransactionId;
+
+-- Get all splits for data export.
+selectAll:
+SELECT * FROM split_transaction;

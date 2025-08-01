@@ -1,0 +1,22 @@
+CREATE TABLE ignore_rule (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    pattern TEXT NOT NULL UNIQUE,
+    isEnabled INTEGER NOT NULL DEFAULT 1,
+    isDefault INTEGER NOT NULL DEFAULT 0
+);
+
+selectAll:
+SELECT * FROM ignore_rule ORDER BY pattern ASC;
+
+selectEnabled:
+SELECT * FROM ignore_rule WHERE isEnabled = 1;
+
+insert:
+INSERT OR IGNORE INTO ignore_rule(type, pattern, isEnabled, isDefault) VALUES ?;
+
+update:
+UPDATE ignore_rule SET isEnabled = :isEnabled WHERE id = :id;
+
+deleteById:
+DELETE FROM ignore_rule WHERE id = :id;

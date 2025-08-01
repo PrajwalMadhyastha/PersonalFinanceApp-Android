@@ -1,0 +1,33 @@
+-- The 'CREATE TABLE' statement for the Budget entity.
+-- A UNIQUE constraint on categoryName, month, and year ensures
+-- there can only be one budget per category per month.
+CREATE TABLE budget (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    categoryName TEXT NOT NULL,
+    amount REAL NOT NULL,
+    month INTEGER NOT NULL,
+    year INTEGER NOT NULL,
+    UNIQUE(categoryName, month, year)
+);
+
+-- Select all budgets.
+selectAll:
+SELECT * FROM budget;
+
+-- Select a single budget by its ID.
+selectById:
+SELECT * FROM budget WHERE id = :id;
+
+-- Insert a new budget.
+insert:
+INSERT OR REPLACE INTO budget(categoryName, amount, month, year)
+VALUES (:categoryName, :amount, :month, :year);
+
+-- Update an existing budget.
+update:
+UPDATE budget SET categoryName = :categoryName, amount = :amount, month = :month, year = :year
+WHERE id = :id;
+
+-- Delete a budget by its ID.
+deleteById:
+DELETE FROM budget WHERE id = :id;
