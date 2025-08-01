@@ -13,7 +13,6 @@ import android.net.Uri
 import android.util.Log
 import io.pm.finlight.AppDataBackup
 import io.pm.finlight.TransactionDetails
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext

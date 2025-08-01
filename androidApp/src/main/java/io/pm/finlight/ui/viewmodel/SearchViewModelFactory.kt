@@ -10,7 +10,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import io.pm.finlight.data.db.AppDatabase
 
 class SearchViewModelFactory(
     private val application: Application,

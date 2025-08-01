@@ -15,11 +15,9 @@ if (keystorePropertiesFile.exists()) {
 @Suppress("DSL_SCOPE_VIOLATION")
 plugins {
     alias(libs.plugins.android.application)
-    // --- FIX: Use the corrected, non-nested plugin aliases ---
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
-    // --- FIX: Use the corrected, non-nested plugin aliases ---
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -46,9 +44,7 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-        ksp {
-            arg("room.schemaLocation", "$projectDir/schemas")
-        }
+        // ksp argument for room.schemaLocation is no longer needed
     }
 
     buildTypes {
@@ -106,11 +102,13 @@ dependencies {
     implementation(libs.androidx.compose.material)
     implementation(libs.androidx.compose.runtime.livedata)
 
+    // --- FIX: Keep Room runtime for now for potential future migrations, but remove the compiler ---
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.firebase.crashlytics.buildtools)
-    ksp(libs.androidx.room.compiler)
+    // --- FIX: Remove the Room KSP compiler dependency ---
+    // ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)

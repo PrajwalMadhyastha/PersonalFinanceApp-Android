@@ -14,7 +14,6 @@ import androidx.lifecycle.viewModelScope
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
-import io.pm.finlight.data.db.AppDatabase
 import kotlinx.coroutines.flow.*
 import java.text.SimpleDateFormat
 import java.util.*

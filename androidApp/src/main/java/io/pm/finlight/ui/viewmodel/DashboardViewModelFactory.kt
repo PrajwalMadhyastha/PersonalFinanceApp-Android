@@ -1,26 +1,26 @@
-package io.pm.finlight
+package io.pm.finlight.ui.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import io.pm.finlight.data.db.AppDatabase
+import io.pm.finlight.data.db.DatabaseProvider
+import io.pm.finlight.data.repository.AccountRepository
+import io.pm.finlight.data.repository.SettingsRepository
+import io.pm.finlight.data.repository.TransactionRepository
 
-/**
- * Factory for creating a DashboardViewModel with a constructor that takes dependencies.
- */
 class DashboardViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(DashboardViewModel::class.java)) {
-            val db = AppDatabase.getInstance(application)
-            val transactionRepository = TransactionRepository(db.transactionDao())
-            val accountRepository = AccountRepository(db.accountDao())
+            val db = DatabaseProvider.getInstance(application)
+            val transactionRepository = TransactionRepository(db.transactionQueries, db.accountQueries, db.categoryQueries, db.tagQueries, db.transaction_tag_cross_refQueries)
+            val accountRepository = AccountRepository(db.accountQueries)
             val settingsRepository = SettingsRepository(application)
 
             @Suppress("UNCHECKED_CAST")
             return DashboardViewModel(
+                db = db,
                 transactionRepository = transactionRepository,
                 accountRepository = accountRepository,
-                budgetDao = db.budgetDao(),
                 settingsRepository = settingsRepository,
             ) as T
         }

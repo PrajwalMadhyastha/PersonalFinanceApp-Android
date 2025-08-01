@@ -11,7 +11,6 @@ package io.pm.finlight
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.db.dao.AccountDao
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow

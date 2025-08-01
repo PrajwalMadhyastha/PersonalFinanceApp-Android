@@ -37,7 +37,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.google.gson.Gson
 import io.pm.finlight.*
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.ui.components.GlassPanel
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch

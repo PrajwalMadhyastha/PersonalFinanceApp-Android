@@ -77,6 +77,8 @@ google-material = { module = "com.google.android.material:material", version = "
 junit = { module = "junit:junit", version = "4.13.2" }
 
 # Kotlin & Coroutines
+# --- NEW: Add core coroutines dependency ---
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 
@@ -88,7 +90,7 @@ mp-android-chart = { module = "com.github.PhilJay:MPAndroidChart", version.ref =
 mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 
-# --- NEW: Add SQLDelight libraries ---
+# KMP Libraries
 sqlDelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqlDelight" }
 sqlDelight-driver-android = { module = "app.cash.sqldelight:android-driver", version.ref = "sqlDelight" }
 sqlDelight-driver-native = { module = "app.cash.sqldelight:native-driver", version.ref = "sqlDelight" }

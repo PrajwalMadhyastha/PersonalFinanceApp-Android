@@ -19,7 +19,6 @@ import androidx.core.app.ActivityCompat
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.utils.NotificationHelper
 import io.pm.finlight.utils.SmsParser
 import kotlinx.coroutines.CoroutineScope

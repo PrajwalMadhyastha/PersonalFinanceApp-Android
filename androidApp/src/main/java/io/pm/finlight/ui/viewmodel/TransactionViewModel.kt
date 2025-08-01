@@ -16,7 +16,6 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
-import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.ui.components.ShareableField
 import io.pm.finlight.utils.CategoryIconHelper
 import io.pm.finlight.utils.ShareImageGenerator
