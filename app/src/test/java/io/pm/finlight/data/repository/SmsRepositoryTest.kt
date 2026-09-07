@@ -268,4 +268,26 @@ class SmsRepositoryTest : BaseViewModelTest() {
 
             assertTrue(ioDispatcherCalled)
         }
+
+    @Test
+    fun `fetchAllSms handles SecurityException gracefully`() =
+        runTest {
+            `when`(contentResolver.query(any(Uri::class.java), any(), any(), any(), any()))
+                .thenThrow(SecurityException("Permission denied"))
+
+            val result = repository.fetchAllSms(null)
+
+            assertTrue(result.isEmpty())
+        }
+
+    @Test
+    fun `getSmsDetailsById handles SecurityException gracefully`() =
+        runTest {
+            `when`(contentResolver.query(any(Uri::class.java), any(), any(), any(), any()))
+                .thenThrow(SecurityException("Permission denied"))
+
+            val result = repository.getSmsDetailsById(123L)
+
+            assertNull(result)
+        }
 }

@@ -343,6 +343,24 @@ class SmsDebugViewModelTest : BaseViewModelTest() {
         }
 
     @Test
+    fun `runAutoImportAndRefresh handles empty sms inbox gracefully`() =
+        runTest {
+            setupDefaultDaoBehaviors()
+            whenever(smsRepository.fetchAllSms(anyOrNull())).thenReturn(emptyList())
+
+            initializeViewModel()
+            advanceUntilIdle()
+
+            viewModel.runAutoImportAndRefresh()
+            advanceUntilIdle()
+
+            verify(transactionViewModel, never()).autoSaveSmsTransaction(anyObject(), anyString())
+            val finalState = viewModel.uiState.value
+            assertFalse("Should not be loading after empty runAutoImportAndRefresh", finalState.isLoading)
+            assertTrue("Debug results should be empty", finalState.debugResults.isEmpty())
+        }
+
+    @Test
     fun `onCleared closes dependencies`() =
         runTest {
             setupDefaultDaoBehaviors()

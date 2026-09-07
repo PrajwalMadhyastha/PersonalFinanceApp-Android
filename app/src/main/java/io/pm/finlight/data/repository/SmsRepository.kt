@@ -55,13 +55,18 @@ class SmsRepository(
 
             // Query the SMS inbox, sorting by date in descending order
             val cursor =
-                appContext.contentResolver.query(
-                    Telephony.Sms.Inbox.CONTENT_URI,
-                    projection,
-                    selection,
-                    selectionArgs,
-                    "date DESC",
-                )
+                try {
+                    appContext.contentResolver.query(
+                        Telephony.Sms.Inbox.CONTENT_URI,
+                        projection,
+                        selection,
+                        selectionArgs,
+                        "date DESC",
+                    )
+                } catch (e: SecurityException) {
+                    Log.e("SmsRepository", "Permission denied querying SMS inbox", e)
+                    null
+                }
 
             cursor?.use {
                 // Get column indices once for efficiency
@@ -101,13 +106,21 @@ class SmsRepository(
             val selection = "${Telephony.Sms._ID} = ?"
             val selectionArgs = arrayOf(lookupValue.toString())
 
-            appContext.contentResolver.query(
-                Telephony.Sms.Inbox.CONTENT_URI,
-                projection,
-                selection,
-                selectionArgs,
-                null,
-            )?.use { cursor ->
+            val firstCursor =
+                try {
+                    appContext.contentResolver.query(
+                        Telephony.Sms.Inbox.CONTENT_URI,
+                        projection,
+                        selection,
+                        selectionArgs,
+                        null,
+                    )
+                } catch (e: SecurityException) {
+                    Log.e("SmsRepository", "Permission denied querying SMS by ID", e)
+                    null
+                }
+
+            firstCursor?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
                     val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
@@ -128,15 +141,23 @@ class SmsRepository(
             // is mathematically closest to the timestamp we stored.
             val sortOrder = "ABS(date - $lookupValue) ASC LIMIT 1"
 
-            appContext.contentResolver.query(
-                Telephony.Sms.Inbox.CONTENT_URI,
-                projection,
-                // Selection is not needed, we use the sort order
-                null,
-                // Selection args are not needed
-                null,
-                sortOrder,
-            )?.use { cursor ->
+            val fallbackCursor =
+                try {
+                    appContext.contentResolver.query(
+                        Telephony.Sms.Inbox.CONTENT_URI,
+                        projection,
+                        // Selection is not needed, we use the sort order
+                        null,
+                        // Selection args are not needed
+                        null,
+                        sortOrder,
+                    )
+                } catch (e: SecurityException) {
+                    Log.e("SmsRepository", "Permission denied querying SMS by fallback date", e)
+                    null
+                }
+
+            fallbackCursor?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
                     val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
