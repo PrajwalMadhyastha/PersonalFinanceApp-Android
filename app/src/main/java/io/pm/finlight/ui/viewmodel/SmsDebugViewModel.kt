@@ -106,7 +106,7 @@ class SmsDebugViewModel(
             _uiState.update { it.copy(isLoading = true) }
 
             val currentLimit = _uiState.value.loadCount
-            val recentSms = smsRepository.fetchAllSms(null).take(currentLimit)
+            val recentSms = (smsRepository.fetchAllSms(null) ?: emptyList()).take(currentLimit)
             val results = mutableListOf<SmsDebugResult>()
 
             for (sms in recentSms) {
@@ -175,7 +175,7 @@ class SmsDebugViewModel(
             val currentLimit = _uiState.value.loadCount
 
             // Re-scan to get the new state
-            val recentSms = smsRepository.fetchAllSms(null).take(currentLimit)
+            val recentSms = (smsRepository.fetchAllSms(null) ?: emptyList()).take(currentLimit)
             val newResults = mutableListOf<SmsDebugResult>()
             val transactionsToImport = mutableListOf<PotentialTransaction>()
 

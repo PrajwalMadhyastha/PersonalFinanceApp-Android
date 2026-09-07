@@ -45,7 +45,7 @@ class TransactionViewModelFactory(private val application: Application) : ViewMo
                 categoryRepository = CategoryRepository(db.categoryDao()),
                 tagRepository = tagRepository,
                 settingsRepository = settingsRepository,
-                smsRepository = SmsRepository(application),
+                smsRepository = SmsRepository(application, dispatcherProvider),
                 merchantRenameRuleRepository = MerchantRenameRuleRepository(db.merchantRenameRuleDao()),
                 merchantCategoryMappingRepository = MerchantCategoryMappingRepository(db.merchantCategoryMappingDao()),
                 merchantMappingRepository = MerchantMappingRepository(db.merchantMappingDao()),

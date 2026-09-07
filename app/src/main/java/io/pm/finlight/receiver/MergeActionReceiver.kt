@@ -49,7 +49,7 @@ class MergeActionReceiver : BroadcastReceiver() {
                     var childSmsBody: String? = null
                     var childSmsDate: Long? = null
                     if (childTxn?.sourceSmsId != null) {
-                        val smsRepository = SmsRepository(context)
+                        val smsRepository = SmsRepository(context, dispatcherProvider)
                         val sms = smsRepository.getSmsDetailsById(childTxn.sourceSmsId)
                         if (sms != null) {
                             childSmsBody = sms.body

@@ -1212,9 +1212,7 @@ class TransactionViewModel(
     }
 
     suspend fun getOriginalSmsMessage(smsId: Long): SmsMessage? {
-        return withContext(dispatcherProvider.io) {
-            smsRepository.getSmsDetailsById(smsId)
-        }
+        return smsRepository.getSmsDetailsById(smsId)
     }
 
     fun reparseTransactionFromSms(transactionId: Int) {
