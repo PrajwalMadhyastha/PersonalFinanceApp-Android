@@ -97,11 +97,11 @@ class SettingsViewModel(
             initialValue = true,
         )
 
-    val appLockEnabled: StateFlow<Boolean> =
+    val appLockEnabled: StateFlow<Boolean?> =
         settingsRepository.getAppLockEnabled().stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = false,
+            initialValue = null,
         )
 
     val unknownTransactionPopupEnabled: StateFlow<Boolean> =

@@ -595,6 +595,23 @@ class SettingsViewModelTest : BaseViewModelTest() {
             verify(settingsRepository).saveAppLockEnabled(true)
         }
 
+    @Test
+    fun `appLockEnabled emits from repository flow`() =
+        runTest {
+            val appLockFlow = kotlinx.coroutines.flow.MutableStateFlow(true)
+            `when`(settingsRepository.getAppLockEnabled()).thenReturn(appLockFlow)
+            initializeViewModel()
+
+            val values = mutableListOf<Boolean?>()
+            val job =
+                launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.appLockEnabled.collect { values.add(it) }
+                }
+
+            assertTrue("appLockEnabled should reflect repository emission", values.contains(true))
+            job.cancel()
+        }
+
     // --- UPDATED: Test for backup success dialog ---
     @Test
     fun `createBackupSnapshot success sets showBackupSuccessDialog to true`() =

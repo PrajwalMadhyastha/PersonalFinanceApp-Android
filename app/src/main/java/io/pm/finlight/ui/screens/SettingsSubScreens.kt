@@ -587,7 +587,7 @@ fun DataSettingsScreen(
                         title = "Enable App Lock",
                         subtitle = "Use biometrics or screen lock (PIN, pattern, password) to secure the app",
                         icon = Icons.Default.Fingerprint,
-                        checked = isAppLockEnabled,
+                        checked = isAppLockEnabled == true,
                         onCheckedChange = { enabled ->
                             if (enabled) {
                                 val authenticators =
