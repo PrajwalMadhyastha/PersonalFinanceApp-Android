@@ -170,7 +170,7 @@ class MainActivity : AppCompatActivity() {
         val now = System.currentTimeMillis()
         if (now - lastSnapshotTimestamp >= MIN_SNAPSHOT_INTERVAL_MS) {
             lastSnapshotTimestamp = now
-            lifecycleScope.launch(Dispatchers.IO) {
+            lifecycleScope.launch {
                 DataExportService.createBackupSnapshot(applicationContext)
             }
         }

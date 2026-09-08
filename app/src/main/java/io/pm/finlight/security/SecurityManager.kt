@@ -59,12 +59,18 @@ open class SecurityManager(private val context: Context) {
                     "Failed to decrypt existing passphrase. Possible device transfer or key invalidation. Resetting secure storage.",
                     e,
                 )
-                getStorageFile().delete()
+                val fileDeleted = getStorageFile().delete()
+                if (!fileDeleted) {
+                    Log.w(TAG, "Failed to delete secure storage file during reset.")
+                }
                 try {
                     keyStore.deleteEntry(KEY_ALIAS)
-                } catch (ignored: Exception) {
+                } catch (deleteEntryException: Exception) {
+                    Log.w(TAG, "Failed to delete key alias from Keystore", deleteEntryException)
                 }
-                context.deleteDatabase("finance_database")
+                if (!context.deleteDatabase("finance_database")) {
+                    Log.w(TAG, "Failed to delete foreign database during reset.")
+                }
             }
         }
 
@@ -74,7 +80,9 @@ open class SecurityManager(private val context: Context) {
                 TAG,
                 "Database exists but encryption key file is missing (possible partial restore or transfer). Deleting orphaned database.",
             )
-            context.deleteDatabase("finance_database")
+            if (!context.deleteDatabase("finance_database")) {
+                Log.w(TAG, "Failed to delete orphaned database.")
+            }
         }
         val newPassphrase = generateRandomPassphrase()
         val newEncryptedPassphrase = encrypt(newPassphrase)
