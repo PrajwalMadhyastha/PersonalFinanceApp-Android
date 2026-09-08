@@ -183,6 +183,7 @@ class TravelSettingsRepositoryTest : BaseViewModelTest() {
                 it[prefKey] = gson.toJson(expiredSettings)
             }
 
+            // Unlike getTravelModeSettings() Flow, this method returns expired settings as-is; callers must guard endDate
             val result = repository.getCurrentTravelModeSettings()
             assertEquals(expiredSettings, result)
 

@@ -39,6 +39,10 @@ class TravelSettingsRepository(
         }
     }
 
+    /**
+     * Observes the travel mode settings as a reactive [Flow].
+     * Lazily evaluates and filters expired trips to `null` in-memory without mutating DataStore.
+     */
     override fun getTravelModeSettings(): Flow<TravelModeSettings?> {
         return dataStore.data
             .catch { exception ->
@@ -61,6 +65,11 @@ class TravelSettingsRepository(
             .distinctUntilChanged()
     }
 
+    /**
+     * Returns a one-shot snapshot of the raw stored travel mode settings without in-memory expiration filtering.
+     * Unlike [getTravelModeSettings], this returns expired settings as-is so maintenance tasks (e.g. DailyReportWorker)
+     * can inspect and clear them. Callers looking for active trips must guard [TravelModeSettings.endDate].
+     */
     override suspend fun getCurrentTravelModeSettings(): TravelModeSettings? {
         val preferences =
             try {
