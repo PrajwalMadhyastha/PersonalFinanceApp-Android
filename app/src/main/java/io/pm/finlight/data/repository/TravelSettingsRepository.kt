@@ -50,13 +50,13 @@ class TravelSettingsRepository(
             }
             .map { preferences ->
                 val json = preferences[KEY_TRAVEL_MODE_SETTINGS]
-                var settings = if (json == null) null else gson.fromJson(json, TravelModeSettings::class.java)
+                val settings = if (json == null) null else gson.fromJson(json, TravelModeSettings::class.java)
 
                 if (settings != null && System.currentTimeMillis() > settings.endDate) {
-                    saveTravelModeSettings(null)
-                    settings = null
+                    null
+                } else {
+                    settings
                 }
-                settings
             }
             .distinctUntilChanged()
     }
@@ -65,7 +65,7 @@ class TravelSettingsRepository(
         val preferences =
             try {
                 dataStore.data.first()
-            } catch (e: Exception) {
+            } catch (e: IOException) {
                 emptyPreferences()
             }
         val json = preferences[KEY_TRAVEL_MODE_SETTINGS] ?: return null
