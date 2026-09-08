@@ -29,7 +29,12 @@ class SmsRepository(
      * Fetches all SMS messages from the device's inbox.
      * @return A list of SmsMessage objects.
      */
-    override suspend fun fetchAllSms(startDate: Long?): List<SmsMessage> =
+    override suspend fun fetchAllSms(startDate: Long?): List<SmsMessage> = fetchAllSms(startDate, null)
+
+    override suspend fun fetchAllSms(
+        startDate: Long?,
+        endDate: Long?,
+    ): List<SmsMessage> =
         withContext(dispatcherProvider.io) {
             val smsList = mutableListOf<SmsMessage>()
             // Define the columns we want to retrieve
@@ -43,10 +48,18 @@ class SmsRepository(
             val selection: String?
             val selectionArgs: Array<String>?
 
-            if (startDate != null) {
+            if (startDate != null && endDate != null) {
+                selection = "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms.DATE} <= ?"
+                selectionArgs = arrayOf(startDate.toString(), endDate.toString())
+                Log.d("SmsRepository", "Querying SMS between $startDate and $endDate")
+            } else if (startDate != null) {
                 selection = "${Telephony.Sms.DATE} >= ?"
                 selectionArgs = arrayOf(startDate.toString())
                 Log.d("SmsRepository", "Querying SMS with start date: $startDate")
+            } else if (endDate != null) {
+                selection = "${Telephony.Sms.DATE} <= ?"
+                selectionArgs = arrayOf(endDate.toString())
+                Log.d("SmsRepository", "Querying SMS with end date: $endDate")
             } else {
                 selection = null
                 selectionArgs = null

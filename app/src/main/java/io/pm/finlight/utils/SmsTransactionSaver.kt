@@ -143,8 +143,20 @@ class SmsTransactionSaver(
                 )
             }
 
+        // --- Pre-save duplicate guard ---
+        potentialTxn.sourceSmsHash?.let { hash ->
+            if (db.transactionQueryDao().existsBySmsHash(hash)) {
+                Log.d(tag, "Transaction with sourceSmsHash '$hash' already exists. Dropping duplicate save.")
+                return null
+            }
+        }
+
         val finalTags = resolveTravelModeTagUseCase.getFinalTags(potentialTxn.date, emptySet(), travelSettings)
         val newId = transactionRepository.insertTransactionWithTags(transactionToSave, finalTags)
+        if (newId <= 0L) {
+            Log.d(tag, "Transaction insert ignored due to unique constraint conflict on sourceSmsHash.")
+            return null
+        }
 
         // --- NEW: Attempt to detect and link self-transfers ---
         val savedTransaction = transactionToSave.copy(id = newId.toInt())

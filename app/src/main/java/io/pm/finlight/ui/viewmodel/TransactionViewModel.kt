@@ -1714,6 +1714,13 @@ class TransactionViewModel(
     ): Boolean {
         return withContext(dispatcherProvider.io) {
             try {
+                potentialTxn.sourceSmsHash?.let { hash ->
+                    if (db.transactionQueryDao().existsBySmsHash(hash)) {
+                        Log.d(TAG, "Transaction with sourceSmsHash '$hash' already exists. Skipping approve.")
+                        return@withContext false
+                    }
+                }
+
                 val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                 val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
 
@@ -1769,7 +1776,11 @@ class TransactionViewModel(
                     }
 
                 val finalTags = resolveTravelModeTagUseCase.getFinalTags(transactionToSave.date, tags, currentTravelSettings)
-                transactionRepository.insertTransactionWithTags(transactionToSave, finalTags)
+                val newId = transactionRepository.insertTransactionWithTags(transactionToSave, finalTags)
+                if (newId <= 0L) {
+                    Log.d(TAG, "Transaction insert ignored or failed (newId: $newId).")
+                    return@withContext false
+                }
 
                 val merchantName = potentialTxn.merchantName
                 if (categoryId != null && merchantName != null) {
@@ -1795,6 +1806,13 @@ class TransactionViewModel(
     ): Boolean {
         return withContext(dispatcherProvider.io) {
             try {
+                potentialTxn.sourceSmsHash?.let { hash ->
+                    if (db.transactionQueryDao().existsBySmsHash(hash)) {
+                        Log.d(TAG, "Transaction with sourceSmsHash '$hash' already exists. Skipping auto-save.")
+                        return@withContext false
+                    }
+                }
+
                 val accountName = potentialTxn.potentialAccount?.formattedName ?: "Unknown Account"
                 val accountType = potentialTxn.potentialAccount?.accountType ?: "General"
 
@@ -1848,7 +1866,11 @@ class TransactionViewModel(
                     )
 
                 val finalTags = resolveTravelModeTagUseCase.getFinalTags(transactionToSave.date, emptySet(), travelModeSettings.value)
-                transactionRepository.insertTransactionWithTags(transactionToSave, finalTags)
+                val newId = transactionRepository.insertTransactionWithTags(transactionToSave, finalTags)
+                if (newId <= 0L) {
+                    Log.d(TAG, "Auto-save ignored or failed due to conflict (newId: $newId).")
+                    return@withContext false
+                }
                 true
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to auto-save SMS transaction", e)

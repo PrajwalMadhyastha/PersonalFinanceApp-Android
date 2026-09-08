@@ -278,6 +278,9 @@ class TransactionRepository(
         tags: Set<Tag>,
     ): Long {
         val transactionId = transactionWriteDao.insert(transaction)
+        if (transactionId <= 0L) {
+            return transactionId
+        }
         if (tags.isNotEmpty()) {
             val crossRefs =
                 tags.map { tag ->
@@ -309,6 +312,9 @@ class TransactionRepository(
         imagePaths: List<String>,
     ): Long {
         val newTransactionId = transactionWriteDao.insert(transaction)
+        if (newTransactionId <= 0L) {
+            return newTransactionId
+        }
         if (tags.isNotEmpty()) {
             val crossRefs =
                 tags.map { tag ->

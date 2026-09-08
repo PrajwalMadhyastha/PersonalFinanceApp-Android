@@ -172,6 +172,9 @@ interface TransactionQueryDao {
     @Query("SELECT sourceSmsHash FROM transactions WHERE sourceSmsHash IS NOT NULL")
     fun getAllSmsHashes(): Flow<List<String>>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE sourceSmsHash = :hash)")
+    suspend fun existsBySmsHash(hash: String): Boolean
+
     @RoomTransaction
     @Query(
         """
