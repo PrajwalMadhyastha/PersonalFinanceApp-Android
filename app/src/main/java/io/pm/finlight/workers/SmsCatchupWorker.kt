@@ -50,7 +50,8 @@ class SmsCatchupWorker(
         val tagRepository = TagRepository(db.tagDao(), db.transactionQueryDao())
         val resolveTravelModeTagUseCase = ResolveTravelModeTagUseCase(tagRepository)
         val saver = SmsTransactionSaver(db, resolveTravelModeTagUseCase)
-        val smsRepository = SmsRepository(context)
+        val dispatcherProvider = ServiceLocator.provideDispatcherProvider(context)
+        val smsRepository = SmsRepository(context, dispatcherProvider)
 
         val startDate = System.currentTimeMillis() - lookbackMs
         val recentSms: List<SmsMessage> = smsRepository.fetchAllSms(startDate)

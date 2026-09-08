@@ -280,10 +280,7 @@ class SettingsViewModel(
             var newTransactionsFound = 0
             try {
                 val startDate = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -30) }.timeInMillis
-                val rawMessages =
-                    withContext(dispatchers.io) {
-                        smsRepository.fetchAllSms(startDate)
-                    }
+                val rawMessages = smsRepository.fetchAllSms(startDate)
 
                 val existingMappings =
                     withContext(dispatchers.io) {
@@ -386,7 +383,7 @@ class SettingsViewModel(
 
             try {
                 // 2. Fetch all messages
-                val rawMessages = withContext(dispatchers.io) { smsRepository.fetchAllSms(startDate) }
+                val rawMessages = smsRepository.fetchAllSms(startDate)
 
                 // 3. Update total count to show the UI
                 _totalSmsToScan.value = rawMessages.size

@@ -22,7 +22,8 @@ class SmsDebugViewModelFactory(
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SmsDebugViewModel::class.java)) {
-            val smsRepository = SmsRepository(application)
+            val dispatcherProvider = io.pm.finlight.di.ServiceLocator.provideDispatcherProvider(application)
+            val smsRepository = SmsRepository(application, dispatcherProvider)
             val db = AppDatabase.getInstance(application)
             val smsClassifier = SmsClassifier(application)
             val nerExtractor = NerExtractor(application)

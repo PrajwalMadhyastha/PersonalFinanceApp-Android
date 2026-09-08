@@ -50,7 +50,9 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.whenever
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.ByteArrayInputStream
@@ -274,7 +276,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             val sms = SmsMessage(1, "ICICI", "ICICI Bank Acct XX123 debited for Rs 240.00 on 28-Jun-25; DAKSHIN CAFE credited.", 1L)
 
             // Mock dependencies
-            `when`(smsRepository.fetchAllSms(org.mockito.ArgumentMatchers.isNull())).thenReturn(listOf(sms))
+            whenever(smsRepository.fetchAllSms(anyOrNull())).thenReturn(listOf(sms))
             `when`(transactionRepository.getAllSmsHashes()).thenReturn(flowOf(emptyList<String>()))
             `when`(merchantMappingRepository.allMappings).thenReturn(flowOf(emptyList()))
             `when`(merchantRenameRuleDao.getAllRules()).thenReturn(flowOf(emptyList()))
@@ -702,7 +704,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             val sms = SmsMessage(1, "SENDER", "spent Rs 100", 1L)
             val parsedTxn = PotentialTransaction(1L, "SENDER", 100.0, "expense", "Store", "spent Rs 100", null, "hash123")
 
-            `when`(smsRepository.fetchAllSms(anyLong())).thenReturn(listOf(sms))
+            whenever(smsRepository.fetchAllSms(anyLong())).thenReturn(listOf(sms))
             `when`(merchantMappingRepository.allMappings).thenReturn(flowOf(emptyList()))
             `when`(transactionRepository.getAllSmsHashes()).thenReturn(flowOf(emptyList())) // No existing hashes
 
@@ -1232,7 +1234,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
         runTest {
             // Arrange
             org.robolectric.shadows.ShadowApplication.getInstance().grantPermissions(Manifest.permission.READ_SMS)
-            `when`(smsRepository.fetchAllSms(org.mockito.ArgumentMatchers.isNull())).thenReturn(emptyList())
+            whenever(smsRepository.fetchAllSms(anyOrNull())).thenReturn(emptyList())
 
             initializeViewModel()
 
@@ -1282,7 +1284,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             `when`(smsClassifier.classify("Your account credited with Rs 500")).thenReturn(0.9f)
             `when`(smsClassifier.classify("Check out our latest deals!")).thenReturn(0.05f)
 
-            `when`(smsRepository.fetchAllSms(org.mockito.ArgumentMatchers.isNull()))
+            whenever(smsRepository.fetchAllSms(anyOrNull()))
                 .thenReturn(listOf(transactionalSms, nonTransactionalSms))
 
             `when`(transactionRepository.getAllSmsHashes()).thenReturn(flowOf(emptyList<String>()))
@@ -1335,7 +1337,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             val sms1 = SmsMessage(1, "BANK", "Transaction 1", 1L)
             val sms2 = SmsMessage(2, "BANK", "Transaction 2", 2L)
 
-            `when`(smsRepository.fetchAllSms(org.mockito.ArgumentMatchers.isNull()))
+            whenever(smsRepository.fetchAllSms(anyOrNull()))
                 .thenReturn(listOf(sms1, sms2))
             `when`(transactionRepository.getAllSmsHashes()).thenReturn(flowOf(emptyList<String>()))
             `when`(merchantMappingRepository.allMappings).thenReturn(flowOf(emptyList()))
@@ -1379,7 +1381,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
     fun `startSmsScanAndIdentifyMappings resets state after completion`() =
         runTest {
             // Arrange
-            `when`(smsRepository.fetchAllSms(org.mockito.ArgumentMatchers.isNull()))
+            whenever(smsRepository.fetchAllSms(anyOrNull()))
                 .thenReturn(listOf(SmsMessage(1, "BANK", "Test", 1L)))
             `when`(transactionQueryDao.getAllSmsHashes()).thenReturn(flowOf(emptyList<String>()))
             `when`(merchantMappingRepository.allMappings).thenReturn(flowOf(emptyList()))

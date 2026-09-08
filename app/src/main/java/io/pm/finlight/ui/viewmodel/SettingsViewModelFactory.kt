@@ -37,7 +37,7 @@ class SettingsViewModelFactory(
             val merchantMappingRepository = MerchantMappingRepository(db.merchantMappingDao())
             val accountRepository = AccountRepository(db)
             val categoryRepository = CategoryRepository(db.categoryDao())
-            val smsRepository = SmsRepository(application)
+            val smsRepository = SmsRepository(application, dispatcherProvider)
             val smsClassifier = SmsClassifier(application)
             val nerExtractor = NerExtractor(application)
             val transactionRunner = RoomTransactionRunner()
