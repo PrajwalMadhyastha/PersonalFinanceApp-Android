@@ -12,6 +12,7 @@ import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -26,6 +27,7 @@ import javax.crypto.spec.GCMParameterSpec
  */
 open class SecurityManager(private val context: Context) {
     companion object {
+        private const val TAG = "SecurityManager"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         internal const val KEY_ALIAS = "finlight_db_key" // Made internal for test access
         private const val LEGACY_PREFS_NAME = "finlight_secure_prefs"
@@ -44,12 +46,40 @@ open class SecurityManager(private val context: Context) {
      */
     fun getPassphrase(): ByteArray {
         var encryptedPassphrase = getEncryptedPassphrase()
-        if (encryptedPassphrase == null) {
-            val newPassphrase = generateRandomPassphrase()
-            encryptedPassphrase = encrypt(newPassphrase)
-            saveEncryptedPassphrase(encryptedPassphrase)
+        if (encryptedPassphrase != null) {
+            try {
+                return decrypt(encryptedPassphrase)
+            } catch (e: Exception) {
+                // If the key in Keystore cannot decrypt the data (e.g. after a device transfer,
+                // backup restore on a different device, or key invalidation), defensively clean
+                // up the unreadable file, stale Keystore entry, and delete any database file
+                // that cannot be opened with the foreign key.
+                Log.w(
+                    TAG,
+                    "Failed to decrypt existing passphrase. Possible device transfer or key invalidation. Resetting secure storage.",
+                    e,
+                )
+                getStorageFile().delete()
+                try {
+                    keyStore.deleteEntry(KEY_ALIAS)
+                } catch (ignored: Exception) {
+                }
+                context.deleteDatabase("finance_database")
+            }
         }
-        return decrypt(encryptedPassphrase)
+
+        val dbFile = context.getDatabasePath("finance_database")
+        if (dbFile.exists()) {
+            Log.w(
+                TAG,
+                "Database exists but encryption key file is missing (possible partial restore or transfer). Deleting orphaned database.",
+            )
+            context.deleteDatabase("finance_database")
+        }
+        val newPassphrase = generateRandomPassphrase()
+        val newEncryptedPassphrase = encrypt(newPassphrase)
+        saveEncryptedPassphrase(newEncryptedPassphrase)
+        return decrypt(newEncryptedPassphrase)
     }
 
     /**

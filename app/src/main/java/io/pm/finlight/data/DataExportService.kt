@@ -377,7 +377,25 @@ object DataExportService {
                         if (backupData.excludedExpenseMonths.isNotEmpty()) {
                             prefs[stringSetPreferencesKey("excluded_expense_months")] = backupData.excludedExpenseMonths
                         }
-                        backupData.appLockEnabled?.let { prefs[booleanPreferencesKey("app_lock_enabled")] = it }
+                        backupData.appLockEnabled?.let { enabled ->
+                            val canAuthenticate =
+                                if (enabled) {
+                                    try {
+                                        val biometricManager = androidx.biometric.BiometricManager.from(context)
+                                        val authenticators =
+                                            androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                                                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                                                androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                                        biometricManager.canAuthenticate(authenticators) ==
+                                            androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+                                    } catch (e: Exception) {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            prefs[booleanPreferencesKey("app_lock_enabled")] = if (enabled) canAuthenticate else false
+                        }
                         backupData.privacyModeEnabled?.let { prefs[booleanPreferencesKey("privacy_mode_enabled")] = it }
 
                         backupData.dailyReportEnabled?.let { prefs[booleanPreferencesKey("daily_report_enabled")] = it }

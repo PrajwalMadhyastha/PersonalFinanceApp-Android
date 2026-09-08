@@ -204,9 +204,19 @@ fun FinanceAppWithLockScreen(
         }
     }
 
-    if (appLockEnabled == true && !isUnlocked) {
+    val biometricManager = remember { BiometricManager.from(context) }
+    val canAuthenticate =
+        remember {
+            val authenticators =
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                    BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            biometricManager.canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
+        }
+
+    if (appLockEnabled == true && canAuthenticate && !isUnlocked) {
         LockScreen(onUnlock = { isUnlocked = true })
-    } else if (appLockEnabled != null) {
+    } else {
         MainAppScreen(shortcutAction = shortcutAction)
     }
 }

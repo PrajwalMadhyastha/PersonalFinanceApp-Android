@@ -9,6 +9,7 @@ import android.app.backup.BackupDataOutput
 import android.app.backup.FileBackupHelper
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import io.pm.finlight.data.DataExportService
 import io.pm.finlight.di.ServiceLocator
 import io.pm.finlight.utils.NotificationHelper
 import kotlinx.coroutines.flow.first
@@ -56,13 +57,23 @@ class FinlightBackupAgent : BackupAgentHelper() {
         // Capture timestamp to use for both saving and notification
         val backupTime = System.currentTimeMillis()
 
-        // 1. Save the timestamp
+        // 1. Force a fresh database snapshot right now before files are packed
+        try {
+            runBlocking {
+                DataExportService.createBackupSnapshot(applicationContext)
+            }
+            Log.i(TAG, "onBackup: Fresh backup snapshot created successfully.")
+        } catch (e: Exception) {
+            Log.e(TAG, "onBackup: Failed to create fresh backup snapshot", e)
+        }
+
+        // 2. Save the timestamp
         runBlocking {
             backupSettingsRepository.saveLastBackupTimestamp(backupTime)
         }
         Log.i(TAG, "onBackup: Last backup timestamp saved.")
 
-        // 2. Let the system helpers do their work
+        // 3. Let the system helpers do their work
         try {
             super.onBackup(oldState, data, newState)
         } catch (e: Exception) {
