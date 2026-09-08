@@ -16,6 +16,7 @@ import io.pm.finlight.TransactionRepository
 import io.pm.finlight.TransactionType
 import io.pm.finlight.TravelModeSettings
 import io.pm.finlight.data.db.AppDatabase
+import io.pm.finlight.domain.usecase.DetectSelfTransferUseCase
 import io.pm.finlight.domain.usecase.ResolveTravelModeTagUseCase
 
 /**
@@ -34,6 +35,7 @@ import io.pm.finlight.domain.usecase.ResolveTravelModeTagUseCase
 class SmsTransactionSaver(
     private val db: AppDatabase,
     private val resolveTravelModeTagUseCase: ResolveTravelModeTagUseCase,
+    private val detectSelfTransferUseCase: DetectSelfTransferUseCase = DetectSelfTransferUseCase(db),
 ) {
     private val tag = "SmsTransactionSaver"
 
@@ -158,9 +160,9 @@ class SmsTransactionSaver(
             return null
         }
 
-        // --- NEW: Attempt to detect and link self-transfers ---
+        // --- Attempt to detect and link self-transfers ---
         val savedTransaction = transactionToSave.copy(id = newId.toInt())
-        transactionRepository.detectAndLinkSelfTransfer(savedTransaction)
+        detectSelfTransferUseCase(savedTransaction)
 
         return newId
     }

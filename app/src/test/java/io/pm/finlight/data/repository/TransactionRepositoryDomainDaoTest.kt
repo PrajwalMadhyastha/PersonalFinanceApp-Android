@@ -1,6 +1,7 @@
 package io.pm.finlight.data.repository
 
 import android.os.Build
+import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.*
 import io.pm.finlight.*
@@ -123,5 +124,32 @@ class TransactionRepositoryDomainDaoTest {
             coJustRun { reimbursementDao.unlinkReimbursement(any()) }
             repository.unlinkReimbursement(1)
             coVerify(exactly = 1) { reimbursementDao.unlinkReimbursement(1) }
+        }
+
+    @Test
+    fun testDelegationToFindPotentialTransfers() =
+        runTest {
+            val candidate = Transaction(id = 2, description = "Income", amount = 100.0, date = 1000L, accountId = 2, categoryId = 1, transactionType = TransactionType.INCOME, notes = null)
+            coEvery { queryDao.findPotentialTransfers(100.0, 1, TransactionType.EXPENSE, 500L, 1500L) } returns listOf(candidate)
+
+            val result = repository.findPotentialTransfers(100.0, 1, TransactionType.EXPENSE, 500L, 1500L)
+            assertEquals(listOf(candidate), result)
+            coVerify(exactly = 1) { queryDao.findPotentialTransfers(100.0, 1, TransactionType.EXPENSE, 500L, 1500L) }
+        }
+
+    @Test
+    fun testDelegationToLinkTransfer() =
+        runTest {
+            mockkStatic("androidx.room.RoomDatabaseKt")
+            coEvery { any<AppDatabase>().withTransaction<Any?>(any()) } coAnswers {
+                val block = secondArg<suspend () -> Any?>()
+                block()
+            }
+            coJustRun { writeDao.updateTransferLinkStatus(any(), any(), any()) }
+
+            repository.linkTransfer(1, 2)
+
+            coVerify(exactly = 1) { writeDao.updateTransferLinkStatus(1, 2, true) }
+            coVerify(exactly = 1) { writeDao.updateTransferLinkStatus(2, 1, true) }
         }
 }

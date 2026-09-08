@@ -1,26 +1,26 @@
 // =================================================================================
 // FILE: ./app/src/main/java/io/pm/finlight/data/repository/TransactionRepository.kt
-// REASON: REFACTOR (Issue #242) - Extracted business logic (monthly consistency
-// calculations and merge/unmerge operations) into dedicated UseCases
-// (`GetMonthlyConsistencyDataUseCase` and `MergeTransactionsUseCase`).
+// REASON: REFACTOR (Issue #284) - Extracted self-transfer heuristic matching logic
+// into dedicated `DetectSelfTransferUseCase`. Removed direct references to
+// `db.accountDao()` and `db.accountAliasDao()`. Added clean persistence methods
+// `findPotentialTransfers` and `linkTransfer`.
 // =================================================================================
 package io.pm.finlight
 
 import android.util.Log
 import androidx.room.withTransaction
 import io.pm.finlight.data.db.AppDatabase
-import io.pm.finlight.data.model.MerchantPrediction
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
-import java.util.Locale
 import io.pm.finlight.data.db.dao.TransactionAnalyticsDao
 import io.pm.finlight.data.db.dao.TransactionQueryDao
 import io.pm.finlight.data.db.dao.TransactionReimbursementDao
 import io.pm.finlight.data.db.dao.TransactionWriteDao
-
+import io.pm.finlight.data.model.MerchantPrediction
+import io.pm.finlight.domain.usecase.DetectSelfTransferUseCase
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.DispatcherProvider
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 
 class TransactionRepository(
@@ -30,6 +30,7 @@ class TransactionRepository(
     private val transactionReimbursementDao: TransactionReimbursementDao,
     private val db: AppDatabase,
     val dispatcherProvider: DispatcherProvider = DefaultDispatcherProvider(),
+    private val detectSelfTransferUseCase: DetectSelfTransferUseCase? = null,
 ) : ITransactionRepository {
     @Deprecated("Use domain DAO constructor", level = DeprecationLevel.WARNING)
     constructor(
@@ -531,91 +532,40 @@ class TransactionRepository(
         transactionWriteDao.updateMergeDismissed(id, true)
     }
 
-    // ─── Self Transfer Detection ──────────────────────────────────────────
+    // ─── Self Transfer Detection & Linkage ─────────────────────────────────
 
-    /**
-     * Automatically detects if a newly inserted transaction is part of a self-transfer
-     * between two user accounts, based on a two-tiered logic:
-     * 1. Strict Time (<= 5 mins): Matches exactly on Amount.
-     * 2. Loose Time (<= 6 hours): Matches on Amount AND Account Alias/Name text.
-     */
-    override suspend fun detectAndLinkSelfTransfer(newTxn: Transaction) =
+    override suspend fun findPotentialTransfers(
+        amount: Double,
+        accountId: Int,
+        transactionType: TransactionType,
+        startTime: Long,
+        endTime: Long,
+    ): List<Transaction> =
         withContext(dispatcherProvider.io) {
-            if (newTxn.sourceSmsId == null || newTxn.linkedTransferId != null || newTxn.isExcluded || newTxn.isSplit) return@withContext
-
-            // 6-hour window
-            val windowMs = 6 * 60 * 60 * 1000L
-            val startTime = newTxn.date - windowMs
-            val endTime = newTxn.date + windowMs
-
-            val candidates =
-                transactionQueryDao.findPotentialTransfers(
-                    amount = newTxn.amount,
-                    accountId = newTxn.accountId,
-                    transactionType = newTxn.transactionType,
-                    startTime = startTime,
-                    endTime = endTime,
-                )
-
-            for (candidate in candidates) {
-                val timeDiff = kotlin.math.abs(candidate.date - newTxn.date)
-                var isMatch = false
-
-                // Tier 2: Strict Time (<= 5 minutes)
-                if (timeDiff <= 5 * 60 * 1000L) {
-                    isMatch = true
-                } else {
-                    // Tier 1: Text Validation
-                    val newTxnAliases = db.accountAliasDao().getAliasesForAccount(newTxn.accountId)
-                    val candidateAliases = db.accountAliasDao().getAliasesForAccount(candidate.accountId)
-
-                    val newTxnDesc = newTxn.originalDescription?.lowercase(Locale.ROOT) ?: ""
-                    val candidateDesc = candidate.originalDescription?.lowercase(Locale.ROOT) ?: ""
-
-                    // Extract digits from alias and check, or use token overlap
-                    val candidateAliasMatches =
-                        candidateAliases.any { alias ->
-                            val digits = alias.aliasName.filter { it.isDigit() }
-                            (digits.isNotEmpty() && newTxnDesc.contains(digits)) ||
-                                io.pm.finlight.core.utils.StringSimilarity.calculateTokenOverlapScore(alias.aliasName, newTxnDesc) > 0.6
-                        }
-
-                    val newTxnAliasMatches =
-                        newTxnAliases.any { alias ->
-                            val digits = alias.aliasName.filter { it.isDigit() }
-                            (digits.isNotEmpty() && candidateDesc.contains(digits)) ||
-                                io.pm.finlight.core.utils.StringSimilarity.calculateTokenOverlapScore(alias.aliasName, candidateDesc) > 0.6
-                        }
-
-                    val newTxnAccount = db.accountDao().getAccountByIdBlocking(newTxn.accountId)
-                    val candidateAccount = db.accountDao().getAccountByIdBlocking(candidate.accountId)
-
-                    val candidateBankNameMatches =
-                        candidateAccount?.name?.let {
-                            io.pm.finlight.core.utils.StringSimilarity.calculateTokenOverlapScore(it, newTxnDesc) > 0.6
-                        } == true
-                    val newTxnBankNameMatches =
-                        newTxnAccount?.name?.let {
-                            io.pm.finlight.core.utils.StringSimilarity.calculateTokenOverlapScore(it, candidateDesc) > 0.6
-                        } == true
-
-                    // Extra check for keywords we discussed
-                    val containsKeywords1 = newTxnDesc.contains("neft") || newTxnDesc.contains("imps") || newTxnDesc.contains("transfer")
-                    val containsKeywords2 = candidateDesc.contains("neft") || candidateDesc.contains("imps") || candidateDesc.contains("transfer")
-
-                    if (candidateAliasMatches || newTxnAliasMatches || candidateBankNameMatches || newTxnBankNameMatches || (containsKeywords1 && containsKeywords2)) {
-                        isMatch = true
-                    }
-                }
-
-                if (isMatch) {
-                    // Link them atomically
-                    db.withTransaction {
-                        transactionWriteDao.updateTransferLinkStatus(newTxn.id, candidate.id, true)
-                        transactionWriteDao.updateTransferLinkStatus(candidate.id, newTxn.id, true)
-                    }
-                    break // Only link the first match
-                }
-            }
+            transactionQueryDao.findPotentialTransfers(
+                amount = amount,
+                accountId = accountId,
+                transactionType = transactionType,
+                startTime = startTime,
+                endTime = endTime,
+            )
         }
+
+    override suspend fun linkTransfer(
+        primaryTxnId: Int,
+        secondaryTxnId: Int,
+    ) = withContext(dispatcherProvider.io) {
+        db.withTransaction {
+            transactionWriteDao.updateTransferLinkStatus(primaryTxnId, secondaryTxnId, true)
+            transactionWriteDao.updateTransferLinkStatus(secondaryTxnId, primaryTxnId, true)
+        }
+    }
+
+    @Deprecated(
+        message = "Self-transfer detection has been moved to DetectSelfTransferUseCase. Inject and use DetectSelfTransferUseCase directly.",
+        level = DeprecationLevel.WARNING,
+    )
+    override suspend fun detectAndLinkSelfTransfer(newTxn: Transaction) {
+        detectSelfTransferUseCase?.invoke(newTxn)
+    }
 }

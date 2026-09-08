@@ -254,5 +254,22 @@ interface ITransactionRepository {
 
     suspend fun dismissMerge(id: Int)
 
+    suspend fun findPotentialTransfers(
+        amount: Double,
+        accountId: Int,
+        transactionType: TransactionType,
+        startTime: Long,
+        endTime: Long,
+    ): List<Transaction>
+
+    suspend fun linkTransfer(
+        primaryTxnId: Int,
+        secondaryTxnId: Int,
+    )
+
+    @Deprecated(
+        message = "Self-transfer detection has been moved to DetectSelfTransferUseCase. Inject and use DetectSelfTransferUseCase directly.",
+        level = DeprecationLevel.WARNING,
+    )
     suspend fun detectAndLinkSelfTransfer(newTxn: Transaction)
 }
