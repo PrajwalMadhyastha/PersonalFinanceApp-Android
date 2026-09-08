@@ -266,10 +266,4 @@ interface ITransactionRepository {
         primaryTxnId: Int,
         secondaryTxnId: Int,
     )
-
-    @Deprecated(
-        message = "Self-transfer detection has been moved to DetectSelfTransferUseCase. Inject and use DetectSelfTransferUseCase directly.",
-        level = DeprecationLevel.WARNING,
-    )
-    suspend fun detectAndLinkSelfTransfer(newTxn: Transaction)
 }

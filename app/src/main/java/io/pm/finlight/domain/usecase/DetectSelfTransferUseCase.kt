@@ -1,5 +1,6 @@
 package io.pm.finlight.domain.usecase
 
+import io.pm.finlight.Account
 import io.pm.finlight.ITransactionRepository
 import io.pm.finlight.Transaction
 import io.pm.finlight.TransactionRepository
@@ -7,6 +8,7 @@ import io.pm.finlight.core.utils.StringSimilarity
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.db.dao.AccountAliasDao
 import io.pm.finlight.data.db.dao.AccountDao
+import io.pm.finlight.data.db.entity.AccountAlias
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.DispatcherProvider
 import kotlinx.coroutines.withContext
@@ -66,7 +68,16 @@ class DetectSelfTransferUseCase(
                     endTime = endTime,
                 )
 
+            val newTxnDesc = (newTxn.originalDescription ?: newTxn.description).lowercase(Locale.ROOT)
+            var newTxnAliases: List<AccountAlias>? = null
+            var newTxnAccount: Account? = null
+            var fetchedNewTxnAccount = false
+
             for (candidate in candidates) {
+                if (candidate.isSplit) {
+                    continue
+                }
+
                 val timeDiff = abs(candidate.date - newTxn.date)
                 var isMatch = false
 
@@ -75,11 +86,17 @@ class DetectSelfTransferUseCase(
                     isMatch = true
                 } else {
                     // Tier 1: Text Validation
-                    val newTxnAliases = accountAliasDao.getAliasesForAccount(newTxn.accountId)
-                    val candidateAliases = accountAliasDao.getAliasesForAccount(candidate.accountId)
+                    val currentNewTxnAliases =
+                        newTxnAliases ?: accountAliasDao.getAliasesForAccount(newTxn.accountId).also {
+                            newTxnAliases = it
+                        }
+                    if (!fetchedNewTxnAccount) {
+                        newTxnAccount = accountDao.getAccountByIdBlocking(newTxn.accountId)
+                        fetchedNewTxnAccount = true
+                    }
 
-                    val newTxnDesc = newTxn.originalDescription?.lowercase(Locale.ROOT) ?: ""
-                    val candidateDesc = candidate.originalDescription?.lowercase(Locale.ROOT) ?: ""
+                    val candidateAliases = accountAliasDao.getAliasesForAccount(candidate.accountId)
+                    val candidateDesc = (candidate.originalDescription ?: candidate.description).lowercase(Locale.ROOT)
 
                     // Extract digits from alias and check, or use token overlap
                     val candidateAliasMatches =
@@ -90,13 +107,12 @@ class DetectSelfTransferUseCase(
                         }
 
                     val newTxnAliasMatches =
-                        newTxnAliases.any { alias ->
+                        currentNewTxnAliases.any { alias ->
                             val digits = alias.aliasName.filter { it.isDigit() }
                             (digits.isNotEmpty() && candidateDesc.contains(digits)) ||
                                 StringSimilarity.calculateTokenOverlapScore(alias.aliasName, candidateDesc) > 0.6
                         }
 
-                    val newTxnAccount = accountDao.getAccountByIdBlocking(newTxn.accountId)
                     val candidateAccount = accountDao.getAccountByIdBlocking(candidate.accountId)
 
                     val candidateBankNameMatches =
@@ -109,8 +125,10 @@ class DetectSelfTransferUseCase(
                         } == true
 
                     // Extra check for keywords we discussed
-                    val containsKeywords1 = newTxnDesc.contains("neft") || newTxnDesc.contains("imps") || newTxnDesc.contains("transfer")
-                    val containsKeywords2 = candidateDesc.contains("neft") || candidateDesc.contains("imps") || candidateDesc.contains("transfer")
+                    val containsKeywords1 =
+                        newTxnDesc.contains("neft") || newTxnDesc.contains("imps") || newTxnDesc.contains("transfer")
+                    val containsKeywords2 =
+                        candidateDesc.contains("neft") || candidateDesc.contains("imps") || candidateDesc.contains("transfer")
 
                     if (candidateAliasMatches || newTxnAliasMatches || candidateBankNameMatches || newTxnBankNameMatches || (containsKeywords1 && containsKeywords2)) {
                         isMatch = true

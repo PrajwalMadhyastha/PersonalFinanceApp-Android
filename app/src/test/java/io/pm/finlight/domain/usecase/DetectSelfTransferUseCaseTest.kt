@@ -583,4 +583,769 @@ class DetectSelfTransferUseCaseTest : BaseViewModelTest() {
             secondaryUseCase(newTxn)
             coVerify(exactly = 0) { queryDao.findPotentialTransfers(any(), any(), any(), any(), any()) }
         }
+
+    @Test
+    fun `loose time match with new transaction alias digit match links transactions`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Sent",
+                    originalDescription = "Sent money",
+                    amount = 1000.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Received",
+                    originalDescription = "Deposit from a/c ending in 1234",
+                    amount = 1000.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            val alias = AccountAlias(aliasName = "HDFC-1234", destinationAccountId = 1)
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns listOf(alias)
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Account1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Account2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 2) }
+        }
+
+    @Test
+    fun `loose time match with new transaction alias token overlap links transactions`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Sent",
+                    originalDescription = "Sent money",
+                    amount = 1000.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Received",
+                    originalDescription = "Deposit into secondary savings account",
+                    amount = 1000.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            val alias = AccountAlias(aliasName = "secondary savings account", destinationAccountId = 1)
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns listOf(alias)
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Primary Checking", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Other Bank", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 2) }
+        }
+
+    @Test
+    fun `loose time match with new transaction alias digit mismatch and low overlap does not match`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "Sent money",
+                    amount = 1000.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "Received funds",
+                    amount = 1000.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            val alias = AccountAlias(aliasName = "Axis-9999", destinationAccountId = 1)
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns listOf(alias)
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 0) { transactionRepository.linkTransfer(any(), any()) }
+        }
+
+    @Test
+    fun `fallback to description when originalDescription is null on both transactions`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "neft transfer sent",
+                    originalDescription = null,
+                    amount = 500.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "neft transfer received",
+                    originalDescription = null,
+                    amount = 500.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 2) }
+        }
+
+    @Test
+    fun `fallback to description when originalDescription is null on only new transaction`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "imps transfer out",
+                    originalDescription = null,
+                    amount = 750.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "imps transfer in",
+                    amount = 750.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 2) }
+        }
+
+    @Test
+    fun `fallback to description when originalDescription is null on only candidate`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "imps transfer out",
+                    amount = 750.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "imps transfer in",
+                    originalDescription = null,
+                    amount = 750.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 2) }
+        }
+
+    @Test
+    fun `candidate with isSplit true is skipped and next valid candidate is linked`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Transfer",
+                    amount = 500.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val splitCandidate =
+                Transaction(
+                    id = 2,
+                    description = "Split Parent",
+                    amount = 500.0,
+                    date = 1000000L + 60000L,
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    isSplit = true,
+                    categoryId = null,
+                    notes = null,
+                )
+            val validCandidate =
+                Transaction(
+                    id = 3,
+                    description = "Valid Match",
+                    amount = 500.0,
+                    date = 1000000L + 120000L,
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 30,
+                    isSplit = false,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(splitCandidate, validCandidate)
+
+            useCase(newTxn)
+
+            coVerify(exactly = 0) { transactionRepository.linkTransfer(1, 2) }
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 3) }
+        }
+
+    @Test
+    fun `null candidateAccount and newTxnAccount are handled safely without linking`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "Payment sent",
+                    amount = 1000.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "Payment received",
+                    amount = 1000.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns null
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns null
+
+            useCase(newTxn)
+
+            coVerify(exactly = 0) { transactionRepository.linkTransfer(any(), any()) }
+        }
+
+    @Test
+    fun `candidateAccount name overlap low does not match`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "Payment sent to grocery store",
+                    amount = 1000.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "Payment received for freelance work",
+                    amount = 1000.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Barclays Bank", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Citibank", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 0) { transactionRepository.linkTransfer(any(), any()) }
+        }
+
+    @Test
+    fun `only one transaction contains keyword does not match`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "neft transfer sent",
+                    amount = 1000.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "salary credited from employer",
+                    amount = 1000.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 0) { transactionRepository.linkTransfer(any(), any()) }
+        }
+
+    @Test
+    fun `candidate alias without digits but token overlap greater than 0_6 matches`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "Sent to emergency savings pool",
+                    amount = 500.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "Received deposit",
+                    amount = 500.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            val candidateAlias = AccountAlias(aliasName = "emergency savings pool", destinationAccountId = 2)
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns listOf(candidateAlias)
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 2) }
+        }
+
+    @Test
+    fun `candidate alias without digits and token overlap low does not match`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "Sent to grocery store",
+                    amount = 500.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "Received deposit",
+                    amount = 500.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            val candidateAlias = AccountAlias(aliasName = "Emergency Fund", destinationAccountId = 2)
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns listOf(candidateAlias)
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 0) { transactionRepository.linkTransfer(any(), any()) }
+        }
+
+    @Test
+    fun `candidate alias with digits not in newTxnDesc but token overlap greater than 0_6 matches`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "Sent to my emergency vault fund",
+                    amount = 500.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "Received deposit",
+                    amount = 500.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            val candidateAlias = AccountAlias(aliasName = "emergency vault fund 9876", destinationAccountId = 2)
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns listOf(candidateAlias)
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 2) }
+        }
+
+    @Test
+    fun `newTxn alias without digits and token overlap low does not match`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "Payment sent",
+                    amount = 500.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "Payment received from investment dividends",
+                    amount = 500.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            val newTxnAlias = AccountAlias(aliasName = "Payroll Account", destinationAccountId = 1)
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns listOf(newTxnAlias)
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 0) { transactionRepository.linkTransfer(any(), any()) }
+        }
+
+    @Test
+    fun `newTxn alias with digits not in candidateDesc but token overlap greater than 0_6 matches`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "Sent money",
+                    amount = 500.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    originalDescription = "Received from payroll salary account",
+                    amount = 500.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate)
+
+            val newTxnAlias = AccountAlias(aliasName = "payroll salary account 5555", destinationAccountId = 1)
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns listOf(newTxnAlias)
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+
+            useCase(newTxn)
+
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 2) }
+        }
+
+    @Test
+    fun `Tier 1 caches newTxnAliases and newTxnAccount across multiple candidates without N+1 queries`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    originalDescription = "transfer between accounts ref 4321",
+                    amount = 800.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate1 =
+                Transaction(
+                    id = 2,
+                    description = "Income Non Match",
+                    originalDescription = "cash deposit at counter",
+                    amount = 800.0,
+                    date = 1000000L + (1 * 3600 * 1000L),
+                    accountId = 2,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 20,
+                    categoryId = null,
+                    notes = null,
+                )
+            val candidate2 =
+                Transaction(
+                    id = 3,
+                    description = "Income Match",
+                    originalDescription = "transfer received ref 4321",
+                    amount = 800.0,
+                    date = 1000000L + (2 * 3600 * 1000L),
+                    accountId = 3,
+                    transactionType = TransactionType.INCOME,
+                    sourceSmsId = 30,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns listOf(candidate1, candidate2)
+
+            coEvery { accountAliasDao.getAliasesForAccount(1) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(2) } returns emptyList()
+            coEvery { accountAliasDao.getAliasesForAccount(3) } returns emptyList()
+            coEvery { accountDao.getAccountByIdBlocking(1) } returns Account(id = 1, name = "Acc1", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(2) } returns Account(id = 2, name = "Acc2", type = "bank")
+            coEvery { accountDao.getAccountByIdBlocking(3) } returns Account(id = 3, name = "Acc3", type = "bank")
+
+            useCase(newTxn)
+
+            // Caching verification: newTxn account and aliases should be queried at most ONCE
+            coVerify(exactly = 1) { accountAliasDao.getAliasesForAccount(1) }
+            coVerify(exactly = 1) { accountDao.getAccountByIdBlocking(1) }
+            // Candidate 2 matched and linked
+            coVerify(exactly = 0) { transactionRepository.linkTransfer(1, 2) }
+            coVerify(exactly = 1) { transactionRepository.linkTransfer(1, 3) }
+        }
+
+    @Test
+    fun `no candidates found terminates without action`() =
+        runTest(testDispatcher) {
+            val newTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    amount = 500.0,
+                    date = 1000000L,
+                    accountId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    sourceSmsId = 10,
+                    categoryId = null,
+                    notes = null,
+                )
+
+            coEvery {
+                transactionRepository.findPotentialTransfers(any(), any(), any(), any(), any())
+            } returns emptyList()
+
+            useCase(newTxn)
+
+            coVerify(exactly = 0) { transactionRepository.linkTransfer(any(), any()) }
+        }
 }

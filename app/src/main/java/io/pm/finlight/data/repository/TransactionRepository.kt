@@ -15,7 +15,6 @@ import io.pm.finlight.data.db.dao.TransactionQueryDao
 import io.pm.finlight.data.db.dao.TransactionReimbursementDao
 import io.pm.finlight.data.db.dao.TransactionWriteDao
 import io.pm.finlight.data.model.MerchantPrediction
-import io.pm.finlight.domain.usecase.DetectSelfTransferUseCase
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.DispatcherProvider
 import kotlinx.coroutines.flow.Flow
@@ -30,7 +29,6 @@ class TransactionRepository(
     private val transactionReimbursementDao: TransactionReimbursementDao,
     private val db: AppDatabase,
     val dispatcherProvider: DispatcherProvider = DefaultDispatcherProvider(),
-    private val detectSelfTransferUseCase: DetectSelfTransferUseCase? = null,
 ) : ITransactionRepository {
     @Deprecated("Use domain DAO constructor", level = DeprecationLevel.WARNING)
     constructor(
@@ -559,13 +557,5 @@ class TransactionRepository(
             transactionWriteDao.updateTransferLinkStatus(primaryTxnId, secondaryTxnId, true)
             transactionWriteDao.updateTransferLinkStatus(secondaryTxnId, primaryTxnId, true)
         }
-    }
-
-    @Deprecated(
-        message = "Self-transfer detection has been moved to DetectSelfTransferUseCase. Inject and use DetectSelfTransferUseCase directly.",
-        level = DeprecationLevel.WARNING,
-    )
-    override suspend fun detectAndLinkSelfTransfer(newTxn: Transaction) {
-        detectSelfTransferUseCase?.invoke(newTxn)
     }
 }

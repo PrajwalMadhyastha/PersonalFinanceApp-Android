@@ -122,62 +122,6 @@ class TransactionRepositoryTest : BaseViewModelTest() {
             verify(transactionDao).updateTransferLinkStatus(2, 1, true)
         }
 
-    @Test
-    fun `detectAndLinkSelfTransfer delegates to detectSelfTransferUseCase when provided`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            val mockUseCase: io.pm.finlight.domain.usecase.DetectSelfTransferUseCase = mock()
-            repository =
-                TransactionRepository(
-                    transactionWriteDao = transactionDao,
-                    transactionQueryDao = transactionDao,
-                    transactionAnalyticsDao = transactionDao,
-                    transactionReimbursementDao = transactionDao,
-                    db = db,
-                    dispatcherProvider = testDispatcherProvider,
-                    detectSelfTransferUseCase = mockUseCase,
-                )
-
-            val newTxn =
-                Transaction(
-                    id = 1,
-                    description = "Withdrawal",
-                    amount = 500.0,
-                    date = 1000000L,
-                    accountId = 1,
-                    transactionType = TransactionType.EXPENSE,
-                    sourceSmsId = 10,
-                    categoryId = null,
-                    notes = null,
-                )
-
-            repository.detectAndLinkSelfTransfer(newTxn)
-
-            verify(mockUseCase).invoke(newTxn)
-        }
-
-    @Test
-    fun `detectAndLinkSelfTransfer safely no-ops when detectSelfTransferUseCase is null`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val newTxn =
-                Transaction(
-                    id = 1,
-                    description = "Withdrawal",
-                    amount = 500.0,
-                    date = 1000000L,
-                    accountId = 1,
-                    transactionType = TransactionType.EXPENSE,
-                    sourceSmsId = 10,
-                    categoryId = null,
-                    notes = null,
-                )
-
-            repository.detectAndLinkSelfTransfer(newTxn)
-        }
-
     // ── Reimbursement / Offset Feature Tests ──────────────────────────────────
 
     @Test
