@@ -114,6 +114,17 @@ class FinlightBackupAgentTest {
         }
 
     @Test
+    fun `onBackup catches exception and continues when createBackupSnapshot fails`() =
+        runTest {
+            coEvery { io.pm.finlight.data.DataExportService.createBackupSnapshot(any()) } throws RuntimeException("Snapshot failed")
+
+            agent.onBackup(null, null, null)
+
+            coVerify(exactly = 1) { io.pm.finlight.data.DataExportService.createBackupSnapshot(any()) }
+            coVerify(exactly = 1) { mockBackupSettingsRepository.saveLastBackupTimestamp(any()) }
+        }
+
+    @Test
     fun `onRestore handles restore process`() {
         agent.onRestore(null, 1, null)
     }

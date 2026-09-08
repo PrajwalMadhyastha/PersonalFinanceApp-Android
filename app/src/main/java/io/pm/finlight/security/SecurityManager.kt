@@ -64,7 +64,7 @@ open class SecurityManager(private val context: Context) {
                     Log.w(TAG, "Failed to delete secure storage file during reset.")
                 }
                 try {
-                    keyStore.deleteEntry(KEY_ALIAS)
+                    deleteKeyEntry()
                 } catch (deleteEntryException: Exception) {
                     Log.w(TAG, "Failed to delete key alias from Keystore", deleteEntryException)
                 }
@@ -165,7 +165,11 @@ open class SecurityManager(private val context: Context) {
         return cipher.doFinal(data)
     }
 
-    private fun getStorageFile(): File = File(context.filesDir, SECURE_STORAGE_FILE)
+    internal open fun getStorageFile(): File = File(context.filesDir, SECURE_STORAGE_FILE)
+
+    internal open fun deleteKeyEntry() {
+        keyStore.deleteEntry(KEY_ALIAS)
+    }
 
     /**
      * Saves the encrypted passphrase and its IV to a private file.
