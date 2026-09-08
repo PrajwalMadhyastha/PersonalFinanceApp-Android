@@ -56,7 +56,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         GoalContribution::class,
         MergeRecord::class,
     ],
-    version = 56,
+    version = 57,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1044,6 +1044,28 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        // --- Migration 56→57: Eliminate Duplicate SMS Capture with UNIQUE index on sourceSmsHash ---
+        val MIGRATION_56_57 =
+            object : Migration(56, 57) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    // Heal existing duplicate sourceSmsHash rows before index creation
+                    db.execSQL(
+                        """
+                        UPDATE transactions 
+                        SET sourceSmsHash = NULL 
+                        WHERE id NOT IN (
+                            SELECT MIN(id) 
+                            FROM transactions 
+                            WHERE sourceSmsHash IS NOT NULL 
+                            GROUP BY sourceSmsHash
+                        ) AND sourceSmsHash IS NOT NULL
+                        """,
+                    )
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_transactions_sourceSmsHash` ON `transactions` (`sourceSmsHash`)")
+                    Log.i("Migration_56_57", "Created UNIQUE index on sourceSmsHash after healing existing duplicate rows.")
+                }
+            }
+
         @androidx.annotation.VisibleForTesting
         fun setTestInstance(database: AppDatabase) {
             INSTANCE = database
@@ -1087,6 +1109,7 @@ abstract class AppDatabase : RoomDatabase() {
                             MIGRATION_53_54,
                             MIGRATION_54_55,
                             MIGRATION_55_56,
+                            MIGRATION_56_57,
                         )
                         .fallbackToDestructiveMigration()
                         .addCallback(DatabaseCallback(context))

@@ -147,7 +147,7 @@ class SmsProcessorWorker(
 
         // --- Duplicate guard ---
         val hash = potentialTxn.sourceSmsHash
-        if (hash == null || hash in existingSmsHashes || hash in deletedHashes) {
+        if (hash == null || hash in existingSmsHashes || hash in deletedHashes || db.transactionQueryDao().existsBySmsHash(hash)) {
             Log.d(tag, "SMS already processed or intentionally deleted (hash match). Skipping.")
             return Result.success()
         }

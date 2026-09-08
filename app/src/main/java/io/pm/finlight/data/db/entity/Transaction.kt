@@ -25,6 +25,7 @@ import kotlinx.serialization.Serializable
         Index(value = ["date"]), // --- NEW: Add index for date-based queries ---
         Index(value = ["parentReimbursementId"]), // --- NEW: Index for reimbursement lookups ---
         Index(value = ["linkedSurplusTxnId"]), // --- NEW: Index for reimbursement surplus lookups ---
+        Index(value = ["sourceSmsHash"], unique = true),
     ],
     foreignKeys = [
         ForeignKey(

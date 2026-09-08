@@ -313,4 +313,61 @@ class TransactionViewModelSmsTest : TransactionViewModelBaseSetup() {
             verify(transactionRepository).insertTransactionWithTags(captor.capture(), any())
             assertEquals(2, captor.firstValue.accountId)
         }
+
+    @Test
+    fun `autoSaveSmsTransaction returns false when insertTransactionWithTags returns -1L`() =
+        runTest {
+            val potentialTxn =
+                PotentialTransaction(1L, "Test", 100.0, "expense", "Auto Merchant", "Msg", PotentialAccount("Cash", "Wallet"), "hash", 1)
+            whenever(accountAliasDao.findByAlias(anyString())).thenReturn(null)
+            whenever(accountDao.findByName("Cash")).thenReturn(Account(1, "Cash", "Wallet"))
+            whenever(transactionRepository.insertTransactionWithTags(any(), any())).thenReturn(-1L)
+
+            val result = viewModel.autoSaveSmsTransaction(potentialTxn)
+            advanceUntilIdle()
+
+            assertFalse(result)
+        }
+
+    @Test
+    fun `autoSaveSmsTransaction returns false when existsBySmsHash returns true`() =
+        runTest {
+            val potentialTxn =
+                PotentialTransaction(1L, "Test", 100.0, "expense", "Auto Merchant", "Msg", PotentialAccount("Cash", "Wallet"), "existing_hash", 1)
+            whenever(transactionQueryDao.existsBySmsHash("existing_hash")).thenReturn(true)
+
+            val result = viewModel.autoSaveSmsTransaction(potentialTxn)
+            advanceUntilIdle()
+
+            assertFalse(result)
+            verify(transactionRepository, never()).insertTransactionWithTags(any(), any())
+        }
+
+    @Test
+    fun `approveSmsTransaction returns false when insertTransactionWithTags returns -1L`() =
+        runTest {
+            val potentialTxn =
+                PotentialTransaction(1L, "Test", 100.0, "expense", "Test Merchant", "Msg", PotentialAccount("Cash", "Bank"), "hash")
+            whenever(accountDao.findByName("Cash")).thenReturn(Account(1, "Cash", "Bank"))
+            whenever(transactionRepository.insertTransactionWithTags(any(), any())).thenReturn(-1L)
+
+            val result = viewModel.approveSmsTransaction(potentialTxn, "Test Merchant", null, null, emptySet(), false)
+            advanceUntilIdle()
+
+            assertFalse(result)
+        }
+
+    @Test
+    fun `approveSmsTransaction returns false when existsBySmsHash returns true`() =
+        runTest {
+            val potentialTxn =
+                PotentialTransaction(1L, "Test", 100.0, "expense", "Test Merchant", "Msg", PotentialAccount("Cash", "Bank"), "existing_hash")
+            whenever(transactionQueryDao.existsBySmsHash("existing_hash")).thenReturn(true)
+
+            val result = viewModel.approveSmsTransaction(potentialTxn, "Test Merchant", null, null, emptySet(), false)
+            advanceUntilIdle()
+
+            assertFalse(result)
+            verify(transactionRepository, never()).insertTransactionWithTags(any(), any())
+        }
 }

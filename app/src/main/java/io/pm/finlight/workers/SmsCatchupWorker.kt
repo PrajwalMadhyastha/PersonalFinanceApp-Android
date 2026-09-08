@@ -42,6 +42,9 @@ class SmsCatchupWorker(
     /** Look back 48 hours for potentially missed SMS messages. */
     private val lookbackMs = 48L * 60 * 60 * 1000
 
+    /** Cooldown buffer: leave real-time SMS from last 10 minutes to SmsProcessorWorker. */
+    private val cooldownMs = 10L * 60 * 1000
+
     override suspend fun doWork(): Result {
         Log.d(tag, "Starting catch-up scan for missed SMS transactions...")
 
@@ -53,16 +56,18 @@ class SmsCatchupWorker(
         val dispatcherProvider = ServiceLocator.provideDispatcherProvider(context)
         val smsRepository = SmsRepository(context, dispatcherProvider)
 
-        val startDate = System.currentTimeMillis() - lookbackMs
-        val recentSms: List<SmsMessage> = smsRepository.fetchAllSms(startDate)
+        val now = System.currentTimeMillis()
+        val endDate = now - cooldownMs
+        val startDate = endDate - lookbackMs
+        val recentSms: List<SmsMessage> = smsRepository.fetchAllSms(startDate = startDate, endDate = endDate)
 
         if (recentSms.isEmpty()) {
-            Log.d(tag, "No SMS messages found in the last 48 hours. Nothing to catch up.")
+            Log.d(tag, "No SMS messages found in the catch-up window. Nothing to catch up.")
             return Result.success()
         }
 
         // Load current hashes once — this is our duplicate guard.
-        val existingSmsHashes = db.transactionQueryDao().getAllSmsHashes().first().toSet()
+        val existingSmsHashes = db.transactionQueryDao().getAllSmsHashes().first().toMutableSet()
 
         // Load deleted hashes — transactions the user intentionally removed should
         // never be re-created by this worker, even if their SMS reappears in the inbox.
@@ -132,6 +137,12 @@ class SmsCatchupWorker(
                 // or intentionally deleted by the user.
                 if (hash in existingSmsHashes || hash in deletedHashes || hash in savedHashesThisRun) continue
 
+                // Dynamic TOCTOU check against DB in case real-time worker saved it concurrently
+                if (db.transactionQueryDao().existsBySmsHash(hash)) {
+                    existingSmsHashes.add(hash)
+                    continue
+                }
+
                 // Save silently — no notifications for catch-up transactions.
                 val newId =
                     saver.resolveAndSaveTransaction(
@@ -141,6 +152,7 @@ class SmsCatchupWorker(
                     )
 
                 if (newId != null) {
+                    existingSmsHashes.add(hash)
                     savedHashesThisRun.add(hash)
                     savedCount++
                     Log.d(tag, "Recovered missed transaction: ${potentialTxn.merchantName} (₹${potentialTxn.amount})")

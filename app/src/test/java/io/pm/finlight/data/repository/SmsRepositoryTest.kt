@@ -108,6 +108,41 @@ class SmsRepositoryTest : BaseViewModelTest() {
         }
 
     @Test
+    fun `fetchAllSms with startDate and endDate applies correct selection`() =
+        runTest {
+            val startDate = 500L
+            val endDate = 1500L
+            `when`(contentResolver.query(any(Uri::class.java), any(), any(), any(), any())).thenReturn(MatrixCursor(smsColumns))
+
+            repository.fetchAllSms(startDate, endDate)
+
+            verify(contentResolver).query(
+                any(),
+                any(),
+                eq("${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms.DATE} <= ?"),
+                eq(arrayOf(startDate.toString(), endDate.toString())),
+                any(),
+            )
+        }
+
+    @Test
+    fun `fetchAllSms with endDate only applies correct selection`() =
+        runTest {
+            val endDate = 1500L
+            `when`(contentResolver.query(any(Uri::class.java), any(), any(), any(), any())).thenReturn(MatrixCursor(smsColumns))
+
+            repository.fetchAllSms(null, endDate)
+
+            verify(contentResolver).query(
+                any(),
+                any(),
+                eq("${Telephony.Sms.DATE} <= ?"),
+                eq(arrayOf(endDate.toString())),
+                any(),
+            )
+        }
+
+    @Test
     fun `fetchAllSms handles null cursor gracefully`() =
         runTest {
             `when`(contentResolver.query(any(Uri::class.java), any(), any(), any(), any())).thenReturn(null)

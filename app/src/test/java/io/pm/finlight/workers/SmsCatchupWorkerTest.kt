@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -102,10 +103,11 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
         coEvery { deletedSmsHashDao.getAllHashes() } returns emptyList()
 
         mockkConstructor(SmsRepository::class)
-        coEvery { anyConstructed<SmsRepository>().fetchAllSms(any()) } returns emptyList()
+        coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns emptyList()
 
         coEvery { merchantMappingDao.getAllMappings() } returns flowOf(emptyList())
         coEvery { transactionQueryDao.getAllSmsHashes() } returns flowOf(emptyList())
+        coEvery { transactionQueryDao.existsBySmsHash(any()) } returns false
         coEvery { customSmsRuleDao.getAllRules() } returns flowOf(emptyList())
         coEvery { ignoreRuleDao.getEnabledRules() } returns emptyList()
         coEvery { merchantRenameRuleDao.getAllRules() } returns flowOf(emptyList())
@@ -149,7 +151,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     @Test
     fun `returns success when no recent SMS are found`() =
         runTest {
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any()) } returns emptyList()
+            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns emptyList()
 
             val worker = TestListenableWorkerBuilder<SmsCatchupWorker>(context).build()
             val result = worker.doWork()
@@ -162,7 +164,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     fun `recovers missed transaction silently`() =
         runTest {
             val sms = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any()) } returns listOf(sms)
+            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms)
 
             val txn =
                 PotentialTransaction(
@@ -189,7 +191,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     fun `skips transaction already in database`() =
         runTest {
             val sms = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any()) } returns listOf(sms)
+            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms)
 
             val txn =
                 PotentialTransaction(
@@ -216,7 +218,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
             // Two identical SMS messages in the inbox
             val sms1 = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
             val sms2 = SmsMessage(2L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis() + 1000)
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any()) } returns listOf(sms1, sms2)
+            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms1, sms2)
 
             val txn =
                 PotentialTransaction(
@@ -240,7 +242,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     fun `skips transaction whose hash is in the deleted deny-list`() =
         runTest {
             val sms = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any()) } returns listOf(sms)
+            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms)
 
             val txn =
                 PotentialTransaction(
@@ -263,6 +265,56 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
 
             assertEquals(ListenableWorker.Result.success(), result)
             // Must NOT be re-created
+            coVerify(exactly = 0) { transactionWriteDao.insert(any()) }
+        }
+
+    @Test
+    fun `queries SMS with 10-minute cooldown window buffer`() =
+        runTest {
+            val startSlot = slot<Long>()
+            val endSlot = slot<Long>()
+            coEvery { anyConstructed<SmsRepository>().fetchAllSms(capture(startSlot), capture(endSlot)) } returns emptyList()
+
+            val before = System.currentTimeMillis()
+            val worker = TestListenableWorkerBuilder<SmsCatchupWorker>(context).build()
+            val result = worker.doWork()
+            val after = System.currentTimeMillis()
+
+            assertEquals(ListenableWorker.Result.success(), result)
+            val expectedCooldownMs = 10L * 60 * 1000
+            val expectedLookbackMs = 48L * 60 * 60 * 1000
+
+            // endDate should be approximately now - 10 minutes
+            assertTrue(endSlot.captured in (before - expectedCooldownMs - 2000)..(after - expectedCooldownMs + 2000))
+            // startDate should be endDate - 48 hours
+            assertEquals(endSlot.captured - expectedLookbackMs, startSlot.captured)
+        }
+
+    @Test
+    fun `skips transaction when existsBySmsHash returns true in dynamic TOCTOU check`() =
+        runTest {
+            val sms = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
+            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms)
+
+            val txn =
+                PotentialTransaction(
+                    sourceSmsId = 1L, smsSender = "AM-HDFCBK", amount = 100.0,
+                    transactionType = "expense", merchantName = "Swiggy",
+                    originalMessage = "Spent Rs.100 at Swiggy", sourceSmsHash = "concurrent_hash",
+                )
+            coEvery { SmsParser.parseWithOnlyCustomRules(any(), any(), any(), any(), any()) } returns null
+            coEvery { SmsParser.parseWithReason(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns ParseResult.Success(txn)
+
+            // Stale snapshot initially had no hashes
+            coEvery { transactionQueryDao.getAllSmsHashes() } returns flowOf(emptyList())
+            // But dynamic check detects concurrent insert by real-time worker
+            coEvery { transactionQueryDao.existsBySmsHash("concurrent_hash") } returns true
+
+            val worker = TestListenableWorkerBuilder<SmsCatchupWorker>(context).build()
+            val result = worker.doWork()
+
+            assertEquals(ListenableWorker.Result.success(), result)
+            // Save must be dropped due to dynamic check
             coVerify(exactly = 0) { transactionWriteDao.insert(any()) }
         }
 }

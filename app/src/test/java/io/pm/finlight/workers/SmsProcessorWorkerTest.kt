@@ -249,6 +249,30 @@ class SmsProcessorWorkerTest : BaseViewModelTest() {
         }
 
     @Test
+    fun `skips duplicate when existsBySmsHash returns true in dynamic DB check`() =
+        runTest {
+            val hash = "dynamic_duplicate_hash"
+            val txn =
+                PotentialTransaction(
+                    sourceSmsId = 1L, smsSender = "AM-HDFCBK", amount = 100.0,
+                    transactionType = "expense", merchantName = "Swiggy",
+                    originalMessage = "Spent Rs.100 at Swiggy", sourceSmsHash = hash,
+                )
+            coEvery { SmsParser.parseWithOnlyCustomRules(any(), any(), any(), any(), any()) } returns null
+            coEvery { SmsParser.parseWithReason(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns ParseResult.Success(txn)
+
+            // Initial snapshot was empty
+            coEvery { transactionQueryDao.getAllSmsHashes() } returns flowOf(emptyList())
+            // Dynamic check finds hash in DB
+            coEvery { transactionQueryDao.existsBySmsHash(hash) } returns true
+
+            val result = buildWorker("AM-HDFCBK", "Spent Rs.100 at Swiggy").doWork()
+
+            assertEquals(ListenableWorker.Result.success(), result)
+            coVerify(exactly = 0) { transactionWriteDao.insert(any()) }
+        }
+
+    @Test
     fun `ignored SMS returns success without saving`() =
         runTest {
             coEvery { SmsParser.parseWithOnlyCustomRules(any(), any(), any(), any(), any()) } returns null
