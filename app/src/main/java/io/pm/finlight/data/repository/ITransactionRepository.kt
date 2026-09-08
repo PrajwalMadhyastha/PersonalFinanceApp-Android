@@ -254,5 +254,16 @@ interface ITransactionRepository {
 
     suspend fun dismissMerge(id: Int)
 
-    suspend fun detectAndLinkSelfTransfer(newTxn: Transaction)
+    suspend fun findPotentialTransfers(
+        amount: Double,
+        accountId: Int,
+        transactionType: TransactionType,
+        startTime: Long,
+        endTime: Long,
+    ): List<Transaction>
+
+    suspend fun linkTransfer(
+        primaryTxnId: Int,
+        secondaryTxnId: Int,
+    )
 }

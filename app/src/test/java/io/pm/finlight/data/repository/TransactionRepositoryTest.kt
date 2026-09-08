@@ -12,7 +12,6 @@ import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import io.pm.finlight.*
 import io.pm.finlight.data.db.AppDatabase
-import io.pm.finlight.data.db.entity.AccountAlias
 import io.pm.finlight.data.model.MerchantPrediction
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.TestDispatcherProvider
@@ -47,12 +46,6 @@ class TransactionRepositoryTest : BaseViewModelTest() {
     @Mock
     private lateinit var db: AppDatabase
 
-    @Mock
-    private lateinit var accountDao: io.pm.finlight.data.db.dao.AccountDao
-
-    @Mock
-    private lateinit var accountAliasDao: io.pm.finlight.data.db.dao.AccountAliasDao
-
     private lateinit var testDispatcherProvider: TestDispatcherProvider
     private lateinit var repository: TransactionRepository
 
@@ -61,10 +54,6 @@ class TransactionRepositoryTest : BaseViewModelTest() {
         super.setup()
 
         testDispatcherProvider = TestDispatcherProvider(testDispatcher)
-
-        // Mock DB dependencies
-        `when`(db.accountDao()).thenReturn(accountDao)
-        `when`(db.accountAliasDao()).thenReturn(accountAliasDao)
 
         // Mock withTransaction
         mockkStatic("androidx.room.RoomDatabaseKt")
@@ -84,32 +73,20 @@ class TransactionRepositoryTest : BaseViewModelTest() {
         `when`(transactionDao.getRecentTransactionDetails()).thenReturn(flowOf(emptyList()))
     }
 
-    // ── Self Transfer Detection Tests ───────────────────────────────────────────
+    // ── Self Transfer Repository Methods Tests ───────────────────────────────────
 
     @Test
-    fun `detectAndLinkSelfTransfer strict time match within 5 minutes links transactions atomically`() =
+    fun `findPotentialTransfers delegates to transactionDao with correct parameters`() =
         runTest {
             setupDefaultPropertyMocks()
             repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
 
-            val newTxn =
-                Transaction(
-                    id = 1,
-                    description = "Withdrawal",
-                    amount = 500.0,
-                    date = 1000000L,
-                    accountId = 1,
-                    transactionType = TransactionType.EXPENSE,
-                    sourceSmsId = 10,
-                    categoryId = null,
-                    notes = null,
-                )
             val candidate =
                 Transaction(
                     id = 2,
                     description = "Deposit",
                     amount = 500.0,
-                    date = 1000000L + (4 * 60 * 1000L),
+                    date = 1000000L,
                     accountId = 2,
                     transactionType = TransactionType.INCOME,
                     sourceSmsId = 20,
@@ -122,281 +99,27 @@ class TransactionRepositoryTest : BaseViewModelTest() {
                     eq(500.0),
                     eq(1),
                     eq(TransactionType.EXPENSE),
-                    any(),
-                    any(),
+                    eq(100L),
+                    eq(200L),
                 ),
             ).thenReturn(listOf(candidate))
 
-            repository.detectAndLinkSelfTransfer(newTxn)
+            val result = repository.findPotentialTransfers(500.0, 1, TransactionType.EXPENSE, 100L, 200L)
+
+            assertEquals(listOf(candidate), result)
+            verify(transactionDao).findPotentialTransfers(500.0, 1, TransactionType.EXPENSE, 100L, 200L)
+        }
+
+    @Test
+    fun `linkTransfer updates both transactions link status atomically`() =
+        runTest {
+            setupDefaultPropertyMocks()
+            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
+
+            repository.linkTransfer(1, 2)
 
             verify(transactionDao).updateTransferLinkStatus(1, 2, true)
             verify(transactionDao).updateTransferLinkStatus(2, 1, true)
-        }
-
-    @Test
-    fun `detectAndLinkSelfTransfer loose time match with alias digit match links transactions`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val newTxn =
-                Transaction(
-                    id = 1,
-                    description = "Transfer",
-                    originalDescription = "Transfer to 1234",
-                    amount = 1000.0,
-                    date = 1000000L,
-                    accountId = 1,
-                    transactionType = TransactionType.EXPENSE,
-                    sourceSmsId = 10,
-                    categoryId = null,
-                    notes = null,
-                )
-            val candidate =
-                Transaction(
-                    id = 2,
-                    description = "Received",
-                    originalDescription = "Received from a/c",
-                    amount = 1000.0,
-                    date = 1000000L + (2 * 3600 * 1000L),
-                    accountId = 2,
-                    transactionType = TransactionType.INCOME,
-                    sourceSmsId = 20,
-                    categoryId = null,
-                    notes = null,
-                )
-
-            whenever(
-                transactionDao.findPotentialTransfers(
-                    eq(1000.0),
-                    eq(1),
-                    eq(TransactionType.EXPENSE),
-                    any(),
-                    any(),
-                ),
-            ).thenReturn(listOf(candidate))
-
-            val alias = AccountAlias(aliasName = "HDFC-1234", destinationAccountId = 2)
-            whenever(accountAliasDao.getAliasesForAccount(1)).thenReturn(emptyList())
-            whenever(accountAliasDao.getAliasesForAccount(2)).thenReturn(listOf(alias))
-
-            whenever(accountDao.getAccountByIdBlocking(1)).thenReturn(Account(id = 1, name = "Account1", type = "bank"))
-            whenever(accountDao.getAccountByIdBlocking(2)).thenReturn(Account(id = 2, name = "Account2", type = "bank"))
-
-            repository.detectAndLinkSelfTransfer(newTxn)
-
-            verify(transactionDao).updateTransferLinkStatus(1, 2, true)
-            verify(transactionDao).updateTransferLinkStatus(2, 1, true)
-        }
-
-    @Test
-    fun `detectAndLinkSelfTransfer loose time match with account name token overlap links transactions`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val newTxn =
-                Transaction(
-                    id = 1,
-                    description = "Transfer",
-                    originalDescription = "Sent money to State Bank of India main branch",
-                    amount = 2500.0,
-                    date = 1000000L,
-                    accountId = 1,
-                    transactionType = TransactionType.EXPENSE,
-                    sourceSmsId = 10,
-                    categoryId = null,
-                    notes = null,
-                )
-            val candidate =
-                Transaction(
-                    id = 2,
-                    description = "Received",
-                    originalDescription = "Received from ICICI Bank salary account",
-                    amount = 2500.0,
-                    date = 1000000L + (3 * 3600 * 1000L),
-                    accountId = 2,
-                    transactionType = TransactionType.INCOME,
-                    sourceSmsId = 20,
-                    categoryId = null,
-                    notes = null,
-                )
-
-            whenever(
-                transactionDao.findPotentialTransfers(
-                    eq(2500.0),
-                    eq(1),
-                    eq(TransactionType.EXPENSE),
-                    any(),
-                    any(),
-                ),
-            ).thenReturn(listOf(candidate))
-
-            whenever(accountAliasDao.getAliasesForAccount(1)).thenReturn(emptyList())
-            whenever(accountAliasDao.getAliasesForAccount(2)).thenReturn(emptyList())
-
-            whenever(accountDao.getAccountByIdBlocking(1)).thenReturn(Account(id = 1, name = "ICICI Bank", type = "bank"))
-            whenever(accountDao.getAccountByIdBlocking(2)).thenReturn(Account(id = 2, name = "State Bank of India", type = "bank"))
-
-            repository.detectAndLinkSelfTransfer(newTxn)
-
-            verify(transactionDao).updateTransferLinkStatus(1, 2, true)
-            verify(transactionDao).updateTransferLinkStatus(2, 1, true)
-        }
-
-    @Test
-    fun `detectAndLinkSelfTransfer loose time match with NEFT transfer keywords links transactions`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val newTxn =
-                Transaction(
-                    id = 1,
-                    description = "NEFT transfer sent",
-                    originalDescription = "neft transfer sent ref 9988",
-                    amount = 1200.0,
-                    date = 1000000L,
-                    accountId = 1,
-                    transactionType = TransactionType.EXPENSE,
-                    sourceSmsId = 10,
-                    categoryId = null,
-                    notes = null,
-                )
-            val candidate =
-                Transaction(
-                    id = 2,
-                    description = "NEFT transfer recd",
-                    originalDescription = "neft transfer received ref 9988",
-                    amount = 1200.0,
-                    date = 1000000L + (1 * 3600 * 1000L),
-                    accountId = 2,
-                    transactionType = TransactionType.INCOME,
-                    sourceSmsId = 20,
-                    categoryId = null,
-                    notes = null,
-                )
-
-            whenever(
-                transactionDao.findPotentialTransfers(
-                    eq(1200.0),
-                    eq(1),
-                    eq(TransactionType.EXPENSE),
-                    any(),
-                    any(),
-                ),
-            ).thenReturn(listOf(candidate))
-
-            whenever(accountAliasDao.getAliasesForAccount(1)).thenReturn(emptyList())
-            whenever(accountAliasDao.getAliasesForAccount(2)).thenReturn(emptyList())
-
-            whenever(accountDao.getAccountByIdBlocking(1)).thenReturn(Account(id = 1, name = "Acc1", type = "bank"))
-            whenever(accountDao.getAccountByIdBlocking(2)).thenReturn(Account(id = 2, name = "Acc2", type = "bank"))
-
-            repository.detectAndLinkSelfTransfer(newTxn)
-
-            verify(transactionDao).updateTransferLinkStatus(1, 2, true)
-            verify(transactionDao).updateTransferLinkStatus(2, 1, true)
-        }
-
-    @Test
-    fun `detectAndLinkSelfTransfer loose time match without keyword or alias match does not link`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val newTxn =
-                Transaction(
-                    id = 1,
-                    description = "Expense",
-                    originalDescription = "grocery store purchase",
-                    amount = 100.0,
-                    date = 1000000L,
-                    accountId = 1,
-                    transactionType = TransactionType.EXPENSE,
-                    sourceSmsId = 10,
-                    categoryId = null,
-                    notes = null,
-                )
-            val candidate =
-                Transaction(
-                    id = 2,
-                    description = "Income",
-                    originalDescription = "freelance payment",
-                    amount = 100.0,
-                    date = 1000000L + (2 * 3600 * 1000L),
-                    accountId = 2,
-                    transactionType = TransactionType.INCOME,
-                    sourceSmsId = 20,
-                    categoryId = null,
-                    notes = null,
-                )
-
-            whenever(
-                transactionDao.findPotentialTransfers(
-                    eq(100.0),
-                    eq(1),
-                    eq(TransactionType.EXPENSE),
-                    any(),
-                    any(),
-                ),
-            ).thenReturn(listOf(candidate))
-
-            whenever(accountAliasDao.getAliasesForAccount(1)).thenReturn(emptyList())
-            whenever(accountAliasDao.getAliasesForAccount(2)).thenReturn(emptyList())
-
-            whenever(accountDao.getAccountByIdBlocking(1)).thenReturn(Account(id = 1, name = "Acc1", type = "bank"))
-            whenever(accountDao.getAccountByIdBlocking(2)).thenReturn(Account(id = 2, name = "Acc2", type = "bank"))
-
-            repository.detectAndLinkSelfTransfer(newTxn)
-
-            verify(transactionDao, never()).updateTransferLinkStatus(any(), any(), any())
-        }
-
-    @Test
-    fun `detectAndLinkSelfTransfer skips execution when transaction is invalid for transfer linking`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val noSms = Transaction(id = 1, description = "A", amount = 100.0, date = 1000L, accountId = 1, transactionType = TransactionType.EXPENSE, sourceSmsId = null, categoryId = null, notes = null)
-            val alreadyLinked = Transaction(id = 2, description = "B", amount = 100.0, date = 1000L, accountId = 1, transactionType = TransactionType.EXPENSE, sourceSmsId = 10, linkedTransferId = 99, categoryId = null, notes = null)
-            val excluded = Transaction(id = 3, description = "C", amount = 100.0, date = 1000L, accountId = 1, transactionType = TransactionType.EXPENSE, sourceSmsId = 10, isExcluded = true, categoryId = null, notes = null)
-            val split = Transaction(id = 4, description = "D", amount = 100.0, date = 1000L, accountId = 1, transactionType = TransactionType.EXPENSE, sourceSmsId = 10, isSplit = true, categoryId = null, notes = null)
-
-            repository.detectAndLinkSelfTransfer(noSms)
-            repository.detectAndLinkSelfTransfer(alreadyLinked)
-            repository.detectAndLinkSelfTransfer(excluded)
-            repository.detectAndLinkSelfTransfer(split)
-
-            verify(transactionDao, never()).findPotentialTransfers(any(), any(), any(), any(), any())
-        }
-
-    @Test
-    fun `detectAndLinkSelfTransfer multiple candidates links only the first match`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val newTxn = Transaction(id = 1, description = "Transfer", amount = 100.0, date = 1000000L, accountId = 1, transactionType = TransactionType.EXPENSE, sourceSmsId = 10, categoryId = null, notes = null)
-            val candidate1 = Transaction(id = 2, description = "Match1", amount = 100.0, date = 1000000L + 60000L, accountId = 2, transactionType = TransactionType.INCOME, sourceSmsId = 20, categoryId = null, notes = null)
-            val candidate2 = Transaction(id = 3, description = "Match2", amount = 100.0, date = 1000000L + 120000L, accountId = 3, transactionType = TransactionType.INCOME, sourceSmsId = 30, categoryId = null, notes = null)
-
-            whenever(
-                transactionDao.findPotentialTransfers(
-                    eq(100.0),
-                    eq(1),
-                    eq(TransactionType.EXPENSE),
-                    any(),
-                    any(),
-                ),
-            ).thenReturn(listOf(candidate1, candidate2))
-
-            repository.detectAndLinkSelfTransfer(newTxn)
-
-            verify(transactionDao).updateTransferLinkStatus(1, 2, true)
-            verify(transactionDao).updateTransferLinkStatus(2, 1, true)
-            verify(transactionDao, never()).updateTransferLinkStatus(eq(3), any(), any())
         }
 
     // ── Reimbursement / Offset Feature Tests ──────────────────────────────────
