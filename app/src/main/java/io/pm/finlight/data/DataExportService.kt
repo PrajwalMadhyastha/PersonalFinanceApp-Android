@@ -17,6 +17,7 @@ import io.pm.finlight.di.ServiceLocator
 import io.pm.finlight.utils.FormatUtils
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -285,136 +286,186 @@ object DataExportService {
                 val backupData = json.decodeFromString<AppDataBackup>(jsonString)
                 val db = AppDatabase.getInstance(context)
 
-                // Clear all data in the correct order (respecting foreign keys)
-                db.splitTransactionDao().deleteAll()
-                db.transactionWriteDao().deleteAll() // Deletes transactions and their tag cross-refs via cascade
-                db.tagDao().deleteAll() // Must be after transactions
-                db.accountDao().deleteAll()
-                db.categoryDao().deleteAll()
-                db.budgetDao().deleteAll()
-                db.merchantMappingDao().deleteAll()
-                db.goalDao().deleteAll()
-                db.goalTransactionLinkDao().deleteAll()
-                db.tripDao().deleteAll()
-                db.accountAliasDao().deleteAll()
-                // --- Phase 1: Clear Core Parsing Intelligence Tables ---
-                db.customSmsRuleDao().deleteAll()
-                db.merchantRenameRuleDao().deleteAll()
-                db.merchantCategoryMappingDao().deleteAll()
-                db.ignoreRuleDao().deleteAll()
-                db.smsParseTemplateDao().deleteAll()
-                // --- Phase 3: Clear App-Learned Recurring Patterns ---
-                db.recurringPatternDao().deleteAll()
-                // --- Phase 5: Clear SMS Lifecycle Deny-List & Merge Records ---
-                db.deletedSmsHashDao().deleteAll()
-                db.mergeRecordDao().deleteAll()
-
-                // Insert new data
-                db.accountDao().insertAll(backupData.accounts)
-                db.categoryDao().insertAll(backupData.categories)
-                db.budgetDao().insertAll(backupData.budgets)
-                db.merchantMappingDao().insertAll(backupData.merchantMappings)
-                db.tagDao().insertAll(backupData.tags)
-                db.goalDao().insertAll(backupData.goals)
-                db.goalTransactionLinkDao().insertAll(backupData.goalTransactionLinks)
-                db.tripDao().insertAll(backupData.trips)
-                db.accountAliasDao().insertAll(backupData.accountAliases)
-                db.transactionWriteDao().insertAll(backupData.transactions)
-                db.splitTransactionDao().insertAll(backupData.splitTransactions)
-                db.transactionWriteDao().addTagsToTransaction(backupData.transactionTagCrossRefs)
-
-                // --- Phase 1: Insert Core Parsing Intelligence Data ---
-                db.customSmsRuleDao().insertAll(backupData.customSmsRules)
-                db.merchantRenameRuleDao().insertAll(backupData.merchantRenameRules)
-                db.merchantCategoryMappingDao().insertAll(backupData.merchantCategoryMappings)
-                db.ignoreRuleDao().insertAll(backupData.ignoreRules)
-                db.smsParseTemplateDao().insertAll(backupData.smsParseTemplates)
-                // --- Phase 3: Insert App-Learned Recurring Patterns ---
-                backupData.recurringPatterns.forEach { db.recurringPatternDao().insert(it) }
-
-                // --- Phase 5: Insert SMS Lifecycle & Merge History ---
-                db.deletedSmsHashDao().insertAll(backupData.deletedSmsHashes)
-                db.mergeRecordDao().insertAll(backupData.mergeRecords)
-
-                // --- Phase 4 & 6: Restore User Profile, Budgets, & Preferences ---
-                try {
-                    context.financeSettingsDataStore.edit { prefs ->
-                        backupData.userName?.let { name ->
-                            if (name.isNotBlank()) {
-                                prefs[stringPreferencesKey("user_name")] = name
-                            }
-                        }
-                        backupData.homeCurrency?.let { currency ->
-                            if (currency.isNotBlank()) {
-                                prefs[stringPreferencesKey("home_currency_code")] = currency
-                            }
-                        }
-                        backupData.overallBudgets.forEach { (yearMonth, amount) ->
-                            prefs[floatPreferencesKey("overall_budget_$yearMonth")] = amount
-                        }
-                        if (backupData.overallBudgets.isEmpty() && backupData.overallBudget != null) {
-                            val cal = Calendar.getInstance()
-                            val currentKey =
-                                String.format(
-                                    Locale.ROOT,
-                                    "overall_budget_%d_%02d",
-                                    cal.get(Calendar.YEAR),
-                                    cal.get(Calendar.MONTH) + 1,
-                                )
-                            prefs[floatPreferencesKey(currentKey)] = backupData.overallBudget
-                        }
-
-                        backupData.selectedAppTheme?.let { prefs[stringPreferencesKey("selected_app_theme")] = it }
-                        backupData.dashboardCardOrder?.let { prefs[stringPreferencesKey("dashboard_card_order")] = it }
-                        backupData.travelModeSettings?.let { prefs[stringPreferencesKey("travel_mode_settings")] = it }
-                        backupData.smsScanStartDate?.let { prefs[longPreferencesKey("sms_scan_start_date")] = it }
-                        if (backupData.dismissedMergeSuggestions.isNotEmpty()) {
-                            prefs[stringSetPreferencesKey("dismissed_merge_suggestions")] = backupData.dismissedMergeSuggestions
-                        }
-                        if (backupData.excludedIncomeMonths.isNotEmpty()) {
-                            prefs[stringSetPreferencesKey("excluded_income_months")] = backupData.excludedIncomeMonths
-                        }
-                        if (backupData.excludedExpenseMonths.isNotEmpty()) {
-                            prefs[stringSetPreferencesKey("excluded_expense_months")] = backupData.excludedExpenseMonths
-                        }
-                        backupData.appLockEnabled?.let { prefs[booleanPreferencesKey("app_lock_enabled")] = it }
-                        backupData.privacyModeEnabled?.let { prefs[booleanPreferencesKey("privacy_mode_enabled")] = it }
-
-                        backupData.dailyReportEnabled?.let { prefs[booleanPreferencesKey("daily_report_enabled")] = it }
-                        backupData.dailyReportHour?.let { prefs[intPreferencesKey("daily_report_hour")] = it }
-                        backupData.dailyReportMinute?.let { prefs[intPreferencesKey("daily_report_minute")] = it }
-                        backupData.weeklySummaryEnabled?.let { prefs[booleanPreferencesKey("weekly_summary_enabled")] = it }
-                        backupData.weeklyReportDay?.let { prefs[intPreferencesKey("weekly_report_day")] = it }
-                        backupData.weeklyReportHour?.let { prefs[intPreferencesKey("weekly_report_hour")] = it }
-                        backupData.weeklyReportMinute?.let { prefs[intPreferencesKey("weekly_report_minute")] = it }
-                        backupData.monthlySummaryEnabled?.let { prefs[booleanPreferencesKey("monthly_summary_enabled")] = it }
-                        backupData.monthlyReportDay?.let { prefs[intPreferencesKey("monthly_report_day")] = it }
-                        backupData.monthlyReportHour?.let { prefs[intPreferencesKey("monthly_report_hour")] = it }
-                        backupData.monthlyReportMinute?.let { prefs[intPreferencesKey("monthly_report_minute")] = it }
-                        backupData.autocaptureNotificationEnabled?.let { prefs[booleanPreferencesKey("autocapture_notification_enabled")] = it }
-                        backupData.unknownTransactionPopupEnabled?.let { prefs[booleanPreferencesKey("unknown_transaction_popup_enabled")] = it }
-
-                        backupData.profilePictureBase64?.let { base64Str ->
-                            try {
-                                val bytes = Base64.decode(base64Str, Base64.DEFAULT)
-                                val profileDir = File(context.filesDir, "profile")
-                                if (!profileDir.exists()) profileDir.mkdirs()
-                                val picFile = File(profileDir, "profile_picture.jpg")
-                                picFile.writeBytes(bytes)
-                                prefs[stringPreferencesKey("profile_picture_uri")] = picFile.absolutePath
-                            } catch (e: Exception) {
-                                Log.w("DataExportService", "Failed to restore profile picture", e)
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("DataExportService", "Failed to restore user settings preferences", e)
-                }
+                clearDatabase(db)
+                insertBackupEntities(db, backupData)
+                restorePreferences(context, backupData)
                 true
             } catch (e: Exception) {
                 Log.e("DataExportService", "Error processing JSON string during import", e)
                 false
             }
+        }
+    }
+
+    private suspend fun clearDatabase(db: AppDatabase) {
+        // Clear all data in the correct order (respecting foreign keys)
+        db.splitTransactionDao().deleteAll()
+        db.transactionWriteDao().deleteAll() // Deletes transactions and their tag cross-refs via cascade
+        db.tagDao().deleteAll() // Must be after transactions
+        db.accountDao().deleteAll()
+        db.categoryDao().deleteAll()
+        db.budgetDao().deleteAll()
+        db.merchantMappingDao().deleteAll()
+        db.goalDao().deleteAll()
+        db.goalTransactionLinkDao().deleteAll()
+        db.tripDao().deleteAll()
+        db.accountAliasDao().deleteAll()
+        // --- Phase 1: Clear Core Parsing Intelligence Tables ---
+        db.customSmsRuleDao().deleteAll()
+        db.merchantRenameRuleDao().deleteAll()
+        db.merchantCategoryMappingDao().deleteAll()
+        db.ignoreRuleDao().deleteAll()
+        db.smsParseTemplateDao().deleteAll()
+        // --- Phase 3: Clear App-Learned Recurring Patterns ---
+        db.recurringPatternDao().deleteAll()
+        // --- Phase 5: Clear SMS Lifecycle Deny-List & Merge Records ---
+        db.deletedSmsHashDao().deleteAll()
+        db.mergeRecordDao().deleteAll()
+    }
+
+    private suspend fun insertBackupEntities(
+        db: AppDatabase,
+        backupData: AppDataBackup
+    ) {
+        // Insert new data
+        db.accountDao().insertAll(backupData.accounts)
+        db.categoryDao().insertAll(backupData.categories)
+        db.budgetDao().insertAll(backupData.budgets)
+        db.merchantMappingDao().insertAll(backupData.merchantMappings)
+        db.tagDao().insertAll(backupData.tags)
+        db.goalDao().insertAll(backupData.goals)
+        db.goalTransactionLinkDao().insertAll(backupData.goalTransactionLinks)
+        db.tripDao().insertAll(backupData.trips)
+        db.accountAliasDao().insertAll(backupData.accountAliases)
+        db.transactionWriteDao().insertAll(backupData.transactions)
+        db.splitTransactionDao().insertAll(backupData.splitTransactions)
+        db.transactionWriteDao().addTagsToTransaction(backupData.transactionTagCrossRefs)
+
+        // --- Phase 1: Insert Core Parsing Intelligence Data ---
+        db.customSmsRuleDao().insertAll(backupData.customSmsRules)
+        db.merchantRenameRuleDao().insertAll(backupData.merchantRenameRules)
+        db.merchantCategoryMappingDao().insertAll(backupData.merchantCategoryMappings)
+        db.ignoreRuleDao().insertAll(backupData.ignoreRules)
+        db.smsParseTemplateDao().insertAll(backupData.smsParseTemplates)
+        // --- Phase 3: Insert App-Learned Recurring Patterns ---
+        backupData.recurringPatterns.forEach { db.recurringPatternDao().insert(it) }
+
+        // --- Phase 5: Insert SMS Lifecycle & Merge History ---
+        db.deletedSmsHashDao().insertAll(backupData.deletedSmsHashes)
+        db.mergeRecordDao().insertAll(backupData.mergeRecords)
+    }
+
+    private suspend fun restorePreferences(
+        context: Context,
+        backupData: AppDataBackup
+    ) {
+        try {
+            context.financeSettingsDataStore.edit { prefs ->
+                restoreGeneralPreferences(context, prefs, backupData)
+                restoreNotificationAndReportPreferences(prefs, backupData)
+                restoreProfilePicture(context, prefs, backupData.profilePictureBase64)
+            }
+        } catch (e: Exception) {
+            Log.e("DataExportService", "Failed to restore user settings preferences", e)
+        }
+    }
+
+    private fun restoreGeneralPreferences(
+        context: Context,
+        prefs: MutablePreferences,
+        backupData: AppDataBackup,
+    ) {
+        backupData.userName?.let { name ->
+            if (name.isNotBlank()) {
+                prefs[stringPreferencesKey("user_name")] = name
+            }
+        }
+        backupData.homeCurrency?.let { currency ->
+            if (currency.isNotBlank()) {
+                prefs[stringPreferencesKey("home_currency_code")] = currency
+            }
+        }
+        backupData.overallBudgets.forEach { (yearMonth, amount) ->
+            prefs[floatPreferencesKey("overall_budget_$yearMonth")] = amount
+        }
+        if (backupData.overallBudgets.isEmpty() && backupData.overallBudget != null) {
+            val cal = Calendar.getInstance()
+            val currentKey =
+                String.format(
+                    Locale.ROOT,
+                    "overall_budget_%d_%02d",
+                    cal.get(Calendar.YEAR),
+                    cal.get(Calendar.MONTH) + 1,
+                )
+            prefs[floatPreferencesKey(currentKey)] = backupData.overallBudget
+        }
+
+        backupData.selectedAppTheme?.let { prefs[stringPreferencesKey("selected_app_theme")] = it }
+        backupData.dashboardCardOrder?.let { prefs[stringPreferencesKey("dashboard_card_order")] = it }
+        backupData.travelModeSettings?.let { prefs[stringPreferencesKey("travel_mode_settings")] = it }
+        backupData.smsScanStartDate?.let { prefs[longPreferencesKey("sms_scan_start_date")] = it }
+        if (backupData.dismissedMergeSuggestions.isNotEmpty()) {
+            prefs[stringSetPreferencesKey("dismissed_merge_suggestions")] = backupData.dismissedMergeSuggestions
+        }
+        if (backupData.excludedIncomeMonths.isNotEmpty()) {
+            prefs[stringSetPreferencesKey("excluded_income_months")] = backupData.excludedIncomeMonths
+        }
+        if (backupData.excludedExpenseMonths.isNotEmpty()) {
+            prefs[stringSetPreferencesKey("excluded_expense_months")] = backupData.excludedExpenseMonths
+        }
+        backupData.appLockEnabled?.let { enabled ->
+            prefs[booleanPreferencesKey("app_lock_enabled")] = enabled && canAuthenticateOnDevice(context)
+        }
+        backupData.privacyModeEnabled?.let { prefs[booleanPreferencesKey("privacy_mode_enabled")] = it }
+    }
+
+    private fun canAuthenticateOnDevice(context: Context): Boolean {
+        return try {
+            val biometricManager = androidx.biometric.BiometricManager.from(context)
+            val authenticators =
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                    androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            biometricManager.canAuthenticate(authenticators) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun restoreNotificationAndReportPreferences(
+        prefs: MutablePreferences,
+        backupData: AppDataBackup,
+    ) {
+        backupData.dailyReportEnabled?.let { prefs[booleanPreferencesKey("daily_report_enabled")] = it }
+        backupData.dailyReportHour?.let { prefs[intPreferencesKey("daily_report_hour")] = it }
+        backupData.dailyReportMinute?.let { prefs[intPreferencesKey("daily_report_minute")] = it }
+        backupData.weeklySummaryEnabled?.let { prefs[booleanPreferencesKey("weekly_summary_enabled")] = it }
+        backupData.weeklyReportDay?.let { prefs[intPreferencesKey("weekly_report_day")] = it }
+        backupData.weeklyReportHour?.let { prefs[intPreferencesKey("weekly_report_hour")] = it }
+        backupData.weeklyReportMinute?.let { prefs[intPreferencesKey("weekly_report_minute")] = it }
+        backupData.monthlySummaryEnabled?.let { prefs[booleanPreferencesKey("monthly_summary_enabled")] = it }
+        backupData.monthlyReportDay?.let { prefs[intPreferencesKey("monthly_report_day")] = it }
+        backupData.monthlyReportHour?.let { prefs[intPreferencesKey("monthly_report_hour")] = it }
+        backupData.monthlyReportMinute?.let { prefs[intPreferencesKey("monthly_report_minute")] = it }
+        backupData.autocaptureNotificationEnabled?.let { prefs[booleanPreferencesKey("autocapture_notification_enabled")] = it }
+        backupData.unknownTransactionPopupEnabled?.let { prefs[booleanPreferencesKey("unknown_transaction_popup_enabled")] = it }
+    }
+
+    private fun restoreProfilePicture(
+        context: Context,
+        prefs: MutablePreferences,
+        base64Str: String?,
+    ) {
+        if (base64Str == null) return
+        try {
+            val bytes = Base64.decode(base64Str, Base64.DEFAULT)
+            val profileDir = File(context.filesDir, "profile")
+            if (!profileDir.exists()) profileDir.mkdirs()
+            val picFile = File(profileDir, "profile_picture.jpg")
+            picFile.writeBytes(bytes)
+            prefs[stringPreferencesKey("profile_picture_uri")] = picFile.absolutePath
+        } catch (e: Exception) {
+            Log.w("DataExportService", "Failed to restore profile picture", e)
         }
     }
 

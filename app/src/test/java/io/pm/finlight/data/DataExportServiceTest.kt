@@ -636,6 +636,127 @@ class DataExportServiceTest : BaseViewModelTest() {
         }
 
     @Test
+    fun `restoreFromBackupSnapshot restores appLockEnabled when biometric authentication is supported`() =
+        runTest {
+            val backupData =
+                AppDataBackup(
+                    transactions = emptyList(),
+                    accounts = emptyList(),
+                    categories = emptyList(),
+                    budgets = emptyList(),
+                    merchantMappings = emptyList(),
+                    appLockEnabled = true,
+                )
+
+            val jsonString = Json.encodeToString(AppDataBackup.serializer(), backupData)
+            val snapshotFile = File(context.filesDir, "backup_snapshot.gz")
+            FileOutputStream(snapshotFile).use { fos ->
+                GZIPOutputStream(fos).use { gzip ->
+                    gzip.write(jsonString.toByteArray())
+                }
+            }
+
+            val success = DataExportService.restoreFromBackupSnapshot(context)
+            assertTrue("Restore should succeed", success)
+
+            val prefs = context.financeSettingsDataStore.data.first()
+            assertNotNull(prefs[booleanPreferencesKey("app_lock_enabled")])
+        }
+
+    @Test
+    fun `restoreFromBackupSnapshot handles exception in canAuthenticateOnDevice gracefully`() =
+        runTest {
+            mockkStatic(androidx.biometric.BiometricManager::class)
+            every { androidx.biometric.BiometricManager.from(any()) } throws RuntimeException("Biometric hardware fault")
+
+            val backupData =
+                AppDataBackup(
+                    transactions = emptyList(),
+                    accounts = emptyList(),
+                    categories = emptyList(),
+                    budgets = emptyList(),
+                    merchantMappings = emptyList(),
+                    appLockEnabled = true,
+                )
+
+            val jsonString = Json.encodeToString(AppDataBackup.serializer(), backupData)
+            val snapshotFile = File(context.filesDir, "backup_snapshot.gz")
+            FileOutputStream(snapshotFile).use { fos ->
+                GZIPOutputStream(fos).use { gzip ->
+                    gzip.write(jsonString.toByteArray())
+                }
+            }
+
+            val success = DataExportService.restoreFromBackupSnapshot(context)
+            assertTrue("Restore should succeed", success)
+
+            val prefs = context.financeSettingsDataStore.data.first()
+            assertEquals(false, prefs[booleanPreferencesKey("app_lock_enabled")])
+
+            unmockkStatic(androidx.biometric.BiometricManager::class)
+        }
+
+    @Test
+    fun `restoreFromBackupSnapshot handles exception when restoring preferences fails`() =
+        runTest {
+            mockkStatic("io.pm.finlight.data.DataStoreExtensionsKt")
+            every { any<android.content.Context>().financeSettingsDataStore } throws RuntimeException("DataStore unavailable")
+
+            val backupData =
+                AppDataBackup(
+                    transactions = emptyList(),
+                    accounts = emptyList(),
+                    categories = emptyList(),
+                    budgets = emptyList(),
+                    merchantMappings = emptyList(),
+                    userName = "Test Name",
+                )
+
+            val jsonString = Json.encodeToString(AppDataBackup.serializer(), backupData)
+            val snapshotFile = File(context.filesDir, "backup_snapshot.gz")
+            FileOutputStream(snapshotFile).use { fos ->
+                GZIPOutputStream(fos).use { gzip ->
+                    gzip.write(jsonString.toByteArray())
+                }
+            }
+
+            val success = DataExportService.restoreFromBackupSnapshot(context)
+            assertTrue("Restore should succeed even if preferences fail", success)
+
+            unmockkStatic("io.pm.finlight.data.DataStoreExtensionsKt")
+        }
+
+    @Test
+    fun `restoreFromBackupSnapshot handles profile picture write failure gracefully`() =
+        runTest {
+            val profileDir = File(context.filesDir, "profile")
+            profileDir.deleteRecursively()
+            profileDir.createNewFile()
+
+            val backupData =
+                AppDataBackup(
+                    transactions = emptyList(),
+                    accounts = emptyList(),
+                    categories = emptyList(),
+                    budgets = emptyList(),
+                    merchantMappings = emptyList(),
+                    profilePictureBase64 = "YWJj",
+                )
+
+            val jsonString = Json.encodeToString(AppDataBackup.serializer(), backupData)
+            val snapshotFile = File(context.filesDir, "backup_snapshot.gz")
+            FileOutputStream(snapshotFile).use { fos ->
+                GZIPOutputStream(fos).use { gzip ->
+                    gzip.write(jsonString.toByteArray())
+                }
+            }
+
+            val success = DataExportService.restoreFromBackupSnapshot(context)
+            assertTrue("Restore should succeed even if profile picture writing fails", success)
+            profileDir.delete()
+        }
+
+    @Test
     fun `restoreFromBackupSnapshot inserts recurring patterns when present`() =
         runTest {
             // Arrange
