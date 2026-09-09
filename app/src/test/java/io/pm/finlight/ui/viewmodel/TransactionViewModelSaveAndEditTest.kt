@@ -535,6 +535,23 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
         }
 
     @Test
+    fun `createAccount when getAccountByIdSync returns null does not invoke callback`() =
+        runTest {
+            val newAccountName = "New Bank Null"
+            val newAccountType = "Bank"
+            var callbackInvoked = false
+
+            whenever(db.accountDao().findByName(newAccountName)).thenReturn(null)
+            whenever(accountRepository.insert(Account(name = newAccountName, type = newAccountType))).thenReturn(1L)
+            whenever(accountRepository.getAccountByIdSync(1)).thenReturn(null)
+
+            viewModel.createAccount(newAccountName, newAccountType) { callbackInvoked = true }
+            advanceUntilIdle()
+
+            assertFalse(callbackInvoked)
+        }
+
+    @Test
     fun `createAccount failure on duplicate name`() =
         runTest {
             // Arrange

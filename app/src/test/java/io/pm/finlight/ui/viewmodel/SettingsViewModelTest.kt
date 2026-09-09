@@ -513,6 +513,48 @@ class SettingsViewModelTest : BaseViewModelTest() {
         }
 
     @Test
+    fun `commitCsvImport creates new account when not found in snapshot`() =
+        runTest {
+            // Arrange
+            initializeViewModel()
+            val rowsToImport =
+                listOf(
+                    ReviewableRow(
+                        2,
+                        "1,,2025-10-09 10:00:00,Groceries,200.0,expense,Food,NewWallet,,false,".split(','),
+                        CsvRowStatus.VALID,
+                        "",
+                    ),
+                )
+            setCsvValidationReport(
+                viewModel,
+                CsvValidationReport(
+                    header = "Id,ParentId,Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags".split(','),
+                    reviewableRows = rowsToImport,
+                ),
+            )
+
+            `when`(categoryRepository.allCategories).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "OtherBank", "Bank")))
+            `when`(accountRepository.insert(Account(name = "NewWallet", type = "Imported"))).thenReturn(2L)
+            `when`(transactionRepository.insertTransactionWithTags(anyObject(), anyObject())).thenReturn(1L)
+
+            // Act
+            viewModel.commitCsvImport(rowsToImport)
+            advanceUntilIdle()
+
+            // Assert
+            verify(accountRepository, org.mockito.Mockito.timeout(5000)).insert(Account(name = "NewWallet", type = "Imported"))
+            val transactionCaptor = argumentCaptor<Transaction>()
+            verify(
+                transactionRepository,
+                org.mockito.Mockito.timeout(5000),
+            ).insertTransactionWithTags(capture(transactionCaptor), anyObject())
+
+            assertEquals(2, transactionCaptor.value.accountId)
+        }
+
+    @Test
     fun `privacyModeEnabled flow emits value from repository`() =
         runTest {
             // Arrange

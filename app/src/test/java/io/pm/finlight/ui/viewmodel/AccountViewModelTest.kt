@@ -623,4 +623,67 @@ class AccountViewModelTest : BaseViewModelTest() {
             assertTrue(callbackTriggered)
             assertTrue(successResult)
         }
+
+    @Test
+    fun `checkAccountName with default excludeAccountId parameter finds match`() =
+        runTest {
+            val account = Account(id = 1, name = "HDFC", type = "Bank")
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(account))
+
+            val match = viewModel.checkAccountName("HDFC")
+
+            assertEquals(MatchType.EXACT, match.matchType)
+            assertEquals(account, match.account)
+        }
+
+    @Test
+    fun `mergeAccounts with default callback executes successfully`() =
+        runTest {
+            viewModel.mergeAccounts(1, listOf(2))
+            advanceUntilIdle()
+
+            verify(accountRepository).mergeAccounts(1, listOf(2))
+        }
+
+    @Test
+    fun `addAccount success when existing accounts have different names`() =
+        runTest {
+            val existing = Account(id = 1, name = "Different Name", type = "Bank")
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(existing))
+
+            var callbackTriggered = false
+            var successResult = false
+
+            viewModel.addAccount("New Unique Account", "Bank") { success ->
+                callbackTriggered = true
+                successResult = success
+            }
+            advanceUntilIdle()
+
+            verify(accountRepository).insert(Account(name = "New Unique Account", type = "Bank"))
+            assertTrue(callbackTriggered)
+            assertTrue(successResult)
+        }
+
+    @Test
+    fun `updateAccount succeeds when existing account has same id and same name`() =
+        runTest {
+            val account = Account(id = 1, name = "My Account", type = "Card")
+            val sameAccountInDb = Account(id = 1, name = "My Account", type = "Bank")
+            val otherAccountInDb = Account(id = 2, name = "Other Account", type = "Bank")
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(sameAccountInDb, otherAccountInDb))
+
+            var callbackTriggered = false
+            var successResult = false
+
+            viewModel.updateAccount(account) { success ->
+                callbackTriggered = true
+                successResult = success
+            }
+            advanceUntilIdle()
+
+            verify(accountRepository).update(account)
+            assertTrue(callbackTriggered)
+            assertTrue(successResult)
+        }
 }
