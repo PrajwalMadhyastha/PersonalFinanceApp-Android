@@ -1003,13 +1003,12 @@ class TransactionViewModel(
         // For simplicity, we assume the UI will re-resolve the ID to the object
         viewModelScope.launch {
             val categories = allCategories.first()
-            val accounts = allAccounts.first()
+            val account = accountRepository.getAccountByIdSync(transactionDetails.transaction.accountId)
 
             val category = categories.find { it.id == transactionDetails.transaction.categoryId }
             _addTransactionCategory.value = category
             _userManuallySelectedCategory.value = true // Prevent auto-categorizer from overwriting
 
-            val account = accounts.find { it.id == transactionDetails.transaction.accountId }
             _addTransactionAccount.value = account
 
             // Load tags
@@ -1308,13 +1307,13 @@ class TransactionViewModel(
                 }
 
                 potentialTxn.potentialAccount?.let { parsedAccount ->
-                    val currentAccount = accountRepository.getAccountById(transaction.accountId).first()
+                    val currentAccount = accountRepository.getAccountByIdSync(transaction.accountId)
                     if (currentAccount?.name?.equals(parsedAccount.formattedName, ignoreCase = true) == false) {
                         var account = db.accountDao().findByName(parsedAccount.formattedName)
                         if (account == null) {
                             val newAccount = Account(name = parsedAccount.formattedName, type = parsedAccount.accountType)
                             val newId = accountRepository.insert(newAccount)
-                            account = db.accountDao().getAccountById(newId.toInt()).first()
+                            account = accountRepository.getAccountByIdSync(newId.toInt())
                         }
                         if (account != null) {
                             transactionRepository.updateAccountId(transactionId, account.id)
@@ -1372,7 +1371,7 @@ class TransactionViewModel(
             }
 
             val newAccountId = accountRepository.insert(Account(name = name, type = type))
-            accountRepository.getAccountById(newAccountId.toInt()).first()?.let { newAccount ->
+            accountRepository.getAccountByIdSync(newAccountId.toInt())?.let { newAccount ->
                 onAccountCreated(newAccount)
             }
         }
@@ -1835,7 +1834,7 @@ class TransactionViewModel(
                         // null, silently dropping the transaction. Fall back to findByName instead.
                         account =
                             if (newId != -1L) {
-                                db.accountDao().getAccountById(newId.toInt()).first()
+                                accountRepository.getAccountByIdSync(newId.toInt())
                             } else {
                                 Log.d(TAG, "Account '$accountName' already existed (IGNORE conflict). Fetching by name.")
                                 db.accountDao().findByName(accountName)

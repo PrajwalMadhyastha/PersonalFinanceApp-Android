@@ -19,8 +19,16 @@ class AccountRepository(private val db: AppDatabase) : IAccountRepository {
 
     override val allAccounts: Flow<List<Account>> = accountDao.getAllAccounts()
 
+    override suspend fun getAllAccountsSnapshot(): List<Account> {
+        return accountDao.getAllAccountsSnapshot()
+    }
+
     override fun getAccountById(accountId: Int): Flow<Account?> {
         return accountDao.getAccountById(accountId)
+    }
+
+    override suspend fun getAccountByIdSync(accountId: Int): Account? {
+        return accountDao.getAccountByIdSync(accountId)
     }
 
     override suspend fun insert(account: Account): Long {
@@ -30,7 +38,7 @@ class AccountRepository(private val db: AppDatabase) : IAccountRepository {
     override suspend fun update(account: Account) {
         db.withTransaction {
             // Check if the account name is being changed
-            val oldAccount = accountDao.getAccountByIdBlocking(account.id)
+            val oldAccount = accountDao.getAccountByIdSync(account.id)
             if (oldAccount != null && oldAccount.name != account.name) {
                 // Name changed: create an alias from the old name to this account
                 val alias = AccountAlias(aliasName = oldAccount.name, destinationAccountId = account.id)
@@ -57,7 +65,7 @@ class AccountRepository(private val db: AppDatabase) : IAccountRepository {
     ) {
         db.withTransaction {
             // --- NEW: Create aliases for the source accounts before deleting them ---
-            val sourceAccounts = sourceAccountIds.mapNotNull { db.accountDao().getAccountByIdBlocking(it) }
+            val sourceAccounts = sourceAccountIds.mapNotNull { accountDao.getAccountByIdSync(it) }
             val aliases =
                 sourceAccounts.map {
                     AccountAlias(aliasName = it.name, destinationAccountId = destinationAccountId)
@@ -74,7 +82,7 @@ class AccountRepository(private val db: AppDatabase) : IAccountRepository {
             db.transactionWriteDao().reassignTransactions(sourceAccountIds, destinationAccountId)
 
             // 3. Delete the now-empty source accounts.
-            db.accountDao().deleteByIds(sourceAccountIds)
+            accountDao.deleteByIds(sourceAccountIds)
         }
     }
 }

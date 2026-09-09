@@ -523,7 +523,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
 
             whenever(db.accountDao().findByName(newAccountName)).thenReturn(null)
             whenever(accountRepository.insert(Account(name = newAccountName, type = newAccountType))).thenReturn(1L)
-            whenever(accountRepository.getAccountById(1)).thenReturn(flowOf(newAccount))
+            whenever(accountRepository.getAccountByIdSync(1)).thenReturn(newAccount)
 
             // Act
             viewModel.createAccount(newAccountName, newAccountType) { createdAccount = it }
@@ -532,6 +532,23 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             // Assert
             verify(accountRepository).insert(Account(name = newAccountName, type = newAccountType))
             assertEquals(newAccount, createdAccount)
+        }
+
+    @Test
+    fun `createAccount when getAccountByIdSync returns null does not invoke callback`() =
+        runTest {
+            val newAccountName = "New Bank Null"
+            val newAccountType = "Bank"
+            var callbackInvoked = false
+
+            whenever(db.accountDao().findByName(newAccountName)).thenReturn(null)
+            whenever(accountRepository.insert(Account(name = newAccountName, type = newAccountType))).thenReturn(1L)
+            whenever(accountRepository.getAccountByIdSync(1)).thenReturn(null)
+
+            viewModel.createAccount(newAccountName, newAccountType) { callbackInvoked = true }
+            advanceUntilIdle()
+
+            assertFalse(callbackInvoked)
         }
 
     @Test
@@ -648,15 +665,10 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
                 ),
             )
 
+            whenever(accountRepository.getAccountByIdSync(1)).thenReturn(Account(id = 1, name = "Cash", type = "Cash"))
+
             // Re-initialize ViewModel to pick up the new flows
             initializeViewModel()
-
-            // FIX: Start collecting `allAccounts` to trigger the `stateIn(WhileSubscribed)` upstream flow.
-            // Without this, `allAccounts.first()` inside the ViewModel returns the initial `emptyList()`
-            // because the StateFlow hasn't connected to the repository flow yet.
-            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-                viewModel.allAccounts.collect { }
-            }
 
             // Ensure values are propagated
             advanceUntilIdle()

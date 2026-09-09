@@ -207,6 +207,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
         runTest {
             `when`(transactionQueryDao.getAllTransactionsSimple()).thenReturn(flowOf(emptyList()))
             `when`(accountDao.getAllAccounts()).thenReturn(flowOf(emptyList()))
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(emptyList())
             `when`(categoryDao.getAllCategories()).thenReturn(flowOf(emptyList()))
             `when`(budgetDao.getAllBudgets()).thenReturn(flowOf(emptyList()))
             `when`(merchantMappingDao.getAllMappings()).thenReturn(flowOf(emptyList()))
@@ -364,7 +365,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             val shadowContentResolver = shadowOf(applicationContext.contentResolver)
             shadowContentResolver.registerInputStream(mockUri, ByteArrayInputStream(csvContent.toByteArray()))
 
-            `when`(accountDao.getAllAccounts()).thenReturn(flowOf(listOf(Account(1, "Savings", "Bank"))))
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(categoryDao.getAllCategories()).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
 
             initializeViewModel()
@@ -440,7 +441,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             setCsvValidationReport(viewModel, CsvValidationReport(reviewableRows = listOf(row1, row2)))
 
             val correctedData = listOf("", "", "2025-10-09 10:00:00", "a", "10", "expense", "Food", "Savings", "", "false", "")
-            `when`(accountDao.getAllAccounts()).thenReturn(flowOf(listOf(Account(1, "Savings", "Bank"))))
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(categoryDao.getAllCategories()).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
 
             // Act
@@ -485,7 +486,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             )
 
             `when`(categoryRepository.allCategories).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
-            `when`(accountRepository.allAccounts).thenReturn(flowOf(listOf(Account(1, "Savings", "Bank"))))
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(tagDao.findByName("Work")).thenReturn(Tag(1, "Work"))
             `when`(tagDao.findByName("Personal")).thenReturn(null)
             `when`(tagDao.insert(anyObject())).thenReturn(2L)
@@ -509,6 +510,48 @@ class SettingsViewModelTest : BaseViewModelTest() {
             assertEquals(2, tagsCaptor.value.size)
             assertTrue(tagsCaptor.value.any { it.name == "Work" })
             assertTrue(tagsCaptor.value.any { it.name == "Personal" })
+        }
+
+    @Test
+    fun `commitCsvImport creates new account when not found in snapshot`() =
+        runTest {
+            // Arrange
+            initializeViewModel()
+            val rowsToImport =
+                listOf(
+                    ReviewableRow(
+                        2,
+                        "1,,2025-10-09 10:00:00,Groceries,200.0,expense,Food,NewWallet,,false,".split(','),
+                        CsvRowStatus.VALID,
+                        "",
+                    ),
+                )
+            setCsvValidationReport(
+                viewModel,
+                CsvValidationReport(
+                    header = "Id,ParentId,Date,Description,Amount,Type,Category,Account,Notes,IsExcluded,Tags".split(','),
+                    reviewableRows = rowsToImport,
+                ),
+            )
+
+            `when`(categoryRepository.allCategories).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "OtherBank", "Bank")))
+            `when`(accountRepository.insert(Account(name = "NewWallet", type = "Imported"))).thenReturn(2L)
+            `when`(transactionRepository.insertTransactionWithTags(anyObject(), anyObject())).thenReturn(1L)
+
+            // Act
+            viewModel.commitCsvImport(rowsToImport)
+            advanceUntilIdle()
+
+            // Assert
+            verify(accountRepository, org.mockito.Mockito.timeout(5000)).insert(Account(name = "NewWallet", type = "Imported"))
+            val transactionCaptor = argumentCaptor<Transaction>()
+            verify(
+                transactionRepository,
+                org.mockito.Mockito.timeout(5000),
+            ).insertTransactionWithTags(capture(transactionCaptor), anyObject())
+
+            assertEquals(2, transactionCaptor.value.accountId)
         }
 
     @Test

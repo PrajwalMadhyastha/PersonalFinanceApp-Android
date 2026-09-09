@@ -134,7 +134,7 @@ class SmsTransactionSaverTest : BaseViewModelTest() {
             coEvery { accountAliasDao.findByAlias(any()) } returns null
             coEvery { accountDao.findByName(any()) } returns null
             coEvery { accountDao.insert(any()) } returns 15L
-            coEvery { accountDao.getAccountByIdBlocking(15) } returns Account(15, "HDFC Bank - X1234", "Bank Account")
+            coEvery { accountDao.getAccountByIdSync(15) } returns Account(15, "HDFC Bank - X1234", "Bank Account")
 
             val id = saver.resolveAndSaveTransaction(makeTxn())
 
@@ -188,7 +188,7 @@ class SmsTransactionSaverTest : BaseViewModelTest() {
             coEvery { accountAliasDao.findByAlias("Unknown Account") } returns null
             coEvery { accountDao.findByName("Unknown Account") } returns null
             coEvery { accountDao.insert(any()) } returns 5L
-            coEvery { accountDao.getAccountByIdBlocking(5) } returns Account(5, "Unknown Account", "General")
+            coEvery { accountDao.getAccountByIdSync(5) } returns Account(5, "Unknown Account", "General")
 
             val id = saver.resolveAndSaveTransaction(makeTxn(account = null))
 
