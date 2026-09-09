@@ -648,15 +648,10 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
                 ),
             )
 
+            whenever(accountRepository.getAccountByIdSync(1)).thenReturn(Account(id = 1, name = "Cash", type = "Cash"))
+
             // Re-initialize ViewModel to pick up the new flows
             initializeViewModel()
-
-            // FIX: Start collecting `allAccounts` to trigger the `stateIn(WhileSubscribed)` upstream flow.
-            // Without this, `allAccounts.first()` inside the ViewModel returns the initial `emptyList()`
-            // because the StateFlow hasn't connected to the repository flow yet.
-            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-                viewModel.allAccounts.collect { }
-            }
 
             // Ensure values are propagated
             advanceUntilIdle()

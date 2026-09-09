@@ -658,7 +658,7 @@ class SettingsViewModel(
         uri: Uri,
         initialData: List<ReviewableRow>? = null,
     ): CsvValidationReport {
-        val accountsMap = db.accountDao().getAllAccountsSnapshot().associateBy { it.name }
+        val accountsMap = accountRepository.getAllAccountsSnapshot().associateBy { it.name }
         val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
 
         if (initialData != null) {
@@ -764,7 +764,7 @@ class SettingsViewModel(
                 if (indexToUpdate != -1) {
                     val revalidatedRow =
                         withContext(dispatchers.io) {
-                            val accountsMap = db.accountDao().getAllAccountsSnapshot().associateBy { it.name }
+                            val accountsMap = accountRepository.getAllAccountsSnapshot().associateBy { it.name }
                             val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
                             createReviewableRow(lineNumber, correctedData, accountsMap, categoriesMap)
                         }

@@ -122,7 +122,7 @@ class DataExportServiceTest : BaseViewModelTest() {
         coEvery {
             transactionQueryDao.getAllTransactionsSimple()
         } returns flowOf(listOf(Transaction(id = 1, description = "Test Tx", amount = 100.0, date = 1L, accountId = 1, categoryId = 1, notes = null)))
-        coEvery { accountDao.getAllAccounts() } returns flowOf(listOf(Account(id = 1, name = "Test Acc", type = "Bank")))
+        coEvery { accountDao.getAllAccountsSnapshot() } returns listOf(Account(id = 1, name = "Test Acc", type = "Bank"))
         coEvery { categoryDao.getAllCategories() } returns flowOf(listOf(Category(id = 1, name = "Test Cat", iconKey = "icon", colorKey = "color")))
         coEvery {
             budgetDao.getAllBudgets()

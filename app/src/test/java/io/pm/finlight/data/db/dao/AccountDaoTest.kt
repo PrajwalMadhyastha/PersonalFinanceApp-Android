@@ -148,8 +148,8 @@ class AccountDaoTest {
             val accounts = accountDao.getAllAccountsSnapshot()
             // Assert
             assertEquals(2, accounts.size)
-            assertTrue(accounts.any { it.name == "HDFC Bank" })
-            assertTrue(accounts.any { it.name == "ICICI Credit Card" })
+            assertEquals("HDFC Bank", accounts[0].name)
+            assertEquals("ICICI Credit Card", accounts[1].name)
         }
 
     @Test

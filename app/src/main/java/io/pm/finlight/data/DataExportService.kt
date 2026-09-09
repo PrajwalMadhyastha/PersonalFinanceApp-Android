@@ -125,7 +125,7 @@ object DataExportService {
                 val backupData =
                     AppDataBackup(
                         transactions = db.transactionQueryDao().getAllTransactionsSimple().first(),
-                        accounts = db.accountDao().getAllAccounts().first(),
+                        accounts = db.accountDao().getAllAccountsSnapshot(),
                         categories = db.categoryDao().getAllCategories().first(),
                         budgets = db.budgetDao().getAllBudgets().first(),
                         merchantMappings = db.merchantMappingDao().getAllMappings().first(),

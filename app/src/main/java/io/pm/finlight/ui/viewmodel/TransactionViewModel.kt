@@ -1003,13 +1003,12 @@ class TransactionViewModel(
         // For simplicity, we assume the UI will re-resolve the ID to the object
         viewModelScope.launch {
             val categories = allCategories.first()
-            val accounts = allAccounts.first()
+            val account = accountRepository.getAccountByIdSync(transactionDetails.transaction.accountId)
 
             val category = categories.find { it.id == transactionDetails.transaction.categoryId }
             _addTransactionCategory.value = category
             _userManuallySelectedCategory.value = true // Prevent auto-categorizer from overwriting
 
-            val account = accounts.find { it.id == transactionDetails.transaction.accountId }
             _addTransactionAccount.value = account
 
             // Load tags
@@ -1314,7 +1313,7 @@ class TransactionViewModel(
                         if (account == null) {
                             val newAccount = Account(name = parsedAccount.formattedName, type = parsedAccount.accountType)
                             val newId = accountRepository.insert(newAccount)
-                            account = db.accountDao().getAccountByIdSync(newId.toInt())
+                            account = accountRepository.getAccountByIdSync(newId.toInt())
                         }
                         if (account != null) {
                             transactionRepository.updateAccountId(transactionId, account.id)
@@ -1835,7 +1834,7 @@ class TransactionViewModel(
                         // null, silently dropping the transaction. Fall back to findByName instead.
                         account =
                             if (newId != -1L) {
-                                db.accountDao().getAccountByIdSync(newId.toInt())
+                                accountRepository.getAccountByIdSync(newId.toInt())
                             } else {
                                 Log.d(TAG, "Account '$accountName' already existed (IGNORE conflict). Fetching by name.")
                                 db.accountDao().findByName(accountName)

@@ -82,7 +82,7 @@ class AccountRepository(private val db: AppDatabase) : IAccountRepository {
             db.transactionWriteDao().reassignTransactions(sourceAccountIds, destinationAccountId)
 
             // 3. Delete the now-empty source accounts.
-            db.accountDao().deleteByIds(sourceAccountIds)
+            accountDao.deleteByIds(sourceAccountIds)
         }
     }
 }
