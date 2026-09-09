@@ -27,7 +27,6 @@ class CategoryViewModelFactory(private val application: Application) : ViewModel
             return CategoryViewModel(
                 categoryRepository = CategoryRepository(db.categoryDao()),
                 transactionRepository = transactionRepository,
-                categoryDao = db.categoryDao(),
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")

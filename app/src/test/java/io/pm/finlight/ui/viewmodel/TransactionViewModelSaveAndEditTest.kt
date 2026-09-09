@@ -385,6 +385,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             // Arrange
             val foodCategory = Category(1, "Food & Drinks", "icon", "color")
             whenever(categoryRepository.allCategories).thenReturn(flowOf(listOf(foodCategory)))
+            whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(foodCategory))
             initializeViewModel()
 
             viewModel.suggestedCategory.test(timeout = 5.seconds) { // Increase timeout for debounce
@@ -426,6 +427,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             val foodCategory = Category(1, "Food & Drinks", "icon", "color")
             val testTag = Tag(1, "Test")
             whenever(categoryRepository.allCategories).thenReturn(flowOf(listOf(foodCategory)))
+            whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(foodCategory))
             initializeViewModel()
 
             // Set up a dirty state
@@ -584,8 +586,9 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             val newCategory = Category(1, newCategoryName, newIcon, newColor)
             var createdCategory: Category? = null
 
-            whenever(db.categoryDao().findByName(newCategoryName)).thenReturn(null)
+            whenever(categoryRepository.findByName(newCategoryName)).thenReturn(null)
             whenever(categoryRepository.allCategories).thenReturn(flowOf(emptyList())) // For color helper
+            whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(emptyList())
             whenever(categoryRepository.insert(Category(name = newCategoryName, iconKey = newIcon, colorKey = newColor))).thenReturn(1L)
             whenever(categoryRepository.getCategoryById(1)).thenReturn(newCategory)
 
@@ -606,7 +609,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             val existingCategory = Category(1, existingCategoryName, "icon", "color")
             var createdCategory: Category? = null
 
-            whenever(db.categoryDao().findByName(existingCategoryName)).thenReturn(existingCategory)
+            whenever(categoryRepository.findByName(existingCategoryName)).thenReturn(existingCategory)
 
             // Act & Assert
             viewModel.validationError.test {
@@ -663,6 +666,15 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
                         Category(id = 11, name = "Transport", iconKey = "car", colorKey = "blue"),
                     ),
                 ),
+            )
+            whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(
+                listOf(
+                    Category(id = 10, name = "Food", iconKey = "food", colorKey = "green"),
+                    Category(id = 11, name = "Transport", iconKey = "car", colorKey = "blue"),
+                ),
+            )
+            whenever(categoryRepository.getCategoryById(10)).thenReturn(
+                Category(id = 10, name = "Food", iconKey = "food", colorKey = "green"),
             )
 
             whenever(accountRepository.getAccountByIdSync(1)).thenReturn(Account(id = 1, name = "Cash", type = "Cash"))
@@ -786,6 +798,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             // Verify the auto-suggest still works (manual flag not set to true)
             val foodCategory = Category(1, "Food & Drinks", "icon", "color")
             whenever(categoryRepository.allCategories).thenReturn(flowOf(listOf(foodCategory)))
+            whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(foodCategory))
             initializeViewModel()
 
             viewModel.suggestedCategory.test(timeout = 5.seconds) {
@@ -803,6 +816,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             // Arrange
             val foodCategory = Category(1, "Food & Drinks", "food_icon", "green")
             whenever(categoryRepository.allCategories).thenReturn(flowOf(listOf(foodCategory)))
+            whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(foodCategory))
             initializeViewModel()
 
             // Act: set a category
@@ -861,6 +875,14 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
                         Category(id = 10, name = "Food", iconKey = "food", colorKey = "green"),
                     ),
                 ),
+            )
+            whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(
+                listOf(
+                    Category(id = 10, name = "Food", iconKey = "food", colorKey = "green"),
+                ),
+            )
+            whenever(categoryRepository.getCategoryById(10)).thenReturn(
+                Category(id = 10, name = "Food", iconKey = "food", colorKey = "green"),
             )
             initializeViewModel()
 
@@ -1102,8 +1124,9 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             val createdCategory = Category(1, newCategoryName, resolvedIconKey, "blue_light")
             var callbackResult: Category? = null
 
-            whenever(db.categoryDao().findByName(newCategoryName)).thenReturn(null)
+            whenever(categoryRepository.findByName(newCategoryName)).thenReturn(null)
             whenever(categoryRepository.allCategories).thenReturn(flowOf(emptyList<Category>()))
+            whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(emptyList())
             whenever(categoryRepository.insert(any<Category>())).thenReturn(1L)
             whenever(categoryRepository.getCategoryById(1)).thenReturn(createdCategory)
 

@@ -342,7 +342,7 @@ class TransactionViewModel(
             .flatMapLatest { (description, manualSelect) ->
                 if (description.length > 2 && !manualSelect) {
                     flow {
-                        val allCategoriesList = allCategories.first()
+                        val allCategoriesList = categoryRepository.getAllCategoriesSnapshot()
                         emit(HeuristicCategorizer.findCategoryForDescription(description, allCategoriesList))
                     }
                 } else {
@@ -1002,10 +1002,9 @@ class TransactionViewModel(
         // This logic is best handled by the UI observing the state changes, or we can look them up here
         // For simplicity, we assume the UI will re-resolve the ID to the object
         viewModelScope.launch {
-            val categories = allCategories.first()
+            val category = transactionDetails.transaction.categoryId?.let { categoryRepository.getCategoryById(it) }
             val account = accountRepository.getAccountByIdSync(transactionDetails.transaction.accountId)
 
-            val category = categories.find { it.id == transactionDetails.transaction.categoryId }
             _addTransactionCategory.value = category
             _userManuallySelectedCategory.value = true // Prevent auto-categorizer from overwriting
 
@@ -1385,13 +1384,13 @@ class TransactionViewModel(
     ) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            val existingCategory = db.categoryDao().findByName(name)
+            val existingCategory = categoryRepository.findByName(name)
             if (existingCategory != null) {
                 _validationError.value = "A category named '$name' already exists."
                 return@launch
             }
 
-            val usedColorKeys = allCategories.first().map { it.colorKey }
+            val usedColorKeys = categoryRepository.getAllCategoriesSnapshot().map { it.colorKey }
             val finalIconKey = if (iconKey == "category") "letter_default" else iconKey
             val finalColorKey = if (colorKey == "gray_light") CategoryIconHelper.getNextAvailableColor(usedColorKeys) else colorKey
 

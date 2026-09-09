@@ -26,7 +26,6 @@ import io.pm.finlight.data.db.entity.Trip
 import io.pm.finlight.security.SecurityManager
 import io.pm.finlight.utils.CategoryIconHelper
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
@@ -1137,7 +1136,7 @@ abstract class AppDatabase : RoomDatabase() {
                     val smsRuleSettingsRepository = io.pm.finlight.di.ServiceLocator.provideSmsRuleSettingsRepository(context)
 
                     val categoryDao = database.categoryDao()
-                    val categoryCount = categoryDao.getAllCategories().first().size
+                    val categoryCount = categoryDao.getCategoryCount()
                     if (categoryCount == 0) {
                         Log.w("DatabaseCallback", "Categories table is empty. Repopulating default categories.")
                         categoryDao.insertAllIgnore(CategoryIconHelper.predefinedCategories)
@@ -1172,7 +1171,7 @@ abstract class AppDatabase : RoomDatabase() {
 
             private suspend fun repairCategoryIcons(db: AppDatabase) {
                 val categoryDao = db.categoryDao()
-                val allCategories = categoryDao.getAllCategories().first()
+                val allCategories = categoryDao.getAllCategoriesSnapshot()
                 val usedColorKeys = allCategories.mapNotNull { it.colorKey }.toMutableList()
 
                 val categoriesToFix = allCategories.filter { it.iconKey == "category" }

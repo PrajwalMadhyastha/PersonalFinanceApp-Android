@@ -126,7 +126,7 @@ object DataExportService {
                     AppDataBackup(
                         transactions = db.transactionQueryDao().getAllTransactionsSimple().first(),
                         accounts = db.accountDao().getAllAccountsSnapshot(),
-                        categories = db.categoryDao().getAllCategories().first(),
+                        categories = db.categoryDao().getAllCategoriesSnapshot(),
                         budgets = db.budgetDao().getAllBudgets().first(),
                         merchantMappings = db.merchantMappingDao().getAllMappings().first(),
                         splitTransactions = db.splitTransactionDao().getAllSplits().first(),
