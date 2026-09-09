@@ -586,7 +586,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             val newCategory = Category(1, newCategoryName, newIcon, newColor)
             var createdCategory: Category? = null
 
-            whenever(db.categoryDao().findByName(newCategoryName)).thenReturn(null)
+            whenever(categoryRepository.findByName(newCategoryName)).thenReturn(null)
             whenever(categoryRepository.allCategories).thenReturn(flowOf(emptyList())) // For color helper
             whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(emptyList())
             whenever(categoryRepository.insert(Category(name = newCategoryName, iconKey = newIcon, colorKey = newColor))).thenReturn(1L)
@@ -609,7 +609,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             val existingCategory = Category(1, existingCategoryName, "icon", "color")
             var createdCategory: Category? = null
 
-            whenever(db.categoryDao().findByName(existingCategoryName)).thenReturn(existingCategory)
+            whenever(categoryRepository.findByName(existingCategoryName)).thenReturn(existingCategory)
 
             // Act & Assert
             viewModel.validationError.test {
@@ -672,6 +672,9 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
                     Category(id = 10, name = "Food", iconKey = "food", colorKey = "green"),
                     Category(id = 11, name = "Transport", iconKey = "car", colorKey = "blue"),
                 ),
+            )
+            whenever(categoryRepository.getCategoryById(10)).thenReturn(
+                Category(id = 10, name = "Food", iconKey = "food", colorKey = "green"),
             )
 
             whenever(accountRepository.getAccountByIdSync(1)).thenReturn(Account(id = 1, name = "Cash", type = "Cash"))
@@ -877,6 +880,9 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
                 listOf(
                     Category(id = 10, name = "Food", iconKey = "food", colorKey = "green"),
                 ),
+            )
+            whenever(categoryRepository.getCategoryById(10)).thenReturn(
+                Category(id = 10, name = "Food", iconKey = "food", colorKey = "green"),
             )
             initializeViewModel()
 
@@ -1118,7 +1124,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
             val createdCategory = Category(1, newCategoryName, resolvedIconKey, "blue_light")
             var callbackResult: Category? = null
 
-            whenever(db.categoryDao().findByName(newCategoryName)).thenReturn(null)
+            whenever(categoryRepository.findByName(newCategoryName)).thenReturn(null)
             whenever(categoryRepository.allCategories).thenReturn(flowOf(emptyList<Category>()))
             whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(emptyList())
             whenever(categoryRepository.insert(any<Category>())).thenReturn(1L)

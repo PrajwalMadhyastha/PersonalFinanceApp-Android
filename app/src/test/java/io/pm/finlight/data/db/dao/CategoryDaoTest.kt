@@ -103,6 +103,20 @@ class CategoryDaoTest {
         }
 
     @Test
+    fun `getCategoryCount returns correct count`() =
+        runTest {
+            // Assert initial count is 0
+            assertEquals(0, categoryDao.getCategoryCount())
+
+            // Act & Assert after inserting items
+            categoryDao.insert(Category(name = "Cat1", iconKey = "icon1", colorKey = "color1"))
+            assertEquals(1, categoryDao.getCategoryCount())
+
+            categoryDao.insert(Category(name = "Cat2", iconKey = "icon2", colorKey = "color2"))
+            assertEquals(2, categoryDao.getCategoryCount())
+        }
+
+    @Test
     fun `getCategoryById returns correct category`() =
         runTest {
             // Arrange

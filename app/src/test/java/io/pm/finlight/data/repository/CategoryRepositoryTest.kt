@@ -74,6 +74,19 @@ class CategoryRepositoryTest : BaseViewModelTest() {
         }
 
     @Test
+    fun `findByName calls DAO`() =
+        runTest {
+            val mockCategory = Category(id = 1, name = "Food", iconKey = "restaurant", colorKey = "red")
+            `when`(categoryDao.findByName("Food")).thenReturn(mockCategory)
+            val repository = CategoryRepository(categoryDao)
+
+            val result = repository.findByName("Food")
+
+            assertEquals(mockCategory, result)
+            verify(categoryDao).findByName("Food")
+        }
+
+    @Test
     fun `insertAll calls DAO`() =
         runTest {
             // Arrange

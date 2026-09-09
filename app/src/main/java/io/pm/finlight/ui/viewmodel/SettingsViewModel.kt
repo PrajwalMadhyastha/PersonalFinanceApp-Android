@@ -939,7 +939,7 @@ class SettingsViewModel(
         name: String,
         usedColorKeys: MutableList<String>,
     ): Category {
-        var category = categoryRepository.getAllCategoriesSnapshot().find { it.name.equals(name, ignoreCase = true) }
+        var category = categoryRepository.findByName(name)
         if (category == null) {
             val nextColor = CategoryIconHelper.getNextAvailableColor(usedColorKeys)
             usedColorKeys.add(nextColor)

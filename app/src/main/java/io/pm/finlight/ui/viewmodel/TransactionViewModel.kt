@@ -1002,10 +1002,9 @@ class TransactionViewModel(
         // This logic is best handled by the UI observing the state changes, or we can look them up here
         // For simplicity, we assume the UI will re-resolve the ID to the object
         viewModelScope.launch {
-            val categories = categoryRepository.getAllCategoriesSnapshot()
+            val category = transactionDetails.transaction.categoryId?.let { categoryRepository.getCategoryById(it) }
             val account = accountRepository.getAccountByIdSync(transactionDetails.transaction.accountId)
 
-            val category = categories.find { it.id == transactionDetails.transaction.categoryId }
             _addTransactionCategory.value = category
             _userManuallySelectedCategory.value = true // Prevent auto-categorizer from overwriting
 
@@ -1385,7 +1384,7 @@ class TransactionViewModel(
     ) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            val existingCategory = db.categoryDao().findByName(name)
+            val existingCategory = categoryRepository.findByName(name)
             if (existingCategory != null) {
                 _validationError.value = "A category named '$name' already exists."
                 return@launch

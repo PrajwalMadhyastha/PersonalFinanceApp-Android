@@ -492,6 +492,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
 
             `when`(categoryRepository.allCategories).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
             `when`(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(Category(1, "Food", "", "")))
+            `when`(categoryRepository.findByName("Food")).thenReturn(Category(1, "Food", "", ""))
             `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(tagDao.findByName("Work")).thenReturn(Tag(1, "Work"))
             `when`(tagDao.findByName("Personal")).thenReturn(null)
@@ -542,6 +543,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
 
             `when`(categoryRepository.allCategories).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
             `when`(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(Category(1, "Food", "", "")))
+            `when`(categoryRepository.findByName("Food")).thenReturn(Category(1, "Food", "", ""))
             `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "OtherBank", "Bank")))
             `when`(accountRepository.insert(Account(name = "NewWallet", type = "Imported"))).thenReturn(2L)
             `when`(transactionRepository.insertTransactionWithTags(anyObject(), anyObject())).thenReturn(1L)

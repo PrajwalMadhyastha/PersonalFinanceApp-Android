@@ -1136,7 +1136,7 @@ abstract class AppDatabase : RoomDatabase() {
                     val smsRuleSettingsRepository = io.pm.finlight.di.ServiceLocator.provideSmsRuleSettingsRepository(context)
 
                     val categoryDao = database.categoryDao()
-                    val categoryCount = categoryDao.getAllCategoriesSnapshot().size
+                    val categoryCount = categoryDao.getCategoryCount()
                     if (categoryCount == 0) {
                         Log.w("DatabaseCallback", "Categories table is empty. Repopulating default categories.")
                         categoryDao.insertAllIgnore(CategoryIconHelper.predefinedCategories)
