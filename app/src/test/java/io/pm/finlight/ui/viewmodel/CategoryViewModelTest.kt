@@ -35,6 +35,9 @@ class CategoryViewModelTest : BaseViewModelTest() {
     override fun setup() {
         super.setup()
         `when`(categoryRepository.allCategories).thenReturn(flowOf(emptyList()))
+        runTest {
+            `when`(categoryRepository.getAllCategoriesSnapshot()).thenReturn(emptyList())
+        }
         viewModel = CategoryViewModel(categoryRepository, transactionRepository, categoryDao)
     }
 
@@ -59,7 +62,7 @@ class CategoryViewModelTest : BaseViewModelTest() {
             // Arrange
             val categoryName = "New Category"
             `when`(categoryDao.findByName(categoryName)).thenReturn(null)
-            `when`(categoryRepository.allCategories).thenReturn(flowOf(emptyList())) // For getNextAvailableColor
+            `when`(categoryRepository.getAllCategoriesSnapshot()).thenReturn(emptyList()) // For getNextAvailableColor
             val categoryCaptor = argumentCaptor<Category>()
             viewModel = CategoryViewModel(categoryRepository, transactionRepository, categoryDao)
 

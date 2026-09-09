@@ -133,6 +133,7 @@ abstract class TransactionViewModelBaseSetup : BaseViewModelTest() {
             ).thenReturn(flowOf(emptyList()))
             whenever(accountRepository.allAccounts).thenReturn(flowOf(emptyList()))
             whenever(categoryRepository.allCategories).thenReturn(flowOf(emptyList()))
+            whenever(categoryRepository.getAllCategoriesSnapshot()).thenReturn(emptyList())
             whenever(tagRepository.allTags).thenReturn(flowOf(emptyList()))
             whenever(transactionRepository.getFirstTransactionDate()).thenReturn(flowOf(null))
             whenever(transactionRepository.getMonthlyTrends(anyLong())).thenReturn(flowOf(emptyList()))

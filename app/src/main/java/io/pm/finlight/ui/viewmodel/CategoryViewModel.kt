@@ -13,7 +13,6 @@ import androidx.lifecycle.viewModelScope
 import io.pm.finlight.utils.CategoryIconHelper
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
@@ -43,7 +42,7 @@ class CategoryViewModel(
                 return@launch
             }
 
-            val usedColorKeys = allCategories.firstOrNull()?.map { it.colorKey } ?: emptyList()
+            val usedColorKeys = categoryRepository.getAllCategoriesSnapshot().map { it.colorKey }
             val finalIconKey = if (iconKey == "category") "letter_default" else iconKey
             val finalColorKey =
                 if (colorKey == "gray_light") {

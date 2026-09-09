@@ -209,6 +209,9 @@ class SettingsViewModelTest : BaseViewModelTest() {
             `when`(accountDao.getAllAccounts()).thenReturn(flowOf(emptyList()))
             `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(emptyList())
             `when`(categoryDao.getAllCategories()).thenReturn(flowOf(emptyList()))
+            `when`(categoryDao.getAllCategoriesSnapshot()).thenReturn(emptyList())
+            `when`(categoryRepository.allCategories).thenReturn(flowOf(emptyList()))
+            `when`(categoryRepository.getAllCategoriesSnapshot()).thenReturn(emptyList())
             `when`(budgetDao.getAllBudgets()).thenReturn(flowOf(emptyList()))
             `when`(merchantMappingDao.getAllMappings()).thenReturn(flowOf(emptyList()))
             `when`(splitTransactionDao.getAllSplits()).thenReturn(flowOf(emptyList()))
@@ -367,6 +370,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
 
             `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(categoryDao.getAllCategories()).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
+            `when`(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(Category(1, "Food", "", "")))
 
             initializeViewModel()
 
@@ -443,6 +447,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             val correctedData = listOf("", "", "2025-10-09 10:00:00", "a", "10", "expense", "Food", "Savings", "", "false", "")
             `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(categoryDao.getAllCategories()).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
+            `when`(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(Category(1, "Food", "", "")))
 
             // Act
             viewModel.updateAndRevalidateRow(1, correctedData)
@@ -486,6 +491,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             )
 
             `when`(categoryRepository.allCategories).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
+            `when`(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(Category(1, "Food", "", "")))
             `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(tagDao.findByName("Work")).thenReturn(Tag(1, "Work"))
             `when`(tagDao.findByName("Personal")).thenReturn(null)
@@ -535,6 +541,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             )
 
             `when`(categoryRepository.allCategories).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
+            `when`(categoryRepository.getAllCategoriesSnapshot()).thenReturn(listOf(Category(1, "Food", "", "")))
             `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "OtherBank", "Bank")))
             `when`(accountRepository.insert(Account(name = "NewWallet", type = "Imported"))).thenReturn(2L)
             `when`(transactionRepository.insertTransactionWithTags(anyObject(), anyObject())).thenReturn(1L)

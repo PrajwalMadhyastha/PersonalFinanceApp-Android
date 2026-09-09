@@ -41,6 +41,22 @@ class CategoryRepositoryTest : BaseViewModelTest() {
         }
 
     @Test
+    fun `getAllCategoriesSnapshot calls DAO`() =
+        runTest {
+            // Arrange
+            val mockCategories = listOf(Category(id = 1, name = "Food", iconKey = "restaurant", colorKey = "red"))
+            `when`(categoryDao.getAllCategoriesSnapshot()).thenReturn(mockCategories)
+            val repository = CategoryRepository(categoryDao)
+
+            // Act
+            val result = repository.getAllCategoriesSnapshot()
+
+            // Assert
+            assertEquals(mockCategories, result)
+            verify(categoryDao).getAllCategoriesSnapshot()
+        }
+
+    @Test
     fun `getCategoryById calls DAO`() =
         runTest {
             // Arrange

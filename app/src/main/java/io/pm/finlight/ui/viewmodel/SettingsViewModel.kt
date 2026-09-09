@@ -659,7 +659,7 @@ class SettingsViewModel(
         initialData: List<ReviewableRow>? = null,
     ): CsvValidationReport {
         val accountsMap = accountRepository.getAllAccountsSnapshot().associateBy { it.name }
-        val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
+        val categoriesMap = categoryRepository.getAllCategoriesSnapshot().associateBy { it.name }
 
         if (initialData != null) {
             val revalidatedRows =
@@ -765,7 +765,7 @@ class SettingsViewModel(
                     val revalidatedRow =
                         withContext(dispatchers.io) {
                             val accountsMap = accountRepository.getAllAccountsSnapshot().associateBy { it.name }
-                            val categoriesMap = db.categoryDao().getAllCategories().first().associateBy { it.name }
+                            val categoriesMap = categoryRepository.getAllCategoriesSnapshot().associateBy { it.name }
                             createReviewableRow(lineNumber, correctedData, accountsMap, categoriesMap)
                         }
                     currentRows[indexToUpdate] = revalidatedRow
@@ -786,7 +786,7 @@ class SettingsViewModel(
             val isFinlightExport = header.contains("Id") && header.contains("ParentId")
 
             val learnedMappings = mutableMapOf<String, Int>()
-            val allCategories = db.categoryDao().getAllCategories().first()
+            val allCategories = categoryRepository.getAllCategoriesSnapshot()
             val usedColorKeys = allCategories.mapNotNull { it.colorKey }.toMutableList()
 
             transactionRunner.run(db) {
@@ -939,7 +939,7 @@ class SettingsViewModel(
         name: String,
         usedColorKeys: MutableList<String>,
     ): Category {
-        var category = categoryRepository.allCategories.first().find { it.name.equals(name, ignoreCase = true) }
+        var category = categoryRepository.getAllCategoriesSnapshot().find { it.name.equals(name, ignoreCase = true) }
         if (category == null) {
             val nextColor = CategoryIconHelper.getNextAvailableColor(usedColorKeys)
             usedColorKeys.add(nextColor)
