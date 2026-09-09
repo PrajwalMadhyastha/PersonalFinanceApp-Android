@@ -87,7 +87,7 @@ class SmsTransactionSaver(
                         // getAccountById which would always return null.
                         account =
                             if (newId != -1L) {
-                                accountDao.getAccountByIdBlocking(newId.toInt())
+                                accountDao.getAccountByIdSync(newId.toInt())
                             } else {
                                 Log.d(tag, "Account '$accountName' already existed (IGNORE conflict). Fetching by name.")
                                 accountDao.findByName(accountName)

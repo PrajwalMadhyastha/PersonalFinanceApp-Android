@@ -222,9 +222,9 @@ class AccountViewModel(
 
     suspend fun checkAccountName(
         name: String,
-        excludeAccountId: Int? = null
+        excludeAccountId: Int? = null,
     ): AccountMatch {
-        val accounts = repository.allAccounts.first()
+        val accounts = repository.getAllAccountsSnapshot()
         val normalizedInput = normalizeAccountName(name)
 
         val exactMatch = accounts.find { it.name.equals(name, ignoreCase = true) && it.id != excludeAccountId }
@@ -246,7 +246,7 @@ class AccountViewModel(
     fun mergeAccounts(
         destinationAccountId: Int,
         sourceAccountIds: List<Int>,
-        onComplete: (Boolean) -> Unit = {}
+        onComplete: (Boolean) -> Unit = {},
     ) {
         viewModelScope.launch {
             try {
@@ -263,11 +263,11 @@ class AccountViewModel(
     fun addAccount(
         name: String,
         type: String,
-        onComplete: (Boolean) -> Unit = {}
+        onComplete: (Boolean) -> Unit = {},
     ) = viewModelScope.launch {
         try {
             if (name.isNotBlank() && type.isNotBlank()) {
-                val existingAccount = repository.allAccounts.first().find { it.name.equals(name, ignoreCase = true) }
+                val existingAccount = repository.getAllAccountsSnapshot().find { it.name.equals(name, ignoreCase = true) }
                 if (existingAccount != null) {
                     _uiEvent.send("An account named '$name' already exists.")
                     onComplete(false)
@@ -287,10 +287,10 @@ class AccountViewModel(
 
     fun updateAccount(
         account: Account,
-        onComplete: (Boolean) -> Unit = {}
+        onComplete: (Boolean) -> Unit = {},
     ) = viewModelScope.launch {
         try {
-            val existingAccount = repository.allAccounts.first().find { it.name.equals(account.name, ignoreCase = true) && it.id != account.id }
+            val existingAccount = repository.getAllAccountsSnapshot().find { it.name.equals(account.name, ignoreCase = true) && it.id != account.id }
             if (existingAccount != null) {
                 _uiEvent.send("An account named '${account.name}' already exists.")
                 onComplete(false)
@@ -310,7 +310,7 @@ class AccountViewModel(
     ) {
         if (newName.isBlank()) return
         viewModelScope.launch {
-            val accountToUpdate = repository.getAccountById(accountId).firstOrNull()
+            val accountToUpdate = repository.getAccountByIdSync(accountId)
             accountToUpdate?.let {
                 updateAccount(it.copy(name = newName))
             }

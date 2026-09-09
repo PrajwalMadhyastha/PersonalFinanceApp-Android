@@ -91,7 +91,7 @@ class DetectSelfTransferUseCase(
                             newTxnAliases = it
                         }
                     if (!fetchedNewTxnAccount) {
-                        newTxnAccount = accountDao.getAccountByIdBlocking(newTxn.accountId)
+                        newTxnAccount = accountDao.getAccountByIdSync(newTxn.accountId)
                         fetchedNewTxnAccount = true
                     }
 
@@ -113,7 +113,7 @@ class DetectSelfTransferUseCase(
                                 StringSimilarity.calculateTokenOverlapScore(alias.aliasName, candidateDesc) > 0.6
                         }
 
-                    val candidateAccount = accountDao.getAccountByIdBlocking(candidate.accountId)
+                    val candidateAccount = accountDao.getAccountByIdSync(candidate.accountId)
 
                     val candidateBankNameMatches =
                         candidateAccount?.name?.let {

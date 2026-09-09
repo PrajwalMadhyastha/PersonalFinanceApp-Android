@@ -96,10 +96,30 @@ class AccountRepositoryTest : BaseViewModelTest() {
         }
 
     @Test
+    fun `getAllAccountsSnapshot calls DAO`() =
+        runTest {
+            val accounts = listOf(Account(name = "Test", type = "Bank"))
+            `when`(accountDao.getAllAccountsSnapshot()).thenReturn(accounts)
+            val result = repository.getAllAccountsSnapshot()
+            verify(accountDao).getAllAccountsSnapshot()
+            assertEquals(accounts, result)
+        }
+
+    @Test
     fun `getAccountById calls DAO`() =
         runTest {
             repository.getAccountById(1)
             verify(accountDao).getAccountById(1)
+        }
+
+    @Test
+    fun `getAccountByIdSync calls DAO`() =
+        runTest {
+            val account = Account(id = 1, name = "Test", type = "Bank")
+            `when`(accountDao.getAccountByIdSync(1)).thenReturn(account)
+            val result = repository.getAccountByIdSync(1)
+            verify(accountDao).getAccountByIdSync(1)
+            assertEquals(account, result)
         }
 
     @Test
@@ -116,7 +136,7 @@ class AccountRepositoryTest : BaseViewModelTest() {
             val oldAccount = Account(id = 1, name = "Old Name", type = "Bank")
             val newAccount = Account(id = 1, name = "New Name", type = "Bank")
 
-            `when`(accountDao.getAccountByIdBlocking(1)).thenReturn(oldAccount)
+            `when`(accountDao.getAccountByIdSync(1)).thenReturn(oldAccount)
 
             mockkStatic("androidx.room.RoomDatabaseKt")
             coEvery { db.withTransaction<Any?>(any()) } coAnswers {
@@ -138,7 +158,7 @@ class AccountRepositoryTest : BaseViewModelTest() {
 
             val inOrder = inOrder(accountDao, accountAliasDao, writableDb)
             inOrder.verify(writableDb).beginTransaction()
-            inOrder.verify(accountDao).getAccountByIdBlocking(1)
+            inOrder.verify(accountDao).getAccountByIdSync(1)
             inOrder.verify(accountAliasDao).insertAll(capture(aliasCaptor))
             inOrder.verify(accountDao).update(newAccount)
             inOrder.verify(writableDb).setTransactionSuccessful()
@@ -154,7 +174,7 @@ class AccountRepositoryTest : BaseViewModelTest() {
         runTest {
             val account = Account(id = 1, name = "Same Name", type = "Bank")
 
-            `when`(accountDao.getAccountByIdBlocking(1)).thenReturn(account)
+            `when`(accountDao.getAccountByIdSync(1)).thenReturn(account)
 
             mockkStatic("androidx.room.RoomDatabaseKt")
             coEvery { db.withTransaction<Any?>(any()) } coAnswers {
@@ -175,7 +195,7 @@ class AccountRepositoryTest : BaseViewModelTest() {
 
             val inOrder = inOrder(accountDao, accountAliasDao, writableDb)
             inOrder.verify(writableDb).beginTransaction()
-            inOrder.verify(accountDao).getAccountByIdBlocking(1)
+            inOrder.verify(accountDao).getAccountByIdSync(1)
             inOrder.verify(accountDao).update(account)
             inOrder.verify(writableDb).setTransactionSuccessful()
             inOrder.verify(writableDb).endTransaction()
@@ -199,8 +219,8 @@ class AccountRepositoryTest : BaseViewModelTest() {
             val sourceAccount2 = Account(id = 2, name = "Source Account 2", type = "Bank")
             val sourceAccount3 = Account(id = 3, name = "Source Account 3", type = "Card")
 
-            `when`(accountDao.getAccountByIdBlocking(2)).thenReturn(sourceAccount2)
-            `when`(accountDao.getAccountByIdBlocking(3)).thenReturn(sourceAccount3)
+            `when`(accountDao.getAccountByIdSync(2)).thenReturn(sourceAccount2)
+            `when`(accountDao.getAccountByIdSync(3)).thenReturn(sourceAccount3)
 
             // Mock the withTransaction extension function to avoid the hang.
             // We manually call the transaction methods on writableDb to satisfy the test's verification logic.

@@ -130,7 +130,7 @@ class SmsProcessorWorkerTest : BaseViewModelTest() {
         coEvery { accountAliasDao.findByAlias(any()) } returns null
         coEvery { accountDao.findByName(any()) } returns Account(1, "Test", "Bank Account")
         coEvery { accountDao.insert(any()) } returns 1L
-        coEvery { accountDao.getAccountByIdBlocking(any()) } returns Account(1, "Test", "Bank Account")
+        coEvery { accountDao.getAccountByIdSync(any()) } returns Account(1, "Test", "Bank Account")
         coEvery { tagDao.findByName(any()) } returns null
         coEvery { tagDao.insert(any()) } returns 1L
 

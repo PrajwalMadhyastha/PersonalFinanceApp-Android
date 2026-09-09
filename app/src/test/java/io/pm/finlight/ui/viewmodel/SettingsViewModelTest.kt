@@ -207,6 +207,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
         runTest {
             `when`(transactionQueryDao.getAllTransactionsSimple()).thenReturn(flowOf(emptyList()))
             `when`(accountDao.getAllAccounts()).thenReturn(flowOf(emptyList()))
+            `when`(accountDao.getAllAccountsSnapshot()).thenReturn(emptyList())
             `when`(categoryDao.getAllCategories()).thenReturn(flowOf(emptyList()))
             `when`(budgetDao.getAllBudgets()).thenReturn(flowOf(emptyList()))
             `when`(merchantMappingDao.getAllMappings()).thenReturn(flowOf(emptyList()))
@@ -364,7 +365,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             val shadowContentResolver = shadowOf(applicationContext.contentResolver)
             shadowContentResolver.registerInputStream(mockUri, ByteArrayInputStream(csvContent.toByteArray()))
 
-            `when`(accountDao.getAllAccounts()).thenReturn(flowOf(listOf(Account(1, "Savings", "Bank"))))
+            `when`(accountDao.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(categoryDao.getAllCategories()).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
 
             initializeViewModel()
@@ -440,7 +441,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             setCsvValidationReport(viewModel, CsvValidationReport(reviewableRows = listOf(row1, row2)))
 
             val correctedData = listOf("", "", "2025-10-09 10:00:00", "a", "10", "expense", "Food", "Savings", "", "false", "")
-            `when`(accountDao.getAllAccounts()).thenReturn(flowOf(listOf(Account(1, "Savings", "Bank"))))
+            `when`(accountDao.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(categoryDao.getAllCategories()).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
 
             // Act
@@ -485,7 +486,7 @@ class SettingsViewModelTest : BaseViewModelTest() {
             )
 
             `when`(categoryRepository.allCategories).thenReturn(flowOf(listOf(Category(1, "Food", "", ""))))
-            `when`(accountRepository.allAccounts).thenReturn(flowOf(listOf(Account(1, "Savings", "Bank"))))
+            `when`(accountRepository.getAllAccountsSnapshot()).thenReturn(listOf(Account(1, "Savings", "Bank")))
             `when`(tagDao.findByName("Work")).thenReturn(Tag(1, "Work"))
             `when`(tagDao.findByName("Personal")).thenReturn(null)
             `when`(tagDao.insert(anyObject())).thenReturn(2L)

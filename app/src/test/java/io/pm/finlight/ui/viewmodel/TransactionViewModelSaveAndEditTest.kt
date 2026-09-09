@@ -523,7 +523,7 @@ class TransactionViewModelSaveAndEditTest : TransactionViewModelBaseSetup() {
 
             whenever(db.accountDao().findByName(newAccountName)).thenReturn(null)
             whenever(accountRepository.insert(Account(name = newAccountName, type = newAccountType))).thenReturn(1L)
-            whenever(accountRepository.getAccountById(1)).thenReturn(flowOf(newAccount))
+            whenever(accountRepository.getAccountByIdSync(1)).thenReturn(newAccount)
 
             // Act
             viewModel.createAccount(newAccountName, newAccountType) { createdAccount = it }
