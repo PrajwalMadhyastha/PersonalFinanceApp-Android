@@ -9,11 +9,27 @@ package io.pm.finlight
 
 import androidx.room.withTransaction
 import io.pm.finlight.data.db.AppDatabase
+import io.pm.finlight.data.db.dao.AccountAliasDao
+import io.pm.finlight.data.db.dao.AccountDao
 import io.pm.finlight.data.db.entity.AccountAlias
+import io.pm.finlight.domain.usecase.MergeAccountsUseCase
 import kotlinx.coroutines.flow.Flow
 
-class AccountRepository(private val db: AppDatabase) : IAccountRepository {
-    private val accountDao = db.accountDao()
+class AccountRepository(
+    private val accountDao: AccountDao,
+    private val accountAliasDao: AccountAliasDao,
+    private val db: AppDatabase,
+    private val mergeAccountsUseCase: MergeAccountsUseCase,
+) : IAccountRepository {
+    constructor(
+        db: AppDatabase,
+        mergeAccountsUseCase: MergeAccountsUseCase = MergeAccountsUseCase(db),
+    ) : this(
+        accountDao = db.accountDao(),
+        accountAliasDao = db.accountAliasDao(),
+        db = db,
+        mergeAccountsUseCase = mergeAccountsUseCase,
+    )
 
     override val accountsWithBalance: Flow<List<AccountWithBalance>> = accountDao.getAccountsWithBalance()
 
@@ -42,7 +58,7 @@ class AccountRepository(private val db: AppDatabase) : IAccountRepository {
             if (oldAccount != null && oldAccount.name != account.name) {
                 // Name changed: create an alias from the old name to this account
                 val alias = AccountAlias(aliasName = oldAccount.name, destinationAccountId = account.id)
-                db.accountAliasDao().insertAll(listOf(alias))
+                accountAliasDao.insertAll(listOf(alias))
             }
             accountDao.update(account)
         }
@@ -63,26 +79,6 @@ class AccountRepository(private val db: AppDatabase) : IAccountRepository {
         destinationAccountId: Int,
         sourceAccountIds: List<Int>,
     ) {
-        db.withTransaction {
-            // --- NEW: Create aliases for the source accounts before deleting them ---
-            val sourceAccounts = sourceAccountIds.mapNotNull { accountDao.getAccountByIdSync(it) }
-            val aliases =
-                sourceAccounts.map {
-                    AccountAlias(aliasName = it.name, destinationAccountId = destinationAccountId)
-                }
-            if (aliases.isNotEmpty()) {
-                db.accountAliasDao().insertAll(aliases)
-            }
-            // --- End of new logic ---
-
-            // 1. Re-assign goals from source accounts to the destination account.
-            db.goalDao().reassignGoals(sourceAccountIds, destinationAccountId)
-
-            // 2. Re-assign all transactions from source accounts to the destination account.
-            db.transactionWriteDao().reassignTransactions(sourceAccountIds, destinationAccountId)
-
-            // 3. Delete the now-empty source accounts.
-            accountDao.deleteByIds(sourceAccountIds)
-        }
+        mergeAccountsUseCase(destinationAccountId, sourceAccountIds)
     }
 }
