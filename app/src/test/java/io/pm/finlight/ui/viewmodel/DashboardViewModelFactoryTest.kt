@@ -7,6 +7,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.mockk
+import io.mockk.verify
 import io.pm.finlight.DashboardViewModel
 import io.pm.finlight.DashboardViewModelFactory
 import io.pm.finlight.IAccountRepository
@@ -16,6 +17,7 @@ import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.di.ServiceLocator
 import org.junit.After
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
@@ -52,12 +54,26 @@ class DashboardViewModelFactoryTest {
         val mockTxnRepo: ITransactionRepository = mockk(relaxed = true)
         val mockAccountRepo: IAccountRepository = mockk(relaxed = true)
 
-        ServiceLocator.setTransactionRepositoryForTesting(mockTxnRepo)
-        ServiceLocator.setAccountRepositoryForTesting(mockAccountRepo)
+        ServiceLocator.setTransactionRepository(mockTxnRepo)
+        ServiceLocator.setAccountRepository(mockAccountRepo)
 
         val viewModel = factory.create(DashboardViewModel::class.java)
 
         assertNotNull(viewModel)
+        val txnField =
+            DashboardViewModel::class.java.getDeclaredField("transactionRepository").apply {
+                isAccessible = true
+            }.get(viewModel)
+        assertSame(mockTxnRepo, txnField)
+
+        val accField =
+            DashboardViewModel::class.java.getDeclaredField("accountRepository").apply {
+                isAccessible = true
+            }.get(viewModel)
+        assertSame(mockAccountRepo, accField)
+
+        verify { mockTxnRepo.getFinancialSummaryForRangeFlow(any(), any()) }
+        verify { mockAccountRepo.accountsWithBalance }
     }
 
     @Test

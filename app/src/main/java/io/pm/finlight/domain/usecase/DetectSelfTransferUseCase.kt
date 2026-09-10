@@ -1,5 +1,6 @@
 package io.pm.finlight.domain.usecase
 
+import android.content.Context
 import io.pm.finlight.Account
 import io.pm.finlight.ITransactionRepository
 import io.pm.finlight.Transaction
@@ -9,6 +10,7 @@ import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.db.dao.AccountAliasDao
 import io.pm.finlight.data.db.dao.AccountDao
 import io.pm.finlight.data.db.entity.AccountAlias
+import io.pm.finlight.di.ServiceLocator
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.DispatcherProvider
 import kotlinx.coroutines.withContext
@@ -30,6 +32,20 @@ class DetectSelfTransferUseCase(
     private val accountAliasDao: AccountAliasDao,
     private val dispatcherProvider: DispatcherProvider = DefaultDispatcherProvider(),
 ) {
+    constructor(
+        context: Context,
+        db: AppDatabase = AppDatabase.getInstance(context),
+    ) : this(
+        transactionRepository = ServiceLocator.provideTransactionRepository(context),
+        accountDao = db.accountDao(),
+        accountAliasDao = db.accountAliasDao(),
+        dispatcherProvider = ServiceLocator.provideDispatcherProvider(context),
+    )
+
+    @Deprecated(
+        message = "Pass ITransactionRepository directly to primary constructor or provide Context to resolve via ServiceLocator",
+        level = DeprecationLevel.WARNING,
+    )
     constructor(
         db: AppDatabase,
         dispatcherProvider: DispatcherProvider = DefaultDispatcherProvider(),

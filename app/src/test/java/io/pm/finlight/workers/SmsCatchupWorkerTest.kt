@@ -18,6 +18,7 @@ import io.mockk.*
 import io.pm.finlight.*
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.db.dao.*
+import io.pm.finlight.di.ServiceLocator
 import io.pm.finlight.ml.MlModelFactory
 import io.pm.finlight.ml.NerExtractor
 import io.pm.finlight.ml.SmsClassifier
@@ -49,7 +50,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     private lateinit var accountDao: AccountDao
     private lateinit var accountAliasDao: AccountAliasDao
     private lateinit var tagDao: TagDao
-    private lateinit var smsRepository: SmsRepository
+    private lateinit var smsRepository: ISmsRepository
     private lateinit var deletedSmsHashDao: DeletedSmsHashDao
     private lateinit var mockClassifier: SmsClassifier
     private lateinit var mockNerExtractor: NerExtractor
@@ -102,8 +103,8 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
         every { db.deletedSmsHashDao() } returns deletedSmsHashDao
         coEvery { deletedSmsHashDao.getAllHashes() } returns emptyList()
 
-        mockkConstructor(SmsRepository::class)
-        coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns emptyList()
+        ServiceLocator.setSmsRepository(smsRepository)
+        coEvery { smsRepository.fetchAllSms(any(), any()) } returns emptyList()
 
         coEvery { merchantMappingDao.getAllMappings() } returns flowOf(emptyList())
         coEvery { transactionQueryDao.getAllSmsHashes() } returns flowOf(emptyList())
@@ -144,6 +145,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
 
     @After
     override fun tearDown() {
+        ServiceLocator.reset()
         unmockkAll()
         super.tearDown()
     }
@@ -151,7 +153,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     @Test
     fun `returns success when no recent SMS are found`() =
         runTest {
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns emptyList()
+            coEvery { smsRepository.fetchAllSms(any(), any()) } returns emptyList()
 
             val worker = TestListenableWorkerBuilder<SmsCatchupWorker>(context).build()
             val result = worker.doWork()
@@ -164,7 +166,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     fun `recovers missed transaction silently`() =
         runTest {
             val sms = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms)
+            coEvery { smsRepository.fetchAllSms(any(), any()) } returns listOf(sms)
 
             val txn =
                 PotentialTransaction(
@@ -191,7 +193,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     fun `skips transaction already in database`() =
         runTest {
             val sms = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms)
+            coEvery { smsRepository.fetchAllSms(any(), any()) } returns listOf(sms)
 
             val txn =
                 PotentialTransaction(
@@ -218,7 +220,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
             // Two identical SMS messages in the inbox
             val sms1 = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
             val sms2 = SmsMessage(2L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis() + 1000)
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms1, sms2)
+            coEvery { smsRepository.fetchAllSms(any(), any()) } returns listOf(sms1, sms2)
 
             val txn =
                 PotentialTransaction(
@@ -242,7 +244,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     fun `skips transaction whose hash is in the deleted deny-list`() =
         runTest {
             val sms = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms)
+            coEvery { smsRepository.fetchAllSms(any(), any()) } returns listOf(sms)
 
             val txn =
                 PotentialTransaction(
@@ -273,7 +275,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
         runTest {
             val startSlot = slot<Long>()
             val endSlot = slot<Long>()
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(capture(startSlot), capture(endSlot)) } returns emptyList()
+            coEvery { smsRepository.fetchAllSms(capture(startSlot), capture(endSlot)) } returns emptyList()
 
             val before = System.currentTimeMillis()
             val worker = TestListenableWorkerBuilder<SmsCatchupWorker>(context).build()
@@ -294,7 +296,7 @@ class SmsCatchupWorkerTest : BaseViewModelTest() {
     fun `skips transaction when existsBySmsHash returns true in dynamic TOCTOU check`() =
         runTest {
             val sms = SmsMessage(1L, "AM-HDFCBK", "Spent Rs.100 at Swiggy", System.currentTimeMillis())
-            coEvery { anyConstructed<SmsRepository>().fetchAllSms(any(), any()) } returns listOf(sms)
+            coEvery { smsRepository.fetchAllSms(any(), any()) } returns listOf(sms)
 
             val txn =
                 PotentialTransaction(

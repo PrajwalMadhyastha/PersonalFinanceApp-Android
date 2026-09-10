@@ -91,13 +91,13 @@ class ServiceLocatorDomainRepositoriesTest {
     }
 
     @Test
-    fun setTransactionRepository_and_setTransactionRepositoryForTesting_overridesInstance() {
+    fun setTransactionRepository_overridesInstance() {
         val mockRepo: ITransactionRepository = mockk(relaxed = true)
         ServiceLocator.setTransactionRepository(mockRepo)
         assertSame(mockRepo, ServiceLocator.provideTransactionRepository(application))
 
         val mockRepo2: ITransactionRepository = mockk(relaxed = true)
-        ServiceLocator.setTransactionRepositoryForTesting(mockRepo2)
+        ServiceLocator.setTransactionRepository(mockRepo2)
         assertSame(mockRepo2, ServiceLocator.provideTransactionRepository(application))
 
         ServiceLocator.setTransactionRepository(null)
@@ -107,13 +107,13 @@ class ServiceLocatorDomainRepositoriesTest {
     }
 
     @Test
-    fun setAccountRepository_and_setAccountRepositoryForTesting_overridesInstance() {
+    fun setAccountRepository_overridesInstance() {
         val mockRepo: IAccountRepository = mockk(relaxed = true)
         ServiceLocator.setAccountRepository(mockRepo)
         assertSame(mockRepo, ServiceLocator.provideAccountRepository(application))
 
         val mockRepo2: IAccountRepository = mockk(relaxed = true)
-        ServiceLocator.setAccountRepositoryForTesting(mockRepo2)
+        ServiceLocator.setAccountRepository(mockRepo2)
         assertSame(mockRepo2, ServiceLocator.provideAccountRepository(application))
 
         ServiceLocator.setAccountRepository(null)
@@ -123,13 +123,13 @@ class ServiceLocatorDomainRepositoriesTest {
     }
 
     @Test
-    fun setCategoryRepository_and_setCategoryRepositoryForTesting_overridesInstance() {
+    fun setCategoryRepository_overridesInstance() {
         val mockRepo: ICategoryRepository = mockk(relaxed = true)
         ServiceLocator.setCategoryRepository(mockRepo)
         assertSame(mockRepo, ServiceLocator.provideCategoryRepository(application))
 
         val mockRepo2: ICategoryRepository = mockk(relaxed = true)
-        ServiceLocator.setCategoryRepositoryForTesting(mockRepo2)
+        ServiceLocator.setCategoryRepository(mockRepo2)
         assertSame(mockRepo2, ServiceLocator.provideCategoryRepository(application))
 
         ServiceLocator.setCategoryRepository(null)
@@ -139,13 +139,13 @@ class ServiceLocatorDomainRepositoriesTest {
     }
 
     @Test
-    fun setTagRepository_and_setTagRepositoryForTesting_overridesInstance() {
+    fun setTagRepository_overridesInstance() {
         val mockRepo: ITagRepository = mockk(relaxed = true)
         ServiceLocator.setTagRepository(mockRepo)
         assertSame(mockRepo, ServiceLocator.provideTagRepository(application))
 
         val mockRepo2: ITagRepository = mockk(relaxed = true)
-        ServiceLocator.setTagRepositoryForTesting(mockRepo2)
+        ServiceLocator.setTagRepository(mockRepo2)
         assertSame(mockRepo2, ServiceLocator.provideTagRepository(application))
 
         ServiceLocator.setTagRepository(null)
@@ -155,13 +155,13 @@ class ServiceLocatorDomainRepositoriesTest {
     }
 
     @Test
-    fun setSmsRepository_and_setSmsRepositoryForTesting_overridesInstance() {
+    fun setSmsRepository_overridesInstance() {
         val mockRepo: ISmsRepository = mockk(relaxed = true)
         ServiceLocator.setSmsRepository(mockRepo)
         assertSame(mockRepo, ServiceLocator.provideSmsRepository(application))
 
         val mockRepo2: ISmsRepository = mockk(relaxed = true)
-        ServiceLocator.setSmsRepositoryForTesting(mockRepo2)
+        ServiceLocator.setSmsRepository(mockRepo2)
         assertSame(mockRepo2, ServiceLocator.provideSmsRepository(application))
 
         ServiceLocator.setSmsRepository(null)
@@ -178,11 +178,11 @@ class ServiceLocatorDomainRepositoriesTest {
         val mockTag: ITagRepository = mockk(relaxed = true)
         val mockSms: ISmsRepository = mockk(relaxed = true)
 
-        ServiceLocator.setTransactionRepositoryForTesting(mockTxn)
-        ServiceLocator.setAccountRepositoryForTesting(mockAccount)
-        ServiceLocator.setCategoryRepositoryForTesting(mockCategory)
-        ServiceLocator.setTagRepositoryForTesting(mockTag)
-        ServiceLocator.setSmsRepositoryForTesting(mockSms)
+        ServiceLocator.setTransactionRepository(mockTxn)
+        ServiceLocator.setAccountRepository(mockAccount)
+        ServiceLocator.setCategoryRepository(mockCategory)
+        ServiceLocator.setTagRepository(mockTag)
+        ServiceLocator.setSmsRepository(mockSms)
 
         assertSame(mockTxn, ServiceLocator.provideTransactionRepository(application))
         assertSame(mockAccount, ServiceLocator.provideAccountRepository(application))

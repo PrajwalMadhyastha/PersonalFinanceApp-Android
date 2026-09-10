@@ -58,11 +58,11 @@ class TransactionViewModelFactoryTest {
         val mockTagRepo: ITagRepository = mockk(relaxed = true)
         val mockSmsRepo: ISmsRepository = mockk(relaxed = true)
 
-        ServiceLocator.setTransactionRepositoryForTesting(mockTxnRepo)
-        ServiceLocator.setAccountRepositoryForTesting(mockAccountRepo)
-        ServiceLocator.setCategoryRepositoryForTesting(mockCategoryRepo)
-        ServiceLocator.setTagRepositoryForTesting(mockTagRepo)
-        ServiceLocator.setSmsRepositoryForTesting(mockSmsRepo)
+        ServiceLocator.setTransactionRepository(mockTxnRepo)
+        ServiceLocator.setAccountRepository(mockAccountRepo)
+        ServiceLocator.setCategoryRepository(mockCategoryRepo)
+        ServiceLocator.setTagRepository(mockTagRepo)
+        ServiceLocator.setSmsRepository(mockSmsRepo)
 
         val viewModel = factory.create(TransactionViewModel::class.java)
 
@@ -70,6 +70,18 @@ class TransactionViewModelFactoryTest {
         assertSame(mockTxnRepo, viewModel.transactionRepository)
         assertSame(mockAccountRepo, viewModel.accountRepository)
         assertSame(mockCategoryRepo, viewModel.categoryRepository)
+
+        val tagField =
+            TransactionViewModel::class.java.getDeclaredField("tagRepository").apply {
+                isAccessible = true
+            }.get(viewModel)
+        assertSame(mockTagRepo, tagField)
+
+        val smsField =
+            TransactionViewModel::class.java.getDeclaredField("smsRepository").apply {
+                isAccessible = true
+            }.get(viewModel)
+        assertSame(mockSmsRepo, smsField)
     }
 
     @Test

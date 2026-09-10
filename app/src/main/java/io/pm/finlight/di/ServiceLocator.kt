@@ -332,18 +332,8 @@ object ServiceLocator {
     }
 
     @VisibleForTesting
-    fun setTransactionRepositoryForTesting(repository: ITransactionRepository?) {
-        setTransactionRepository(repository)
-    }
-
-    @VisibleForTesting
     fun setAccountRepository(repository: IAccountRepository?) {
         accountRepository = repository
-    }
-
-    @VisibleForTesting
-    fun setAccountRepositoryForTesting(repository: IAccountRepository?) {
-        setAccountRepository(repository)
     }
 
     @VisibleForTesting
@@ -352,28 +342,13 @@ object ServiceLocator {
     }
 
     @VisibleForTesting
-    fun setCategoryRepositoryForTesting(repository: ICategoryRepository?) {
-        setCategoryRepository(repository)
-    }
-
-    @VisibleForTesting
     fun setTagRepository(repository: ITagRepository?) {
         tagRepository = repository
     }
 
     @VisibleForTesting
-    fun setTagRepositoryForTesting(repository: ITagRepository?) {
-        setTagRepository(repository)
-    }
-
-    @VisibleForTesting
     fun setSmsRepository(repository: ISmsRepository?) {
         smsRepository = repository
-    }
-
-    @VisibleForTesting
-    fun setSmsRepositoryForTesting(repository: ISmsRepository?) {
-        setSmsRepository(repository)
     }
 
     @VisibleForTesting
