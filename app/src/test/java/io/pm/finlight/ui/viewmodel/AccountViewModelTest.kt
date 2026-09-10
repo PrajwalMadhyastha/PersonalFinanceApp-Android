@@ -37,6 +37,9 @@ class AccountViewModelTest : BaseViewModelTest() {
     @Mock
     private lateinit var settingsRepository: SettingsRepository
 
+    @Mock
+    private lateinit var mergeAccountsUseCase: io.pm.finlight.domain.usecase.MergeAccountsUseCase
+
     private lateinit var viewModel: AccountViewModel
 
     @Captor
@@ -60,6 +63,7 @@ class AccountViewModelTest : BaseViewModelTest() {
                 accountRepository,
                 transactionRepository,
                 settingsRepository,
+                mergeAccountsUseCase,
             )
     }
 
@@ -81,6 +85,7 @@ class AccountViewModelTest : BaseViewModelTest() {
                     accountRepository,
                     transactionRepository,
                     settingsRepository,
+                    mergeAccountsUseCase,
                 )
             val result = viewModel.accountsWithBalance.first()
 
@@ -142,7 +147,7 @@ class AccountViewModelTest : BaseViewModelTest() {
             viewModel.uiEvent.test {
                 assertEquals("Accounts merged successfully.", awaitItem())
             }
-            verify(accountRepository).mergeAccounts(destinationId, sourceIds)
+            verify(mergeAccountsUseCase).invoke(destinationId, sourceIds)
             assertEquals(false, viewModel.isSelectionModeActive.value)
             assertTrue(viewModel.selectedAccountIds.value.isEmpty())
         }
@@ -166,6 +171,7 @@ class AccountViewModelTest : BaseViewModelTest() {
                     accountRepository,
                     transactionRepository,
                     settingsRepository,
+                    mergeAccountsUseCase,
                 )
             // Ensure all coroutines launched in init complete before we assert
             advanceUntilIdle()
@@ -262,7 +268,7 @@ class AccountViewModelTest : BaseViewModelTest() {
                 advanceUntilIdle()
 
                 assertEquals("Error: Invalid selection for merge.", awaitItem())
-                verify(accountRepository, never()).mergeAccounts(anyInt(), anyObject())
+                verify(mergeAccountsUseCase, never()).invoke(anyInt(), anyList())
             }
         }
 
@@ -273,7 +279,7 @@ class AccountViewModelTest : BaseViewModelTest() {
             val destinationId = 1
             val sourceIds = listOf(2)
             val errorMessage = "DB Error"
-            `when`(accountRepository.mergeAccounts(destinationId, sourceIds)).thenThrow(RuntimeException(errorMessage))
+            `when`(mergeAccountsUseCase.invoke(destinationId, sourceIds)).thenThrow(RuntimeException(errorMessage))
 
             viewModel.enterSelectionMode(null)
             viewModel.toggleAccountSelection(destinationId)
@@ -560,7 +566,7 @@ class AccountViewModelTest : BaseViewModelTest() {
             }
             advanceUntilIdle()
 
-            verify(accountRepository).mergeAccounts(1, listOf(2))
+            verify(mergeAccountsUseCase).invoke(1, listOf(2))
             assertTrue(callbackTriggered)
             assertTrue(successResult)
         }
@@ -569,7 +575,7 @@ class AccountViewModelTest : BaseViewModelTest() {
     fun `mergeAccounts overload triggers error callback on exception`() =
         runTest {
             val errorMessage = "Merge Error"
-            `when`(accountRepository.mergeAccounts(anyInt(), anyList())).thenThrow(RuntimeException(errorMessage))
+            `when`(mergeAccountsUseCase.invoke(anyInt(), anyList())).thenThrow(RuntimeException(errorMessage))
 
             var callbackTriggered = false
             var successResult = true
@@ -642,7 +648,7 @@ class AccountViewModelTest : BaseViewModelTest() {
             viewModel.mergeAccounts(1, listOf(2))
             advanceUntilIdle()
 
-            verify(accountRepository).mergeAccounts(1, listOf(2))
+            verify(mergeAccountsUseCase).invoke(1, listOf(2))
         }
 
     @Test

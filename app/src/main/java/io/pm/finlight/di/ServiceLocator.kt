@@ -233,6 +233,7 @@ object ServiceLocator {
                 MergeAccountsUseCase(
                     accountDao = db.accountDao(),
                     accountAliasDao = db.accountAliasDao(),
+                    recurringTransactionDao = db.recurringTransactionDao(),
                     goalDao = db.goalDao(),
                     transactionWriteDao = db.transactionWriteDao(),
                     db = db,

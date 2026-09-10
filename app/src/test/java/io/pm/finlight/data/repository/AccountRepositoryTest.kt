@@ -217,10 +217,7 @@ class AccountRepositoryTest : BaseViewModelTest() {
         }
 
     @Test
-    fun `constructor with db creates instance successfully`() {
-        `when`(db.goalDao()).thenReturn(mock(GoalDao::class.java))
-        `when`(db.transactionWriteDao()).thenReturn(mock(io.pm.finlight.data.db.dao.TransactionWriteDao::class.java))
-
+    fun `constructor with db creates instance successfully without coupling to other DAOs`() {
         val repoFromDb = AccountRepository(db)
         assertNotNull(repoFromDb)
     }

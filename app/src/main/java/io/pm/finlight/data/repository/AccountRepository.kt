@@ -19,11 +19,11 @@ class AccountRepository(
     private val accountDao: AccountDao,
     private val accountAliasDao: AccountAliasDao,
     private val db: AppDatabase,
-    private val mergeAccountsUseCase: MergeAccountsUseCase,
+    private val mergeAccountsUseCase: MergeAccountsUseCase? = null,
 ) : IAccountRepository {
     constructor(
         db: AppDatabase,
-        mergeAccountsUseCase: MergeAccountsUseCase = MergeAccountsUseCase(db),
+        mergeAccountsUseCase: MergeAccountsUseCase? = null,
     ) : this(
         accountDao = db.accountDao(),
         accountAliasDao = db.accountAliasDao(),
@@ -75,10 +75,17 @@ class AccountRepository(
      * @param destinationAccountId The ID of the account to keep.
      * @param sourceAccountIds The IDs of the accounts to merge and delete.
      */
+    @Deprecated(
+        message = "Use MergeAccountsUseCase directly from presentation/domain layer.",
+        replaceWith = ReplaceWith("mergeAccountsUseCase(destinationAccountId, sourceAccountIds)"),
+    )
     override suspend fun mergeAccounts(
         destinationAccountId: Int,
         sourceAccountIds: List<Int>,
     ) {
-        mergeAccountsUseCase(destinationAccountId, sourceAccountIds)
+        val useCase =
+            mergeAccountsUseCase
+                ?: throw IllegalStateException("MergeAccountsUseCase must be provided to call mergeAccounts on AccountRepository")
+        useCase(destinationAccountId, sourceAccountIds)
     }
 }

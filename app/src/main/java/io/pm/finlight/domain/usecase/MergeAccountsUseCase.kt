@@ -2,6 +2,7 @@ package io.pm.finlight.domain.usecase
 
 import androidx.room.withTransaction
 import io.pm.finlight.GoalDao
+import io.pm.finlight.RecurringTransactionDao
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.db.dao.AccountAliasDao
 import io.pm.finlight.data.db.dao.AccountDao
@@ -13,15 +14,18 @@ import io.pm.finlight.data.db.entity.AccountAlias
  *
  * Responsibilities:
  * 1. Create account aliases for source accounts mapping to destination account (for auto-learning).
- * 2. Reassign all savings goals from source accounts to destination account.
- * 3. Reassign all transactions from source accounts to destination account.
- * 4. Delete the source accounts.
+ * 2. Repoint any existing aliases targeting source accounts to destination account.
+ * 3. Reassign recurring transactions from source accounts to destination account.
+ * 4. Reassign all savings goals from source accounts to destination account.
+ * 5. Reassign all transactions from source accounts to destination account.
+ * 6. Delete the source accounts.
  *
  * All operations execute atomically inside a single database transaction.
  */
 class MergeAccountsUseCase(
     private val accountDao: AccountDao,
     private val accountAliasDao: AccountAliasDao,
+    private val recurringTransactionDao: RecurringTransactionDao,
     private val goalDao: GoalDao,
     private val transactionWriteDao: TransactionWriteDao,
     private val db: AppDatabase,
@@ -29,6 +33,7 @@ class MergeAccountsUseCase(
     constructor(db: AppDatabase) : this(
         accountDao = db.accountDao(),
         accountAliasDao = db.accountAliasDao(),
+        recurringTransactionDao = db.recurringTransactionDao(),
         goalDao = db.goalDao(),
         transactionWriteDao = db.transactionWriteDao(),
         db = db,
@@ -44,8 +49,9 @@ class MergeAccountsUseCase(
         destinationAccountId: Int,
         sourceAccountIds: List<Int>,
     ) {
-        val targetSourceIds = sourceAccountIds.filter { it != destinationAccountId }
+        val targetSourceIds = sourceAccountIds.filter { it != destinationAccountId }.distinct()
         if (targetSourceIds.isEmpty()) return
+        val destinationAccount = accountDao.getAccountByIdSync(destinationAccountId) ?: return
 
         db.withTransaction {
             // 1. Create aliases for the source accounts before deleting them
@@ -58,13 +64,19 @@ class MergeAccountsUseCase(
                 accountAliasDao.insertAll(aliases)
             }
 
-            // 2. Re-assign goals from source accounts to the destination account.
+            // 2. Repoint any existing aliases pointing to source accounts to the destination account
+            accountAliasDao.reassignAliases(targetSourceIds, destinationAccountId)
+
+            // 3. Re-assign recurring transactions to avoid cascade deletion
+            recurringTransactionDao.reassignRecurringTransactions(targetSourceIds, destinationAccountId)
+
+            // 4. Re-assign goals from source accounts to the destination account.
             goalDao.reassignGoals(targetSourceIds, destinationAccountId)
 
-            // 3. Re-assign all transactions from source accounts to the destination account.
+            // 5. Re-assign all transactions from source accounts to the destination account.
             transactionWriteDao.reassignTransactions(targetSourceIds, destinationAccountId)
 
-            // 4. Delete the now-empty source accounts.
+            // 6. Delete the now-empty source accounts.
             accountDao.deleteByIds(targetSourceIds)
         }
     }

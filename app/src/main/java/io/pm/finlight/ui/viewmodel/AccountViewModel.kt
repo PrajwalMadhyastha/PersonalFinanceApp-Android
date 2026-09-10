@@ -21,6 +21,7 @@ import io.pm.finlight.ISettingsRepository
 import io.pm.finlight.ITransactionRepository
 import io.pm.finlight.TransactionDetails
 import io.pm.finlight.TransactionType
+import io.pm.finlight.domain.usecase.MergeAccountsUseCase
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -34,6 +35,7 @@ class AccountViewModel(
     private val repository: IAccountRepository,
     private val transactionRepository: ITransactionRepository,
     private val settingsRepository: ISettingsRepository,
+    private val mergeAccountsUseCase: MergeAccountsUseCase,
 ) : AndroidViewModel(application) {
     private val _uiEvent = Channel<String>(Channel.UNLIMITED)
     val uiEvent = _uiEvent.receiveAsFlow()
@@ -197,7 +199,7 @@ class AccountViewModel(
 
             // 2. If validation passes, proceed with the operation inside a try-finally.
             try {
-                repository.mergeAccounts(destinationAccountId, sourceAccountIds)
+                mergeAccountsUseCase(destinationAccountId, sourceAccountIds)
                 _uiEvent.send("Accounts merged successfully.")
             } catch (e: Exception) {
                 _uiEvent.send("Error merging accounts: ${e.message}")
@@ -250,7 +252,7 @@ class AccountViewModel(
     ) {
         viewModelScope.launch {
             try {
-                repository.mergeAccounts(destinationAccountId, sourceAccountIds)
+                mergeAccountsUseCase(destinationAccountId, sourceAccountIds)
                 _uiEvent.send("Accounts merged successfully.")
                 onComplete(true)
             } catch (e: Exception) {
