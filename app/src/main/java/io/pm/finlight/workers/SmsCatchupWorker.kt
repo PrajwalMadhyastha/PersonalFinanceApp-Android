@@ -23,8 +23,6 @@ import io.pm.finlight.MerchantMappingRepository
 import io.pm.finlight.ParseResult
 import io.pm.finlight.SmsMessage
 import io.pm.finlight.SmsParser
-import io.pm.finlight.SmsRepository
-import io.pm.finlight.TagRepository
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.di.ServiceLocator
 import io.pm.finlight.domain.usecase.ResolveTravelModeTagUseCase
@@ -50,11 +48,10 @@ class SmsCatchupWorker(
 
         val db = AppDatabase.getInstance(context)
         val settingsRepository = ServiceLocator.provideSettingsRepository(context)
-        val tagRepository = TagRepository(db.tagDao(), db.transactionQueryDao())
+        val tagRepository = ServiceLocator.provideTagRepository(context)
         val resolveTravelModeTagUseCase = ResolveTravelModeTagUseCase(tagRepository)
-        val saver = SmsTransactionSaver(db, resolveTravelModeTagUseCase)
-        val dispatcherProvider = ServiceLocator.provideDispatcherProvider(context)
-        val smsRepository = SmsRepository(context, dispatcherProvider)
+        val saver = SmsTransactionSaver(context, resolveTravelModeTagUseCase, db)
+        val smsRepository = ServiceLocator.provideSmsRepository(context)
 
         val now = System.currentTimeMillis()
         val endDate = now - cooldownMs
