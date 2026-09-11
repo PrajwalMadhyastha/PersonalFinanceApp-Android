@@ -18,6 +18,10 @@ interface IAccountRepository {
 
     suspend fun delete(account: Account)
 
+    @Deprecated(
+        message = "Use MergeAccountsUseCase directly from presentation/domain layer.",
+        replaceWith = ReplaceWith("mergeAccountsUseCase(destinationAccountId, sourceAccountIds)"),
+    )
     suspend fun mergeAccounts(
         destinationAccountId: Int,
         sourceAccountIds: List<Int>,

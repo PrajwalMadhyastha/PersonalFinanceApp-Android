@@ -35,6 +35,7 @@ import io.pm.finlight.TagRepository
 import io.pm.finlight.TransactionRepository
 import io.pm.finlight.TravelSettingsRepository
 import io.pm.finlight.data.db.AppDatabase
+import io.pm.finlight.domain.usecase.MergeAccountsUseCase
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.DispatcherProvider
 
@@ -95,6 +96,9 @@ object ServiceLocator {
 
     @Volatile
     private var smsRepository: ISmsRepository? = null
+
+    @Volatile
+    private var mergeAccountsUseCase: MergeAccountsUseCase? = null
 
     fun provideDispatcherProvider(context: Context? = null): DispatcherProvider {
         return dispatcherProvider ?: synchronized(this) {
@@ -222,11 +226,37 @@ object ServiceLocator {
         }
     }
 
+    fun provideMergeAccountsUseCase(context: Context): MergeAccountsUseCase {
+        return mergeAccountsUseCase ?: synchronized(this) {
+            mergeAccountsUseCase ?: run {
+                val db = AppDatabase.getInstance(context.applicationContext)
+                MergeAccountsUseCase(
+                    accountDao = db.accountDao(),
+                    accountAliasDao = db.accountAliasDao(),
+                    recurringTransactionDao = db.recurringTransactionDao(),
+                    goalDao = db.goalDao(),
+                    transactionWriteDao = db.transactionWriteDao(),
+                    mergeRecordDao = db.mergeRecordDao(),
+                    recurringPatternDao = db.recurringPatternDao(),
+                    db = db,
+                ).also {
+                    mergeAccountsUseCase = it
+                }
+            }
+        }
+    }
+
     fun provideAccountRepository(context: Context): IAccountRepository {
         return accountRepository ?: synchronized(this) {
             accountRepository ?: run {
                 val db = AppDatabase.getInstance(context.applicationContext)
-                AccountRepository(db).also {
+                val mergeAccounts = provideMergeAccountsUseCase(context)
+                AccountRepository(
+                    accountDao = db.accountDao(),
+                    accountAliasDao = db.accountAliasDao(),
+                    db = db,
+                    mergeAccountsUseCase = mergeAccounts,
+                ).also {
                     accountRepository = it
                 }
             }
@@ -352,6 +382,11 @@ object ServiceLocator {
     }
 
     @VisibleForTesting
+    fun setMergeAccountsUseCase(useCase: MergeAccountsUseCase?) {
+        mergeAccountsUseCase = useCase
+    }
+
+    @VisibleForTesting
     fun reset() {
         dispatcherProvider = null
         settingsRepository = null
@@ -370,5 +405,6 @@ object ServiceLocator {
         categoryRepository = null
         tagRepository = null
         smsRepository = null
+        mergeAccountsUseCase = null
     }
 }

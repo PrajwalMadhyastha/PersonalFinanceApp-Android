@@ -13,6 +13,7 @@ import io.pm.finlight.ITagRepository
 import io.pm.finlight.ITransactionRepository
 import io.pm.finlight.TestApplication
 import io.pm.finlight.data.db.AppDatabase
+import io.pm.finlight.domain.usecase.MergeAccountsUseCase
 import org.junit.After
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
@@ -88,6 +89,15 @@ class ServiceLocatorDomainRepositoriesTest {
 
         assertNotNull(repo1)
         assertSame(repo1, repo2)
+    }
+
+    @Test
+    fun provideMergeAccountsUseCase_returnsSingletonInstance() {
+        val useCase1 = ServiceLocator.provideMergeAccountsUseCase(application)
+        val useCase2 = ServiceLocator.provideMergeAccountsUseCase(application)
+
+        assertNotNull(useCase1)
+        assertSame(useCase1, useCase2)
     }
 
     @Test
@@ -171,24 +181,43 @@ class ServiceLocatorDomainRepositoriesTest {
     }
 
     @Test
+    fun setMergeAccountsUseCase_overridesInstance() {
+        val mockUseCase: MergeAccountsUseCase = mockk(relaxed = true)
+        ServiceLocator.setMergeAccountsUseCase(mockUseCase)
+        assertSame(mockUseCase, ServiceLocator.provideMergeAccountsUseCase(application))
+
+        val mockUseCase2: MergeAccountsUseCase = mockk(relaxed = true)
+        ServiceLocator.setMergeAccountsUseCase(mockUseCase2)
+        assertSame(mockUseCase2, ServiceLocator.provideMergeAccountsUseCase(application))
+
+        ServiceLocator.setMergeAccountsUseCase(null)
+        val defaultUseCase = ServiceLocator.provideMergeAccountsUseCase(application)
+        assertNotNull(defaultUseCase)
+        assertNotSame(mockUseCase2, defaultUseCase)
+    }
+
+    @Test
     fun reset_clearsAllDomainRepositories() {
         val mockTxn: ITransactionRepository = mockk(relaxed = true)
         val mockAccount: IAccountRepository = mockk(relaxed = true)
         val mockCategory: ICategoryRepository = mockk(relaxed = true)
         val mockTag: ITagRepository = mockk(relaxed = true)
         val mockSms: ISmsRepository = mockk(relaxed = true)
+        val mockMergeAccounts: MergeAccountsUseCase = mockk(relaxed = true)
 
         ServiceLocator.setTransactionRepository(mockTxn)
         ServiceLocator.setAccountRepository(mockAccount)
         ServiceLocator.setCategoryRepository(mockCategory)
         ServiceLocator.setTagRepository(mockTag)
         ServiceLocator.setSmsRepository(mockSms)
+        ServiceLocator.setMergeAccountsUseCase(mockMergeAccounts)
 
         assertSame(mockTxn, ServiceLocator.provideTransactionRepository(application))
         assertSame(mockAccount, ServiceLocator.provideAccountRepository(application))
         assertSame(mockCategory, ServiceLocator.provideCategoryRepository(application))
         assertSame(mockTag, ServiceLocator.provideTagRepository(application))
         assertSame(mockSms, ServiceLocator.provideSmsRepository(application))
+        assertSame(mockMergeAccounts, ServiceLocator.provideMergeAccountsUseCase(application))
 
         ServiceLocator.reset()
 
@@ -197,6 +226,7 @@ class ServiceLocatorDomainRepositoriesTest {
         val newCategory = ServiceLocator.provideCategoryRepository(application)
         val newTag = ServiceLocator.provideTagRepository(application)
         val newSms = ServiceLocator.provideSmsRepository(application)
+        val newMergeAccounts = ServiceLocator.provideMergeAccountsUseCase(application)
 
         assertNotNull(newTxn)
         assertNotSame(mockTxn, newTxn)
@@ -208,5 +238,7 @@ class ServiceLocatorDomainRepositoriesTest {
         assertNotSame(mockTag, newTag)
         assertNotNull(newSms)
         assertNotSame(mockSms, newSms)
+        assertNotNull(newMergeAccounts)
+        assertNotSame(mockMergeAccounts, newMergeAccounts)
     }
 }
