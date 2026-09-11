@@ -35,6 +35,7 @@ import io.pm.finlight.TagRepository
 import io.pm.finlight.TransactionRepository
 import io.pm.finlight.TravelSettingsRepository
 import io.pm.finlight.data.db.AppDatabase
+import io.pm.finlight.domain.usecase.ManageReimbursementUseCase
 import io.pm.finlight.domain.usecase.MergeAccountsUseCase
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.DispatcherProvider
@@ -99,6 +100,9 @@ object ServiceLocator {
 
     @Volatile
     private var mergeAccountsUseCase: MergeAccountsUseCase? = null
+
+    @Volatile
+    private var manageReimbursementUseCase: ManageReimbursementUseCase? = null
 
     fun provideDispatcherProvider(context: Context? = null): DispatcherProvider {
         return dispatcherProvider ?: synchronized(this) {
@@ -212,6 +216,7 @@ object ServiceLocator {
             transactionRepository ?: run {
                 val db = AppDatabase.getInstance(context.applicationContext)
                 val dispatcherProvider = provideDispatcherProvider(context)
+                val manageReimbursement = provideManageReimbursementUseCase(context)
                 TransactionRepository(
                     transactionWriteDao = db.transactionWriteDao(),
                     transactionQueryDao = db.transactionQueryDao(),
@@ -219,8 +224,27 @@ object ServiceLocator {
                     transactionReimbursementDao = db.transactionReimbursementDao(),
                     db = db,
                     dispatcherProvider = dispatcherProvider,
+                    manageReimbursementUseCase = manageReimbursement,
                 ).also {
                     transactionRepository = it
+                }
+            }
+        }
+    }
+
+    fun provideManageReimbursementUseCase(context: Context): ManageReimbursementUseCase {
+        return manageReimbursementUseCase ?: synchronized(this) {
+            manageReimbursementUseCase ?: run {
+                val db = AppDatabase.getInstance(context.applicationContext)
+                val dispatcherProvider = provideDispatcherProvider(context)
+                ManageReimbursementUseCase(
+                    transactionQueryDao = db.transactionQueryDao(),
+                    transactionWriteDao = db.transactionWriteDao(),
+                    transactionReimbursementDao = db.transactionReimbursementDao(),
+                    db = db,
+                    dispatcherProvider = dispatcherProvider,
+                ).also {
+                    manageReimbursementUseCase = it
                 }
             }
         }
@@ -387,6 +411,11 @@ object ServiceLocator {
     }
 
     @VisibleForTesting
+    fun setManageReimbursementUseCase(useCase: ManageReimbursementUseCase?) {
+        manageReimbursementUseCase = useCase
+    }
+
+    @VisibleForTesting
     fun reset() {
         dispatcherProvider = null
         settingsRepository = null
@@ -406,5 +435,6 @@ object ServiceLocator {
         tagRepository = null
         smsRepository = null
         mergeAccountsUseCase = null
+        manageReimbursementUseCase = null
     }
 }

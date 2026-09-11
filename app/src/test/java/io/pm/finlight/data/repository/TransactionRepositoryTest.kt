@@ -13,6 +13,7 @@ import io.mockk.unmockkAll
 import io.pm.finlight.*
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.model.MerchantPrediction
+import io.pm.finlight.domain.usecase.ManageReimbursementUseCase
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.TestDispatcherProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -45,6 +46,9 @@ class TransactionRepositoryTest : BaseViewModelTest() {
 
     @Mock
     private lateinit var db: AppDatabase
+
+    @Mock
+    private lateinit var manageReimbursementUseCase: ManageReimbursementUseCase
 
     private lateinit var testDispatcherProvider: TestDispatcherProvider
     private lateinit var repository: TransactionRepository
@@ -123,6 +127,40 @@ class TransactionRepositoryTest : BaseViewModelTest() {
         }
 
     // ── Reimbursement / Offset Feature Tests ──────────────────────────────────
+
+    @Test
+    fun `linkReimbursement delegates directly to ManageReimbursementUseCase`() =
+        runTest {
+            setupDefaultPropertyMocks()
+            repository =
+                TransactionRepository(
+                    transactionDao = transactionDao,
+                    db = db,
+                    dispatcherProvider = testDispatcherProvider,
+                    manageReimbursementUseCase = manageReimbursementUseCase,
+                )
+
+            repository.linkReimbursement(incomeId = 10, expenseId = 20)
+
+            verify(manageReimbursementUseCase).linkReimbursement(10, 20)
+        }
+
+    @Test
+    fun `unlinkReimbursement delegates directly to ManageReimbursementUseCase`() =
+        runTest {
+            setupDefaultPropertyMocks()
+            repository =
+                TransactionRepository(
+                    transactionDao = transactionDao,
+                    db = db,
+                    dispatcherProvider = testDispatcherProvider,
+                    manageReimbursementUseCase = manageReimbursementUseCase,
+                )
+
+            repository.unlinkReimbursement(incomeId = 10)
+
+            verify(manageReimbursementUseCase).unlinkReimbursement(10)
+        }
 
     @Test
     fun `linkReimbursement deducts income amount from expense amount and updates DAO`() =

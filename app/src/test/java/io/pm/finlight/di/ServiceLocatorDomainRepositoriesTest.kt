@@ -13,6 +13,7 @@ import io.pm.finlight.ITagRepository
 import io.pm.finlight.ITransactionRepository
 import io.pm.finlight.TestApplication
 import io.pm.finlight.data.db.AppDatabase
+import io.pm.finlight.domain.usecase.ManageReimbursementUseCase
 import io.pm.finlight.domain.usecase.MergeAccountsUseCase
 import org.junit.After
 import org.junit.Assert.assertNotNull
@@ -95,6 +96,15 @@ class ServiceLocatorDomainRepositoriesTest {
     fun provideMergeAccountsUseCase_returnsSingletonInstance() {
         val useCase1 = ServiceLocator.provideMergeAccountsUseCase(application)
         val useCase2 = ServiceLocator.provideMergeAccountsUseCase(application)
+
+        assertNotNull(useCase1)
+        assertSame(useCase1, useCase2)
+    }
+
+    @Test
+    fun provideManageReimbursementUseCase_returnsSingletonInstance() {
+        val useCase1 = ServiceLocator.provideManageReimbursementUseCase(application)
+        val useCase2 = ServiceLocator.provideManageReimbursementUseCase(application)
 
         assertNotNull(useCase1)
         assertSame(useCase1, useCase2)
@@ -197,6 +207,22 @@ class ServiceLocatorDomainRepositoriesTest {
     }
 
     @Test
+    fun setManageReimbursementUseCase_overridesInstance() {
+        val mockUseCase: ManageReimbursementUseCase = mockk(relaxed = true)
+        ServiceLocator.setManageReimbursementUseCase(mockUseCase)
+        assertSame(mockUseCase, ServiceLocator.provideManageReimbursementUseCase(application))
+
+        val mockUseCase2: ManageReimbursementUseCase = mockk(relaxed = true)
+        ServiceLocator.setManageReimbursementUseCase(mockUseCase2)
+        assertSame(mockUseCase2, ServiceLocator.provideManageReimbursementUseCase(application))
+
+        ServiceLocator.setManageReimbursementUseCase(null)
+        val defaultUseCase = ServiceLocator.provideManageReimbursementUseCase(application)
+        assertNotNull(defaultUseCase)
+        assertNotSame(mockUseCase2, defaultUseCase)
+    }
+
+    @Test
     fun reset_clearsAllDomainRepositories() {
         val mockTxn: ITransactionRepository = mockk(relaxed = true)
         val mockAccount: IAccountRepository = mockk(relaxed = true)
@@ -204,6 +230,7 @@ class ServiceLocatorDomainRepositoriesTest {
         val mockTag: ITagRepository = mockk(relaxed = true)
         val mockSms: ISmsRepository = mockk(relaxed = true)
         val mockMergeAccounts: MergeAccountsUseCase = mockk(relaxed = true)
+        val mockManageReimbursement: ManageReimbursementUseCase = mockk(relaxed = true)
 
         ServiceLocator.setTransactionRepository(mockTxn)
         ServiceLocator.setAccountRepository(mockAccount)
@@ -211,6 +238,7 @@ class ServiceLocatorDomainRepositoriesTest {
         ServiceLocator.setTagRepository(mockTag)
         ServiceLocator.setSmsRepository(mockSms)
         ServiceLocator.setMergeAccountsUseCase(mockMergeAccounts)
+        ServiceLocator.setManageReimbursementUseCase(mockManageReimbursement)
 
         assertSame(mockTxn, ServiceLocator.provideTransactionRepository(application))
         assertSame(mockAccount, ServiceLocator.provideAccountRepository(application))
@@ -218,6 +246,7 @@ class ServiceLocatorDomainRepositoriesTest {
         assertSame(mockTag, ServiceLocator.provideTagRepository(application))
         assertSame(mockSms, ServiceLocator.provideSmsRepository(application))
         assertSame(mockMergeAccounts, ServiceLocator.provideMergeAccountsUseCase(application))
+        assertSame(mockManageReimbursement, ServiceLocator.provideManageReimbursementUseCase(application))
 
         ServiceLocator.reset()
 
@@ -227,6 +256,7 @@ class ServiceLocatorDomainRepositoriesTest {
         val newTag = ServiceLocator.provideTagRepository(application)
         val newSms = ServiceLocator.provideSmsRepository(application)
         val newMergeAccounts = ServiceLocator.provideMergeAccountsUseCase(application)
+        val newManageReimbursement = ServiceLocator.provideManageReimbursementUseCase(application)
 
         assertNotNull(newTxn)
         assertNotSame(mockTxn, newTxn)
@@ -240,5 +270,7 @@ class ServiceLocatorDomainRepositoriesTest {
         assertNotSame(mockSms, newSms)
         assertNotNull(newMergeAccounts)
         assertNotSame(mockMergeAccounts, newMergeAccounts)
+        assertNotNull(newManageReimbursement)
+        assertNotSame(mockManageReimbursement, newManageReimbursement)
     }
 }

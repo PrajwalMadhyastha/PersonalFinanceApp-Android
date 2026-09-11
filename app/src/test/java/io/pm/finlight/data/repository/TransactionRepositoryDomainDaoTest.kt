@@ -41,6 +41,12 @@ class TransactionRepositoryDomainDaoTest {
     fun setup() {
         every { queryDao.getAllTransactions() } returns flowOf(emptyList())
 
+        mockkStatic("androidx.room.RoomDatabaseKt")
+        coEvery { any<AppDatabase>().withTransaction<Any?>(any()) } coAnswers {
+            val block = secondArg<suspend () -> Any?>()
+            block()
+        }
+
         repository =
             TransactionRepository(
                 transactionWriteDao = writeDao,
