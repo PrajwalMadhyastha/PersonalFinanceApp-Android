@@ -18,6 +18,7 @@ import io.pm.finlight.core.utils.StringSimilarity
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.model.MerchantPrediction
 import io.pm.finlight.data.model.MergedTransactionItem
+import io.pm.finlight.domain.usecase.ManageReimbursementUseCase
 import io.pm.finlight.domain.usecase.MergeTransactionsUseCase
 import io.pm.finlight.domain.usecase.ResolveTravelModeTagUseCase
 import io.pm.finlight.ui.components.ShareableField
@@ -129,6 +130,14 @@ class TransactionViewModel(
             db = db,
         ),
     val dispatcherProvider: DispatcherProvider = DefaultDispatcherProvider(),
+    private val manageReimbursementUseCase: ManageReimbursementUseCase =
+        ManageReimbursementUseCase(
+            transactionQueryDao = db.transactionQueryDao(),
+            transactionWriteDao = db.transactionWriteDao(),
+            transactionReimbursementDao = db.transactionReimbursementDao(),
+            db = db,
+            dispatcherProvider = dispatcherProvider,
+        ),
 ) : AndroidViewModel(application) {
     private val context = application
 
@@ -631,14 +640,14 @@ class TransactionViewModel(
         expenseId: Int
     ) {
         viewModelScope.launch {
-            transactionRepository.linkReimbursement(incomeId, expenseId)
+            manageReimbursementUseCase.linkReimbursement(incomeId, expenseId)
             _showReimbursementPicker.value = false
         }
     }
 
     fun unlinkReimbursement(incomeId: Int) {
         viewModelScope.launch {
-            transactionRepository.unlinkReimbursement(incomeId)
+            manageReimbursementUseCase.unlinkReimbursement(incomeId)
         }
     }
 
@@ -713,7 +722,7 @@ class TransactionViewModel(
             }
             val expenseId = expenses.first().transaction.id
             incomes.forEach { income ->
-                transactionRepository.linkReimbursement(income.transaction.id, expenseId)
+                manageReimbursementUseCase.linkReimbursement(income.transaction.id, expenseId)
             }
             _uiEvent.send("${incomes.size} repayment(s) linked.")
             clearSelectionMode()

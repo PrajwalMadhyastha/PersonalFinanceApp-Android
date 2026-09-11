@@ -55,8 +55,20 @@ class ManageReimbursementUseCase(
         expenseId: Int,
     ) = withContext(dispatcherProvider.io) {
         db.withTransaction {
+            if (incomeId == expenseId) return@withTransaction
             val incomeTxn = transactionQueryDao.getTransactionByIdSync(incomeId) ?: return@withTransaction
             val expenseTxn = transactionQueryDao.getTransactionByIdSync(expenseId) ?: return@withTransaction
+
+            if (incomeTxn.transactionType != TransactionType.INCOME || expenseTxn.transactionType != TransactionType.EXPENSE) {
+                return@withTransaction
+            }
+            if (incomeTxn.parentReimbursementId != null || incomeTxn.linkedSurplusTxnId != null) {
+                return@withTransaction
+            }
+
+            if (expenseTxn.amount <= 0.0 || incomeTxn.amount <= 0.0) {
+                return@withTransaction
+            }
 
             if (incomeTxn.amount > expenseTxn.amount) {
                 val offset = expenseTxn.amount
@@ -92,14 +104,14 @@ class ManageReimbursementUseCase(
      * Removes the reimbursement link from [incomeId]:
      * - If a linked surplus transaction exists, deletes it and merges its amount back.
      * - Clears parentReimbursementId, linkedSurplusTxnId and removes the excluded flag.
-     * - Adds the offset amount back onto the parent expense.
+     * - Adds the offset amount back onto the parent expense (if parent still exists).
      */
     suspend fun unlinkReimbursement(incomeId: Int) =
         withContext(dispatcherProvider.io) {
             db.withTransaction {
                 val incomeTxn = transactionQueryDao.getTransactionByIdSync(incomeId) ?: return@withTransaction
                 val parentId = incomeTxn.parentReimbursementId ?: return@withTransaction
-                val expenseTxn = transactionQueryDao.getTransactionByIdSync(parentId) ?: return@withTransaction
+                val expenseTxn = transactionQueryDao.getTransactionByIdSync(parentId)
 
                 var totalIncomeToRestore = incomeTxn.amount
                 val surplusId = incomeTxn.linkedSurplusTxnId
@@ -113,8 +125,10 @@ class ManageReimbursementUseCase(
 
                 transactionWriteDao.updateAmount(incomeId, totalIncomeToRestore)
                 transactionReimbursementDao.unlinkReimbursement(incomeId)
-                val restoredExpenseAmount = expenseTxn.amount + incomeTxn.amount
-                transactionWriteDao.updateAmount(parentId, restoredExpenseAmount)
+                if (expenseTxn != null) {
+                    val restoredExpenseAmount = expenseTxn.amount + incomeTxn.amount
+                    transactionWriteDao.updateAmount(parentId, restoredExpenseAmount)
+                }
             }
         }
 }

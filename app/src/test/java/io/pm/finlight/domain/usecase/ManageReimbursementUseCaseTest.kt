@@ -271,6 +271,224 @@ class ManageReimbursementUseCaseTest : BaseViewModelTest() {
             verify(transactionWriteDao, never()).insert(any())
         }
 
+    @Test
+    fun `linkReimbursement returns early when incomeId equals expenseId`() =
+        runTest {
+            useCase.linkReimbursement(incomeId = 1, expenseId = 1)
+
+            verify(transactionQueryDao, never()).getTransactionByIdSync(any())
+            verify(transactionReimbursementDao, never()).linkReimbursement(any(), any(), any())
+            verify(transactionWriteDao, never()).updateAmount(any(), any())
+        }
+
+    @Test
+    fun `linkReimbursement returns early when income transaction has non-INCOME type`() =
+        runTest {
+            val nonIncomeTxn =
+                Transaction(
+                    id = 2,
+                    description = "Expense as Income",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    notes = "",
+                )
+            val expenseTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    notes = "",
+                )
+            `when`(transactionQueryDao.getTransactionByIdSync(2)).thenReturn(nonIncomeTxn)
+            `when`(transactionQueryDao.getTransactionByIdSync(1)).thenReturn(expenseTxn)
+
+            useCase.linkReimbursement(incomeId = 2, expenseId = 1)
+
+            verify(transactionReimbursementDao, never()).linkReimbursement(any(), any(), any())
+            verify(transactionWriteDao, never()).updateAmount(any(), any())
+        }
+
+    @Test
+    fun `linkReimbursement returns early when expense transaction has non-EXPENSE type`() =
+        runTest {
+            val incomeTxn =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.INCOME,
+                    notes = "",
+                )
+            val nonExpenseTxn =
+                Transaction(
+                    id = 1,
+                    description = "Income as Expense",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.INCOME,
+                    notes = "",
+                )
+            `when`(transactionQueryDao.getTransactionByIdSync(2)).thenReturn(incomeTxn)
+            `when`(transactionQueryDao.getTransactionByIdSync(1)).thenReturn(nonExpenseTxn)
+
+            useCase.linkReimbursement(incomeId = 2, expenseId = 1)
+
+            verify(transactionReimbursementDao, never()).linkReimbursement(any(), any(), any())
+            verify(transactionWriteDao, never()).updateAmount(any(), any())
+        }
+
+    @Test
+    fun `linkReimbursement returns early when income is already linked to a parent expense`() =
+        runTest {
+            val alreadyLinkedIncome =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.INCOME,
+                    notes = "",
+                    parentReimbursementId = 99,
+                )
+            val expenseTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    notes = "",
+                )
+            `when`(transactionQueryDao.getTransactionByIdSync(2)).thenReturn(alreadyLinkedIncome)
+            `when`(transactionQueryDao.getTransactionByIdSync(1)).thenReturn(expenseTxn)
+
+            useCase.linkReimbursement(incomeId = 2, expenseId = 1)
+
+            verify(transactionReimbursementDao, never()).linkReimbursement(any(), any(), any())
+            verify(transactionWriteDao, never()).updateAmount(any(), any())
+        }
+
+    @Test
+    fun `linkReimbursement returns early when income already has a linked surplus transaction`() =
+        runTest {
+            val incomeWithSurplus =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.INCOME,
+                    notes = "",
+                    linkedSurplusTxnId = 55,
+                )
+            val expenseTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    notes = "",
+                )
+            `when`(transactionQueryDao.getTransactionByIdSync(2)).thenReturn(incomeWithSurplus)
+            `when`(transactionQueryDao.getTransactionByIdSync(1)).thenReturn(expenseTxn)
+
+            useCase.linkReimbursement(incomeId = 2, expenseId = 1)
+
+            verify(transactionReimbursementDao, never()).linkReimbursement(any(), any(), any())
+            verify(transactionWriteDao, never()).updateAmount(any(), any())
+        }
+
+    @Test
+    fun `linkReimbursement returns early when expense amount is zero or negative`() =
+        runTest {
+            val incomeTxn =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.INCOME,
+                    notes = "",
+                )
+            val expenseTxnZero =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    amount = 0.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    notes = "",
+                )
+            `when`(transactionQueryDao.getTransactionByIdSync(2)).thenReturn(incomeTxn)
+            `when`(transactionQueryDao.getTransactionByIdSync(1)).thenReturn(expenseTxnZero)
+
+            useCase.linkReimbursement(incomeId = 2, expenseId = 1)
+
+            verify(transactionReimbursementDao, never()).linkReimbursement(any(), any(), any())
+            verify(transactionWriteDao, never()).updateAmount(any(), any())
+            verify(transactionWriteDao, never()).insert(any())
+        }
+
+    @Test
+    fun `linkReimbursement returns early when income amount is zero or negative`() =
+        runTest {
+            val incomeTxnZero =
+                Transaction(
+                    id = 2,
+                    description = "Income",
+                    amount = 0.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.INCOME,
+                    notes = "",
+                )
+            val expenseTxn =
+                Transaction(
+                    id = 1,
+                    description = "Expense",
+                    amount = 100.0,
+                    date = 0L,
+                    accountId = 1,
+                    categoryId = 1,
+                    transactionType = TransactionType.EXPENSE,
+                    notes = "",
+                )
+            `when`(transactionQueryDao.getTransactionByIdSync(2)).thenReturn(incomeTxnZero)
+            `when`(transactionQueryDao.getTransactionByIdSync(1)).thenReturn(expenseTxn)
+
+            useCase.linkReimbursement(incomeId = 2, expenseId = 1)
+
+            verify(transactionReimbursementDao, never()).linkReimbursement(any(), any(), any())
+            verify(transactionWriteDao, never()).updateAmount(any(), any())
+            verify(transactionWriteDao, never()).insert(any())
+        }
+
     // ── Unlink Reimbursement Tests ───────────────────────────────────────────
 
     @Test
@@ -445,7 +663,7 @@ class ManageReimbursementUseCaseTest : BaseViewModelTest() {
         }
 
     @Test
-    fun `unlinkReimbursement returns early when parent expense transaction does not exist`() =
+    fun `unlinkReimbursement when parent expense is deleted restores income and clears link`() =
         runTest {
             val incomeTxn =
                 Transaction(
@@ -464,8 +682,48 @@ class ManageReimbursementUseCaseTest : BaseViewModelTest() {
 
             useCase.unlinkReimbursement(incomeId = 2)
 
-            verify(transactionReimbursementDao, never()).unlinkReimbursement(any())
-            verify(transactionWriteDao, never()).updateAmount(any(), any())
+            verify(transactionWriteDao).updateAmount(2, 500.0)
+            verify(transactionReimbursementDao).unlinkReimbursement(2)
+            verify(transactionWriteDao, never()).updateAmount(org.mockito.kotlin.eq(1), any())
             verify(transactionWriteDao, never()).delete(any())
+        }
+
+    @Test
+    fun `unlinkReimbursement when parent expense is deleted with linked surplus merges surplus back and clears link`() =
+        runTest {
+            val surplusTxn =
+                Transaction(
+                    id = 99,
+                    description = "Repayment (Surplus)",
+                    amount = 200.0,
+                    date = 2000L,
+                    accountId = 1,
+                    categoryId = 2,
+                    transactionType = TransactionType.INCOME,
+                    notes = null,
+                )
+            val incomeTxn =
+                Transaction(
+                    id = 2,
+                    description = "Repayment",
+                    amount = 300.0,
+                    date = 2000L,
+                    accountId = 1,
+                    categoryId = 2,
+                    transactionType = TransactionType.INCOME,
+                    notes = null,
+                    parentReimbursementId = 1,
+                    linkedSurplusTxnId = 99,
+                )
+            `when`(transactionQueryDao.getTransactionByIdSync(99)).thenReturn(surplusTxn)
+            `when`(transactionQueryDao.getTransactionByIdSync(2)).thenReturn(incomeTxn)
+            `when`(transactionQueryDao.getTransactionByIdSync(1)).thenReturn(null)
+
+            useCase.unlinkReimbursement(incomeId = 2)
+
+            verify(transactionWriteDao).delete(surplusTxn)
+            verify(transactionWriteDao).updateAmount(2, 500.0)
+            verify(transactionReimbursementDao).unlinkReimbursement(2)
+            verify(transactionWriteDao, never()).updateAmount(org.mockito.kotlin.eq(1), any())
         }
 }
