@@ -13,6 +13,7 @@ import io.mockk.unmockkAll
 import io.pm.finlight.*
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.model.MerchantPrediction
+import io.pm.finlight.domain.usecase.ManageReimbursementUseCase
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.TestDispatcherProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -45,6 +46,9 @@ class TransactionRepositoryTest : BaseViewModelTest() {
 
     @Mock
     private lateinit var db: AppDatabase
+
+    @Mock
+    private lateinit var manageReimbursementUseCase: ManageReimbursementUseCase
 
     private lateinit var testDispatcherProvider: TestDispatcherProvider
     private lateinit var repository: TransactionRepository
@@ -125,119 +129,37 @@ class TransactionRepositoryTest : BaseViewModelTest() {
     // ── Reimbursement / Offset Feature Tests ──────────────────────────────────
 
     @Test
-    fun `linkReimbursement deducts income amount from expense amount and updates DAO`() =
+    fun `linkReimbursement delegates directly to ManageReimbursementUseCase`() =
         runTest {
             setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
+            repository =
+                TransactionRepository(
+                    transactionDao = transactionDao,
+                    db = db,
+                    dispatcherProvider = testDispatcherProvider,
+                    manageReimbursementUseCase = manageReimbursementUseCase,
+                )
 
-            val expenseTxn = Transaction(id = 1, description = "Dinner", amount = 1500.0, date = 1000L, accountId = 1, categoryId = 1, notes = "", transactionType = TransactionType.EXPENSE)
-            val incomeTxn = Transaction(id = 2, description = "Friend Share", amount = 500.0, date = 2000L, accountId = 1, categoryId = 2, notes = "", transactionType = TransactionType.INCOME)
+            repository.linkReimbursement(incomeId = 10, expenseId = 20)
 
-            `when`(transactionDao.getTransactionByIdSync(2)).thenReturn(incomeTxn)
-            `when`(transactionDao.getTransactionByIdSync(1)).thenReturn(expenseTxn)
-
-            repository.linkReimbursement(incomeId = 2, expenseId = 1)
-
-            verify(transactionDao).linkReimbursement(2, 1, null)
-            // 1500 - 500 = 1000
-            verify(transactionDao).updateAmount(1, 1000.0)
+            verify(manageReimbursementUseCase).linkReimbursement(10, 20)
         }
 
     @Test
-    fun `linkReimbursement caps expense at zero and creates surplus income on over-repayment`() =
+    fun `unlinkReimbursement delegates directly to ManageReimbursementUseCase`() =
         runTest {
             setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
+            repository =
+                TransactionRepository(
+                    transactionDao = transactionDao,
+                    db = db,
+                    dispatcherProvider = testDispatcherProvider,
+                    manageReimbursementUseCase = manageReimbursementUseCase,
+                )
 
-            val expenseTxn = Transaction(id = 1, description = "Lunch", amount = 300.0, date = 1000L, accountId = 1, categoryId = 1, notes = "", transactionType = TransactionType.EXPENSE)
-            val incomeTxn = Transaction(id = 2, description = "Repayment", amount = 500.0, date = 2000L, accountId = 1, categoryId = 2, notes = "", transactionType = TransactionType.INCOME)
+            repository.unlinkReimbursement(incomeId = 10)
 
-            `when`(transactionDao.getTransactionByIdSync(2)).thenReturn(incomeTxn)
-            `when`(transactionDao.getTransactionByIdSync(1)).thenReturn(expenseTxn)
-            `when`(transactionDao.insert(any())).thenReturn(99L)
-
-            repository.linkReimbursement(incomeId = 2, expenseId = 1)
-
-            // Offset is 300.0 -> income updated to 300.0, expense updated to 0.0
-            verify(transactionDao).updateAmount(2, 300.0)
-            verify(transactionDao).linkReimbursement(2, 1, 99)
-            verify(transactionDao).updateAmount(1, 0.0)
-        }
-
-    @Test
-    fun `linkReimbursement returns early when income or expense is missing`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            `when`(transactionDao.getTransactionByIdSync(1)).thenReturn(null)
-            `when`(transactionDao.getTransactionByIdSync(2)).thenReturn(null)
-
-            repository.linkReimbursement(incomeId = 1, expenseId = 2)
-
-            verify(transactionDao, never()).linkReimbursement(any(), any(), any())
-            verify(transactionDao, never()).updateAmount(any(), any())
-        }
-
-    @Test
-    fun `unlinkReimbursement restores amount to expense and updates DAO`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val incomeTxn = Transaction(id = 2, description = "Repayment", amount = 500.0, date = 2000L, accountId = 1, categoryId = 2, notes = "", transactionType = TransactionType.INCOME, parentReimbursementId = 1)
-            val expenseTxn = Transaction(id = 1, description = "Dinner", amount = 1000.0, date = 1000L, accountId = 1, categoryId = 1, notes = "", transactionType = TransactionType.EXPENSE)
-
-            `when`(transactionDao.getTransactionByIdSync(2)).thenReturn(incomeTxn)
-            `when`(transactionDao.getTransactionByIdSync(1)).thenReturn(expenseTxn)
-
-            repository.unlinkReimbursement(incomeId = 2)
-
-            verify(transactionDao).unlinkReimbursement(2)
-            // 1000 + 500 = 1500
-            verify(transactionDao).updateAmount(1, 1500.0)
-            verify(transactionDao).updateAmount(2, 500.0)
-        }
-
-    @Test
-    fun `unlinkReimbursement with linked surplus merges surplus back and restores original amounts`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val surplusTxn = Transaction(id = 99, description = "Repayment (Surplus)", amount = 200.0, date = 2000L, accountId = 1, categoryId = 2, transactionType = TransactionType.INCOME, notes = null)
-            val incomeTxn = Transaction(id = 2, description = "Repayment", amount = 300.0, date = 2000L, accountId = 1, categoryId = 2, transactionType = TransactionType.INCOME, notes = null, parentReimbursementId = 1, linkedSurplusTxnId = 99)
-            val expenseTxn = Transaction(id = 1, description = "Lunch", amount = 0.0, date = 1000L, accountId = 1, categoryId = 1, transactionType = TransactionType.EXPENSE, notes = null)
-
-            `when`(transactionDao.getTransactionByIdSync(99)).thenReturn(surplusTxn)
-            `when`(transactionDao.getTransactionByIdSync(2)).thenReturn(incomeTxn)
-            `when`(transactionDao.getTransactionByIdSync(1)).thenReturn(expenseTxn)
-
-            repository.unlinkReimbursement(incomeId = 2)
-
-            verify(transactionDao).delete(surplusTxn)
-            // 300 + 200 = 500 restored to income
-            verify(transactionDao).updateAmount(2, 500.0)
-            verify(transactionDao).unlinkReimbursement(2)
-            // 0 + 300 = 300 restored to expense
-            verify(transactionDao).updateAmount(1, 300.0)
-        }
-
-    @Test
-    fun `unlinkReimbursement returns early when income or parent is missing`() =
-        runTest {
-            setupDefaultPropertyMocks()
-            repository = TransactionRepository(transactionDao, db, testDispatcherProvider)
-
-            val unlinkedIncome = Transaction(id = 2, description = "Normal Income", amount = 500.0, date = 2000L, accountId = 1, categoryId = 2, notes = "", transactionType = TransactionType.INCOME, parentReimbursementId = null)
-            `when`(transactionDao.getTransactionByIdSync(2)).thenReturn(unlinkedIncome)
-            `when`(transactionDao.getTransactionByIdSync(99)).thenReturn(null)
-
-            repository.unlinkReimbursement(incomeId = 2)
-            repository.unlinkReimbursement(incomeId = 99)
-
-            verify(transactionDao, never()).unlinkReimbursement(any())
-            verify(transactionDao, never()).updateAmount(any(), any())
+            verify(manageReimbursementUseCase).unlinkReimbursement(10)
         }
 
     // ── Tag and Image Operations Tests ─────────────────────────────────────────

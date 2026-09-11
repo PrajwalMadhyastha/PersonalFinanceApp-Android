@@ -15,6 +15,7 @@ import io.pm.finlight.data.db.dao.TransactionQueryDao
 import io.pm.finlight.data.db.dao.TransactionReimbursementDao
 import io.pm.finlight.data.db.dao.TransactionWriteDao
 import io.pm.finlight.data.model.MerchantPrediction
+import io.pm.finlight.domain.usecase.ManageReimbursementUseCase
 import io.pm.finlight.utils.DefaultDispatcherProvider
 import io.pm.finlight.utils.DispatcherProvider
 import kotlinx.coroutines.flow.Flow
@@ -29,12 +30,28 @@ class TransactionRepository(
     private val transactionReimbursementDao: TransactionReimbursementDao,
     private val db: AppDatabase,
     val dispatcherProvider: DispatcherProvider = DefaultDispatcherProvider(),
+    private val manageReimbursementUseCase: ManageReimbursementUseCase =
+        ManageReimbursementUseCase(
+            transactionQueryDao = transactionQueryDao,
+            transactionWriteDao = transactionWriteDao,
+            transactionReimbursementDao = transactionReimbursementDao,
+            db = db,
+            dispatcherProvider = dispatcherProvider,
+        ),
 ) : ITransactionRepository {
     @Deprecated("Use domain DAO constructor", level = DeprecationLevel.WARNING)
     constructor(
         transactionDao: TransactionDao,
         db: AppDatabase,
         dispatcherProvider: DispatcherProvider = DefaultDispatcherProvider(),
+        manageReimbursementUseCase: ManageReimbursementUseCase =
+            ManageReimbursementUseCase(
+                transactionQueryDao = transactionDao,
+                transactionWriteDao = transactionDao,
+                transactionReimbursementDao = transactionDao,
+                db = db,
+                dispatcherProvider = dispatcherProvider,
+            ),
     ) : this(
         transactionWriteDao = transactionDao,
         transactionQueryDao = transactionDao,
@@ -42,6 +59,7 @@ class TransactionRepository(
         transactionReimbursementDao = transactionDao,
         db = db,
         dispatcherProvider = dispatcherProvider,
+        manageReimbursementUseCase = manageReimbursementUseCase,
     )
 
     // --- NEW: Function for Spending Velocity feature ---
@@ -442,77 +460,30 @@ class TransactionRepository(
         transactionReimbursementDao.getLinkedExpenseForReimbursement(incomeId)
 
     /**
-     * Links [incomeId] as a reimbursement for [expenseId]:
-     * - If incomeTxn.amount > expenseTxn.amount (over-repayment):
-     *   - Offsets expenseTxn to 0.0 (fully settled).
-     *   - Adjusts incomeTxn amount to the offset portion, marks it isExcluded = true.
-     *   - Creates an active surplus INCOME transaction for (incomeTxn.amount - offset).
-     *   - Links the surplus transaction to the reimbursement income via linkedSurplusTxnId.
-     * - Else:
-     *   - Deducts the full income amount from the expense.
-     *   - Marks incomeTxn as isExcluded = true and parentReimbursementId = expenseId.
+     * Links [incomeId] as a reimbursement for [expenseId].
+     * Business calculation and lifecycle management delegated to [ManageReimbursementUseCase].
      */
+    @Deprecated(
+        message = "Use ManageReimbursementUseCase directly from presentation/domain layer.",
+        replaceWith = ReplaceWith("manageReimbursementUseCase.linkReimbursement(incomeId, expenseId)"),
+    )
     override suspend fun linkReimbursement(
         incomeId: Int,
         expenseId: Int,
     ) {
-        val incomeTxn = transactionQueryDao.getTransactionByIdSync(incomeId) ?: return
-        val expenseTxn = transactionQueryDao.getTransactionByIdSync(expenseId) ?: return
-
-        if (incomeTxn.amount > expenseTxn.amount) {
-            val offset = expenseTxn.amount
-            val surplus = incomeTxn.amount - offset
-
-            val surplusTxn =
-                Transaction(
-                    description = "${incomeTxn.description} (Surplus)",
-                    amount = surplus,
-                    date = incomeTxn.date,
-                    accountId = incomeTxn.accountId,
-                    categoryId = incomeTxn.categoryId,
-                    transactionType = TransactionType.INCOME,
-                    isExcluded = false,
-                    notes = "Surplus from repayment for ${expenseTxn.description}",
-                    source = "Surplus Allocation",
-                    status = TransactionStatus.CONFIRMED,
-                )
-            val surplusId = transactionWriteDao.insert(surplusTxn).toInt()
-
-            transactionWriteDao.updateAmount(incomeId, offset)
-            transactionReimbursementDao.linkReimbursement(incomeId, expenseId, surplusId)
-            transactionWriteDao.updateAmount(expenseId, 0.0)
-        } else {
-            transactionReimbursementDao.linkReimbursement(incomeId, expenseId, null)
-            val newExpenseAmount = expenseTxn.amount - incomeTxn.amount
-            transactionWriteDao.updateAmount(expenseId, newExpenseAmount)
-        }
+        manageReimbursementUseCase.linkReimbursement(incomeId, expenseId)
     }
 
     /**
-     * Removes the reimbursement link from [incomeId]:
-     * - If a linked surplus transaction exists, deletes it and merges its amount back.
-     * - Clears parentReimbursementId, linkedSurplusTxnId and removes the excluded flag.
-     * - Adds the offset amount back onto the parent expense.
+     * Removes the reimbursement link from [incomeId].
+     * Business calculation and lifecycle management delegated to [ManageReimbursementUseCase].
      */
+    @Deprecated(
+        message = "Use ManageReimbursementUseCase directly from presentation/domain layer.",
+        replaceWith = ReplaceWith("manageReimbursementUseCase.unlinkReimbursement(incomeId)"),
+    )
     override suspend fun unlinkReimbursement(incomeId: Int) {
-        val incomeTxn = transactionQueryDao.getTransactionByIdSync(incomeId) ?: return
-        val parentId = incomeTxn.parentReimbursementId ?: return
-        val expenseTxn = transactionQueryDao.getTransactionByIdSync(parentId) ?: return
-
-        var totalIncomeToRestore = incomeTxn.amount
-        val surplusId = incomeTxn.linkedSurplusTxnId
-        if (surplusId != null) {
-            val surplusTxn = transactionQueryDao.getTransactionByIdSync(surplusId)
-            if (surplusTxn != null) {
-                totalIncomeToRestore += surplusTxn.amount
-                transactionWriteDao.delete(surplusTxn)
-            }
-        }
-
-        transactionWriteDao.updateAmount(incomeId, totalIncomeToRestore)
-        transactionReimbursementDao.unlinkReimbursement(incomeId)
-        val restoredExpenseAmount = expenseTxn.amount + incomeTxn.amount
-        transactionWriteDao.updateAmount(parentId, restoredExpenseAmount)
+        manageReimbursementUseCase.unlinkReimbursement(incomeId)
     }
 
     // --- NEW: Smart Transaction Merge ---

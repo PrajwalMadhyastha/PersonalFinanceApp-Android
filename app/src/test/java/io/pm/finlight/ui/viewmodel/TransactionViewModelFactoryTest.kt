@@ -16,6 +16,7 @@ import io.pm.finlight.TestApplication
 import io.pm.finlight.TransactionViewModel
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.di.ServiceLocator
+import io.pm.finlight.domain.usecase.ManageReimbursementUseCase
 import org.junit.After
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
@@ -57,12 +58,14 @@ class TransactionViewModelFactoryTest {
         val mockCategoryRepo: ICategoryRepository = mockk(relaxed = true)
         val mockTagRepo: ITagRepository = mockk(relaxed = true)
         val mockSmsRepo: ISmsRepository = mockk(relaxed = true)
+        val mockManageReimbursementUseCase: ManageReimbursementUseCase = mockk(relaxed = true)
 
         ServiceLocator.setTransactionRepository(mockTxnRepo)
         ServiceLocator.setAccountRepository(mockAccountRepo)
         ServiceLocator.setCategoryRepository(mockCategoryRepo)
         ServiceLocator.setTagRepository(mockTagRepo)
         ServiceLocator.setSmsRepository(mockSmsRepo)
+        ServiceLocator.setManageReimbursementUseCase(mockManageReimbursementUseCase)
 
         val viewModel = factory.create(TransactionViewModel::class.java)
 
@@ -82,6 +85,12 @@ class TransactionViewModelFactoryTest {
                 isAccessible = true
             }.get(viewModel)
         assertSame(mockSmsRepo, smsField)
+
+        val reimbursementUseCaseField =
+            TransactionViewModel::class.java.getDeclaredField("manageReimbursementUseCase").apply {
+                isAccessible = true
+            }.get(viewModel)
+        assertSame(mockManageReimbursementUseCase, reimbursementUseCaseField)
     }
 
     @Test

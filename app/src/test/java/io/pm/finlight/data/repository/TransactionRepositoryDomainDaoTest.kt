@@ -41,6 +41,12 @@ class TransactionRepositoryDomainDaoTest {
     fun setup() {
         every { queryDao.getAllTransactions() } returns flowOf(emptyList())
 
+        mockkStatic("androidx.room.RoomDatabaseKt")
+        coEvery { any<AppDatabase>().withTransaction<Any?>(any()) } coAnswers {
+            val block = secondArg<suspend () -> Any?>()
+            block()
+        }
+
         repository =
             TransactionRepository(
                 transactionWriteDao = writeDao,
@@ -111,10 +117,11 @@ class TransactionRepositoryDomainDaoTest {
     @Test
     fun testDelegationToReimbursementDao() =
         runTest {
-            val incomeTxn = Transaction(id = 1, description = "Income", amount = 50.0, date = 1000L, accountId = 1, categoryId = 1, transactionType = TransactionType.INCOME, notes = null, parentReimbursementId = 2)
+            val incomeTxn = Transaction(id = 1, description = "Income", amount = 50.0, date = 1000L, accountId = 1, categoryId = 1, transactionType = TransactionType.INCOME, notes = null, parentReimbursementId = null)
+            val linkedIncomeTxn = incomeTxn.copy(parentReimbursementId = 2)
             val expenseTxn = Transaction(id = 2, description = "Expense", amount = 100.0, date = 1000L, accountId = 1, categoryId = 1, transactionType = TransactionType.EXPENSE, notes = null)
 
-            coEvery { queryDao.getTransactionByIdSync(1) } returns incomeTxn
+            coEvery { queryDao.getTransactionByIdSync(1) } returnsMany listOf(incomeTxn, linkedIncomeTxn)
             coEvery { queryDao.getTransactionByIdSync(2) } returns expenseTxn
             coJustRun { reimbursementDao.linkReimbursement(any(), any(), any()) }
 

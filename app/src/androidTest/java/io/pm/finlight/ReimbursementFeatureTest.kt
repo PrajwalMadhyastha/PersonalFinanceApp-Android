@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import io.pm.finlight.data.db.AppDatabase
+import io.pm.finlight.domain.usecase.ManageReimbursementUseCase
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -283,15 +284,8 @@ class ReimbursementFeatureTest {
                 ),
             )
 
-            val repo =
-                TransactionRepository(
-                    transactionWriteDao = appDatabase.transactionWriteDao(),
-                    transactionQueryDao = appDatabase.transactionQueryDao(),
-                    transactionAnalyticsDao = appDatabase.transactionAnalyticsDao(),
-                    transactionReimbursementDao = appDatabase.transactionReimbursementDao(),
-                    db = appDatabase,
-                )
-            repo.linkReimbursement(incomeId = 9002, expenseId = expenseId)
+            val manageReimbursementUseCase = ManageReimbursementUseCase(appDatabase)
+            manageReimbursementUseCase.linkReimbursement(incomeId = 9002, expenseId = expenseId)
         }
 
         openTransactionsTab()
