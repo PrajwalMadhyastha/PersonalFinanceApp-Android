@@ -5,6 +5,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.pm.finlight.Account
 import io.pm.finlight.Goal
 import io.pm.finlight.GoalDao
+import io.pm.finlight.RecurringPattern
+import io.pm.finlight.RecurringPatternDao
 import io.pm.finlight.RecurringTransaction
 import io.pm.finlight.RecurringTransactionDao
 import io.pm.finlight.TestApplication
@@ -12,15 +14,18 @@ import io.pm.finlight.Transaction
 import io.pm.finlight.TransactionType
 import io.pm.finlight.data.db.dao.AccountAliasDao
 import io.pm.finlight.data.db.dao.AccountDao
+import io.pm.finlight.data.db.dao.MergeRecordDao
 import io.pm.finlight.data.db.dao.TransactionQueryDao
 import io.pm.finlight.data.db.dao.TransactionWriteDao
 import io.pm.finlight.data.db.entity.AccountAlias
 import io.pm.finlight.util.DatabaseTestRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -40,7 +45,10 @@ class MergeAccountsUseCaseIntegrationTest {
     private lateinit var goalDao: GoalDao
     private lateinit var transactionWriteDao: TransactionWriteDao
     private lateinit var transactionQueryDao: TransactionQueryDao
+    private lateinit var mergeRecordDao: MergeRecordDao
+    private lateinit var recurringPatternDao: RecurringPatternDao
 
+    private lateinit var mergeTransactionsUseCase: MergeTransactionsUseCase
     private lateinit var useCase: MergeAccountsUseCase
 
     @Before
@@ -52,6 +60,18 @@ class MergeAccountsUseCaseIntegrationTest {
         goalDao = db.goalDao()
         transactionWriteDao = db.transactionWriteDao()
         transactionQueryDao = db.transactionQueryDao()
+        mergeRecordDao = db.mergeRecordDao()
+        recurringPatternDao = db.recurringPatternDao()
+
+        mergeTransactionsUseCase =
+            MergeTransactionsUseCase(
+                transactionQueryDao = db.transactionQueryDao(),
+                transactionWriteDao = db.transactionWriteDao(),
+                transactionReimbursementDao = db.transactionReimbursementDao(),
+                mergeRecordDao = db.mergeRecordDao(),
+                deletedSmsHashDao = db.deletedSmsHashDao(),
+                db = db,
+            )
 
         useCase = MergeAccountsUseCase(db)
     }
@@ -212,5 +232,97 @@ class MergeAccountsUseCaseIntegrationTest {
 
             // Assert
             assertNotNull(accountDao.getAccountByIdSync(destId))
+        }
+
+    @Test
+    fun `mergeAccounts reassigns merge_records and unmerging succeeds without SQLiteConstraintException`() =
+        runTest {
+            // Arrange: create destination and source accounts
+            val destId = accountDao.insert(Account(name = "Main Checking", type = "Bank")).toInt()
+            val sourceId = accountDao.insert(Account(name = "Old Card", type = "Card")).toInt()
+
+            // Create anchor transaction on destination account
+            val anchorTxn =
+                Transaction(
+                    description = "Supermarket",
+                    amount = 100.0,
+                    date = 1000L,
+                    accountId = destId,
+                    categoryId = null,
+                    notes = "anchor note",
+                    transactionType = TransactionType.EXPENSE,
+                )
+            val anchorId = transactionWriteDao.insert(anchorTxn).toInt()
+
+            // Create child transaction on source account
+            val childTxn =
+                Transaction(
+                    description = "Supermarket Bag Fee",
+                    amount = 5.0,
+                    date = 1001L,
+                    accountId = sourceId,
+                    categoryId = null,
+                    notes = null,
+                    transactionType = TransactionType.EXPENSE,
+                )
+            val childId = transactionWriteDao.insert(childTxn).toInt()
+
+            // Merge child into anchor
+            mergeTransactionsUseCase.manualMerge(anchorId, listOf(childId))
+
+            // Seed recurring pattern associated with source account
+            val pattern =
+                RecurringPattern(
+                    smsSignature = "sig-supermarket-rule",
+                    description = "Supermarket",
+                    amount = 5.0,
+                    transactionType = TransactionType.EXPENSE,
+                    accountId = sourceId,
+                    categoryId = null,
+                    occurrences = 2,
+                    firstSeen = 500L,
+                    lastSeen = 1001L,
+                )
+            recurringPatternDao.insert(pattern)
+
+            // Verify pre-conditions: merge record has childAccountId == sourceId, child txn is deleted
+            val preMergeRecords = mergeRecordDao.getAll()
+            assertEquals(1, preMergeRecords.size)
+            assertEquals(sourceId, preMergeRecords.first().childAccountId)
+            assertNull(transactionQueryDao.getTransactionByIdSync(childId))
+
+            // Act: merge source account into destination account
+            useCase(destId, listOf(sourceId))
+
+            // Assert: source account is deleted
+            assertNull(accountDao.getAccountByIdSync(sourceId))
+
+            // Assert: recurring pattern accountId is repointed to destId
+            val updatedPattern = recurringPatternDao.getPatternBySignature("sig-supermarket-rule")
+            assertNotNull(updatedPattern)
+            assertEquals(destId, updatedPattern?.accountId)
+
+            // Assert: merge record childAccountId is repointed to destId
+            val postMergeRecords = mergeRecordDao.getAll()
+            assertEquals(1, postMergeRecords.size)
+            assertEquals(destId, postMergeRecords.first().childAccountId)
+
+            // Act: unmerge transaction - MUST NOT throw SQLiteConstraintException even though sourceId was deleted!
+            mergeTransactionsUseCase.unmerge(anchorId)
+
+            // Assert: anchor restored to original amount
+            val restoredAnchor = transactionQueryDao.getTransactionByIdSync(anchorId)
+            assertNotNull(restoredAnchor)
+            assertEquals(100.0, restoredAnchor?.amount ?: 0.0, 0.001)
+
+            // Assert: child transaction was restored with accountId == destId
+            val allTxns = transactionQueryDao.getAllTransactionsSimple().first()
+            val restoredChild = allTxns.find { it.description == "Supermarket Bag Fee" }
+            assertNotNull(restoredChild)
+            assertEquals(destId, restoredChild?.accountId)
+            assertEquals(5.0, restoredChild?.amount ?: 0.0, 0.001)
+
+            // Assert: merge record was cleaned up after successful unmerge
+            assertTrue(mergeRecordDao.getAll().isEmpty())
         }
 }

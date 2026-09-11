@@ -26,6 +26,7 @@ import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 @ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
@@ -221,4 +222,15 @@ class AccountRepositoryTest : BaseViewModelTest() {
         val repoFromDb = AccountRepository(db)
         assertNotNull(repoFromDb)
     }
+
+    @Test
+    fun `mergeAccounts throws IllegalStateException when mergeAccountsUseCase is null`() =
+        runTest {
+            val repoWithoutUseCase = AccountRepository(accountDao, accountAliasDao, db, mergeAccountsUseCase = null)
+            val exception =
+                assertFailsWith<IllegalStateException> {
+                    repoWithoutUseCase.mergeAccounts(1, listOf(2))
+                }
+            assertEquals("MergeAccountsUseCase must be provided to call mergeAccounts on AccountRepository", exception.message)
+        }
 }

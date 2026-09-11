@@ -11,11 +11,13 @@ import io.mockk.unmockkAll
 import io.pm.finlight.Account
 import io.pm.finlight.BaseViewModelTest
 import io.pm.finlight.GoalDao
+import io.pm.finlight.RecurringPatternDao
 import io.pm.finlight.RecurringTransactionDao
 import io.pm.finlight.TestApplication
 import io.pm.finlight.data.db.AppDatabase
 import io.pm.finlight.data.db.dao.AccountAliasDao
 import io.pm.finlight.data.db.dao.AccountDao
+import io.pm.finlight.data.db.dao.MergeRecordDao
 import io.pm.finlight.data.db.dao.TransactionWriteDao
 import io.pm.finlight.data.db.entity.AccountAlias
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -62,6 +64,12 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
     private lateinit var transactionWriteDao: TransactionWriteDao
 
     @Mock
+    private lateinit var mergeRecordDao: MergeRecordDao
+
+    @Mock
+    private lateinit var recurringPatternDao: RecurringPatternDao
+
+    @Mock
     private lateinit var openHelper: SupportSQLiteOpenHelper
 
     @Mock
@@ -78,6 +86,8 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
         `when`(db.recurringTransactionDao()).thenReturn(recurringTransactionDao)
         `when`(db.goalDao()).thenReturn(goalDao)
         `when`(db.transactionWriteDao()).thenReturn(transactionWriteDao)
+        `when`(db.mergeRecordDao()).thenReturn(mergeRecordDao)
+        `when`(db.recurringPatternDao()).thenReturn(recurringPatternDao)
 
         `when`(db.openHelper).thenReturn(openHelper)
         `when`(openHelper.writableDatabase).thenReturn(writableDb)
@@ -104,6 +114,8 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
                 recurringTransactionDao = recurringTransactionDao,
                 goalDao = goalDao,
                 transactionWriteDao = transactionWriteDao,
+                mergeRecordDao = mergeRecordDao,
+                recurringPatternDao = recurringPatternDao,
                 db = db,
             )
     }
@@ -131,7 +143,17 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
 
             useCase(destinationId, sourceIds)
 
-            val inOrder = inOrder(writableDb, accountAliasDao, recurringTransactionDao, goalDao, transactionWriteDao, accountDao)
+            val inOrder =
+                inOrder(
+                    writableDb,
+                    accountAliasDao,
+                    recurringTransactionDao,
+                    goalDao,
+                    transactionWriteDao,
+                    mergeRecordDao,
+                    recurringPatternDao,
+                    accountDao,
+                )
 
             inOrder.verify(writableDb).beginTransaction()
             inOrder.verify(accountAliasDao).insertAll(aliasCaptor.capture())
@@ -139,6 +161,8 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
             inOrder.verify(recurringTransactionDao).reassignRecurringTransactions(eq(sourceIds), eq(destinationId))
             inOrder.verify(goalDao).reassignGoals(eq(sourceIds), eq(destinationId))
             inOrder.verify(transactionWriteDao).reassignTransactions(eq(sourceIds), eq(destinationId))
+            inOrder.verify(mergeRecordDao).reassignChildAccount(eq(sourceIds), eq(destinationId))
+            inOrder.verify(recurringPatternDao).reassignRecurringPatterns(eq(sourceIds), eq(destinationId))
             inOrder.verify(accountDao).deleteByIds(eq(sourceIds))
             inOrder.verify(writableDb).setTransactionSuccessful()
             inOrder.verify(writableDb).endTransaction()
@@ -173,7 +197,17 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
             useCase(destinationId, sourceIds)
 
             val expectedSources = listOf(2)
-            val inOrder = inOrder(writableDb, accountAliasDao, recurringTransactionDao, goalDao, transactionWriteDao, accountDao)
+            val inOrder =
+                inOrder(
+                    writableDb,
+                    accountAliasDao,
+                    recurringTransactionDao,
+                    goalDao,
+                    transactionWriteDao,
+                    mergeRecordDao,
+                    recurringPatternDao,
+                    accountDao,
+                )
 
             inOrder.verify(writableDb).beginTransaction()
             inOrder.verify(accountAliasDao).insertAll(aliasCaptor.capture())
@@ -181,6 +215,8 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
             inOrder.verify(recurringTransactionDao).reassignRecurringTransactions(eq(expectedSources), eq(destinationId))
             inOrder.verify(goalDao).reassignGoals(eq(expectedSources), eq(destinationId))
             inOrder.verify(transactionWriteDao).reassignTransactions(eq(expectedSources), eq(destinationId))
+            inOrder.verify(mergeRecordDao).reassignChildAccount(eq(expectedSources), eq(destinationId))
+            inOrder.verify(recurringPatternDao).reassignRecurringPatterns(eq(expectedSources), eq(destinationId))
             inOrder.verify(accountDao).deleteByIds(eq(expectedSources))
             inOrder.verify(writableDb).setTransactionSuccessful()
             inOrder.verify(writableDb).endTransaction()
@@ -211,6 +247,8 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
             verify(recurringTransactionDao).reassignRecurringTransactions(eq(uniqueSources), eq(destinationId))
             verify(goalDao).reassignGoals(eq(uniqueSources), eq(destinationId))
             verify(transactionWriteDao).reassignTransactions(eq(uniqueSources), eq(destinationId))
+            verify(mergeRecordDao).reassignChildAccount(eq(uniqueSources), eq(destinationId))
+            verify(recurringPatternDao).reassignRecurringPatterns(eq(uniqueSources), eq(destinationId))
             verify(accountDao).deleteByIds(eq(uniqueSources))
         }
 
@@ -230,6 +268,8 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
             verify(recurringTransactionDao, never()).reassignRecurringTransactions(any(), any())
             verify(goalDao, never()).reassignGoals(any(), any())
             verify(transactionWriteDao, never()).reassignTransactions(any(), any())
+            verify(mergeRecordDao, never()).reassignChildAccount(any(), any())
+            verify(recurringPatternDao, never()).reassignRecurringPatterns(any(), any())
             verify(accountDao, never()).deleteByIds(any())
         }
 
@@ -244,6 +284,8 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
             verify(recurringTransactionDao, never()).reassignRecurringTransactions(any(), any())
             verify(goalDao, never()).reassignGoals(any(), any())
             verify(transactionWriteDao, never()).reassignTransactions(any(), any())
+            verify(mergeRecordDao, never()).reassignChildAccount(any(), any())
+            verify(recurringPatternDao, never()).reassignRecurringPatterns(any(), any())
             verify(accountDao, never()).deleteByIds(any())
         }
 
@@ -258,6 +300,8 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
             verify(recurringTransactionDao, never()).reassignRecurringTransactions(any(), any())
             verify(goalDao, never()).reassignGoals(any(), any())
             verify(transactionWriteDao, never()).reassignTransactions(any(), any())
+            verify(mergeRecordDao, never()).reassignChildAccount(any(), any())
+            verify(recurringPatternDao, never()).reassignRecurringPatterns(any(), any())
             verify(accountDao, never()).deleteByIds(any())
         }
 
@@ -274,13 +318,25 @@ class MergeAccountsUseCaseTest : BaseViewModelTest() {
 
             useCase(destinationId, sourceIds)
 
-            val inOrder = inOrder(writableDb, accountAliasDao, recurringTransactionDao, goalDao, transactionWriteDao, accountDao)
+            val inOrder =
+                inOrder(
+                    writableDb,
+                    accountAliasDao,
+                    recurringTransactionDao,
+                    goalDao,
+                    transactionWriteDao,
+                    mergeRecordDao,
+                    recurringPatternDao,
+                    accountDao,
+                )
 
             inOrder.verify(writableDb).beginTransaction()
             inOrder.verify(accountAliasDao).reassignAliases(eq(sourceIds), eq(destinationId))
             inOrder.verify(recurringTransactionDao).reassignRecurringTransactions(eq(sourceIds), eq(destinationId))
             inOrder.verify(goalDao).reassignGoals(eq(sourceIds), eq(destinationId))
             inOrder.verify(transactionWriteDao).reassignTransactions(eq(sourceIds), eq(destinationId))
+            inOrder.verify(mergeRecordDao).reassignChildAccount(eq(sourceIds), eq(destinationId))
+            inOrder.verify(recurringPatternDao).reassignRecurringPatterns(eq(sourceIds), eq(destinationId))
             inOrder.verify(accountDao).deleteByIds(eq(sourceIds))
             inOrder.verify(writableDb).setTransactionSuccessful()
             inOrder.verify(writableDb).endTransaction()

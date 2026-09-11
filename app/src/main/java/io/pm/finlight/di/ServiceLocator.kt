@@ -236,6 +236,8 @@ object ServiceLocator {
                     recurringTransactionDao = db.recurringTransactionDao(),
                     goalDao = db.goalDao(),
                     transactionWriteDao = db.transactionWriteDao(),
+                    mergeRecordDao = db.mergeRecordDao(),
+                    recurringPatternDao = db.recurringPatternDao(),
                     db = db,
                 ).also {
                     mergeAccountsUseCase = it
